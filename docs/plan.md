@@ -16,7 +16,7 @@ Status: proposal awaiting Oriol's review. Revision 2 incorporates an independent
 
 Observed 2026-10-09, shell 0.1.0 reached via the system keyboard switcher: panel opens recording, Stop inserted `[recorded 3.0 s]` and returned to FUTO. FUTO's microphone key with the toggle on did nothing, also after a language switch and a force-stop.
 
-Diagnosed from framework source (`SubtypeUtils.getImplicitlyApplicableSubtypesImpl`): voice subtypes without a locale are dropped from the implicitly enabled list, so FUTO's `getShortcutInputMethodsAndSubtypes()` lookup found no voice subtype. Fix in 0.1.1: `overridesImplicitlyEnabledSubtype="true"` on our subtype, which Android honours regardless of locale. Installed; Android now lists the subtype with the flag. The microphone-key path itself is not yet re-tested. Still unobserved: FUTO baseline timings.
+Diagnosed from framework source (`SubtypeUtils.getImplicitlyApplicableSubtypesImpl`): voice subtypes without a locale are dropped from the implicitly enabled list, so FUTO's `getShortcutInputMethodsAndSubtypes()` lookup found no voice subtype. Fix in 0.1.1: `overridesImplicitlyEnabledSubtype="true"` on our subtype, which Android honours regardless of locale. Installed; Android now lists the subtype with the flag. Verified 2026-10-09 by Oriol: FUTO's microphone key now opens our panel, Stop inserts text and FUTO returns. Milestone 1 gate (launch without a new per-recording step, insertion, return) is met for the happy path; the remaining milestone 1 items are the edge cases in step 2 below, signing, and the baseline. Still unobserved: FUTO baseline timings (template in [baseline](baseline.md)).
 
 ## How FUTO hands off to us (inferred, to be verified first)
 
