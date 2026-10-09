@@ -23,4 +23,4 @@ USB debugging stays off except while testing. To test: Settings, System, Develop
 
 ## Known state after 2026-10-09
 
-Steps 1 to 4 are done on the phone with app version 0.1.1. The microphone-key path is not yet verified after the 0.1.1 fix; the panel is verified via the system keyboard switcher. See [plan](plan.md) for status.
+Steps 1 to 4 are done on the phone with app version 0.1.1, debug-signed `app-debug.apk`. Verified by Oriol: FUTO's microphone key opens the panel, Stop inserts text and FUTO returns. The first release-signed install will require one uninstall and repeating steps 1 to 4; after that, release builds live under `app/build/outputs/apk/release/`. See [plan](plan.md) for status.
