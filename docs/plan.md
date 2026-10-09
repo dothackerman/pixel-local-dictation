@@ -13,6 +13,7 @@ Status: decisions D1–D5 approved by Oriol on 2026-10-09. Revision 5 incorporat
 | Oriol's normal dictation is a long take like D6/E6, 30–40 s | Oriol |
 | Toolchain: JDK 21, Gradle 9.8.1, AGP 9.4.1, platform 36.1, build-tools 37.0.0, NDK 30.0.16248370, CMake 4.1.2, all in `~/Android/Sdk` | laptop |
 | Gate: deny rules, hook, `tools/phone` with status/versions/install/uninstall/logs/crash/test/subtypes | commits b3378aa, a02d007 |
+| Step 1 built, not yet installed: `app-release.apk` (not debuggable) and `app-benchmark.apk` (debuggable) carry the same release certificate, SHA-256 `a3200b72…dfc6b530b`; without the `dictation.*` keys both fail naming `tools/set-signing-password.sh`, debug still builds. Gradle needs `ANDROID_HOME=~/Android/Sdk` (no `sdk.dir` in `local.properties`) | `apksigner verify`, `aapt2 dump badging`, build in a copy without `local.properties` |
 
 Handoff: observed, FUTO's key reaches our panel only when our locale-less voice subtype carries `overridesImplicitlyEnabledSubtype="true"`. Inferred from FUTO 0.1.30 and framework source: FUTO asks `getShortcutInputMethodsAndSubtypes()`, which returns the first enabled input method with an implicitly enabled voice subtype. Rollback: FUTO toggle off first, then uninstall.
 
