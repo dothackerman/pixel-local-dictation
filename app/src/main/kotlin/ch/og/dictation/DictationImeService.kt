@@ -36,6 +36,8 @@ class DictationImeService : InputMethodService() {
 
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Apps call restartInput on text changes; keep a live recording untouched.
+        if (recorder.isRunning) return
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
     }
@@ -94,8 +96,13 @@ class DictationImeService : InputMethodService() {
     private fun hasMicPermission() =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+    private var permissionAsked = false
+
+    /** Ask once per service lifetime; after "don't ask again" we only show the message. */
     private fun requestMicPermission() {
         status?.setText(R.string.status_no_permission)
+        if (permissionAsked) return
+        permissionAsked = true
         startActivity(Intent(this, PermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }

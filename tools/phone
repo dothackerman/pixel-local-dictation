@@ -15,8 +15,10 @@ usage: tools/phone <subcommand>
   versions          Android/GrapheneOS build, API level, FUTO versions, input methods (read-only)
   install <apk>     install an APK whose package is exactly $PKG
   uninstall         uninstall $PKG only
-  logs              live log lines from $PKG (Ctrl-C to stop)
+  logs              live log lines from $PKG's own log tags (Ctrl-C to stop)
   crash             last crash/ANR entries mentioning $PKG (read-only)
+  test              run $PKG's instrumentation tests on the phone via Gradle
+  subtypes          every enabled input method with its subtypes and modes (read-only)
 USAGE
   exit 1
 }
@@ -43,8 +45,13 @@ case "${1:-}" in
   uninstall)
     "$ADB" uninstall "$PKG" ;;
   logs)
-    "$ADB" logcat -v time -T 1 | grep --line-buffered -F "$PKG" ;;
+    # Our own tags only, plus uncaught exceptions. Everything else silenced (*:S).
+    "$ADB" logcat -v time -T 1 DictationIme:V Recorder:V Recognizer:V ReplayTest:V AndroidRuntime:E '*:S' ;;
   crash)
     "$ADB" logcat -d -b crash | grep -F -B2 -A40 "$PKG" | tail -200 ;;
+  test)
+    cd "$(dirname "$0")/.." && ANDROID_HOME="$SDK" ./gradlew connectedDebugAndroidTest --console=plain ;;
+  subtypes)
+    "$ADB" shell ime list -a | grep -E '^[^ ]|mId=|mMode=|mLocale=|mIsAuxiliary=|mSubtypeId=|Enabled' ;;
   *) usage ;;
 esac

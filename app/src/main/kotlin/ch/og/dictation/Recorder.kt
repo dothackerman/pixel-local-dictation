@@ -40,6 +40,7 @@ class Recorder {
             val chunk = ByteArray(minBuf)
             while (running.get()) {
                 val n = rec.read(chunk, 0, chunk.size)
+                if (n < 0) { running.set(false); break }  // device error or interruption
                 if (n > 0) synchronized(buffer) { buffer.write(chunk, 0, n) }
             }
         }.also { it.start() }

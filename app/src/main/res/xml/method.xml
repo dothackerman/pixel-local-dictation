@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Voice-only input method. No locale is declared on purpose: the recognizer
-     decides the language per recording (R2). -->
+     decides the language per recording (R2). overridesImplicitlyEnabledSubtype makes
+     Android count this subtype as enabled although it has no locale (SubtypeUtils
+     .getImplicitlyApplicableSubtypesImpl); without it FUTO's shortcut lookup finds nothing. -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:isDefault="false"
     android:supportsSwitchingToNextInputMethod="true">
@@ -8,5 +10,5 @@
         android:label="@string/ime_label"
         android:imeSubtypeMode="voice"
         android:isAuxiliary="true"
-        android:overridesImplicitlyEnabledSubtype="false" />
+        android:overridesImplicitlyEnabledSubtype="true" />
 </input-method>
