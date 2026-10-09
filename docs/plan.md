@@ -1,66 +1,72 @@
-# Implementation plan (for review, 2026-10-09, revision 2)
+# Implementation plan (revision 4, 2026-10-09)
 
-Status: proposal awaiting Oriol's review. Revision 2 incorporates an independent review; its accepted findings are marked (rev). Nothing beyond the milestone 1 shell is built. Requirements in [requirements](requirements.md) stay authoritative; this file says how the [roadmap](roadmap.md) milestones will be executed and what was learned on the phone.
+Status: decisions D1–D5 approved by Oriol on 2026-10-09. Revision 4 incorporates a second independent review. Requirements in [requirements](requirements.md) stay authoritative; this file says how the [roadmap](roadmap.md) milestones are executed. The implementing session reads, in order: AGENTS.md, this file, [setup](setup.md), [baseline](baseline.md), [research](research.md), [decisions](decisions.md). It touches the phone only through `tools/phone`, never edits the gate files, and asks Oriol for every wrapper change by writing a proposed replacement file and naming its path.
 
 ## Where we stand (AS-IS, 2026-10-09)
 
 | Fact | Evidence |
 |---|---|
-| Pixel 10 Pro XL, Tensor G5, GrapheneOS build 2026100601, Android 17 (API 37) | `tools/phone versions` |
-| FUTO Keyboard Play Store build 0.1.30, the only enabled keyboard before this project | same |
-| FUTO voice model Multilingual-244; keyboard languages Deutsch (Schweiz), English (UK) | Oriol |
-| FUTO 0.1.30 Voice Input settings offer one toggle, "Disable built-in voice input / use voice input provided by external app", and no provider dropdown | Oriol |
-| `ch.og.dictation` 0.1.0 installed and enabled as an input method; only permission RECORD_AUDIO, no INTERNET | `aapt2 dump permissions`, install log |
-| Laptop toolchain: JDK 21, Gradle 9.8.1, AGP 9.4.1, platform 36.1, build-tools 37.0.0, NDK 30.0.16248370, CMake 4.1.2 | installed from Google's live listing |
-| Phone access gate active: deny rules, hook, `tools/phone` wrapper; audio and keys refused by pre-commit | commit b3378aa |
+| Pixel 10 Pro XL, Tensor G5, GrapheneOS 2026100601, Android 17 (API 37) | `tools/phone versions` |
+| FUTO Keyboard Play Store 0.1.30; voice model Multilingual-244; keyboard languages Deutsch (Schweiz), English (UK); Voice Input settings offer one toggle, no provider dropdown | phone, Oriol |
+| `ch.og.dictation` 0.1.1 (debug-signed) installed, enabled, microphone granted, FUTO toggle on. FUTO's microphone key opens our panel, Stop inserts text, FUTO returns | Oriol, 2026-10-09 |
+| FUTO baseline: about 1× real-time decode after stop (35.85 s wait for a 35 s German take, 34.75 s English); single sentences nearly error-free; long German take lost two names and one common word | [baseline](baseline.md) |
+| Oriol's normal dictation is a long take like D6/E6, 30–40 s | Oriol |
+| Toolchain: JDK 21, Gradle 9.8.1, AGP 9.4.1, platform 36.1, build-tools 37.0.0, NDK 30.0.16248370, CMake 4.1.2, all in `~/Android/Sdk` | laptop |
+| Gate: deny rules, hook, `tools/phone` with status/versions/install/uninstall/logs/crash/test/subtypes | commits b3378aa, a02d007 |
 
-Observed 2026-10-09, shell 0.1.0 reached via the system keyboard switcher: panel opens recording, Stop inserted `[recorded 3.0 s]` and returned to FUTO. FUTO's microphone key with the toggle on did nothing, also after a language switch and a force-stop.
+Handoff: observed, FUTO's key reaches our panel only when our locale-less voice subtype carries `overridesImplicitlyEnabledSubtype="true"`. Inferred from FUTO 0.1.30 and framework source: FUTO asks `getShortcutInputMethodsAndSubtypes()`, which returns the first enabled input method with an implicitly enabled voice subtype. Rollback: FUTO toggle off first, then uninstall.
 
-Diagnosed from framework source (`SubtypeUtils.getImplicitlyApplicableSubtypesImpl`): voice subtypes without a locale are dropped from the implicitly enabled list, so FUTO's `getShortcutInputMethodsAndSubtypes()` lookup found no voice subtype. Fix in 0.1.1: `overridesImplicitlyEnabledSubtype="true"` on our subtype, which Android honours regardless of locale. Installed; Android now lists the subtype with the flag. Verified 2026-10-09 by Oriol: FUTO's microphone key now opens our panel, Stop inserts text and FUTO returns. Milestone 1 gate (launch without a new per-recording step, insertion, return) is met for the happy path; the remaining milestone 1 items are the edge cases in step 2 below, signing, and the baseline. Still unobserved: FUTO baseline timings (template in [baseline](baseline.md)).
+## Target, derived from the baseline
 
-## How FUTO hands off to us (inferred, to be verified first)
+R4 in both languages on Oriol's real usage: a 35 s take. FUTO waits about 35 s after stop. Interim target for the engine decision: under 10 s after stop for a 35 s take, with accuracy on the long takes at least matching FUTO. The sub-second warm target from requirements is reachable only if decoding runs during the recording and the model stays loaded between takes; both are spike questions, not assumptions.
 
-The Play Store build has only the toggle. Inferred from FUTO's LatinIME ancestry and AOSP, not verified in 0.1.30 source: with the toggle on, the microphone key triggers Android's shortcut-IME switch. Android, not FUTO, then chooses among enabled input methods that declare a subtype of mode `voice`, preferring one whose locale matches the system locale, else the first found. Our subtype declares no locale on purpose (R2). Risks (rev): another enabled voice input method could win; FUTO's own subtypes might qualify and loop back; the auxiliary subtype's implicit enablement is an AOSP rule not yet observed on Android 17/GrapheneOS.
+## Milestone 1 remainder (shell), in this order
 
-Verification before anything else: Oriol's six-step live test, plus a read-only `ime list -a` through the wrapper to list every enabled input method's subtypes and modes. If the wrong target is chosen, the fallbacks are, in order: declare locales on our subtype, a `RECOGNIZE_SPEECH` activity, or a newer FUTO build with the explicit provider dropdown. Each is a design change recorded in decisions.md.
+1. **Release signing (D5).** One-time, by Oriol with a command the implementer provides: `keytool -genkeypair -keystore ~/.keys/pixel-dictation/release.jks -alias dictation -keyalg RSA -keysize 4096 -validity 36500`. `local.properties` (gitignored) holds the keystore path and passwords; `app/build.gradle.kts` reads them into `signingConfigs.release`. Add a `benchmark` build type: `initWith(getByName("release")); isDebuggable = true; signingConfig = signingConfigs.getByName("release"); matchingFallbacks += "release"`, and `testBuildType = "benchmark"`. Daily use runs the release build; benchmark and release share the key, so either updates the other in place. The first release-signed install replaces the debug-signed 0.1.1 and requires one uninstall (toggle off first, then setup.md steps 1–4 again); say so to Oriol before doing it.
+2. **Session-safe insertion.** Every text operation is tied to the input session that started the recording: capture a token in `onStartInput`, and commit only on the main thread if the token still matches. `onFinishInputView` and `onFinishInput` invalidate it. This is required before any background decoding exists.
+3. **Benchmark switch (D4).** A settings activity for the app (declared via `android:settingsActivity` in method.xml so it is reachable from Android's keyboard list), with one switch "Benchmark mode: save recordings", off by default, and a button "Delete benchmark data". When on, the panel shows a red banner "benchmark: saving audio", and each take is written to `files/benchmark/<timestamp>.wav` (16 kHz mono PCM) plus `<timestamp>.json` with recognizer output and timings. Off by default means production audio stays in memory as today.
+4. **Wrapper changes for Oriol to apply:** `test` runs `connectedBenchmarkAndroidTest`; new `pull-report` runs `exec-out run-as ch.og.dictation tar c files/benchmark | tar x -C corpus/`, read-only, used only after Oriol says yes for that run. Write the proposed file to the scratchpad and name the path.
+5. **Edge cases with the FUTO key, by Oriol:** Cancel inserts nothing; tapping another field during recording inserts nothing; a messaging app restarting input mid-recording keeps recording; call or screen lock leaves no stuck microphone; denied permission shows the message once.
+6. **Oriol records D6 and E6** through the benchmark switch, twice each. Tag `m1`.
 
-Rollback (rev, corrects revision 1): turn the FUTO toggle off first, then optionally uninstall our app. Uninstalling with the toggle still on leaves FUTO's microphone key dead.
+## Milestone 2: Parakeet TDT 0.6B v3 via sherpa-onnx
 
-## Milestone 1 completion (shell, no recognizer)
+### Design (proposal, confirmed or changed by the spike)
 
-1. Baseline before any change (rev): Oriol dictates five short sentences per language with FUTO as installed and notes stop-to-text wait, cold and warm, in `docs/baseline.md`. No instrumentation; this is the reference the roadmap requires before settings change.
-2. Live test by Oriol: toggle on; microphone key; Record/Stop inserts `[recorded N s]`; Cancel inserts nothing; focus change during recording inserts nothing; messaging app, browser field, multiline note.
-3. Shell fixes found by review (rev), in this order, each a commit: `onStartInputView(restarting = true)` must not reset the panel or restart capture while recording; permanent permission denial must show a message, not relaunch the prompt on every show; `Recorder` must stop on read errors instead of spinning; decide and record whether auto-start on every show is wanted or whether Record must be tapped.
-4. Signing (rev): generate a release key now, stored outside Git at a path Oriol chooses, referenced from `local.properties`. All phone installs use it from here on so upgrades never require uninstall and re-setup.
-5. Wrapper changes, applied by Oriol (rev): log filter by our tags; `test` subcommand for instrumentation tests; `subtypes` subcommand running `ime list -a` read-only; `pull-report` subcommand that copies only the app's own report directory, debug build only, used solely with a per-run yes.
-6. Write `docs/setup.md`: enable the input method, grant microphone, toggle, and the exact reverse in the safe order. Gate: roadmap milestone 1 gate met; tag `m1`.
+- Audio is segmented live with sherpa-onnx's silero VAD. Parameters start at: minimum silence 0.8 s, minimum speech 0.25 s, maximum segment 15 s; segments under 2 s are merged into the next. Each completed segment is decoded by the offline Parakeet recognizer on one serial background thread while recording continues.
+- Progress is shown with `setComposingText` (joined segments, single space between them), never committed early. On Stop the final partial segment is decoded, the queue is drained with the panel showing "finishing", and the whole text is committed once. Cancel or focus loss clears the composing text and discards the queue, so nothing is ever left in a field. This resolves O1 from revision 3: the user sees progress and Cancel stays clean.
+- The language is detected by Parakeet per segment; one language per take is Oriol's usage, so a flip between segments is measured as an error.
+- Why not alternatives: Nemotron and Moonshine streaming models would need FUTO's manual language choice in this build (R1/R2); repeated whole-buffer decoding grows quadratically with take length.
 
-## Milestone 2: local Parakeet TDT 0.6B v3 on CPU
+### Step 0: assets, pinned before the spike
 
-Runtime, proposed: sherpa-onnx, pending evidence. Before the spike, add to research.md (rev): license, prebuilt arm64 Android artifacts, Parakeet TDT v3 export and INT8 support, each with a link and the inspected version. Alternative: ONNX Runtime directly, following Parakeeb.
+`assets.lock` lists exact URLs and SHA-256 of: `sherpa-onnx-1.13.8.aar` (GitHub release v1.13.8), `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2` (release tag `asr-models`), `silero_vad.onnx` (same release tag; pin the exact asset name and checksum found there). `tools/fetch-assets.sh` downloads into gitignored `models/` and verifies checksums. The AAR goes into `app/libs/` (gitignored) and is consumed with `implementation(files("libs/sherpa-onnx-1.13.8.aar"))`. Before the first install, check the AAR's `arm64-v8a/*.so` for 16 KB page alignment (`readelf -lW ... | grep LOAD`, alignment 0x4000); Android 16+ requires it. Model files are bundled uncompressed via `androidResources { noCompress += listOf("onnx", "txt") }` under `app/src/main/assets/parakeet-v3/`; sherpa-onnx's Kotlin API reads them through `AssetManager`, so peak load memory is about twice the file size and is measured, not assumed. The phone never downloads anything.
 
-Spike (rev): on the phone via WAV replay, at least five German and five English clips, compare INT8 output against fp16 or reference output for parity, and record cold load, warm latency, peak memory. Record the outcome as ADR-003 before product code. The "about 1 GB" memory figure is a guess until measured.
+### Step 1: spike (ADR-003 gate)
 
-Steps, each its own commit:
+A throwaway instrumentation test in `app/src/androidTest/`, no UI, reading WAVs from `files/benchmark/` on the phone (Oriol's D6/E6 recordings) and from `androidTest/assets/` for short clips (kept local, since pre-commit refuses audio; the implementer records them with the benchmark switch). Logged under tag `ReplayTest` and written to `files/benchmark/spike.json`:
 
-1. Asset pipeline: pinned runtime release and model export with SHA-256 checksums in `assets.lock`; a laptop script fetches into a gitignored `models/` folder. Bundled as uncompressed assets (`noCompress`) so they are memory-mapped, not copied on first run (rev). The phone never downloads.
-2. `Recognizer` interface with `FakeRecognizer` for tests and `ParakeetRecognizer` wrapping the runtime. Loaded once per process and reused; cold and warm timings logged separately.
-3. Milestone 1 pipeline feeds 16 kHz mono PCM; end-of-recording decoding only. Partial decoding waits for milestone 3 evidence.
-4. Instrumentation test `ReplayTest` inside the app sandbox: replays WAV files from the app's private directory, checks output against references, writes per-clip timing JSON to the app's report directory, read back only via `pull-report` with a per-run yes.
-5. Privacy review: merged manifest has no INTERNET; dependency tree contains no network library (`gradle dependencies` output committed); airplane-mode test. Gate: roadmap milestone 2 gate; tag `m2`.
+- cold load time; peak memory as `Debug.MemoryInfo.totalPss` and `VmHWM` from `/proc/self/status`;
+- real-time factor, defined as decode time divided by audio duration, warm, median and maximum, per segment of 3–10 s, German and English;
+- for each D6/E6 recording: stop-to-final for whole-take decode, and for VAD-segmented decode with the segments fed at real-time pace;
+- INT8 parity: word error rate of INT8 output against the official model's fp32 output on the same clips, produced on the laptop with sherpa-onnx's fp32 export or NeMo. Pass: INT8 WER at most 1 point worse;
+- join quality: capitalisation and punctuation errors at segment boundaries, counted separately;
+- language flips between segments of one take;
+- `PowerManager.currentThermalStatus` and battery level before and after ten consecutive long takes;
+- warm reuse: a second take 10 minutes after returning to FUTO, checking whether the process survived (log the pid) and whether the load repeated.
 
-Known risks, measured not assumed: cold load of a 600M-parameter model; memory; heat under repeated use; wrong language on short utterances.
+Pass: under 10 s after stop for a 35 s take, per-segment RTF median under 0.5, parity within 1 point, memory under 2 GB, thermal status never above "moderate", no mid-word cuts observable in the outputs, names on D6/E6 no worse than FUTO (two takes, anecdotal, labelled as such). Record ADR-003 with numbers either way. Fail paths, in order: ONNX Runtime directly with the same model (Parakeeb precedent); then roadmap milestone 4.
 
-## Milestone 3: measurement (rev, aligned with roadmap)
+### Steps after a passed spike, each its own commit
 
-Corpus recorded on the phone's own microphone, not the laptop (acoustic confound). Our app never saves production audio, so recording uses a separate Oriol-operated recorder app or a benchmark-only mode in our app that is off by default and visibly on. Clips are copied to `corpus/` on the laptop only with a per-run yes. 20 German and 20 English clips, 5 to 30 s, plus a few 60 s takes, Swiss-accented German included because that is the installed locale, languages interleaved.
+2. `Recognizer` interface (`transcribe(samples: FloatArray): String`, 16 kHz mono in [-1, 1]), `FakeRecognizer`, `ParakeetRecognizer` wrapping `OfflineRecognizer` with `modelType = "nemo_transducer"`, created once per process on a background thread at service creation; cold and warm timings logged under tag `Recognizer`.
+3. `Segmenter` wrapping sherpa-onnx `Vad` on the live stream; serial decode queue; composing-text progress and single commit on Stop, as designed above.
+4. Privacy review: merged manifest has no INTERNET; `./gradlew :app:dependencies` output committed under `docs/dependencies.txt`; airplane-mode test by Oriol. Gate: roadmap milestone 2 gate; tag `m2`.
 
-Baseline: first attempt identical-audio replay through FUTO (file import or a harness with FUTO's model and decoding settings, labelled model-level). Only if that fails, matched live takes, labelled as such; distinct spoken takes are never called identical-input comparisons. Report per language: word error rate, corrections counted by Oriol, names/numbers, punctuation/capitalization, wrong-language count, tap-to-ready, model load, stop-to-final with median and slow tail, cold and warm, memory, heat and battery over repeated sessions. Gate: R4 holds in both languages, otherwise milestone 4.
+## Milestone 3: measurement
 
-## Decisions requested from Oriol
+Corpus: D1–D5 and E1–E5 single sentences, D6 and E6, plus at least 15 further long takes per language written by Oriol about his real topics with names and numbers, all recorded through the benchmark switch, copied with `pull-report` after a per-run yes. FUTO comparison: first attempt identical-audio replay through FUTO; the roadmap says file import is not established, so if it cannot be done the same scripts are dictated live through FUTO on the same day (toggle off, dictate, toggle on) and timed by screen recording, labelled "matched live takes, not identical audio". Scoring script `tools/score.py` on the laptop: normalise digits and punctuation, word error rate per language, names and numbers listed separately, stop-to-final median and worst case, cold versus warm, memory, thermal, battery. Gate: R4 in both languages, else milestone 4.
 
-- D1: apply the proposed `tools/phone` replacement (log filter, `test`, `subtypes`; `pull-report` added later with the report format).
-- D2: sherpa-onnx as the first runtime to spike, after its evidence is added to research.md.
-- D3: auto-start recording when the panel opens, matching FUTO's microphone-key behaviour, or require a Record tap.
-- D4: corpus recording method on the phone (separate recorder app, or an opt-in benchmark mode in our app) and consent per copy to the laptop.
-- D5: location of the release signing key outside Git.
+## Approved decisions
+
+D1 wrapper changes applied. D2 sherpa-onnx first. D3 recording starts when the panel opens; only Stop is tapped. D4 benchmark switch in the app; clips copied only with a per-run yes; deletion button in the app. D5 signing key at `~/.keys/pixel-dictation`, backed up by Oriol.
