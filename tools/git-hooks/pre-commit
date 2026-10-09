@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Refuse audio, transcripts and signing material in any commit, whatever the path.
+set -euo pipefail
+bad=$(git diff --cached --name-only --diff-filter=AM | grep -Ei '\.(wav|flac|mp3|m4a|ogg|opus|aac|webm|jks|keystore|pem|p12)$|(^|/)corpus/' || true)
+if [ -n "$bad" ]; then
+  echo "pre-commit: refusing to commit recordings/transcripts/signing material:" >&2
+  echo "$bad" >&2
+  exit 1
+fi

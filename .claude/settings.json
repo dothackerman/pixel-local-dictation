@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(adb:*)",
+      "Bash(fastboot:*)",
+      "Bash(*platform-tools/adb*)",
+      "Bash(*platform-tools/fastboot*)",
+      "Bash(sudo:*)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)",
+      "Edit(tools/phone)",
+      "Write(tools/phone)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/phone-guard.sh" }
+        ]
+      }
+    ]
+  }
+}

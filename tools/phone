@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# The only phone door. Fixed subcommands, package name hard-coded.
+# Read it: nothing here can name another app or change phone settings.
+set -euo pipefail
+PKG="ch.og.dictation"
+FUTO_PKGS="org.futo.inputmethod.latin org.futo.inputmethod.latin.playstore org.futo.voiceinput org.futo.voiceinput.playstore"
+SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
+ADB="$SDK/platform-tools/adb"
+[ -x "$ADB" ] || { echo "adb not installed at $ADB" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<USAGE
+usage: tools/phone <subcommand>
+  status            connected devices (read-only)
+  versions          Android/GrapheneOS build, API level, FUTO versions, input methods (read-only)
+  install <apk>     install an APK whose package is exactly $PKG
+  uninstall         uninstall $PKG only
+  logs              live log lines from $PKG (Ctrl-C to stop)
+  crash             last crash/ANR entries mentioning $PKG (read-only)
+USAGE
+  exit 1
+}
+
+case "${1:-}" in
+  status)
+    "$ADB" devices -l ;;
+  versions)
+    for p in ro.product.model ro.build.version.release ro.build.version.sdk ro.build.id ro.build.display.id ro.soc.model; do
+      printf '%-28s %s\n' "$p" "$("$ADB" shell getprop "$p")"
+    done
+    for p in $FUTO_PKGS $PKG; do
+      v=$("$ADB" shell dumpsys package "$p" 2>/dev/null | grep -m1 -E 'versionName' | sed 's/^ *//') || true
+      printf '%-40s %s\n' "$p" "${v:-not installed}"
+    done
+    echo "input methods:"; "$ADB" shell ime list -s ;;
+  install)
+    apk="${2:-}"; [ -f "$apk" ] || usage
+    aapt2=$(ls -1 "$SDK"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+    [ -n "$aapt2" ] || { echo "aapt2 missing; cannot verify package name" >&2; exit 1; }
+    name=$("$aapt2" dump packagename "$apk")
+    [ "$name" = "$PKG" ] || { echo "refusing: APK package is '$name', not $PKG" >&2; exit 1; }
+    "$ADB" install -r "$apk" ;;
+  uninstall)
+    "$ADB" uninstall "$PKG" ;;
+  logs)
+    "$ADB" logcat -v time -T 1 | grep --line-buffered -F "$PKG" ;;
+  crash)
+    "$ADB" logcat -d -b crash | grep -F -B2 -A40 "$PKG" | tail -200 ;;
+  *) usage ;;
+esac

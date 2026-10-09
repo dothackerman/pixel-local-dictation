@@ -1,0 +1,17 @@
+# personal recordings, transcripts, benchmark exports (requirement R3/privacy)
+corpus/
+*.wav
+*.flac
+*.m4a
+*.ogg
+*.opus
+# signing material
+*.jks
+*.keystore
+# android build output
+build/
+.gradle/
+local.properties
+.idea/
+*.iml
+.kotlin/
