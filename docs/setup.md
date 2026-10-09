@@ -1,0 +1,26 @@
+# Phone setup and rollback
+
+For Oriol's Pixel 10 Pro XL on GrapheneOS with FUTO Keyboard (Play Store build 0.1.30). Every step is reversible; the reverse is listed next to it. Nothing here touches system or security settings.
+
+## Setup (one time)
+
+| Step | Where | Reverse |
+|---|---|---|
+| 1. Install the app | Laptop: `tools/phone install app/build/outputs/apk/debug/app-debug.apk` | `tools/phone uninstall`, only after step 4 is reversed |
+| 2. Enable it as an input method | Settings, System, Keyboard, On-screen keyboard: switch on **Local dictation**. Android warns that a keyboard can read what you type; this applies to every keyboard, FUTO included. | Switch it off in the same list |
+| 3. Grant microphone | The first time the panel opens it asks; choose **While using the app**. If you chose "Don't ask again", grant it under Settings, Apps, Dictation, Permissions. | Revoke in the same place |
+| 4. Point FUTO at it | FUTO Keyboard settings, Voice Input: switch on **Disable built-in voice input** (subtitle "use voice input provided by external app"). | Switch it off. FUTO's own recognizer and the Multilingual-244 model are untouched and come back immediately. |
+
+Order matters for removal: reverse step 4 before step 1. With the FUTO toggle still on and the app gone, FUTO's microphone key does nothing until the toggle is turned off.
+
+## Daily use
+
+Tap FUTO's microphone key. The panel replaces the keyboard and starts recording at once. Tap **Stop** to insert the text and return to FUTO, **Cancel** to discard and return, **Keyboard** to return without recording. Tapping into another field while recording discards the recording. The app has no network permission; recordings stay in memory and are discarded after use.
+
+## Development connection
+
+USB debugging stays off except while testing. To test: Settings, System, Developer options, **USB debugging** on, plug in, run `tools/phone status` on the laptop and tap **Allow** on the phone. When done: unplug, and optionally **Revoke USB debugging authorizations** in Developer options. Leave **OEM unlocking** off always.
+
+## Known state after 2026-10-09
+
+Steps 1 to 4 are done on the phone with app version 0.1.1. The microphone-key path is not yet verified after the 0.1.1 fix; the panel is verified via the system keyboard switcher. See [plan](plan.md) for status.
