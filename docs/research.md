@@ -1,0 +1,31 @@
+# Research for implementation
+
+Source review: 2026-10-09. This is documentation/source evidence, **not** a phone benchmark. Inspect current upstream and pin the versions actually used. No candidate is proven to beat Oriol's installed baseline in both languages.
+
+## Baseline and candidates
+
+| Option | Evidence relevant to this project | What remains unproven |
+|---|---|---|
+| FUTO Multilingual-244 | Registry maps to `small_acft_q8_0.bin`: already quantized Whisper small with short-context ACFT tuning. | Exact installed decoding configuration, personal accuracy, cold/warm delay. |
+| Parakeet TDT v3 | Automatic language detection; German/English, punctuation and capitalization; ~600M parameters. Android INT8 precedent exists. | Real-phone latency, memory and accuracy relative to ACFT small. Not automatically native streaming. |
+| Moonshine | German Small Streaming 123M; separate English Small/Medium; Android library. | End-to-end automatic routing, personal German accuracy and Pixel Pro XL timing. |
+| Cactus Whistle | Compact German-capable model and Android engine. | Accuracy win over this baseline; published Whisper-base comparisons do not establish it. |
+| FUTO nightly Nemotron 3.5 | German-capable streaming implementation in inspected source. | Downloaded APK contents and phone performance; documented multilingual non-Whisper modes force manual selection. |
+| Accelerated Whisper | Existing Android/native ecosystem and Vulkan backend upstream. | Benefit on this Pixel; larger model quality/latency trade-off. faster-whisper's CUDA path is not Tensor acceleration. |
+
+The earlier Moonshine Pixel 10a timing evidence concerns English and excludes the silence interval used to detect speech ending. It is not a German Pro XL end-to-end latency result. Cross-publisher word-error rates use different corpora/settings; do not rank models from those numbers alone.
+
+## Implementation references
+
+- [FUTO external API/keyboard integration](https://github.com/futo-org/voice-input#api-support): voice IME and `RECOGNIZE_SPEECH`; do not assume `SpeechRecognizer` service support. [Nightly setup/limitations](https://docs.keyboard.futo.tech/improvements/voice-input-nightly-september-2026) describes external routing, manual multilingual selection and streaming fallback.
+- [Pinned FUTO baseline registry](https://github.com/futo-org/android-keyboard/blob/70a5d390c505a6bbcc4e14966e5628e43ca3f1fc/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/Models.kt), [ACFT rationale](https://github.com/futo-org/whisper-acft), [development registry](https://github.com/futo-org/voice-input/blob/95e82ada5e2513484dccf68295a5ddde6d223730/shared/src/main/java/org/futo/voiceinput/shared/Models.kt): source evidence is not proof of the installed build. A tested anonymous access path to the nightly native submodule failed; clean buildability remains a gate, not a confirmed universal blocker.
+- [Parakeet v3 official model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): automatic detection, mono 16 kHz input, model license CC BY 4.0. [Parakeeb](https://github.com/surma/parakeeb) provides Android implementation precedent, not verified FUTO integration. Check code and asset licenses separately.
+- [Moonshine models](https://moonshine-voice.readthedocs.io/en/latest/models/available-models/), [Android library/sample](https://moonshine-voice.readthedocs.io/en/latest/using/adding-the-library/): Maven coordinates `ai.moonshine:moonshine-voice`; select a verified release supporting the desired model rather than treating a documentation example version as a project pin. [Accuracy methodology](https://moonshine-voice.readthedocs.io/en/latest/models/accuracy/), [timing methodology](https://moonshine-voice.readthedocs.io/en/latest/using/benchmarks/) explain comparison limits.
+- [Whistle model](https://huggingface.co/Cactus-Compute/whistle), [publisher benchmarks](https://cactuscompute.com/blog/whistle), [buffered recognition guidance](https://www.cactuscompute.com/blog/whistle-best-practices): repeated buffered decoding is not equivalent to cached native streaming.
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for Android/native/Vulkan investigation; [faster-whisper](https://github.com/SYSTRAN/faster-whisper) is a reference, not a ready-made Pixel Tensor backend.
+
+## Pixel-specific evidence
+
+[Google specifications](https://store.google.com/product/pixel_10_pro_specs?hl=en-US) identify Tensor G5 and 16 GB RAM. Capacity provides headroom, not evidence of low latency. [Tensor SDK beta](https://developers.google.com/edge/litert/next/tensor-sdk) supports G5 with access enrollment; [LiteRT NPU documentation](https://developers.google.com/edge/litert/next/npu) describes model conversion and ahead-of-time compilation. FUTO GGML files cannot simply be passed to it. No German ASR result on Oriol's GrapheneOS installation was established.
+
+Do not base new acceleration strategy on [deprecated NNAPI](https://developer.android.com/ndk/guides/neuralnetworks). Qualcomm-specific SDK claims do not apply to Tensor. GrapheneOS [ordinary TPU/API discussion](https://grapheneos.org/usage#pixel-camera) does not establish compatibility with every new SDK dispatcher. Its [secure app spawning](https://grapheneos.org/usage#exec-spawning) concerns cold startup, not a demonstrated multi-second sustained transcription penalty.
