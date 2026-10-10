@@ -28,4 +28,11 @@ ASSETS="$ROOT/app/src/benchmark/assets/parakeet-v3"
 mkdir -p "$ASSETS"
 for f in encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt; do ln -f "$DEST/$MODEL/$f" "$ASSETS/$f"; done
 ln -f "$DEST/silero_vad.onnx" "$ASSETS/silero_vad.onnx"
+# Optional second model for the spike: MatMul-only INT8 encoder with fp32 decoder and joiner,
+# built by tools/export-fp32.sh and tools/quant_variant.py (see docs/plan.md).
+ALT="$DEST/parakeet-v3-matmul8"
+if [ -d "$ALT" ]; then
+  mkdir -p "$ASSETS-matmul8"
+  for f in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do ln -f "$ALT/$f" "$ASSETS-matmul8/$f"; done
+fi
 echo "done: $DEST, $ASSETS"

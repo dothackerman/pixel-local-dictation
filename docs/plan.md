@@ -48,7 +48,7 @@ R4 in both languages on Oriol's real usage: a 35 s take. FUTO waits about 35 s a
 
 ### Step 1: spike (ADR-003 gate)
 
-A throwaway instrumentation test in `app/src/androidTest/`, no UI, reading Oriol's recordings from `files/benchmark/` on the phone (single sentences and long takes from milestone 1 step 6). Logged under tag `ReplayTest` and written to `files/benchmark/spike.json`:
+A throwaway instrumentation test in `app/src/androidTest/`, no UI, reading Oriol's recordings from `files/benchmark/` on the phone (single sentences and long takes from milestone 1 step 6). Logged under tag `ReplayTest` and written to `files/benchmark/spike-<model>.json`, one per bundled model:
 
 - cold load time; memory as `Debug.MemoryInfo.totalPss` after load and after the longest take, plus `VmHWM` from `/proc/self/status` as the peak;
 - real-time factor, defined as decode time divided by audio duration, warm, median and maximum, per segment of 3–10 s, German and English;

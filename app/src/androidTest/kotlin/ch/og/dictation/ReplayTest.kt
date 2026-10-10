@@ -25,7 +25,7 @@ import org.junit.runner.RunWith
 /**
  * Throwaway spike for ADR-003 (docs/plan.md, milestone 2 step 1): replays the takes
  * Oriol saved in benchmark mode through Parakeet v3 INT8 and writes the numbers the
- * gate asks for to files/benchmark/spike.json and the log. No UI, no microphone.
+ * gate asks for to files/benchmark/spike-<model>.json and the log. No UI, no microphone.
  */
 @RunWith(AndroidJUnit4::class)
 class ReplayTest {
@@ -37,11 +37,22 @@ class ReplayTest {
     @Test fun spike() {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
-        val out = JSONObject().put("app", ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName)
+        // Published INT8 first, then the MatMul-only encoder if the build carries it.
+        for (model in listOf("parakeet-v3", "parakeet-v3-matmul8")) {
+            if (ctx.assets.list(model).isNullOrEmpty()) continue
+            // Resets the peak-memory counter (VmHWM) so each model gets its own peak.
+            runCatching { File("/proc/self/clear_refs").writeText("5") }
+            File(dir, "spike-$model.json").writeText(spike(model, takes).toString(2))
+        }
+    }
+
+    private fun spike(model: String, takes: List<File>): JSONObject {
+        val out = JSONObject().put("model", model)
+        out.put("app", ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName)
         out.put("before", state())
 
         val t0 = SystemClock.elapsedRealtime()
-        val rec = recognizer(threads = 4)
+        val rec = recognizer(model, threads = 4)
         out.put("coldLoadMs", SystemClock.elapsedRealtime() - t0).put("threads", 4)
         out.put("pssAfterLoadKb", pssKb())
         decode(rec, FloatArray(rate))  // first inference pays one-time allocation; keep it out of the factors
@@ -83,21 +94,23 @@ class ReplayTest {
         val sweep = JSONArray()
         val longest = audio.values.maxBy { it.size }
         for (n in intArrayOf(2, 6, 8)) {
-            val r = recognizer(n); decode(r, FloatArray(rate))
+            val r = recognizer(model, n); decode(r, FloatArray(rate))
             sweep.put(decode(r, longest).put("threads", n)); r.release()
         }
         out.put("threadSweep", sweep)
 
-        File(dir, "spike.json").writeText(out.toString(2))
-        Log.i(tag, "spike done: coldLoadMs=${out.getLong("coldLoadMs")} vmHwmKb=${out.getLong("vmHwmKb")}")
+        Log.i(tag, "spike $model done: coldLoadMs=${out.getLong("coldLoadMs")} vmHwmKb=${out.getLong("vmHwmKb")}")
+        return out
     }
 
-    private fun recognizer(threads: Int): OfflineRecognizer {
+    private fun recognizer(model: String, threads: Int): OfflineRecognizer {
+        val files = ctx.assets.list(model).orEmpty()
+        fun part(stem: String) = "$model/" + files.single { it.startsWith(stem) && it.endsWith(".onnx") }
         val config = OfflineRecognizerConfig()
-        config.modelConfig.transducer.encoder = "parakeet-v3/encoder.int8.onnx"
-        config.modelConfig.transducer.decoder = "parakeet-v3/decoder.int8.onnx"
-        config.modelConfig.transducer.joiner = "parakeet-v3/joiner.int8.onnx"
-        config.modelConfig.tokens = "parakeet-v3/tokens.txt"
+        config.modelConfig.transducer.encoder = part("encoder")
+        config.modelConfig.transducer.decoder = part("decoder")
+        config.modelConfig.transducer.joiner = part("joiner")
+        config.modelConfig.tokens = "$model/tokens.txt"
         config.modelConfig.modelType = "nemo_transducer"
         config.modelConfig.numThreads = threads
         return OfflineRecognizer(ctx.assets, config)
