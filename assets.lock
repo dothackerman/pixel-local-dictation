@@ -1,0 +1,6 @@
+# Pinned third-party binaries (plan, milestone 2 step 0). Fetched to the laptop only by
+# tools/fetch-assets.sh; the phone never downloads anything. Columns: sha256 bytes file url.
+# Checksums are the digests GitHub publishes for the release assets, read 2026-10-10.
+633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96 50129134 sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf 487170055 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2
+9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6 643854 silero_vad.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
