@@ -5,6 +5,7 @@
      .getImplicitlyApplicableSubtypesImpl); without it FUTO's shortcut lookup finds nothing. -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:isDefault="false"
+    android:settingsActivity="ch.og.dictation.SettingsActivity"
     android:supportsSwitchingToNextInputMethod="true">
     <subtype
         android:label="@string/ime_label"

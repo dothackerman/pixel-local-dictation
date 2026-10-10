@@ -8,4 +8,12 @@
     <string name="stop">Stop</string>
     <string name="cancel">Cancel</string>
     <string name="back">Keyboard</string>
+    <string name="settings_label">Local dictation settings</string>
+    <string name="benchmark_switch">Benchmark mode: save recordings</string>
+    <string name="benchmark_explanation">When on, every take is stored on this phone as audio plus its recognition result, until you delete it below. Nothing leaves the phone. When off, audio stays in memory and is discarded after use.</string>
+    <string name="benchmark_banner">benchmark: saving audio</string>
+    <string name="benchmark_stored">Stored takes: %1$d</string>
+    <string name="benchmark_delete">Delete benchmark data</string>
+    <string name="benchmark_delete_confirm">Delete all stored benchmark recordings and results?</string>
+    <string name="benchmark_delete_failed">Deleting failed</string>
 </resources>

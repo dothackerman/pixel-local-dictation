@@ -17,6 +17,10 @@ Order matters for removal: reverse step 4 before step 1. With the FUTO toggle st
 
 Tap FUTO's microphone key. The panel replaces the keyboard and starts recording at once. Tap **Stop** to insert the text and return to FUTO, **Cancel** to discard and return, **Keyboard** to return without recording. Tapping into another field while recording discards the recording. The app has no network permission; recordings stay in memory and are discarded after use.
 
+## Benchmark mode
+
+Settings, System, Keyboard, On-screen keyboard, **Local dictation** opens the app's settings. **Benchmark mode: save recordings** is off by default. While it is on, the panel shows a red banner and every take ended with Stop is stored on the phone as audio plus a result file; **Delete benchmark data** removes them all. Reverse: switch it off and delete.
+
 ## Development connection
 
 USB debugging stays off except while testing. To test: Settings, System, Developer options, **USB debugging** on, plug in, run `tools/phone status` on the laptop and tap **Allow** on the phone. When done: unplug, and optionally **Revoke USB debugging authorizations** in Developer options. Leave **OEM unlocking** off always.

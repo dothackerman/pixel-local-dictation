@@ -19,6 +19,12 @@
             </intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method" />
         </service>
+        <!-- Exported so Android's keyboard list can open it (method.xml settingsActivity). -->
+        <activity
+            android:name=".SettingsActivity"
+            android:label="@string/settings_label"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.DayNight" />
         <activity
             android:name=".PermissionActivity"
             android:exported="false"

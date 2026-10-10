@@ -11,6 +11,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.TextView
+import org.json.JSONObject
 
 /**
  * Milestone 1 shell: a voice-only input method FUTO can hand off to.
@@ -25,6 +26,9 @@ class DictationImeService : InputMethodService() {
     private var recordBtn: Button? = null
     private var stopBtn: Button? = null
     private var startedAt = 0L
+    private var banner: View? = null
+    /** Decided when the panel opens, so the banner always matches what happens to the take. */
+    private var saveTake = false
     private val session = InputSession()
     /** Session that started the current recording; text goes there or nowhere. */
     private var recordingToken: Long? = null
@@ -32,6 +36,7 @@ class DictationImeService : InputMethodService() {
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.ime, null)
         status = v.findViewById(R.id.status)
+        banner = v.findViewById(R.id.benchmark_banner)
         recordBtn = v.findViewById<Button>(R.id.record).apply { setOnClickListener { startRecording() } }
         stopBtn = v.findViewById<Button>(R.id.stop).apply { setOnClickListener { stopAndInsert() } }
         v.findViewById<Button>(R.id.cancel).setOnClickListener { cancelAndReturn() }
@@ -52,6 +57,8 @@ class DictationImeService : InputMethodService() {
             if (session.matches(recordingToken)) return
             recorder.cancel(); Log.i(tag, "cancelled: input session changed")
         }
+        saveTake = BenchmarkStore.isEnabled(this)
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
     }
@@ -91,8 +98,10 @@ class DictationImeService : InputMethodService() {
         val ms = SystemClock.elapsedRealtime() - startedAt
         val seconds = pcm.size / 2.0 / Recorder.SAMPLE_RATE
         Log.i(tag, "stopped after ${ms} ms, ${pcm.size} bytes (%.2f s)".format(seconds))
+        val text = "[recorded %.1f s] ".format(seconds)
+        if (saveTake) saveBenchmarkTake(pcm, text, seconds, ms)
         pcm.fill(0)
-        val committed = commitForSession(recordingToken, "[recorded %.1f s] ".format(seconds))
+        val committed = commitForSession(recordingToken, text)
         showIdle()
         if (committed) returnToKeyboard()
     }
@@ -108,6 +117,21 @@ class DictationImeService : InputMethodService() {
         if (ic == null) { Log.w(tag, "no input connection; dropping result"); return false }
         ic.commitText(text, 1)
         return true
+    }
+
+    private fun saveBenchmarkTake(pcm: ByteArray, text: String, audioSeconds: Double, recordingMs: Long) {
+        try {
+            val json = JSONObject()
+                .put("app", packageManager.getPackageInfo(packageName, 0).versionName)
+                .put("recognizer", "none")
+                .put("text", text)
+                .put("audioSeconds", audioSeconds)
+                .put("recordingMs", recordingMs)
+            val name = BenchmarkStore.of(this).save(pcm, Recorder.SAMPLE_RATE, json.toString(2))
+            Log.i(tag, "benchmark take saved: $name")
+        } catch (e: Exception) {
+            Log.e(tag, "benchmark save failed", e)
+        }
     }
 
     private fun cancelAndReturn() {
