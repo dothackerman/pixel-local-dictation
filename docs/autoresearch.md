@@ -72,6 +72,15 @@ Models available under `models/` (nothing else, download nothing):
 
 ## The loop
 
+Setup state on 2026-10-10 evening: Oriol did all four steps above except the hour-long lock-screen
+test. The setup session then ran steps 2 to 4 below: `check ok`; experiment 0 is
+`corpus/lab/runs/baseline-2284daa.json`, adopted as `corpus/lab/baseline.json`; the phone control
+row passed (real-time factor 0.064, wait after Stop 0.8 s, peak 1.86 GB, thermal none, phone text
+46 German and 22 English errors against the laptop's 46.0 and 25.3; six of ten texts differ by a few
+words, which is the expected boundary sensitivity). The ledger has that one row. The loop session
+therefore starts at step 1 (branch), confirms with `tools/lab.py ledger`, and skips steps 3 and 4
+unless the ledger is empty.
+
 Setup, once, with Oriol present:
 
 1. `git status` must be clean on `main`. Create the branch `autoresearch/<date>` and work on it.
