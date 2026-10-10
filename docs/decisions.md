@@ -24,7 +24,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 ## ADR-003 — Parakeet v3 via sherpa-onnx with a MatMul-only INT8 encoder
 
-**Date:** 2026-10-10. **Status:** proposed from spike evidence; awaiting Oriol's decision because one gate criterion failed. **Implementation:** spike only (`ReplayTest`, benchmark build). **Builds on:** ADR-002.
+**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the working choice for milestone 2 ("for now"), knowing that the English accuracy criterion failed; not a permanent engine decision. **Implementation:** spike only (`ReplayTest`, benchmark build). **Builds on:** ADR-002.
 
 **Evidence.** Pixel 10 Pro XL, app 0.1.5 benchmark build, sherpa-onnx 1.13.8, 4 threads, four takes by Oriol (D6 twice, E6 twice, 28–34 s, 242 reference words). Raw files: `corpus/files/benchmark/spike-*.json` (not in Git). Four takes are anecdotal; FUTO's figures are one different take per script from [baseline](baseline.md).
 
@@ -51,4 +51,4 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 
 **Alternatives.** Whole-take decoding without VAD would already meet the 10 s target at about 2 s and removes segment joins, at the cost of no in-panel preview and a wait that grows with take length. The plan's fail path (ONNX Runtime directly) addresses a runtime problem that the spike did not find. Roadmap milestone 4 (Moonshine) remains the path if milestone 3 shows English accuracy below FUTO.
 
-**Revisit when:** milestone 3 results exist, or peak memory or cold load proves a problem in daily use.
+**Revisit when:** milestone 3 results exist, or peak memory or cold load proves a problem in daily use. Oriol wants other quantisations (including selective, per-layer schemes) and other runtimes compared in the final optimisation experiments, see [roadmap](roadmap.md) milestone 5.
