@@ -8,6 +8,8 @@ Status: decisions D1–D5 approved by Oriol on 2026-10-09; [ADR-003](decisions.m
 
 **On the phone.** Release build 0.2.2, enabled, FUTO toggle on. 0.2.2 has not been used for live dictation by Oriol; its cutting was checked on the phone only by `PipelineTest` (chunk counts and text lengths for ten saved takes). Ten takes are stored in the app's benchmark directory and copied to `corpus/files/benchmark/`: D6 ×2, E6 ×2, de-1 to de-3, en-1 to en-3; `corpus/takes.json` maps them to scripts, `corpus/futo/` holds FUTO's texts and times for the six new ones.
 
+**Last phone run (2026-10-10, benchmark build 0.2.2).** Both instrumentation tests passed. `PipelineTest` covers the app's current cutting. `ReplayTest` is the spike test and still uses its own speech-only segmentation, so its stop-to-final figures (0.2–1.7 s on takes of up to 110 s) describe the old cutting; its peak memory of 4.5 GB comes from a second recognizer in the same process plus whole-take decodes of 110 s and says nothing about the app. Update or retire it before using it for a new candidate. The release build was reinstalled afterwards.
+
 **What the saved audio allows without Oriol.** Any model, decoder setting or cutting rule can be replayed on the laptop against the same ten takes (`tools/replay.py`, `tools/compare.py`); finalists need one run each of the phone tool's `test` subcommand for speed, phone plugged in.
 
 **Experiment ideas** are kept apart from this state, in [experiments](experiments.md); none is decided.
