@@ -20,7 +20,9 @@ Evidence for requirement R4. Raw recordings, transcripts and reports stay in the
 | Our app 0.2.1 as recorded on the phone | 40/468 = 8.5 % | 35/506 = 6.9 % |
 | Same audio, 0.2.2 cutting, laptop replay | 43/468 = 9.2 % | 20/506 = 4.0 % |
 
-0.2.1 lost words at the start of segments; 0.2.2 cuts contiguous chunks at pauses instead. The 0.2.2 row is a laptop replay of the phone's audio, not a phone run.
+| Same audio, 0.2.2 cutting, full-precision fp32 model, laptop | 41/468 = 8.8 % | 19/506 = 3.8 % |
+
+0.2.1 lost words at the start of segments; 0.2.2 cuts contiguous chunks at pauses instead. The 0.2.2 rows are laptop replays of the phone's audio, not phone runs; on the phone, 0.2.2 cut the same takes into the same number of chunks (`PipelineTest` log), its texts were not copied. The fp32 row is within noise of the shipped model, so the quantisation of [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder) is not what limits accuracy on these takes.
 
 **Reading.** Neither language shows a difference larger than the 2 points the plan requires for a verdict from this few takes; the German and English differences are one to five words out of about 500. Accuracy is therefore "comparable", not "better", and R4's accuracy half is not established. Speed is better by about two orders of magnitude.
 

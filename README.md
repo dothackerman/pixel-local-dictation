@@ -4,7 +4,7 @@ Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/
 
 **AS-IS — 2026-10-09:** GrapheneOS, FUTO Keyboard, Multilingual-244. Press microphone and speak one language per recording; English/German detection is automatic. Oriol reports slow recognition and wants fewer corrections. Installed versions, timings and correction rates have not been measured.
 
-**Project state (2026-10-10):** milestone 1 is done (tag `m1`). Milestone 2 is in progress: `ch.og.dictation` 0.2.0 recognises speech on the phone with Parakeet TDT 0.6B v3 through sherpa-onnx ([ADR-003](docs/decisions.md)); see [plan](docs/plan.md) for what has been verified. No measurement against FUTO on a real corpus and no acceleration work exists. Git is local-only; no remote is configured.
+**Project state (2026-10-10, end of session):** milestones 1 and 2 are done (tags `m1`, `m2`). `ch.og.dictation` 0.2.2 recognises German and English on the phone with Parakeet TDT 0.6B v3 through sherpa-onnx ([ADR-003](docs/decisions.md)), decoding during the recording. First measurement against FUTO ([results](docs/results.md)): the wait after Stop fell from 80–100 s to about 1 s; accuracy is level with FUTO, not better, so R4 is half met. Next: accuracy experiments, to be agreed with Oriol ([plan](docs/plan.md), "Next session"). No acceleration work exists. Git is local-only; no remote is configured.
 
 ## Read by need
 

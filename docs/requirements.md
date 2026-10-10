@@ -12,6 +12,8 @@ Confirmed by Oriol on 2026-10-09. These are product constraints, independent of 
 | R6 | Preserve normal GrapheneOS security and a reversible return to the existing recognizer. | Verify without root/security weakening; exercise rollback with FUTO and its baseline model retained. |
 | R7 | German text uses Swiss spelling: "ss" where Standard German writes "ß". Added by Oriol on 2026-10-10 after the first live takes. | Dictate German words with "ß" (weiss, Strasse, gross); no "ß" appears. Scoring treats "ß" and "ss" as equal. |
 
+Clarification of R1/R2 by Oriol on 2026-10-10: the hard requirement is that the user never chooses a language before or during a recording. How the app achieves that is a design matter; models that must be told the language are acceptable if the app determines it by itself.
+
 Privacy handling: bundle model files or import them locally. Any developer downloads happen separately from recognizer inference. Capture only during an explicit recording; release the microphone afterwards. Keep production audio in memory and discard it after transcription. Saving benchmark audio/transcripts or exporting them requires explicit user agreement; provide deletion. Include no audio/transcript telemetry, backup of recordings, or external handoff. Git must contain no personal recordings, transcripts or signing credentials.
 
 Speaker identification (diarization) is unnecessary for this workflow. If introduced later, R3 still applies.

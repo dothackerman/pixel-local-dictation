@@ -2,6 +2,18 @@
 
 Status: decisions D1–D5 approved by Oriol on 2026-10-09; [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder) approved on 2026-10-10, so milestone 2 continues at "Steps after a passed spike", step 2, with the MatMul-only encoder. Revision 5 incorporates two independent reviews; the second verified revision 4 and its remaining findings are fixed here. Requirements in [requirements](requirements.md) stay authoritative; this file says how the [roadmap](roadmap.md) milestones are executed. The implementing session reads, in order: AGENTS.md, this file, [setup](setup.md), [baseline](baseline.md), [research](research.md), [decisions](decisions.md). It touches the phone only through `tools/phone`, never edits the gate files, and asks Oriol for every wrapper change by writing a proposed replacement file with the Write tool and naming its path. The hook refuses any shell command whose text mentions the wrapper path, the Android debug bridge, fastboot or platform-tools, including heredocs and commit messages: read the wrapper with the Read tool and keep those words out of shell commands.
 
+## Next session: start here (written 2026-10-10)
+
+**State.** Milestones 1 and 2 done. Milestone 3 has one run ([results](results.md)): speed established, accuracy level with FUTO in both languages, gate not met. Oriol's conclusion: decoding during the recording is what makes the app fast, so further work goes into accuracy. He wants the experiment suite discussed before any of it is run, and he does not want to record a corpus again.
+
+**On the phone.** Release build 0.2.2, enabled, FUTO toggle on. 0.2.2 has not been used for live dictation by Oriol; its cutting was checked on the phone only by `PipelineTest` (chunk counts and text lengths for ten saved takes). Ten takes are stored in the app's benchmark directory and copied to `corpus/files/benchmark/`: D6 ×2, E6 ×2, de-1 to de-3, en-1 to en-3; `corpus/takes.json` maps them to scripts, `corpus/futo/` holds FUTO's texts and times for the six new ones.
+
+**What the saved audio allows without Oriol.** Any model, decoder setting or cutting rule can be replayed on the laptop against the same ten takes (`tools/replay.py`, `tools/compare.py`); finalists need one run each of the phone tool's `test` subcommand for speed, phone plugged in.
+
+**Candidates to discuss (proposal, nothing decided or tested):** a larger or different model within the speed reserve (Whisper large-v3-turbo; Canary 1B v2 and Moonshine need the language, which is allowed only if the app detects it, see requirements); modified beam search with the current model; cutting parameters (longer chunks, overlap); hotwords and a personal dictionary (Oriol: not now); quantisation and runtime variants and Tensor acceleration (roadmap milestone 5).
+
+**Open points.** Names are the app's weakest area. Short takes after an idle pause wait about 1 s (sub-second target narrowly missed). Peak memory at the 2 GB gate, loading from a file untried. Process survival tested for one 11-minute gap on USB power. Answered call during a take untested. Scripts de-4, de-5, en-4, en-5 unrecorded. `tools/export-fp32.sh` not rerun end to end; a rebuild of the fp32 export is unverified, the quantisation step reproduces the shipped encoder's checksum.
+
 ## Where we stand (AS-IS, 2026-10-09)
 
 | Fact | Evidence |
