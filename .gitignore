@@ -18,3 +18,4 @@ local.properties
 # pinned third-party binaries, see assets.lock
 models/
 app/libs/
+app/src/benchmark/assets/

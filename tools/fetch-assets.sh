@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Download the files pinned in assets.lock into models/ (gitignored) and verify them.
-# Laptop only. Afterwards the AAR is copied to app/libs/ and the model archive unpacked.
+# Laptop only. Afterwards the AAR is copied to app/libs/, the model archive unpacked and linked into the benchmark assets.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/models"
@@ -23,4 +23,9 @@ done
 cp "$DEST"/sherpa-onnx-*.aar "$ROOT/app/libs/"
 MODEL="sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 [ -d "$DEST/$MODEL" ] || tar -xjf "$DEST/$MODEL.tar.bz2" -C "$DEST"
-echo "done: $DEST"
+# Hard links, not copies: the benchmark build packs these as assets (gitignored).
+ASSETS="$ROOT/app/src/benchmark/assets/parakeet-v3"
+mkdir -p "$ASSETS"
+for f in encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt; do ln -f "$DEST/$MODEL/$f" "$ASSETS/$f"; done
+ln -f "$DEST/silero_vad.onnx" "$ASSETS/silero_vad.onnx"
+echo "done: $DEST, $ASSETS"

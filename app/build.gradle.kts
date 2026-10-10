@@ -58,6 +58,8 @@ android {
         }
     }
     testBuildType = "benchmark"
+    // Model files are read through AssetManager and must stay uncompressed in the APK.
+    androidResources { noCompress += listOf("onnx", "txt") }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -77,6 +79,9 @@ tasks.matching { it.name.matches(Regex("pre(Release|Benchmark)(AndroidTest)?Buil
     .configureEach { dependsOn(checkReleaseSigning) }
 
 dependencies {
+    // Spike only (plan milestone 2 step 1): recognizer runtime and model ship in the benchmark build
+    // until ADR-003 is decided. tools/fetch-assets.sh provides the AAR and the assets.
+    "benchmarkImplementation"(files("libs/sherpa-onnx-1.13.8.aar"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
