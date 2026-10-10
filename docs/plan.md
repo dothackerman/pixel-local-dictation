@@ -10,7 +10,7 @@ Status: decisions D1–D5 approved by Oriol on 2026-10-09; [ADR-003](decisions.m
 
 **What the saved audio allows without Oriol.** Any model, decoder setting or cutting rule can be replayed on the laptop against the same ten takes (`tools/replay.py`, `tools/compare.py`); finalists need one run each of the phone tool's `test` subcommand for speed, phone plugged in.
 
-**Candidates to discuss (proposal, nothing decided or tested):** a larger or different model within the speed reserve (Whisper large-v3-turbo; Canary 1B v2 and Moonshine need the language, which is allowed only if the app detects it, see requirements); modified beam search with the current model; cutting parameters (longer chunks, overlap); hotwords and a personal dictionary (Oriol: not now); quantisation and runtime variants and Tensor acceleration (roadmap milestone 5).
+**Experiment ideas** are kept apart from this state, in [experiments](experiments.md); none is decided.
 
 **Open points.** Names are the app's weakest area. Short takes after an idle pause wait about 1 s (sub-second target narrowly missed). Peak memory at the 2 GB gate, loading from a file untried. Process survival tested for one 11-minute gap on USB power. Answered call during a take untested. Scripts de-4, de-5, en-4, en-5 unrecorded. `tools/export-fp32.sh` not rerun end to end; a rebuild of the fp32 export is unverified, the quantisation step reproduces the shipped encoder's checksum.
 

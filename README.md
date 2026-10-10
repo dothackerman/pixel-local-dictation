@@ -16,6 +16,8 @@ Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/
 | Which evidence and upstream projects should be inspected? | [Research](docs/research.md) |
 | How is the current milestone being executed, and what was found on the phone? | [Plan](docs/plan.md) |
 | How is the phone set up, and how is it put back? | [Setup and rollback](docs/setup.md) |
+| What was measured against FUTO? | [Results](docs/results.md) |
+| Which accuracy experiments are on the table? | [Experiment ideas](docs/experiments.md) |
 
 Build: `tools/fetch-assets.sh` (pinned downloads, see `assets.lock`; the shipped model is built once with `tools/export-fp32.sh` and `tools/quant_variant.py`), `tools/set-signing-password.sh`, then `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
 
