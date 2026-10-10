@@ -73,7 +73,9 @@ Evidence from four takes by Oriol (D6 twice, E6 twice, 28–34 s, 242 reference 
 | Oriol speaks these takes without 0.8 s pauses: the VAD cut each take once at the 20 s maximum, giving two segments of about 20 s and 6–13 s | segment lists in the reports |
 | Result language is an empty string in sherpa-onnx's output for this model, so language flips can only be judged from the text | reports |
 
-Consequences for the phone spike (proposal): run it with both the published INT8 and the MatMul-only encoder, since the second is the only variant so far that meets parity; it is 230 MB larger, and its phone speed and memory are unknown. The fp32 export is reproducible with `tools/export-fp32.sh` (not rerun end to end after being assembled from the commands that worked).
+Phone spike run on 2026-10-10 with both models: numbers and the proposal are in [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder). Connected tests left the app installed and enabled (`leaveApksInstalledAfterRun`), release build 0.1.5 reinstalled afterwards.
+
+Consequences for the phone spike as proposed before that run: run it with both the published INT8 and the MatMul-only encoder, since the second is the only variant so far that meets parity; it is 230 MB larger, and its phone speed and memory are unknown. The fp32 export is reproducible with `tools/export-fp32.sh` (not rerun end to end after being assembled from the commands that worked).
 
 ### Steps after a passed spike, each its own commit
 
