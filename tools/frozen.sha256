@@ -1,0 +1,9 @@
+# Frozen files of the experiment loop (docs/autoresearch.md); verified by tools/lab.py check.
+# Regenerate only in a setup session: sha256sum <files> > tools/frozen.sha256
+2841aa1c756c70c11b5c1bbe719cb0aaba93918f4212e47d2e48cdb3379e6d73  tools/score.py
+768130ef3a1aced1b207e841e6e60192b3419af4e57f7221262351df9df4d617  tools/evaluate.py
+7d9f9ac53651f3e42176c91ed391544fabf721561ead2ec53c00b3fc8c412d50  tools/pipeline.py
+fc93653d97b918e4e4984d3c098615856e6272873ac1aa805ce19a6e88b08bf4  tools/variant.py
+4fbfef6058364b617b4eca5b16a601bce37ecea768a24760013da780d57f0bf1  tools/lab.py
+64e6bff8f57e6914b4cc067dc2f23f86f6aa6ca78d7707c5eedf9262a963b7e5  corpus/takes.json
+08522f9152a1c60691627776fdb5e1bf8570e895f097a8570c9fa0fe73aefbb4  models/guard/refs.tsv

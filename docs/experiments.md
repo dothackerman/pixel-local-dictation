@@ -1,6 +1,6 @@
 # Accuracy experiment ideas
 
-Status: proposals collected on 2026-10-10 for discussion with Oriol. Nothing here is decided, scheduled or tested unless a line says so. The current state lives in [plan](plan.md), measured numbers in [results](results.md), requirements in [requirements](requirements.md).
+Status: proposals collected on 2026-10-10 and, on the same day, turned into an unattended experiment loop ([ADR-004](decisions.md#adr-004--experiment-loop-with-a-closed-variant-schema-and-the-phone-as-second-judge), instructions in [autoresearch](autoresearch.md)). The table below says for each idea whether the loop can try it. The current state lives in [plan](plan.md), measured numbers in [results](results.md), requirements in [requirements](requirements.md).
 
 ## Why accuracy, and what the budget is
 
@@ -12,19 +12,23 @@ Ten takes of his voice are saved with reference scripts (`corpus/`, not in Git):
 
 ## Ideas
 
-| Idea | What it might fix | Known so far | Open questions |
+| Idea | What it might fix | Known so far | In the loop? |
 |---|---|---|---|
-| Larger general model: Whisper large-v3-turbo | Unusual names; FUTO's small Whisper got "Cem Yilmaz" and "Winterthur" where Parakeet did not | Detects the language itself; sherpa-onnx has a Whisper path | Phone speed and memory; Whisper's known tendency to invent text on silence; accuracy on these takes |
-| NVIDIA Canary 1B v2 | Overall accuracy | Needs the language as input | Only usable with in-app language detection (allowed by the 2026-10-10 clarification of R2); sherpa-onnx support and size to be checked |
-| Moonshine streaming models (roadmap milestone 4) | Latency and possibly accuracy per language | Models are per language | Same detection requirement; German quality unproven |
-| In-app language detection | Unlocks the two rows above | Nothing selected | Detector choice, delay, error rate on short takes, behaviour when wrong |
-| Modified beam search with the current model | Small general gain | sherpa-onnx offers it for transducers | Whether it works with this model type; speed cost |
-| Cutting rules | Seam errors, context | Tested: contiguous chunks of at least 20 s cut at pauses took English from 6.9 % to 4.0 % on the six new takes; whole-take decoding was no better and once dropped the last sentence | Longer chunks, overlapping chunks with merged text, cut position inside the pause |
-| Hotwords and a personal dictionary | Names | Requested by Oriol as a later feature, then deferred by him on 2026-10-10 | Works with this model? Gain on names, cost in speed, false insertions |
-| Quantisation variants | Size and memory, not accuracy | Tested: full precision scores the same as the shipped MatMul-only INT8 encoder; the published INT8 files are worse | Finer per-layer schemes to shrink the 880 MB encoder; what accelerators need |
-| Other runtimes and Tensor acceleration (roadmap milestone 5) | Speed, heat, battery | Nothing tested | Only worth it if a slower, more accurate model is chosen |
-| Warm-up decode when recording starts | The roughly 0.9 s penalty on the first decode after an idle pause | Observed in the app log, cause unknown | Whether a dummy decode removes it; battery cost |
-| Loading the model from a file instead of assets | Peak memory at the 2 GB gate | The library offers it | Doubles storage use; effect on peak unmeasured |
+| Larger general model: Whisper large-v3-turbo | Unusual names; FUTO's small Whisper got "Cem Yilmaz" and "Winterthur" where Parakeet did not | Prepared as `variants/whisper-turbo.json`. Laptop real-time factor about 0.5, so outside the phone budget by construction; writes "Thank you." on silence; this runtime drops audio beyond 30 s, so it needs its own cutting | Yes, for the accuracy ranking |
+| NVIDIA Canary | Overall accuracy | Canary 1B v2 is not runnable with sherpa-onnx 1.13.8; the 180M flash model is, prepared as `variants/canary-180m.json` with Whisper-tiny language identification on the first chunk | Yes (180M); 1B needs a runtime change, a setup round |
+| Moonshine streaming models (roadmap milestone 4) | Latency and possibly accuracy per language | Models are per language; not prepared | No; setup round |
+| In-app language detection | Unlocks Canary | Implemented as the `lid` step of the variant schema (`CanaryRecognizer`); its accuracy on the ten takes shows in the evaluator's `lid` column | Yes, with Canary |
+| Modified beam search with the current model | Small general gain | Schema keys `decoding.method`, `max_active_paths`, `blank_penalty` | Yes |
+| Cutting rules | Seam errors, context | Contiguous chunks at pauses are the baseline; the boundary alone moves the ten-take count by several words, so counts are averaged over three feed sizes. Schema keys under `cutting`; overlapping chunks are not in the schema | Yes, except overlap |
+| Hotwords and a personal dictionary | Names | Excluded from the loop by Oriol on 2026-10-10: a list taken from the scripts would leak the corpus | No |
+| Quantisation variants | Size and memory, not accuracy | Any model directory under `models/` can be a variant's `model` | Yes, for existing directories |
+| Other runtimes and Tensor acceleration (roadmap milestone 5) | Speed, heat, battery | Out of scope for the loop (ADR-004); the accuracy-only ranking shows the prize | No |
+| Warm-up decode when recording starts | The roughly 0.9 s penalty on the first decode after an idle pause | Observed in the app log, cause unknown | No; app change |
+| Loading the model from a file instead of assets | Peak memory at the 2 GB gate | `LabTest` loads every variant from files; its peak memory for the baseline variant against the asset path's 2.05 GB is the measurement | Measured by the phone control row |
+
+## What the loop needs from Oriol
+
+See [autoresearch](autoresearch.md) and [plan](plan.md), "Next session": the hold-out move, the wrapper change, the benchmark build on the phone with USB debugging on for loop nights, and one recording session of the four hold-out scripts if the trigger fires.
 
 ## What would need Oriol again
 

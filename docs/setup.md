@@ -21,9 +21,13 @@ Tap FUTO's microphone key. The panel replaces the keyboard and starts recording 
 
 Settings, System, Keyboard, On-screen keyboard, **Local dictation** opens the app's settings. **Benchmark mode: save recordings** is off by default. While it is on, the panel shows a red banner and every take ended with Stop is stored on the phone as audio plus a result file; **Delete benchmark data** removes them all. Reverse: switch it off and delete.
 
+## Loop nights (experiment loop, [autoresearch](autoresearch.md))
+
+The benchmark build (debuggable, same key, updates the release build in place) is installed for the night: `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleBenchmark`, then the wrapper's `install` with `app/build/outputs/apk/benchmark/app-benchmark.apk`. USB debugging stays on and the phone stays plugged in. The loop writes only to the app's own `files/lab` directory (a model of up to 1.5 GB plus a result file) and reads the saved takes. Reverse in the morning: install the release build the same way; revoke the USB debugging authorisation if wanted. GrapheneOS's USB-C port setting defaults to charging-only when locked; whether the debug connection survives a locked screen overnight is tested once before the first unattended night.
+
 ## Development connection
 
-USB debugging stays off except while testing. To test: Settings, System, Developer options, **USB debugging** on, plug in, run `tools/phone status` on the laptop and tap **Allow** on the phone. When done: unplug, and optionally **Revoke USB debugging authorizations** in Developer options. Leave **OEM unlocking** off always.
+USB debugging stays off except while testing and loop nights. To test: Settings, System, Developer options, **USB debugging** on, plug in, run `tools/phone status` on the laptop and tap **Allow** on the phone. When done: unplug, and optionally **Revoke USB debugging authorizations** in Developer options. Leave **OEM unlocking** off always.
 
 ## Known state after 2026-10-10
 

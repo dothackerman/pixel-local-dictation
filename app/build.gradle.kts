@@ -29,8 +29,8 @@ android {
         applicationId = "ch.og.dictation"
         minSdk = 36
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.2.2"
+        versionCode = 10
+        versionName = "0.2.3"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -82,6 +82,8 @@ dependencies {
     // Recognizer runtime (ADR-003). tools/fetch-assets.sh provides the AAR and the model assets.
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for laptop unit tests of Variant.parse (the Android stub throws "not mocked").
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

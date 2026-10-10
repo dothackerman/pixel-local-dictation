@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Benchmark build only (merged on top of the main manifest): LabTest holds a partial wake lock
+     so that overnight phone runs with the screen off measure a running CPU. The release build
+     does not get this permission. Still no INTERNET (R3). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+</manifest>

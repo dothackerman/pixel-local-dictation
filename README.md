@@ -4,7 +4,7 @@ Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/
 
 **AS-IS — 2026-10-09:** GrapheneOS, FUTO Keyboard, Multilingual-244. Press microphone and speak one language per recording; English/German detection is automatic. Oriol reports slow recognition and wants fewer corrections. Installed versions, timings and correction rates have not been measured.
 
-**Project state (2026-10-10, end of session):** milestones 1 and 2 are done (tags `m1`, `m2`). `ch.og.dictation` 0.2.2 recognises German and English on the phone with Parakeet TDT 0.6B v3 through sherpa-onnx ([ADR-003](docs/decisions.md)), decoding during the recording. First measurement against FUTO ([results](docs/results.md)): the wait after Stop fell from 80–100 s to about 1 s; accuracy is level with FUTO, not better, so R4 is half met. Next: accuracy experiments, to be agreed with Oriol ([plan](docs/plan.md), "Next session"). No acceleration work exists. Git is local-only; no remote is configured.
+**Project state (2026-10-10, end of session):** milestones 1 and 2 are done (tags `m1`, `m2`). `ch.og.dictation` 0.2.2 recognises German and English on the phone with Parakeet TDT 0.6B v3 through sherpa-onnx ([ADR-003](docs/decisions.md)), decoding during the recording. First measurement against FUTO ([results](docs/results.md)): the wait after Stop fell from 80–100 s to about 1 s; accuracy is level with FUTO, not better, so R4 is half met. Next: the unattended accuracy experiment loop is set up ([autoresearch](docs/autoresearch.md), [ADR-004](docs/decisions.md)) and starts once Oriol has done the four preparation steps in [plan](docs/plan.md), "Next session". No acceleration work exists. Git is local-only; no remote is configured.
 
 ## Read by need
 
@@ -18,6 +18,7 @@ Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/
 | How is the phone set up, and how is it put back? | [Setup and rollback](docs/setup.md) |
 | What was measured against FUTO? | [Results](docs/results.md) |
 | Which accuracy experiments are on the table? | [Experiment ideas](docs/experiments.md) |
+| How does the unattended experiment loop work, and what are its rules? | [Autoresearch loop](docs/autoresearch.md), [ADR-004](docs/decisions.md#adr-004--experiment-loop-with-a-closed-variant-schema-and-the-phone-as-second-judge) |
 
 Build: `tools/fetch-assets.sh` (pinned downloads, see `assets.lock`; the shipped model is built once with `tools/export-fp32.sh` and `tools/quant_variant.py`), `tools/set-signing-password.sh`, then `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
 

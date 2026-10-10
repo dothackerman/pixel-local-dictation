@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "canary-180m",
+  "description": "NVIDIA Canary 180M flash INT8 (the Canary this runtime supports), language from Whisper tiny on the first chunk",
+  "family": "canary",
+  "model": "sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8",
+  "threads": 4,
+  "lid": {"model": "sherpa-onnx-whisper-tiny", "probe_seconds": 0.0, "fallback": "en"},
+  "cutting": {"max_chunk_s": 40.0}
+}

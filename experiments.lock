@@ -1,0 +1,14 @@
+# Assets of the experiment loop (docs/autoresearch.md), downloaded once by the setup session on
+# 2026-10-10 into models/ (gitignored). The loop downloads nothing. Columns: sha256 bytes file url.
+# Unpacked next to the archive with: tar -xjf models/<file> -C models/
+b11acbbcd660b44a8e0df33724feb5aaa709cf65668f2823d59f656312544f22 563790207 sherpa-onnx-whisper-turbo.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-turbo.tar.bz2
+c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1 116204861 sherpa-onnx-whisper-tiny.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
+7a38ed8b13f014ad632b09ff8d22e0c6f1359dd046af9235d281dfae841b9ab9 153692328 sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8.tar.bz2
+# Public regression guard sources (CC BY 4.0), models/guard-src/. tools/build-guard.py turns them into
+# models/guard/ (90 German clips from Multilingual LibriSpeech test, 120 English clips from LibriSpeech
+# test-clean, 5-20 s, at most three per speaker, fixed seed). Manifest models/guard/refs.tsv sha256:
+# 08522f9152a1c60691627776fdb5e1bf8570e895f097a8570c9fa0fe73aefbb4
+39fde525e59672dc6d1551919b1478f724438a95aa55f874b576be21967e6c23 346663984 guard-src/test-clean.tar.gz https://www.openslr.org/resources/12/test-clean.tar.gz
+2453b62d4a506015678f7f6252680621e880aac0d9038ae7bd08e4df26e7efe5 224781063 guard-src/mls-german-test.parquet https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/german/test-00000-of-00001.parquet
+# Not prepared: NVIDIA Canary 1B v2. sherpa-onnx 1.13.8 runs only the 180M flash Canary (en, de, es, fr);
+# a newer runtime would be a setup-session change of the pinned AAR and Python package.

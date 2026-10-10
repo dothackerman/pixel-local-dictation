@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "baseline",
+  "description": "app 0.2.2 as shipped: Parakeet v3 MatMul-only INT8, greedy, chunks of 20 s at pauses",
+  "family": "parakeet",
+  "model": "parakeet-v3-matmul8",
+  "threads": 4
+}

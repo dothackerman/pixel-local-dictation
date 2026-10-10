@@ -54,3 +54,24 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 **Update 2026-10-10, after the first measurement run ([results](results.md)):** the revisit condition is reached. With this model accuracy is level with FUTO in both languages, not better; full precision does not change that. Decoding during the recording leaves roughly a tenfold speed reserve on the phone (real-time factor about 0.06), which a more accurate, slower model could use. No new engine decision has been taken.
 
 **Revisit when:** milestone 3 results exist, or peak memory or cold load proves a problem in daily use. Oriol wants other quantisations (including selective, per-layer schemes) and other runtimes compared in the final optimisation experiments, see [roadmap](roadmap.md) milestone 5.
+
+## ADR-004 — Experiment loop with a closed variant schema and the phone as second judge
+
+**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the method for the accuracy experiments; no engine decision. **Builds on:** ADR-003's revisit condition. **Instructions for the loop:** [autoresearch](autoresearch.md).
+
+**Context.** Accuracy is level with FUTO, speed is solved, and Oriol wants the experiments to run without him, phone included, with no new recordings until a candidate has earned them. An adversarial review of the first design (2026-10-10) found that a free-form editable pipeline and a 5-word keep rule would overfit ten takes, that a laptop-only pipeline cannot be the same product as the phone's, and that the chunk boundary alone moves the error count by several words.
+
+**Decision.**
+
+- One closed, versioned variant schema (`tools/variant.py`, `Variant.kt`), implemented identically on the laptop (`tools/pipeline.py`) and in the app (`Pipeline`, `VadSegmenter`, `SherpaRecognizer`, `CanaryRecognizer`). The loop edits only `variants/*.json`; new keys are a setup-session change. No lexical post-processing exists.
+- A frozen evaluator (`tools/evaluate.py` over `tools/score.py`), checksummed by `tools/lab.py check`, with a paired per-take keep rule, error counts averaged over three recorder feed sizes, a terms column, a punctuation/case column, a silence guard, and a public-clip guard that can only veto.
+- The phone is stage 2: the benchmark build's `LabTest` runs any pushed variant from the app's private storage through the app's own classes and reports real-time factor, wait after Stop at real-time pace, peak memory and thermal status. The daily package is reused (Oriol's choice, 2026-10-10): the benchmark build stays installed on loop nights and the release build comes back afterwards. The wrapper gains `push-variant`, `lab` and `pull-results`, all scoped to the package; Oriol applies that change by hand from the proposed file next to the wrapper.
+- Memory is a flag, not a gate: the 2 GB figure was a spike heuristic on a 16 GB phone.
+- The four unrecorded scripts are a hold-out that lives outside the repository; the loop runner refuses to start while they are in `corpus/`. Recording happens once, when the pre-registered trigger fires.
+- Out of scope for the loop: hotwords (a list from the scripts would leak the corpus), Tensor G5 acceleration (changes speed, not accuracy; the CPU reserve is tenfold), model downloads (assets are pinned in `experiments.lock` by the setup session).
+
+**Evidence from the setup run (laptop, 2026-10-10).** Baseline variant on the ten takes: German 46.0, English 25.3 errors averaged over three feed sizes (total 71.3 of 1,216 words); the sum of per-take spreads between feed sizes is 19 words, which is why single-feed counts are not compared. Guard: German 4.8 %, English 2.0 %. Whisper large-v3-turbo decodes at a laptop real-time factor of about 0.5 and writes "Thank you." on silence; the Canary this runtime supports is the 180M flash model (Canary 1B v2 is not runnable with sherpa-onnx 1.13.8).
+
+**Trade-offs.** The loop searches a fixed knob space instead of editing code; ideas outside the schema wait for a setup round. Phone and laptop texts differ by a few words for the same variant because of boundary sensitivity, so parity is checked with a tolerance and the phone text counts when they diverge. The benchmark build, debuggable, stays on the phone overnight.
+
+**Revisit when:** a kept variant reaches the recording trigger, the control row shows laptop and phone accuracy diverging, or the schema blocks an idea with evidence behind it.

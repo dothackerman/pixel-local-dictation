@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "whisper-turbo",
+  "description": "Whisper large-v3-turbo INT8 via sherpa-onnx, own language detection per chunk, chunks 10-26 s",
+  "family": "whisper",
+  "model": "sherpa-onnx-whisper-turbo",
+  "threads": 4,
+  "cutting": {"min_chunk_s": 10.0, "vad_max_speech_s": 15.0, "max_chunk_s": 26.0}
+}

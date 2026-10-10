@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# The only phone door. Fixed subcommands, package name hard-coded.
+# Read it: nothing here can name another app or change phone settings.
+#
+# PROPOSED REPLACEMENT (2026-10-10, experiment loop setup). Oriol applies it by hand:
+#   cp tools/phone.proposed tools/phone && chmod +x tools/phone && rm tools/phone.proposed
+# Way back: git checkout tools/phone
+# Changes against the current wrapper, all scoped to ch.og.dictation through run-as:
+#   push-variant <dir>  copies a staged model + variant.json INTO the app's private files/lab (replacing it)
+#   lab                 runs only the LabTest instrumentation class (not the whole test set)
+#   pull-results        copies files/lab/result.json OUT to corpus/lab/phone/<timestamp>.json; never audio
+set -euo pipefail
+PKG="ch.og.dictation"
+FUTO_PKGS="org.futo.inputmethod.latin org.futo.inputmethod.latin.playstore org.futo.voiceinput org.futo.voiceinput.playstore"
+SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
+ADB="$SDK/platform-tools/adb"
+[ -x "$ADB" ] || { echo "adb not installed at $ADB" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<USAGE
+usage: tools/phone <subcommand>
+  status            connected devices (read-only)
+  versions          Android/GrapheneOS build, API level, FUTO versions, input methods (read-only)
+  install <apk>     install an APK whose package is exactly $PKG
+  uninstall         uninstall $PKG only
+  logs              live log lines from $PKG's own log tags (Ctrl-C to stop)
+  crash             last crash/ANR entries mentioning $PKG (read-only)
+  test              run $PKG's instrumentation tests on the phone via Gradle (benchmark build)
+  lab               run only the LabTest class (experiment loop, stage 2; benchmark build)
+  push-variant <dir> replace $PKG's files/lab with the staged directory (model, lid, variant.json);
+                    the directory comes from tools/lab.py phone-prepare
+  pull-results      copy $PKG's files/lab/result.json to corpus/lab/phone/ (JSON only, never audio)
+  pull-report       copy $PKG's files/benchmark into corpus/ (read-only on the phone;
+                    needs the benchmark build; only after Oriol says yes for that run)
+  subtypes          every enabled input method with its subtypes and modes (read-only)
+USAGE
+  exit 1
+}
+
+case "${1:-}" in
+  status)
+    "$ADB" devices -l ;;
+  versions)
+    for p in ro.product.model ro.build.version.release ro.build.version.sdk ro.build.id ro.build.display.id ro.soc.model; do
+      printf '%-28s %s\n' "$p" "$("$ADB" shell getprop "$p")"
+    done
+    for p in $FUTO_PKGS $PKG; do
+      v=$("$ADB" shell dumpsys package "$p" 2>/dev/null | grep -m1 -E 'versionName' | sed 's/^ *//') || true
+      printf '%-40s %s\n' "$p" "${v:-not installed}"
+    done
+    echo "input methods:"; "$ADB" shell ime list -s ;;
+  install)
+    apk="${2:-}"; [ -f "$apk" ] || usage
+    aapt2=$(ls -1 "$SDK"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+    [ -n "$aapt2" ] || { echo "aapt2 missing; cannot verify package name" >&2; exit 1; }
+    name=$("$aapt2" dump packagename "$apk")
+    [ "$name" = "$PKG" ] || { echo "refusing: APK package is '$name', not $PKG" >&2; exit 1; }
+    "$ADB" install -r "$apk" ;;
+  uninstall)
+    "$ADB" uninstall "$PKG" ;;
+  logs)
+    # Our own tags only, plus uncaught exceptions. Everything else silenced (*:S).
+    "$ADB" logcat -v time -T 1 DictationIme:V Recorder:V Recognizer:V ReplayTest:V LabTest:V AndroidRuntime:E '*:S' ;;
+  crash)
+    "$ADB" logcat -d -b crash | grep -F -B2 -A40 "$PKG" | tail -200 ;;
+  test)
+    cd "$(dirname "$0")/.." && ANDROID_HOME="$SDK" ./gradlew connectedBenchmarkAndroidTest --console=plain ;;
+  lab)
+    cd "$(dirname "$0")/.." && ANDROID_HOME="$SDK" ./gradlew connectedBenchmarkAndroidTest --console=plain \
+      -Pandroid.testInstrumentationRunnerArguments.class=ch.og.dictation.LabTest ;;
+  push-variant)
+    dir="${2:-}"; [ -f "$dir/variant.json" ] && [ -d "$dir/model" ] || { echo "need a staged directory with variant.json and model/ (tools/lab.py phone-prepare)" >&2; usage; }
+    # Only into our own app's private storage; the previous variant is replaced so storage stays bounded.
+    # -h follows the hard links tools/lab.py creates, so real files are sent.
+    "$ADB" shell run-as "$PKG" sh -c 'rm -rf files/lab && mkdir -p files/lab'
+    tar ch -C "$dir" . | "$ADB" exec-in run-as "$PKG" tar x -C files/lab
+    "$ADB" shell run-as "$PKG" ls -la files/lab files/lab/model ;;
+  pull-results)
+    cd "$(dirname "$0")/.." && mkdir -p corpus/lab/phone
+    out="corpus/lab/phone/$(date +%Y%m%d-%H%M%S).json"
+    "$ADB" exec-out run-as "$PKG" cat files/lab/result.json > "$out"
+    [ -s "$out" ] || { rm -f "$out"; echo "no files/lab/result.json on the phone; did the lab run finish?" >&2; exit 1; }
+    echo "$out" ;;
+  pull-report)
+    # Reads our own app's private benchmark directory; lands in corpus/files/benchmark (gitignored).
+    cd "$(dirname "$0")/.." && mkdir -p corpus
+    "$ADB" exec-out run-as "$PKG" tar c files/benchmark | tar x -C corpus/
+    ls -1 corpus/files/benchmark | wc -l | xargs echo "files in corpus/files/benchmark:" ;;
+  subtypes)
+    "$ADB" shell ime list -a | grep -E '^[^ ]|mId=|mMode=|mLocale=|mIsAuxiliary=|mSubtypeId=|Enabled' ;;
+  *) usage ;;
+esac

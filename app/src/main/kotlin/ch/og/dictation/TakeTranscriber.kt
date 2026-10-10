@@ -13,9 +13,11 @@ class TakeTranscriber(
     private val segmenter: Segmenter,
     private val decodeQueue: Executor,
     private val deliver: Executor,
+    private val seamCapitalize: Boolean = false,
     private val onPreview: (String) -> Unit,
 ) {
     private val texts = ArrayList<String>()   // decode thread only
+    private var begun = false                  // decode thread only
     private var failure: Throwable? = null     // decode thread only
     @Volatile private var cancelled = false
 
@@ -30,7 +32,7 @@ class TakeTranscriber(
         for (s in segmenter.flush()) submit(s)
         decodeQueue.execute {
             if (cancelled) return@execute
-            val result = failure?.let { Result.failure(it) } ?: Result.success(texts.joinToString(" "))
+            val result = failure?.let { Result.failure(it) } ?: Result.success(joinChunks(texts, seamCapitalize))
             deliver.execute { if (!cancelled) onDone(result) }
         }
     }
@@ -40,10 +42,12 @@ class TakeTranscriber(
     private fun submit(segment: FloatArray) = decodeQueue.execute {
         if (cancelled || failure != null) return@execute
         try {
-            val text = recognizer().transcribe(segment).trim()
+            val rec = recognizer()
+            if (!begun) { begun = true; rec.beginTake(segment) }
+            val text = rec.transcribe(segment).trim()
             if (text.isEmpty()) return@execute
             texts.add(text)
-            val joined = texts.joinToString(" ")
+            val joined = joinChunks(texts, seamCapitalize)
             deliver.execute { if (!cancelled) onPreview(joined) }
         } catch (e: Throwable) {
             failure = e
