@@ -60,6 +60,21 @@ A throwaway instrumentation test in `app/src/androidTest/`, no UI, reading Oriol
 
 Pass: under 10 s after stop for a 35 s take on the segmented path, per-segment RTF median under 0.5, parity within 1 point, peak memory (`VmHWM`) under 2 GB, thermal status never above "moderate", at most one join error per long take, and word error rate on D6/E6 after normalisation no higher than FUTO's from [baseline](baseline.md) (two takes, labelled anecdotal). Record ADR-003 with numbers either way. Fail paths, in order: ONNX Runtime directly with the same model (Parakeeb precedent); then roadmap milestone 4.
 
+### Spike results so far (laptop only, 2026-10-10)
+
+Evidence from four takes by Oriol (D6 twice, E6 twice, 28–34 s, 242 reference words), decoded on the laptop with `tools/replay.py` and scored with `tools/score.py`. Four takes are anecdotal; nothing here is a phone number. The on-phone test `ReplayTest` compiles and has not run.
+
+| Finding | Evidence |
+|---|---|
+| Step 0 done: three assets pinned in `assets.lock` and fetched; all four `arm64-v8a` libraries in the AAR have 0x4000 LOAD alignment; the AAR manifest asks for no permission; the 706 MB benchmark APK stores model and libraries uncompressed and passes `zipalign -c -P 16` | `tools/fetch-assets.sh`, `readelf -lW`, `aapt2 dump badging`, commits 5b5844a, 910358c |
+| The published INT8 model fails the parity gate. Word error rate, whole take / VAD-segmented: German INT8 6.0 % / 8.6 %, fp32 5.2 % / 2.6 %; English INT8 6.3 % / 7.1 %, fp32 3.2 % / 3.2 % | `corpus/laptop/int8.json`, `fp32.json` |
+| The loss is in the encoder's quantised convolutions: published INT8 encoder with fp32 decoder and joiner stays bad; fp32 encoder with INT8 decoder and joiner is close to fp32; an encoder with only its MatMul weights quantised (`tools/quant_variant.py`, 880 MB, SHA-256 `d5be30eb…c6d27da6`) with fp32 decoder and joiner scores exactly as fp32 on these takes and decodes as fast on the laptop | `corpus/laptop/var-*.json` |
+| Against FUTO's one take per script in [baseline](baseline.md): German is better with every variant (FUTO 12.1 %); English is worse with every variant (FUTO 1.6 %; fp32 3.2 %, which is "Miss Keller" and "Wintertour" in both takes). Two of the German errors per take are "Tensorchip" for "Tensor-Chip", a spelling difference the scorer counts as two words | `tools/score.py` output |
+| Oriol speaks these takes without 0.8 s pauses: the VAD cut each take once at the 20 s maximum, giving two segments of about 20 s and 6–13 s | segment lists in the reports |
+| Result language is an empty string in sherpa-onnx's output for this model, so language flips can only be judged from the text | reports |
+
+Consequences for the phone spike (proposal): run it with both the published INT8 and the MatMul-only encoder, since the second is the only variant so far that meets parity; it is 230 MB larger, and its phone speed and memory are unknown. The fp32 export is reproducible with `tools/export-fp32.sh` (not rerun end to end after being assembled from the commands that worked).
+
 ### Steps after a passed spike, each its own commit
 
 2. `Recognizer` interface (`transcribe(samples: FloatArray): String`, 16 kHz mono in [-1, 1]), `FakeRecognizer`, `ParakeetRecognizer` wrapping `OfflineRecognizer` with `modelType = "nemo_transducer"`, created once per process on a background thread at service creation; cold and warm timings and the process id logged under tag `Recognizer`. Gate before step 3: Oriol does a take, returns to FUTO, waits 10 minutes, does another take; the log shows whether the process survived and whether the load repeated. If it did not survive, the sub-second warm target needs a design change (recorded as a decision); the under-10 s target still stands.

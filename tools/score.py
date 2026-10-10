@@ -34,6 +34,7 @@ def normalise(text, lang):
     t = text.lower().replace("-", " ")
     t = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", t)
     t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"(\d)([^\W\d])", r"\1 \2", t)  # "16gb" -> "16 gb"
     words = []
     for w in t.split():
         w = {"gigabyte": "gb", "gigabytes": "gb"}.get(w, w)
