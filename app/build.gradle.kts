@@ -29,8 +29,8 @@ android {
         applicationId = "ch.og.dictation"
         minSdk = 36
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 7
+        versionName = "0.2.0"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -79,9 +79,8 @@ tasks.matching { it.name.matches(Regex("pre(Release|Benchmark)(AndroidTest)?Buil
     .configureEach { dependsOn(checkReleaseSigning) }
 
 dependencies {
-    // Spike only (plan milestone 2 step 1): recognizer runtime and model ship in the benchmark build
-    // until ADR-003 is decided. tools/fetch-assets.sh provides the AAR and the assets.
-    "benchmarkImplementation"(files("libs/sherpa-onnx-1.13.8.aar"))
+    // Recognizer runtime (ADR-003). tools/fetch-assets.sh provides the AAR and the model assets.
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")

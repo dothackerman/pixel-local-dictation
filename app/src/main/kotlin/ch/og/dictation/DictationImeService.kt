@@ -15,18 +15,20 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.TextView
+import java.util.concurrent.Executor
 import org.json.JSONObject
 
 /**
- * Milestone 1 shell: a voice-only input method FUTO can hand off to.
- * Record -> Stop inserts text into the focused field through the InputConnection,
- * then returns to the previous keyboard. No recognizer yet: inserted text is a
- * placeholder describing the capture, so insertion/cancel/return can be verified.
+ * A voice-only input method FUTO hands off to. Recording starts when the panel opens;
+ * speech is decoded on the phone while recording continues and shown in the panel only.
+ * Stop commits the whole text once into the field that started the take and returns to
+ * the previous keyboard. Nothing is written to a field before Stop.
  */
 class DictationImeService : InputMethodService() {
     private val tag = "DictationIme"
     private val recorder = Recorder()
     private var status: TextView? = null
+    private var preview: TextView? = null
     private var recordBtn: Button? = null
     private var stopBtn: Button? = null
     private var startedAt = 0L
@@ -35,53 +37,62 @@ class DictationImeService : InputMethodService() {
     private var saveTake = false
     private val session = InputSession()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainExecutor = Executor { mainHandler.post(it) }
     /** Set while a hand-back to the keyboard is pending, so the panel does not start a new take. */
     private var returning = false
-    /** Session that started the current recording; text goes there or nowhere. */
+    /** Session that started the current take; text goes there or nowhere. */
     private var recordingToken: Long? = null
+    private var transcriber: TakeTranscriber? = null
+    /** Audio of a take that is being finished after Stop; wiped when the take ends either way. */
+    private var finishingPcm: ByteArray? = null
+
+    /** A take exists from the start of recording until its text is committed or dropped. */
+    private val takeActive: Boolean get() = recorder.isRunning || finishingPcm != null
 
     /** A locked phone must not keep listening. */
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (recorder.isRunning) discardAndReturn("screen off")
+            if (takeActive) discardAndReturn("screen off")
         }
     }
 
     override fun onCreate() {
         super.onCreate()
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
+        Engine.warmUp(this)
     }
 
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.ime, null)
         status = v.findViewById(R.id.status)
+        preview = v.findViewById(R.id.preview)
         banner = v.findViewById(R.id.benchmark_banner)
         recordBtn = v.findViewById<Button>(R.id.record).apply { setOnClickListener { startRecording() } }
         stopBtn = v.findViewById<Button>(R.id.stop).apply { setOnClickListener { stopAndInsert() } }
         v.findViewById<Button>(R.id.cancel).setOnClickListener { cancelAndReturn() }
-        v.findViewById<Button>(R.id.back).setOnClickListener { returnToKeyboard() }
+        v.findViewById<Button>(R.id.back).setOnClickListener { cancelAndReturn() }
         return v
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        Log.i(tag, "input start: restarting=$restarting recording=${recorder.isRunning} " +
+        Log.i(tag, "input start: restarting=$restarting take=$takeActive " +
             "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
         // Observed 2026-10-10: a browser reports a move between two fields of one page as a
         // restart with identical field attributes, so a restart cannot be trusted to be the
-        // same field. Any input start during a recording ends that recording's session.
+        // same field. Any input start during a take ends that take's session.
         session.start(restarting = false)
-        if (recorder.isRunning) discardAndReturn("input restarted")
+        if (takeActive) discardAndReturn("input restarted")
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         session.resume()
         if (returning) return
-        if (recorder.isRunning) {
-            // The view can be restarted without a new input start; keep that recording.
+        if (takeActive) {
+            // The view can be restarted without a new input start; keep that take.
             if (session.matches(recordingToken)) return
-            recorder.cancel(); Log.i(tag, "cancelled: input session changed")
+            discardTake("input session changed")
         }
         saveTake = BenchmarkStore.isEnabled(this)
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
@@ -92,8 +103,8 @@ class DictationImeService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
-        Log.i(tag, "input view finished: finishingInput=$finishingInput recording=${recorder.isRunning}")
-        if (recorder.isRunning) discardAndReturn("input view finished")
+        Log.i(tag, "input view finished: finishingInput=$finishingInput take=$takeActive")
+        if (takeActive) discardAndReturn("input view finished")
         super.onFinishInputView(finishingInput)
     }
 
@@ -102,16 +113,22 @@ class DictationImeService : InputMethodService() {
         super.onFinishInput()
     }
 
-    override fun onDestroy() { unregisterReceiver(screenOff); recorder.cancel(); super.onDestroy() }
+    override fun onDestroy() { unregisterReceiver(screenOff); discardTake("service destroyed"); super.onDestroy() }
 
     private fun startRecording() {
-        if (recorder.isRunning) return
+        if (takeActive) return
         if (!hasMicPermission()) { status?.setText(R.string.status_no_permission); return }
         try {
-            recorder.start()
+            val segmenter = Engine.segmenter(this).also { it.reset() }
+            val take = TakeTranscriber({ Engine.recognizer(this) }, segmenter, Engine.decodeQueue, mainExecutor) { text ->
+                showPreview(text)
+            }
+            recorder.start(take::feed)
+            transcriber = take
             recordingToken = session.token()
             startedAt = SystemClock.elapsedRealtime()
             status?.setText(R.string.status_recording)
+            preview?.text = ""
             recordBtn?.isEnabled = false; stopBtn?.isEnabled = true
             Log.i(tag, "recording started")
         } catch (e: Exception) {
@@ -121,39 +138,58 @@ class DictationImeService : InputMethodService() {
 
     private fun stopAndInsert() {
         if (!recorder.isRunning) return
+        val take = transcriber ?: return
         val pcm = recorder.stop()
-        val ms = SystemClock.elapsedRealtime() - startedAt
+        val stoppedAt = SystemClock.elapsedRealtime()
+        val recordingMs = stoppedAt - startedAt
         val seconds = pcm.size / 2.0 / Recorder.SAMPLE_RATE
-        Log.i(tag, "stopped after ${ms} ms, ${pcm.size} bytes (%.2f s)".format(seconds))
-        val text = "[recorded %.1f s] ".format(seconds)
-        if (saveTake) saveBenchmarkTake(pcm, text, seconds, ms)
-        pcm.fill(0)
-        val committed = commitForSession(recordingToken, text)
-        showIdle()
-        if (committed) returnToKeyboard()
+        Log.i(tag, "stopped after $recordingMs ms, %.2f s of audio".format(seconds))
+        val token = recordingToken
+        finishingPcm = pcm
+        status?.setText(R.string.status_finishing)
+        stopBtn?.isEnabled = false
+        take.finish { result ->
+            val waitMs = SystemClock.elapsedRealtime() - stoppedAt
+            val text = result.getOrNull()
+            Log.i(tag, "final after $waitMs ms: ${text?.length ?: -1} characters")
+            if (saveTake) saveBenchmarkTake(pcm, text, seconds, recordingMs, waitMs)
+            endTake()
+            if (text == null) {
+                Log.e(tag, "recognition failed", result.exceptionOrNull())
+                showIdle(); status?.setText(R.string.status_failed)
+                return@finish
+            }
+            val done = text.isEmpty() || commitForSession(token, text)
+            showIdle()
+            if (done) returnToKeyboard()
+        }
     }
 
     /**
      * The only path that writes to a field. Commits on the main thread and only
-     * while the session that started the recording is still the live one.
+     * while the session that started the take is still the live one.
      */
     private fun commitForSession(token: Long?, text: String): Boolean {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
         if (!session.matches(token)) { Log.w(tag, "input session changed; dropping result"); return false }
         val ic = currentInputConnection
         if (ic == null) { Log.w(tag, "no input connection; dropping result"); return false }
-        ic.commitText(text, 1)
+        // Dictating after existing text: separate with a space unless there is one already.
+        val before = ic.getTextBeforeCursor(1, 0)
+        val lead = if (!before.isNullOrEmpty() && !before[0].isWhitespace()) " " else ""
+        ic.commitText(lead + text, 1)
         return true
     }
 
-    private fun saveBenchmarkTake(pcm: ByteArray, text: String, audioSeconds: Double, recordingMs: Long) {
+    private fun saveBenchmarkTake(pcm: ByteArray, text: String?, audioSeconds: Double, recordingMs: Long, stopToFinalMs: Long) {
         try {
             val json = JSONObject()
                 .put("app", packageManager.getPackageInfo(packageName, 0).versionName)
-                .put("recognizer", "none")
-                .put("text", text)
+                .put("recognizer", "parakeet-v3-matmul8 sherpa-onnx-1.13.8")
+                .put("text", text ?: JSONObject.NULL)
                 .put("audioSeconds", audioSeconds)
                 .put("recordingMs", recordingMs)
+                .put("stopToFinalMs", stopToFinalMs)
             val name = BenchmarkStore.of(this).save(pcm, Recorder.SAMPLE_RATE, json.toString(2))
             Log.i(tag, "benchmark take saved: $name")
         } catch (e: Exception) {
@@ -161,20 +197,33 @@ class DictationImeService : InputMethodService() {
         }
     }
 
+    /** Stops the microphone, drops queued decoding and wipes the audio. Nothing is committed afterwards. */
+    private fun endTake() {
+        recorder.cancel()
+        transcriber?.cancel(); transcriber = null
+        finishingPcm?.fill(0); finishingPcm = null
+        recordingToken = null
+    }
+
+    private fun discardTake(reason: String) {
+        if (!takeActive) return
+        endTake()
+        Log.i(tag, "cancelled: $reason")
+    }
+
     /**
-     * The system took the field away mid-recording. Drop the audio and hand back to
-     * the keyboard, so the panel never reappears recording without the microphone key.
+     * The system took the field away mid-take. Drop it and hand back to the keyboard,
+     * so the panel never reappears recording without the microphone key.
      */
     private fun discardAndReturn(reason: String) {
-        recorder.cancel(); recordingToken = null
-        Log.i(tag, "cancelled: $reason")
+        discardTake(reason)
         showIdle()
         returning = true
         mainHandler.post { returnToKeyboard(); returning = false }
     }
 
     private fun cancelAndReturn() {
-        recorder.cancel(); Log.i(tag, "cancelled by user"); showIdle(); returnToKeyboard()
+        discardTake("by user"); showIdle(); returnToKeyboard()
     }
 
     private fun returnToKeyboard() {
@@ -185,8 +234,12 @@ class DictationImeService : InputMethodService() {
 
     private fun showIdle() {
         status?.setText(R.string.status_idle)
+        preview?.text = ""
         recordBtn?.isEnabled = true; stopBtn?.isEnabled = false
     }
+
+    /** The end of the text so far; the view is a few lines high. */
+    private fun showPreview(text: String) { preview?.text = text.takeLast(240) }
 
     private fun hasMicPermission() =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED

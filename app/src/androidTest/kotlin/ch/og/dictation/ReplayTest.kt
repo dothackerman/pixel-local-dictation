@@ -37,7 +37,7 @@ class ReplayTest {
     @Test fun spike() {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
-        // Published INT8 first, then the MatMul-only encoder if the build carries it.
+        // Every model directory the build carries; since ADR-003 that is the shipped one only.
         for (model in listOf("parakeet-v3", "parakeet-v3-matmul8")) {
             if (ctx.assets.list(model).isNullOrEmpty()) continue
             // Resets the peak-memory counter (VmHWM) so each model gets its own peak.

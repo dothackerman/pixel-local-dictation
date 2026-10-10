@@ -4,3 +4,6 @@
 633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96 50129134 sherpa-onnx-1.13.8.aar https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
 5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf 487170055 sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2
 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6 643854 silero_vad.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+# Built on the laptop, not downloaded: encoder.int8.onnx of the shipped model (ADR-003), 879747733 bytes.
+# Whether a rebuild reproduces this checksum bit for bit has not been tested.
+#built d5be30ebe93c940eddfeb5c6ce2bf67cdbe5d80b2c5a0256a1bbd6c1f6d27da6

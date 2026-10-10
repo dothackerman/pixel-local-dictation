@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Download the files pinned in assets.lock into models/ (gitignored) and verify them.
-# Laptop only. Afterwards the AAR is copied to app/libs/, the model archive unpacked and linked into the benchmark assets.
+# Laptop only. Afterwards the AAR is copied to app/libs/, the published model archive unpacked for reference, and the built model linked into the app assets.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/models"
@@ -23,16 +23,17 @@ done
 cp "$DEST"/sherpa-onnx-*.aar "$ROOT/app/libs/"
 MODEL="sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 [ -d "$DEST/$MODEL" ] || tar -xjf "$DEST/$MODEL.tar.bz2" -C "$DEST"
-# Hard links, not copies: the benchmark build packs these as assets (gitignored).
-ASSETS="$ROOT/app/src/benchmark/assets/parakeet-v3"
+# The model the app ships (ADR-003): MatMul-only INT8 encoder with fp32 decoder and joiner,
+# built on this laptop by tools/export-fp32.sh and tools/quant_variant.py. Hard links, not
+# copies, into the app's assets (gitignored).
+BUILT="$DEST/parakeet-v3-matmul8"
+WANT="$(grep '^#built ' "$ROOT/assets.lock" | cut -d' ' -f2)"
+[ -f "$BUILT/encoder.int8.onnx" ] || { echo "missing $BUILT: run tools/export-fp32.sh, then
+  models/export/venv/bin/python tools/quant_variant.py models/parakeet-v3-fp32 $BUILT MatMul
+  and link decoder.onnx, joiner.onnx, tokens.txt from models/parakeet-v3-fp32 into it" >&2; exit 1; }
+[ "$(sha256sum "$BUILT/encoder.int8.onnx" | cut -d' ' -f1)" = "$WANT" ] || { echo "MISMATCH built encoder, expected $WANT" >&2; exit 1; }
+ASSETS="$ROOT/app/src/main/assets/parakeet-v3"
 mkdir -p "$ASSETS"
-for f in encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt; do ln -f "$DEST/$MODEL/$f" "$ASSETS/$f"; done
+for f in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do ln -f "$BUILT/$f" "$ASSETS/$f"; done
 ln -f "$DEST/silero_vad.onnx" "$ASSETS/silero_vad.onnx"
-# Optional second model for the spike: MatMul-only INT8 encoder with fp32 decoder and joiner,
-# built by tools/export-fp32.sh and tools/quant_variant.py (see docs/plan.md).
-ALT="$DEST/parakeet-v3-matmul8"
-if [ -d "$ALT" ]; then
-  mkdir -p "$ASSETS-matmul8"
-  for f in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do ln -f "$ALT/$f" "$ASSETS-matmul8/$f"; done
-fi
 echo "done: $DEST, $ASSETS"

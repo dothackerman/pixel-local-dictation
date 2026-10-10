@@ -3,6 +3,8 @@
     <string name="ime_label">Local dictation</string>
     <string name="status_idle">Tap record</string>
     <string name="status_recording">Recording…</string>
+    <string name="status_finishing">Finishing…</string>
+    <string name="status_failed">Recognition failed</string>
     <string name="status_no_permission">Microphone permission missing</string>
     <string name="record">Record</string>
     <string name="stop">Stop</string>
