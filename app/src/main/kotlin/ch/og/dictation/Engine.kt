@@ -110,7 +110,7 @@ object Engine {
 
     /** Decode thread only. */
     fun recognizer(context: Context): Recognizer =
-        recognizer ?: ParakeetRecognizer(context.applicationContext).also { recognizer = it }
+        recognizer ?: SwissSpelling(ParakeetRecognizer(context.applicationContext)).also { recognizer = it }
 
     @Synchronized fun segmenter(context: Context): Segmenter =
         segmenter ?: VadSegmenter(context.applicationContext).also { segmenter = it }

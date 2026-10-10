@@ -63,6 +63,11 @@ class TakeTranscriberTest {
         assertTrue(done!!.isFailure)
     }
 
+    @Test fun swissSpellingReplacesEszett() {
+        val r = SwissSpelling(FakeRecognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
+        assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))
+    }
+
     @Test fun shortSegmentsJoinTheNextOne() {
         val m = ShortSegmentMerger(minSamples = 4)
         assertNull(m.add(floatArrayOf(1f, 2f)))

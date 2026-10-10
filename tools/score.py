@@ -31,7 +31,7 @@ NUMBERS = {"de": ["halb 3", "3 oktober", "12 november", "16 gb", "gleis 4", "vor
 
 
 def normalise(text, lang):
-    t = text.lower().replace("-", " ")
+    t = text.lower().replace("-", " ").replace("ß", "ss")  # Swiss spelling is not an error (R7)
     t = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", t)
     t = re.sub(r"[^\w\s]", " ", t)
     t = re.sub(r"(\d)([^\W\d])", r"\1 \2", t)  # "16gb" -> "16 gb"
