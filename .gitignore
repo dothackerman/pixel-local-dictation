@@ -19,3 +19,4 @@ local.properties
 models/
 app/libs/
 app/src/main/assets/
+__pycache__/
