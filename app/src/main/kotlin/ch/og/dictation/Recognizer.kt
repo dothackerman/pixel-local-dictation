@@ -27,7 +27,7 @@ class FakeRecognizer(private val text: (FloatArray) -> String = { "[%.1f s]".for
 }
 
 /** Swiss spelling (R7): the recognizer writes Standard German "ß", Oriol writes "ss". */
-class SwissSpelling(private val inner: Recognizer) : Recognizer {
+class SwissSpelling(val inner: Recognizer) : Recognizer {
     override fun transcribe(samples: FloatArray): String =
         inner.transcribe(samples).replace("ß", "ss").replace("ẞ", "SS")
     override fun beginTake(firstChunk: FloatArray): String = inner.beginTake(firstChunk)

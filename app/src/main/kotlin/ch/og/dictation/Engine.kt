@@ -202,6 +202,7 @@ object Pipeline {
 
     fun release(r: Recognizer) {
         when (r) {
+            is SwissSpelling -> release(r.inner)
             is SherpaRecognizer -> r.release()
             is CanaryRecognizer -> r.release()
         }
