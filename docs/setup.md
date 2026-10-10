@@ -15,7 +15,7 @@ Order matters for removal: reverse step 4 before step 1. With the FUTO toggle st
 
 ## Daily use
 
-Tap FUTO's microphone key. The panel replaces the keyboard and starts recording at once. Tap **Stop** to insert the text and return to FUTO, **Cancel** to discard and return, **Keyboard** to return without recording. Tapping into another field while recording discards the recording. The app has no network permission; recordings stay in memory and are discarded after use.
+Tap FUTO's microphone key. The panel replaces the keyboard and starts recording at once; while you speak, the text recognised so far appears in the panel only. Tap **Stop** to insert the whole text and return to FUTO; **Cancel** or **Keyboard** discard the take and return. Tapping into another field, hiding the keyboard or locking the screen during a take discards it and FUTO comes back. The first take after the app process starts waits about 4 s longer while the model loads. The app has no network permission; recordings stay in memory and are discarded after use.
 
 ## Benchmark mode
 
