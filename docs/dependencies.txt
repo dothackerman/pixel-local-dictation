@@ -2,6 +2,7 @@
 #   ./gradlew -q :app:dependencies --configuration <name>
 # Direct pins (app/build.gradle.kts): androidTestImplementation androidx.test:runner:1.7.0,
 # androidx.test:rules:1.7.0, androidx.test.ext:junit:1.3.0 (latest stable on Google Maven, checked 2026-10-09).
+# testImplementation junit:junit:4.13.2 (laptop unit tests only).
 # The release APK ships only releaseRuntimeClasspath; the androidTest set runs only in the test APK.
 
 releaseRuntimeClasspath - Runtime classpath of '/release'.

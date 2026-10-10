@@ -29,8 +29,8 @@ android {
         applicationId = "ch.og.dictation"
         minSdk = 36
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -77,6 +77,7 @@ tasks.matching { it.name.matches(Regex("pre(Release|Benchmark)(AndroidTest)?Buil
     .configureEach { dependsOn(checkReleaseSigning) }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
