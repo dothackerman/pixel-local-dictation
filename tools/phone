@@ -17,7 +17,9 @@ usage: tools/phone <subcommand>
   uninstall         uninstall $PKG only
   logs              live log lines from $PKG's own log tags (Ctrl-C to stop)
   crash             last crash/ANR entries mentioning $PKG (read-only)
-  test              run $PKG's instrumentation tests on the phone via Gradle
+  test              run $PKG's instrumentation tests on the phone via Gradle (benchmark build)
+  pull-report       copy $PKG's files/benchmark into corpus/ (read-only on the phone;
+                    needs the benchmark build; only after Oriol says yes for that run)
   subtypes          every enabled input method with its subtypes and modes (read-only)
 USAGE
   exit 1
@@ -50,7 +52,12 @@ case "${1:-}" in
   crash)
     "$ADB" logcat -d -b crash | grep -F -B2 -A40 "$PKG" | tail -200 ;;
   test)
-    cd "$(dirname "$0")/.." && ANDROID_HOME="$SDK" ./gradlew connectedDebugAndroidTest --console=plain ;;
+    cd "$(dirname "$0")/.." && ANDROID_HOME="$SDK" ./gradlew connectedBenchmarkAndroidTest --console=plain ;;
+  pull-report)
+    # Reads our own app's private benchmark directory; lands in corpus/files/benchmark (gitignored).
+    cd "$(dirname "$0")/.." && mkdir -p corpus
+    "$ADB" exec-out run-as "$PKG" tar c files/benchmark | tar x -C corpus/
+    ls -1 corpus/files/benchmark | wc -l | xargs echo "files in corpus/files/benchmark:" ;;
   subtypes)
     "$ADB" shell ime list -a | grep -E '^[^ ]|mId=|mMode=|mLocale=|mIsAuxiliary=|mSubtypeId=|Enabled' ;;
   *) usage ;;
