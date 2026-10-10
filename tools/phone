@@ -7,13 +7,16 @@
 #   push-variant <dir>  copies a staged model + variant.json INTO the app's private files/lab (replacing it)
 #   lab                 runs only the LabTest instrumentation class (not the whole test set)
 #   pull-results        copies files/lab/result.json OUT to corpus/lab/phone/<timestamp>.json; never audio
-# Fix of 2026-10-10 (second proposal): the remote shell re-parses the command line, so the rm/mkdir pair
-# is sent as one quoted string and the tar extraction is done by one run-as sh -c as well.
+# Third proposal (2026-10-10): streaming a tar through the bridge truncated files of about 1 GB twice,
+# at different points. push-variant now uses the bridge's own push into the shell user's temporary
+# directory (/data/local/tmp, no app's data), copies from there into the app's storage with run-as,
+# deletes the temporary copy, and fails unless every file's size matches the staged one.
 set -euo pipefail
 PKG="ch.og.dictation"
 FUTO_PKGS="org.futo.inputmethod.latin org.futo.inputmethod.latin.playstore org.futo.voiceinput org.futo.voiceinput.playstore"
 SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
 ADB="$SDK/platform-tools/adb"
+TMP="/data/local/tmp/dictation-lab"
 [ -x "$ADB" ] || { echo "adb not installed at $ADB" >&2; exit 1; }
 
 usage() {
@@ -70,12 +73,20 @@ case "${1:-}" in
       -Pandroid.testInstrumentationRunnerArguments.class=ch.og.dictation.LabTest ;;
   push-variant)
     dir="${2:-}"; [ -f "$dir/variant.json" ] && [ -d "$dir/model" ] || { echo "need a staged directory with variant.json and model/ (tools/lab.py phone-prepare)" >&2; usage; }
-    # Only into our own app's private storage; the previous variant is replaced so storage stays bounded.
-    # The remote shell re-parses its command line, hence one quoted string per remote command.
-    # -h follows the hard links tools/lab.py creates, so real files are sent.
-    "$ADB" shell "run-as $PKG sh -c 'rm -rf files/lab && mkdir -p files/lab'"
-    tar ch -C "$dir" . | "$ADB" exec-in "run-as $PKG sh -c 'tar x -C files/lab'"
-    "$ADB" shell "run-as $PKG ls -la files/lab files/lab/model" ;;
+    # Hard links in the staged directory are followed by push. The temporary copy belongs to the
+    # shell user and is removed again; the app reads it once with run-as. Sizes are verified.
+    "$ADB" shell "rm -rf $TMP"
+    "$ADB" push "$dir/." "$TMP" >/dev/null
+    "$ADB" shell "run-as $PKG sh -c 'rm -rf files/lab && mkdir -p files/lab && cp -r $TMP/. files/lab/'"
+    "$ADB" shell "rm -rf $TMP"
+    want=$(cd "$dir" && find . -type f -printf '%s %P\n' | sort)
+    got=$("$ADB" shell "run-as $PKG sh -c 'cd files/lab && find . -type f | while read f; do echo \"\$(stat -c %s \"\$f\") \${f#./}\"; done'" | tr -d '\r' | sort)
+    if [ "$want" != "$got" ]; then
+      echo "push-variant: sizes on the phone differ from the staged directory" >&2
+      diff <(echo "$want") <(echo "$got") >&2 || true
+      exit 1
+    fi
+    echo "$got" ;;
   pull-results)
     cd "$(dirname "$0")/.." && mkdir -p corpus/lab/phone
     out="corpus/lab/phone/$(date +%Y%m%d-%H%M%S).json"
