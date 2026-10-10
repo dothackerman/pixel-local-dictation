@@ -29,8 +29,8 @@ android {
         applicationId = "ch.og.dictation"
         minSdk = 36
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.2.1"
+        versionCode = 9
+        versionName = "0.2.2"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

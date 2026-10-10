@@ -54,13 +54,16 @@ class ParakeetRecognizer(context: Context, threads: Int = 4) : Recognizer {
 }
 
 /**
- * Silero VAD on the live stream. Starting parameters from docs/plan.md: 0.8 s of silence
- * ends a segment, 20 s is the longest segment, segments under 2 s join the next one.
- * One thread at a time: the recording thread during a take, the main thread around it.
+ * Silero VAD on the live stream finds the pauses; [PauseChunker] cuts there. A pause is
+ * 0.8 s of silence; continuous speech is cut after 20 s at the latest (starting values from
+ * docs/plan.md). One thread at a time: the recording thread during a take, the main thread
+ * around it.
  */
 class VadSegmenter(private val context: Context) : Segmenter {
     private var vad: Vad? = null
-    private val merger = ShortSegmentMerger(2 * SAMPLE_RATE)
+    private var chunker = newChunker()
+
+    private fun newChunker() = PauseChunker(minSamples = 20 * SAMPLE_RATE, padSamples = (0.4 * SAMPLE_RATE).toInt())
 
     private fun vad(): Vad = vad ?: run {
         val config = VadModelConfig()
@@ -73,25 +76,23 @@ class VadSegmenter(private val context: Context) : Segmenter {
     }
 
     override fun accept(samples: FloatArray): List<FloatArray> {
-        vad().acceptWaveform(samples)
-        return drain()
-    }
-
-    override fun flush(): List<FloatArray> {
-        vad().flush()
-        return drain() + listOfNotNull(merger.rest())
-    }
-
-    override fun reset() {
-        vad?.reset()
-        merger.rest()
-    }
-
-    private fun drain(): List<FloatArray> {
+        chunker.append(samples)
         val v = vad()
+        v.acceptWaveform(samples)
         val out = ArrayList<FloatArray>()
-        while (!v.empty()) { val s = v.front(); v.pop(); merger.add(s.samples)?.let(out::add) }
+        while (!v.empty()) {
+            val s = v.front(); v.pop()
+            chunker.onSpeechEnd(s.start.toLong() + s.samples.size)?.let(out::add)
+        }
         return out
+    }
+
+    override fun flush(): List<FloatArray> = listOfNotNull(chunker.rest())
+
+    /** A fresh detector per take, so its sample positions start at zero again. */
+    override fun reset() {
+        vad?.release(); vad = null
+        chunker = newChunker()
     }
 }
 

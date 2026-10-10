@@ -68,13 +68,22 @@ class TakeTranscriberTest {
         assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))
     }
 
-    @Test fun shortSegmentsJoinTheNextOne() {
-        val m = ShortSegmentMerger(minSamples = 4)
-        assertNull(m.add(floatArrayOf(1f, 2f)))
-        assertArrayEquals(floatArrayOf(1f, 2f, 3f, 4f, 5f), m.add(floatArrayOf(3f, 4f, 5f)), 0f)
-        assertNull(m.rest())
-        assertNull(m.add(floatArrayOf(6f)))
-        assertArrayEquals(floatArrayOf(6f), m.rest(), 0f)
-        assertNull(m.rest())
+    @Test fun chunksAreContiguousAndCutOnlyAtPausesOnceLongEnough() {
+        val c = PauseChunker(minSamples = 10, padSamples = 2)
+        c.append(FloatArray(8) { it.toFloat() })                 // positions 0..7
+        assertNull("too short: pause after 6 samples", c.onSpeechEnd(6))
+        c.append(FloatArray(8) { 8f + it })                      // positions 8..15
+        assertArrayEquals(FloatArray(14) { it.toFloat() }, c.onSpeechEnd(12), 0f)   // 12 + pad
+        c.append(FloatArray(4) { 16f + it })                     // positions 16..19
+        assertNull(c.onSpeechEnd(18))
+        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), c.rest(), 0f)
+        assertNull(c.rest())
+    }
+
+    @Test fun padNeverReachesBeyondRecordedAudio() {
+        val c = PauseChunker(minSamples = 4, padSamples = 100)
+        c.append(FloatArray(6) { it.toFloat() })
+        assertArrayEquals(FloatArray(6) { it.toFloat() }, c.onSpeechEnd(5), 0f)
+        assertNull(c.rest())
     }
 }

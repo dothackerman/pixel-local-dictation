@@ -2,8 +2,8 @@
 """Decode WAV takes on the laptop with a sherpa-onnx Parakeet model directory.
 
 Usage: models/venv/bin/python tools/replay.py MODEL_DIR OUT.json take.wav...
-Each take is decoded whole and, with --vad, as VAD segments joined by one space
-(the phone design in docs/plan.md). Timings are laptop numbers, not phone numbers.
+Each take is decoded whole and, with --vad, in the chunks the app cuts at pauses,
+joined by one space. Timings are laptop numbers, not phone numbers.
 """
 import argparse, glob, json, os, time, wave
 import numpy as np
@@ -30,37 +30,27 @@ def decode(rec, samples):
     return s.result.text.strip(), getattr(s.result, "lang", ""), time.perf_counter() - t
 
 
-def segments(vad_model, samples, max_speech):
+def segments(vad_model, samples, max_speech, min_chunk=20.0, pad=0.4):
+    """The app's cutting (PauseChunker): contiguous chunks, cut 0.4 s after speech ended at a
+    pause, once a chunk is at least 20 s long. Returns (start sample, samples) pairs."""
     cfg = sherpa_onnx.VadModelConfig()
     cfg.silero_vad.model = vad_model
     cfg.silero_vad.min_silence_duration = 0.8
     cfg.silero_vad.min_speech_duration = 0.25
     cfg.silero_vad.max_speech_duration = max_speech
     cfg.sample_rate = 16000
-    vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=120)
-    out, win = [], cfg.silero_vad.window_size
+    vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=600)
+    cuts, win, fed = [0], cfg.silero_vad.window_size, 0
     for i in range(0, len(samples), win):
-        vad.accept_waveform(samples[i:i + win])
+        vad.accept_waveform(samples[i:i + win]); fed = min(i + win, len(samples))
         while not vad.empty():
-            out.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32))); vad.pop()
-    vad.flush()
-    while not vad.empty():
-        out.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32))); vad.pop()
-    # plan: segments under 2 s are merged into the next
-    merged, carry = [], None
-    for start, seg in out:
-        if carry is not None:
-            start, seg = carry[0], np.concatenate([carry[1], seg]); carry = None
-        if len(seg) < 2 * 16000:
-            carry = (start, seg)
-        else:
-            merged.append((start, seg))
-    if carry is not None:
-        if merged:
-            merged[-1] = (merged[-1][0], np.concatenate([merged[-1][1], carry[1]]))
-        else:
-            merged.append(carry)
-    return merged
+            end = vad.front.start + len(vad.front.samples); vad.pop()
+            cut = min(end + int(pad * 16000), fed)
+            if cut - cuts[-1] >= min_chunk * 16000:
+                cuts.append(cut)
+    if cuts[-1] < len(samples):
+        cuts.append(len(samples))
+    return [(a, samples[a:b]) for a, b in zip(cuts, cuts[1:])]
 
 
 def main():

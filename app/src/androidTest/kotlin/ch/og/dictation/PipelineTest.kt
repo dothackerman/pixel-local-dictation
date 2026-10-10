@@ -46,7 +46,8 @@ class PipelineTest {
             take.finish { result = it; latch.countDown() }
             assertTrue("no final text within two minutes", latch.await(2, TimeUnit.MINUTES))
             val text = result!!.getOrThrow()
-            Log.i("ReplayTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters")
+            Log.i("ReplayTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters, " +
+                "${text.split(Regex("\\s+")).size} words")
             assertTrue("empty transcript for ${f.name}", text.isNotBlank())
             out.put(JSONObject().put("file", f.name).put("text", text).put("previews", previews.size)
                 .put("finishMs", SystemClock.elapsedRealtime() - stopped))
