@@ -9,10 +9,12 @@ row from the raw output recorded in docs/baseline.md.
 
 Normalisation before counting: lower case, punctuation removed, hyphens become spaces,
 spoken numbers below 1000 and ordinals up to twelfth become digits, gigabyte(s) becomes gb,
-percent becomes %, a few British/American spelling pairs are treated as equal. Names and numbers
+percent becomes %, a few British/American spelling pairs are treated as equal; accents other
+than German umlauts are ignored; unit abbreviations, money ("£3.80", "4.80 Franken", "vier Franken
+achtzig"), clock times ("14:35 Uhr", "14 Uhr 35", "2.35pm") and spoken years are brought to one form. Names and numbers
 are also reported on their own, because one wrong name matters more than its word count.
 """
-import json, os, re, sys
+import json, os, re, sys, unicodedata
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,7 +65,8 @@ EN_TENS = dict(twenty=20, thirty=30, forty=40, fifty=50, sixty=60, seventy=70, e
 EN_UNITS = dict(one=1, two=2, three=3, four=4, five=5, six=6, seven=7, eight=8, nine=9)
 # Spelling variants that are not recognition errors.
 VARIANTS = {"flavour": "flavor", "tyres": "tires", "colour": "color", "grey": "gray", "café": "cafe",
-            "gigabyte": "gb", "gigabytes": "gb", "percent": "%", "prozent": "%"}
+            "gigabyte": "gb", "gigabytes": "gb", "percent": "%", "prozent": "%", "chilli": "chili",
+            "franc": "franken", "frank": "franken", "francs": "franken", "pound": "pounds", "euro": "euros"}
 
 
 def _english_numbers(words):
@@ -88,20 +91,70 @@ def _english_numbers(words):
     return out
 
 
+UNITS = {"km": "kilometer", "kilometern": "kilometer", "ml": "milliliter", "millilitres": "milliliter",
+         "milliliters": "milliliter", "g": "gramm", "fr": "franken", "litern": "liter", "litres": "liters"}
+CURRENCY = {"£": "pounds", "€": "euros"}
+
+
+def _accents(t):
+    """Léa = Lea, Neuchâtel = Neuchatel, jalapeño = jalapeno; German umlauts stay."""
+    keep = "äöü"
+    return "".join(c if c in keep else unicodedata.normalize("NFD", c)[0] for c in t)
+
+
+def _money_and_times(t):
+    t = re.sub(r"([£€])\s?(\d+)(?:[.,](\d\d))?", lambda m: f" {m.group(2)} {CURRENCY[m.group(1)]} {m.group(3) or ''} ", t)
+    t = re.sub(r"\b(\d+)[.,](\d\d)\s+(franken|frank\b|franc\b|fr\b\.?|pounds|euros?)", r"\1 \3 \2", t)   # 4.80 Franken = 4 Franken 80
+    t = re.sub(r"\b0?(\d{1,2})[:.](\d\d)(?=\s*(uhr|[ap]\.?\s?m\b))", r"\1 \2", t)     # 14:35 Uhr, 9.20 am
+    return t
+
+
+def _years(words, lang):
+    out, i = [], 0
+    while i < len(words):
+        w = words[i]
+        nxt = words[i + 1] if i + 1 < len(words) else ""
+        nxt2 = words[i + 2] if i + 2 < len(words) else ""
+        if w == "2" and nxt in ("thousand", "tausend") and nxt2.isdigit() and len(nxt2) <= 2:
+            out.append(str(2000 + int(nxt2))); i += 3                       # two thousand twenty eight
+        elif w == "2" and nxt in ("thousand", "tausend") and nxt2 == "and" and i + 3 < len(words) and words[i + 3].isdigit():
+            out.append(str(2000 + int(words[i + 3]))); i += 4
+        elif w == "20" and nxt.isdigit() and len(nxt) == 2 and 20 <= int(nxt) <= 99:
+            out.append("20" + nxt); i += 2                                  # twenty twenty-seven
+        else:
+            out.append(w); i += 1
+    return out
+
+
 def normalise(text, lang):
-    t = text.lower().replace("-", " ").replace("ß", "ss")  # Swiss spelling is not an error (R7)
+    t = _accents(text.lower()).replace("ß", "ss")  # Swiss spelling is not an error (R7)
+    t = t.replace("&", " and " if lang == "en" else " und ")
     t = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", t)
     t = re.sub(r"(?<=\d)['’](?=\d)", "", t)  # 1'500 -> 1500
-    t = t.replace("%", " % ")
+    t = re.sub(r"zweitausend(?=\w)", "zwei tausend ", t)
+    t = _money_and_times(t)
+    t = t.replace("-", " ").replace("%", " % ")
     t = re.sub(r"\b([ap])\.?\s?m\b\.?", r"\1m", t)  # p.m. / p m -> pm
     t = re.sub(r"[^\w\s%]", " ", t)
     t = re.sub(r"(\d)([^\W\d])", r"\1 \2", t)  # "16gb" -> "16 gb"
     words = [VARIANTS.get(w, w) for w in t.split()]
+    words = [UNITS.get(w, w) for w in words]
     if lang == "en":
         words = _english_numbers(words)
     else:
         words = [str(GERMAN_COMPOUNDS.get(w, w)) for w in words]
-    return [str(NUM[lang].get(w, w)) for w in words]
+    words = [str(NUM[lang].get(w, w)) for w in words]
+    words = _years(words, lang)
+    i = 0
+    while i < len(words) - 2:   # vierzehn Uhr fünfunddreissig -> 14 35 uhr
+        if words[i + 1] == "uhr" and words[i].isdigit() and (i == 0 or not words[i - 1].isdigit()) \
+                and words[i + 2].isdigit() and len(words[i + 2]) <= 2 \
+                and (i + 3 >= len(words) or words[i + 3] not in ("minuten", "gramm", "kilometer", "liter", "franken")):
+            words[i + 1], words[i + 2] = words[i + 2], "uhr"
+            i += 3
+        else:
+            i += 1
+    return words
 
 
 def errors(ref, hyp):
