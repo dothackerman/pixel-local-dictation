@@ -2,6 +2,7 @@
 """Word error rate of replay reports against the reference scripts in docs/baseline.md.
 
 Usage: tools/score.py TAKES.json REPORT.json [REPORT.json ...]
+       tools/score.py --corpus corpus        (milestone 3: Oriol's scripts, FUTO against the app)
 TAKES.json maps a take's file name to its script id, e.g. {"20261010-080909-723.wav": "D6"}.
 Reports come from tools/replay.py. Prints one row per take and decode path, and FUTO's
 row from the raw output recorded in docs/baseline.md.
@@ -33,6 +34,7 @@ NUMBERS = {"de": ["halb 3", "3 oktober", "12 november", "16 gb", "gleis 4", "vor
 def normalise(text, lang):
     t = text.lower().replace("-", " ").replace("ß", "ss")  # Swiss spelling is not an error (R7)
     t = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", t)
+    t = re.sub(r"(?<=\d)['’](?=\d)", "", t)  # 1'500 -> 1500
     t = re.sub(r"[^\w\s]", " ", t)
     t = re.sub(r"(\d)([^\W\d])", r"\1 \2", t)  # "16gb" -> "16 gb"
     words = []
@@ -79,7 +81,46 @@ def row(label, script, refs, hyp):
     return lang, e, len(r)
 
 
+def corpus(root):
+    """Milestone 3 layout, all under the gitignored corpus directory:
+    scripts/<id>.txt    reference text as Oriol wants it written; id starts with de or en
+    scripts/<id>.terms  optional: one name, number or term per line that must come out right
+    futo/<id>.txt       FUTO's output for the same script; futo/times.txt: "<id> <seconds>" per line
+    takes.json          {"<take>.wav": "<id>"} for files/benchmark/<take>.json written by the app
+    """
+    def read(*parts):
+        path = os.path.join(root, *parts)
+        return open(path, encoding="utf-8").read().strip() if os.path.exists(path) else None
+    ids = sorted(f[:-4] for f in os.listdir(os.path.join(root, "scripts")) if f.endswith(".txt"))
+    waits = dict(l.split() for l in (read("futo", "times.txt") or "").splitlines() if l.strip())
+    ours = {}
+    for wav, script in json.load(open(os.path.join(root, "takes.json"))).items():
+        if script in ids:
+            ours.setdefault(script, []).append(json.loads(read("files", "benchmark", wav[:-4] + ".json")))
+    totals = {}
+    for script in ids:
+        lang, ref = script[:2], normalise(read("scripts", script + ".txt"), script[:2])
+        terms = [normalise(t, lang) for t in (read("scripts", script + ".terms") or "").splitlines() if t.strip()]
+        rows = [("FUTO", read("futo", script + ".txt"), waits.get(script))]
+        rows += [("ours", t.get("text"), "%.1f" % (t["stopToFinalMs"] / 1000)) for t in ours.get(script, [])]
+        for engine, hyp, wait in rows:
+            if hyp is None:
+                print(f"{script:6} {engine:5} missing"); continue
+            h = normalise(hyp, lang)
+            e = errors(ref, h)
+            missed = [" ".join(t) for t in terms if "".join(t) not in "".join(h)]
+            print(f"{script:6} {engine:5} {e:3}/{len(ref)} = {100 * e / len(ref):5.1f}%  wait {wait or '?':>5} s  "
+                  f"terms missed {len(missed)}/{len(terms)}: {', '.join(missed) or '-'}")
+            a = totals.setdefault((lang, engine), [0, 0, 0, 0])
+            a[0] += e; a[1] += len(ref); a[2] += len(missed); a[3] += len(terms)
+    print()
+    for (lang, engine), (e, n, m, t) in sorted(totals.items()):
+        print(f"{lang} {engine:5} word errors {e:3}/{n} = {100 * e / n:5.1f}%   terms missed {m}/{t}")
+
+
 def main():
+    if sys.argv[1] == "--corpus":
+        return corpus(sys.argv[2])
     takes = json.load(open(sys.argv[1]))
     refs, futo = baseline()
     totals = {}
