@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
@@ -33,15 +34,16 @@ class DictationImeService : InputMethodService() {
     /** Decided when the panel opens, so the banner always matches what happens to the take. */
     private var saveTake = false
     private val session = InputSession()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    /** Set while a hand-back to the keyboard is pending, so the panel does not start a new take. */
+    private var returning = false
     /** Session that started the current recording; text goes there or nowhere. */
     private var recordingToken: Long? = null
-    private var sessionField: List<Any?>? = null
 
     /** A locked phone must not keep listening. */
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (!recorder.isRunning) return
-            recorder.cancel(); Log.i(tag, "cancelled: screen off"); showIdle()
+            if (recorder.isRunning) discardAndReturn("screen off")
         }
     }
 
@@ -63,26 +65,21 @@ class DictationImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        // A restart is the same session only if it is still the same field: browsers
-        // also report a move between two fields of one page as a restart.
-        val field = fieldKey(attribute)
-        val sameField = field == sessionField
-        sessionField = field
-        session.start(restarting && sameField)
-        Log.i(tag, "input start: restarting=$restarting sameField=$sameField recording=${recorder.isRunning} " +
+        Log.i(tag, "input start: restarting=$restarting recording=${recorder.isRunning} " +
             "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
-    }
-
-    /** What the app tells us about the field, without its content. */
-    private fun fieldKey(info: EditorInfo?): List<Any?>? = info?.run {
-        listOf(packageName, fieldId, fieldName, inputType, imeOptions, privateImeOptions, hintText?.toString(), label?.toString())
+        // Observed 2026-10-10: a browser reports a move between two fields of one page as a
+        // restart with identical field attributes, so a restart cannot be trusted to be the
+        // same field. Any input start during a recording ends that recording's session.
+        session.start(restarting = false)
+        if (recorder.isRunning) discardAndReturn("input restarted")
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         session.resume()
+        if (returning) return
         if (recorder.isRunning) {
-            // Apps call restartInput on text changes; keep a live recording untouched.
+            // The view can be restarted without a new input start; keep that recording.
             if (session.matches(recordingToken)) return
             recorder.cancel(); Log.i(tag, "cancelled: input session changed")
         }
@@ -96,7 +93,7 @@ class DictationImeService : InputMethodService() {
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
         Log.i(tag, "input view finished: finishingInput=$finishingInput recording=${recorder.isRunning}")
-        if (recorder.isRunning) { recorder.cancel(); Log.i(tag, "cancelled: input view finished") }
+        if (recorder.isRunning) discardAndReturn("input view finished")
         super.onFinishInputView(finishingInput)
     }
 
@@ -162,6 +159,18 @@ class DictationImeService : InputMethodService() {
         } catch (e: Exception) {
             Log.e(tag, "benchmark save failed", e)
         }
+    }
+
+    /**
+     * The system took the field away mid-recording. Drop the audio and hand back to
+     * the keyboard, so the panel never reappears recording without the microphone key.
+     */
+    private fun discardAndReturn(reason: String) {
+        recorder.cancel(); recordingToken = null
+        Log.i(tag, "cancelled: $reason")
+        showIdle()
+        returning = true
+        mainHandler.post { returnToKeyboard(); returning = false }
     }
 
     private fun cancelAndReturn() {
