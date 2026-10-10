@@ -1,7 +1,10 @@
 package ch.og.dictation
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
 import android.os.Looper
@@ -32,6 +35,20 @@ class DictationImeService : InputMethodService() {
     private val session = InputSession()
     /** Session that started the current recording; text goes there or nowhere. */
     private var recordingToken: Long? = null
+    private var sessionField: List<Any?>? = null
+
+    /** A locked phone must not keep listening. */
+    private val screenOff = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!recorder.isRunning) return
+            recorder.cancel(); Log.i(tag, "cancelled: screen off"); showIdle()
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
+    }
 
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.ime, null)
@@ -46,7 +63,19 @@ class DictationImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        session.start(restarting)
+        // A restart is the same session only if it is still the same field: browsers
+        // also report a move between two fields of one page as a restart.
+        val field = fieldKey(attribute)
+        val sameField = field == sessionField
+        sessionField = field
+        session.start(restarting && sameField)
+        Log.i(tag, "input start: restarting=$restarting sameField=$sameField recording=${recorder.isRunning} " +
+            "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
+    }
+
+    /** What the app tells us about the field, without its content. */
+    private fun fieldKey(info: EditorInfo?): List<Any?>? = info?.run {
+        listOf(packageName, fieldId, fieldName, inputType, imeOptions, privateImeOptions, hintText?.toString(), label?.toString())
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -66,6 +95,7 @@ class DictationImeService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
+        Log.i(tag, "input view finished: finishingInput=$finishingInput recording=${recorder.isRunning}")
         if (recorder.isRunning) { recorder.cancel(); Log.i(tag, "cancelled: input view finished") }
         super.onFinishInputView(finishingInput)
     }
@@ -75,7 +105,7 @@ class DictationImeService : InputMethodService() {
         super.onFinishInput()
     }
 
-    override fun onDestroy() { recorder.cancel(); super.onDestroy() }
+    override fun onDestroy() { unregisterReceiver(screenOff); recorder.cancel(); super.onDestroy() }
 
     private fun startRecording() {
         if (recorder.isRunning) return
