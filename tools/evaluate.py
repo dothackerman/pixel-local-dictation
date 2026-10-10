@@ -62,6 +62,11 @@ def punct_case_issues(ref, hyp):
     return abs(marks(ref) - marks(hyp)) + lower_starts
 
 
+def secs(chunk):
+    """Decode time of a chunk: the laptop writes decodeSeconds, LabTest writes decodeMs."""
+    return chunk["decodeSeconds"] if "decodeSeconds" in chunk else chunk.get("decodeMs", 0) / 1000.0
+
+
 def score_takes(report):
     takes_map = json.load(open(os.path.join(ROOT, "corpus", "takes.json")))
     refs = references()
@@ -82,8 +87,8 @@ def score_takes(report):
                      "errorsPrimary": counts[0], "errorsSpread": max(counts) - min(counts),
                      "termsMissed": missed, "termsTotal": len(terms), "punctCase": punct_case_issues(ref, hyp),
                      "chunks": len(chunks), "lid": t.get("lid", ""),
-                     "rtf": (sum(c["decodeSeconds"] for c in chunks) / t["audioSeconds"]) if chunks and t.get("audioSeconds") else None,
-                     "lastChunkSeconds": chunks[-1]["decodeSeconds"] if chunks else None})
+                     "rtf": (sum(secs(c) for c in chunks) / t["audioSeconds"]) if chunks and t.get("audioSeconds") else None,
+                     "lastChunkSeconds": secs(chunks[-1]) if chunks else None})
     return rows
 
 
