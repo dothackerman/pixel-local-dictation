@@ -8,7 +8,8 @@ Reports come from tools/replay.py. Prints one row per take and decode path, and 
 row from the raw output recorded in docs/baseline.md.
 
 Normalisation before counting: lower case, punctuation removed, hyphens become spaces,
-spoken numbers and ordinals become digits, gigabyte(s) becomes gb. Names and numbers
+spoken numbers below 1000 and ordinals up to twelfth become digits, gigabyte(s) becomes gb,
+percent becomes %, a few British/American spelling pairs are treated as equal. Names and numbers
 are also reported on their own, because one wrong name matters more than its word count.
 """
 import json, os, re, sys
@@ -31,17 +32,76 @@ NUMBERS = {"de": ["halb 3", "3 oktober", "12 november", "16 gb", "gleis 4", "vor
            "en": ["half past 2", "3 of october", "12 of november", "16 gb", "platform 4", "before 9"]}
 
 
+def _german_numbers():
+    ones = ["", "ein", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun"]
+    teens = ["zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn", "siebzehn", "achtzehn", "neunzehn"]
+    tens = ["", "", "zwanzig", "dreissig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+    def below100(n):
+        if n < 10: return ones[n]
+        if n < 20: return teens[n - 10]
+        return tens[n // 10] if n % 10 == 0 else ones[n % 10] + "und" + tens[n // 10]
+    out = {}
+    for n in range(21, 1000):
+        h, r = divmod(n, 100)
+        if h:
+            out[ones[h] + "hundert" + below100(r)] = n
+            if h == 1: out["hundert" + below100(r)] = n
+        else:
+            out[below100(n)] = n
+    return out
+
+
+GERMAN_COMPOUNDS = _german_numbers()
+# Ordinals in dates: "fünfzehnten", "einundzwanzigsten" -> 15, 21
+GERMAN_COMPOUNDS.update({w + "ten": n for w, n in list(NUM["de"].items()) if 13 <= n <= 19 and not w.endswith("ten")})
+GERMAN_COMPOUNDS.update({w + "sten": n for w, n in list(GERMAN_COMPOUNDS.items()) if 20 < n <= 31 and not w.endswith("ten")})
+GERMAN_COMPOUNDS.update({"zwanzigsten": 20, "dreissigsten": 30})
+NUM["en"].update(thirteenth=13, fourteenth=14, fifteenth=15, sixteenth=16, seventeenth=17, eighteenth=18,
+                 nineteenth=19, twentieth=20, thirtieth=30)
+EN_ORDINAL_UNITS = dict(first=1, second=2, third=3, fourth=4, fifth=5, sixth=6, seventh=7, eighth=8, ninth=9)
+EN_TENS = dict(twenty=20, thirty=30, forty=40, fifty=50, sixty=60, seventy=70, eighty=80, ninety=90)
+EN_UNITS = dict(one=1, two=2, three=3, four=4, five=5, six=6, seven=7, eight=8, nine=9)
+# Spelling variants that are not recognition errors.
+VARIANTS = {"flavour": "flavor", "tyres": "tires", "colour": "color", "grey": "gray", "café": "cafe",
+            "gigabyte": "gb", "gigabytes": "gb", "percent": "%", "prozent": "%"}
+
+
+def _english_numbers(words):
+    """twenty three -> 23, two hundred and fifty -> 250, on the token list."""
+    out, i = [], 0
+    while i < len(words):
+        w, n, k = words[i], None, i
+        if w in EN_UNITS and k + 1 < len(words) and words[k + 1] == "hundred":
+            n, k = EN_UNITS[w] * 100, k + 2
+            if k < len(words) and words[k] == "and" and k + 1 < len(words) and (words[k + 1] in EN_TENS or words[k + 1] in NUM["en"]):
+                k += 1
+        if k < len(words) and words[k] in EN_TENS:
+            n, k = (n or 0) + EN_TENS[words[k]], k + 1
+            if k < len(words) and (words[k] in EN_UNITS or words[k] in EN_ORDINAL_UNITS):
+                n, k = n + {**EN_UNITS, **EN_ORDINAL_UNITS}[words[k]], k + 1
+        elif n is not None and k < len(words) and words[k] in NUM["en"] and not words[k].endswith(("st", "nd", "rd", "th")):
+            n, k = n + NUM["en"][words[k]], k + 1
+        if n is None:
+            out.append(w); i += 1
+        else:
+            out.append(str(n)); i = k
+    return out
+
+
 def normalise(text, lang):
     t = text.lower().replace("-", " ").replace("ß", "ss")  # Swiss spelling is not an error (R7)
     t = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", t)
     t = re.sub(r"(?<=\d)['’](?=\d)", "", t)  # 1'500 -> 1500
-    t = re.sub(r"[^\w\s]", " ", t)
+    t = t.replace("%", " % ")
+    t = re.sub(r"\b([ap])\.?\s?m\b\.?", r"\1m", t)  # p.m. / p m -> pm
+    t = re.sub(r"[^\w\s%]", " ", t)
     t = re.sub(r"(\d)([^\W\d])", r"\1 \2", t)  # "16gb" -> "16 gb"
-    words = []
-    for w in t.split():
-        w = {"gigabyte": "gb", "gigabytes": "gb"}.get(w, w)
-        words.append(str(NUM[lang].get(w, w)))
-    return words
+    words = [VARIANTS.get(w, w) for w in t.split()]
+    if lang == "en":
+        words = _english_numbers(words)
+    else:
+        words = [str(GERMAN_COMPOUNDS.get(w, w)) for w in words]
+    return [str(NUM[lang].get(w, w)) for w in words]
 
 
 def errors(ref, hyp):
