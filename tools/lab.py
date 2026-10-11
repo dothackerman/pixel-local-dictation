@@ -10,6 +10,8 @@
                                           stage 2: budget on the phone result, parity with the laptop report, ledger
   tools/lab.py adopt-baseline REPORT.json freeze a stage-1 report of variants/baseline.json as the comparison point
   tools/lab.py ledger [--all]             ranking of kept and discarded experiments
+  tools/lab.py dictionary                 write corpus/lab/dictionary.txt (names of the ten scripts) for hotword variants
+  tools/lab.py range NAME...              span of total errors over ledger variants: is a knob family worth searching?
 
 Paths are fixed: reports in corpus/lab/runs/<name>-<commit>.json, the ledger in corpus/lab/results.tsv,
 the frozen baseline report in corpus/lab/baseline.json (written by the setup session from
@@ -19,7 +21,7 @@ import argparse, datetime, hashlib, json, os, re, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-import evaluate, variant as variant_mod  # noqa: E402
+import evaluate, score, variant as variant_mod  # noqa: E402
 
 PY = os.path.join(ROOT, "models", "venv", "bin", "python")
 LAB = os.path.join(ROOT, "corpus", "lab")
@@ -130,6 +132,9 @@ def run(args):
            "--models", os.path.join(ROOT, "models")]
     if args.guard:
         cmd += ["--guard", os.path.join(ROOT, "models", "guard")]
+    cmd += ["--hotwords-dir", LAB]
+    if variant_mod.is_dictionary(v) and not os.path.isfile(os.path.join(LAB, v["hotwords"]["file"])):
+        fail(f"hotwords file corpus/lab/{v['hotwords']['file']} missing; tools/lab.py dictionary writes dictionary.txt")
     print("decoding:", " ".join(os.path.relpath(x, ROOT) if x.startswith(ROOT) else x for x in cmd), file=sys.stderr)
     r = subprocess.run(cmd, cwd=ROOT)
     row = {"when": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "commit": c, "variant": v["name"], "note": args.note or v["description"]}
@@ -145,16 +150,21 @@ def run(args):
                 "laptop_rtf": fmt(s["laptop_rtf_median"]), "laptop_last_s": fmt(s["laptop_last_chunk_max_s"])})
     if os.path.exists(BASELINE) and os.path.abspath(out) != os.path.abspath(BASELINE):
         base = json.load(open(BASELINE, encoding="utf-8"))
-        verdict, reasons, cmp = evaluate.compare(base, report)
+        hot = os.path.join(LAB, v["hotwords"]["file"]) if variant_mod.is_dictionary(v) else None
+        verdict, reasons, cmp = evaluate.compare(base, report, hot)
         print()
         print("per-take error delta (candidate minus baseline):")
         for f, d in cmp.get("per_take_delta", {}).items():
             print(f"  {f}: {d:+.2f}")
-        print(f"gain: {cmp.get('gain')}\nwins: {cmp.get('wins')}\nlosses: {cmp.get('losses')}\nguard_checked: {cmp.get('guard_checked')}")
+        for k in ("rule", "gain", "terms_gain", "other_errors_base", "other_errors", "guard_inserts", "wins", "losses", "guard_checked"):
+            if k in cmp:
+                print(f"{k}: {cmp.get(k)}")
         print(f"stage1: {verdict}")
         print("reasons: " + ("; ".join(reasons) if reasons else "-"))
         row.update({"stage1": verdict, "gain": fmt(cmp.get("gain")), "wins": cmp.get("wins"), "losses": cmp.get("losses"),
                     "status": "pending-phone" if verdict == "pass" else "discard"})
+        if cmp.get("rule") == "dictionary":
+            row["note"] = f"[dictionary: terms +{cmp['terms_gain']}, other {cmp['other_errors_base']}->{cmp['other_errors']}, inserts {cmp['guard_inserts']}] " + row["note"]
     else:
         print("stage1: baseline (no comparison)")
         row.update({"stage1": "baseline", "status": "baseline"})
@@ -171,8 +181,14 @@ def phone_prepare(args):
     os.makedirs(os.path.join(dest, "model"))
     src = os.path.join(ROOT, "models", v["model"])
     for f in os.listdir(src):
-        if f.endswith(".onnx") or f.endswith(".txt") or f.endswith(".weights"):
+        if f.endswith((".onnx", ".txt", ".weights", ".vocab", ".json", ".data")) and os.path.isfile(os.path.join(src, f)):
             os.link(os.path.join(src, f), os.path.join(dest, "model", f))
+    tok = os.path.join(src, "tokenizer")   # Qwen3 keeps its tokenizer files in a subdirectory
+    if os.path.isdir(tok):
+        for f in os.listdir(tok):
+            os.link(os.path.join(tok, f), os.path.join(dest, "model", f))
+    if variant_mod.is_dictionary(v):
+        shutil.copyfile(os.path.join(LAB, v["hotwords"]["file"]), os.path.join(dest, v["hotwords"]["file"]))
     if v["lid"]["model"]:
         os.makedirs(os.path.join(dest, "lid"))
         lsrc = os.path.join(ROOT, "models", v["lid"]["model"])
@@ -228,6 +244,42 @@ def phone_score(args):
     print(f"ledger updated: {row['status']}")
 
 
+def dictionary(args):
+    """Writes corpus/lab/dictionary.txt: the names and terms of the ten scripts without digits, one per line.
+    This is the mechanism test of ADR-005: are names recognised when they are in the user's list."""
+    words = []
+    for _, _, terms in evaluate.references().values():
+        for t in terms:
+            # Names only: a term whose normalised form contains a digit is a number, date or amount.
+            normalised = " ".join(score.normalise(t, "de") + score.normalise(t, "en"))
+            if not any(ch.isdigit() for ch in normalised) and t not in words:
+                words.append(t)
+    os.makedirs(LAB, exist_ok=True)
+    path = os.path.join(LAB, "dictionary.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(words) + "\n")
+    print(f"{len(words)} terms -> {os.path.relpath(path, ROOT)}")
+
+
+def range_cmd(args):
+    """Range-finding: the span of total errors over the named ledger variants. A family whose span
+    stays inside the keep margin is not an experiment."""
+    rows = {r["variant"]: r for r in ledger_rows()}
+    vals = []
+    for name in args.variants:
+        r = rows.get(name)
+        if not r or not r.get("total_errors"):
+            print(f"{name}: no stage-1 row"); continue
+        vals.append((float(r["total_errors"]), name))
+    if not vals:
+        return
+    lo, hi = min(vals), max(vals)
+    base = float(rows["baseline"]["total_errors"]) if "baseline" in rows else None
+    print(f"span {lo[0]:.2f} ({lo[1]}) .. {hi[0]:.2f} ({hi[1]}) = {hi[0] - lo[0]:.2f} words; keep margin {evaluate.MIN_TOTAL_GAIN}"
+          + (f"; best gain against baseline {base - lo[0]:.2f}" if base is not None else ""))
+    print("verdict: " + ("worth searching" if base is not None and base - lo[0] >= evaluate.MIN_TOTAL_GAIN else "inside the margin: not an experiment"))
+
+
 def adopt_baseline(args):
     report = json.load(open(args.report, encoding="utf-8"))
     if report.get("variant", {}).get("name") != "baseline":
@@ -258,10 +310,12 @@ def main():
     pp = sub.add_parser("phone-prepare"); pp.add_argument("variant")
     ps = sub.add_parser("phone-score"); ps.add_argument("result"); ps.add_argument("variant")
     ab = sub.add_parser("adopt-baseline"); ab.add_argument("report")
+    sub.add_parser("dictionary")
+    rg = sub.add_parser("range"); rg.add_argument("variants", nargs="+")
     lg = sub.add_parser("ledger"); lg.add_argument("--all", action="store_true")
     a = p.parse_args()
     {"check": lambda a: check(), "run": run, "phone-prepare": phone_prepare, "phone-score": phone_score,
-     "adopt-baseline": adopt_baseline, "ledger": ledger}[a.cmd](a)
+     "adopt-baseline": adopt_baseline, "ledger": ledger, "dictionary": dictionary, "range": range_cmd}[a.cmd](a)
 
 
 if __name__ == "__main__":

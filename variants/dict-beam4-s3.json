@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "dict-beam4-s3",
+  "description": "dictionary mechanism test: shipped model, modified beam search 4 paths, hotwords score 3.0, no-speech gate",
+  "family": "parakeet",
+  "model": "parakeet-v3-matmul8",
+  "threads": 4,
+  "decoding": {
+    "method": "modified_beam_search",
+    "max_active_paths": 4
+  },
+  "hotwords": {
+    "file": "dictionary.txt",
+    "score": 3.0
+  },
+  "post": {
+    "skip_silent_chunks": true
+  }
+}

@@ -8,7 +8,8 @@ Normalisation and word error counting are tools/score.py's, unchanged.
 
 Usage:
   tools/evaluate.py takes REPORT.json                  per-take table and totals
-  tools/evaluate.py compare BASELINE.json CANDIDATE.json  stage-1 keep rule (docs/autoresearch.md)
+  tools/evaluate.py compare BASELINE.json CANDIDATE.json [HOTWORDS.txt]  stage-1 keep rule; with a hotwords
+                                                    file the dictionary rule applies (docs/autoresearch.md)
   tools/evaluate.py phone RESULT.json [LAPTOP_REPORT.json]  phone budget and text parity
 Prints a summary block of "key: value" lines last; tools/lab.py reads it. Do not edit during a
 loop: checksummed by tools/lab.py check. Quirks of the normaliser are logged, not fixed.
@@ -27,6 +28,11 @@ MAX_TERMS_LOSS = 1        # terms missed may grow by at most this many
 MAX_PUNCT_LOSS = 2        # punctuation/case issues may grow by at most this many
 MAX_GUARD_LOSS = 1.0      # guard word error rate per language may grow by at most this many points
 MAX_SILENCE_CHARS = 0     # letters or digits produced on 5 s of silence or faint noise
+
+# Dictionary variants (ADR-005, schema 2): judged on the mechanism, not on general accuracy.
+DICT_MIN_TERMS_GAIN = 5   # dictionary terms recovered, out of the baseline's misses
+DICT_MAX_OTHER_LOSS = 3   # errors outside dictionary words may grow by at most this many
+DICT_MAX_GUARD_INSERTS = 1  # dictionary words appearing in public clips where none is spoken
 
 # Phone budget (agreed 2026-10-10). Memory is a flag, not a gate (review finding 9).
 MAX_RTF = 0.30
@@ -117,6 +123,51 @@ def score_guard(report):
     return out
 
 
+def dictionary_words(path):
+    """Normalised words of a hotwords file, for the non-dictionary error count and the guard insert check."""
+    words = set()
+    for line in open(path, encoding="utf-8"):
+        term = line.split(" :")[0].strip()
+        if term:
+            for lang in ("de", "en"):
+                words.update(score.normalise(term, lang))
+    return {w for w in words if not any(ch.isdigit() for ch in w)}
+
+
+def other_errors(report, words):
+    """Word errors on the ten takes with the dictionary words removed from reference and hypothesis."""
+    takes_map = json.load(open(os.path.join(ROOT, "corpus", "takes.json")))
+    refs = references()
+    total = 0.0
+    for t in report["takes"]:
+        sid = takes_map.get(t["file"])
+        if sid is None:
+            continue
+        lang, ref, _ = refs[sid]
+        r = [w for w in score.normalise(ref, lang) if w not in words]
+        hyps = [t.get("text") or ""] + [j.get("text") or "" for j in t.get("jitter", [])]
+        total += sum(score.errors(r, [w for w in score.normalise(h, lang) if w not in words]) for h in hyps) / len(hyps)
+    return round(total, 2)
+
+
+def guard_inserts(report, words):
+    """Dictionary words in guard hypotheses that are not in the clip's reference."""
+    if not report.get("guard"):
+        return None
+    ref_by_id = {}
+    with open(os.path.join(ROOT, "models", "guard", "refs.tsv"), encoding="utf-8") as f:
+        next(f)
+        for line in f:
+            cid, lang, secs, ref = line.rstrip("\n").split("\t")
+            ref_by_id[cid] = (lang, ref)
+    n = 0
+    for g in report["guard"]:
+        lang, ref = ref_by_id[g["id"]]
+        r = set(score.normalise(ref, lang))
+        n += sum(1 for w in score.normalise(g["text"], lang) if w in words and w not in r)
+    return n
+
+
 def totals(rows):
     t = {}
     for r in rows:
@@ -166,8 +217,10 @@ def print_takes(report):
     return s
 
 
-def compare(base_report, cand_report):
-    """Stage-1 keep rule. Returns (verdict, reasons, summary)."""
+def compare(base_report, cand_report, hotwords_path=None):
+    """Stage-1 keep rule. Returns (verdict, reasons, summary). With hotwords_path the dictionary rule applies."""
+    if hotwords_path:
+        return compare_dictionary(base_report, cand_report, hotwords_path)
     b_rows, c_rows = score_takes(base_report), score_takes(cand_report)
     b, c = {r["file"]: r for r in b_rows}, {r["file"]: r for r in c_rows}
     reasons = []
@@ -200,6 +253,38 @@ def compare(base_report, cand_report):
     per_take = {f: round(c[f]["errors"] - b[f]["errors"], 2) for f in sorted(b)}
     out = {"verdict": "pass" if ok else "fail", "gain": gain, "wins": wins, "losses": losses,
            "guard_checked": guard_checked, "per_take_delta": per_take, "reasons": reasons, "candidate": cs, "baseline": bs}
+    return out["verdict"], reasons, out
+
+
+def compare_dictionary(base_report, cand_report, hotwords_path):
+    """Dictionary rule: terms recovered, other words not worse, no insertions in the guard, silence clean."""
+    b_rows, c_rows = score_takes(base_report), score_takes(cand_report)
+    bs, cs = summary(base_report, b_rows), summary(cand_report, c_rows)
+    words = dictionary_words(hotwords_path)
+    b_other, c_other = other_errors(base_report, words), other_errors(cand_report, words)
+    inserts = guard_inserts(cand_report, words)
+    reasons, ok = [], True
+    terms_gain = bs["terms_missed"] - cs["terms_missed"]
+    if terms_gain < DICT_MIN_TERMS_GAIN:
+        ok = False; reasons.append(f"terms recovered {terms_gain} < {DICT_MIN_TERMS_GAIN}")
+    if c_other - b_other > DICT_MAX_OTHER_LOSS:
+        ok = False; reasons.append(f"errors outside dictionary words {b_other} -> {c_other}")
+    if inserts is None:
+        ok = False; reasons.append("guard not run: a dictionary variant needs --guard for the false-insertion check")
+    elif inserts > DICT_MAX_GUARD_INSERTS:
+        ok = False; reasons.append(f"dictionary words inserted into public clips: {inserts}")
+    if cs["silence_chars"] > MAX_SILENCE_CHARS:
+        ok = False; reasons.append(f"text on silence or faint noise ({cs['silence_chars']} characters)")
+    for lang in ("de", "en"):
+        if bs[f"guard_{lang}_wer"] is not None and cs[f"guard_{lang}_wer"] is not None \
+                and cs[f"guard_{lang}_wer"] - bs[f"guard_{lang}_wer"] > MAX_GUARD_LOSS:
+            ok = False; reasons.append(f"guard {lang} {bs[f'guard_{lang}_wer']} -> {cs[f'guard_{lang}_wer']}")
+    b, c = {r["file"]: r for r in b_rows}, {r["file"]: r for r in c_rows}
+    out = {"verdict": "pass" if ok else "fail", "rule": "dictionary", "gain": round(bs["total_errors"] - cs["total_errors"], 2),
+           "terms_gain": terms_gain, "other_errors_base": b_other, "other_errors": c_other, "guard_inserts": inserts,
+           "wins": sum(1 for f in b if c[f]["errors"] < b[f]["errors"]), "losses": sum(1 for f in b if c[f]["errors"] > b[f]["errors"]),
+           "guard_checked": inserts is not None, "per_take_delta": {f: round(c[f]["errors"] - b[f]["errors"], 2) for f in sorted(b)},
+           "reasons": reasons, "candidate": cs, "baseline": bs}
     return out["verdict"], reasons, out
 
 
@@ -239,13 +324,14 @@ def main():
         print_takes(json.load(open(sys.argv[2], encoding="utf-8")))
     elif cmd == "compare":
         base = json.load(open(sys.argv[2], encoding="utf-8")); cand = json.load(open(sys.argv[3], encoding="utf-8"))
-        verdict, reasons, out = compare(base, cand)
+        verdict, reasons, out = compare(base, cand, sys.argv[4] if len(sys.argv) > 4 else None)
         print("per-take error delta (candidate minus baseline):")
         for f, d in out.get("per_take_delta", {}).items():
             print(f"  {f}: {d:+.2f}")
         print()
-        for k in ("gain", "wins", "losses", "guard_checked"):
-            print(f"{k}: {out.get(k)}")
+        for k in ("rule", "gain", "terms_gain", "other_errors_base", "other_errors", "guard_inserts", "wins", "losses", "guard_checked"):
+            if k in out:
+                print(f"{k}: {out.get(k)}")
         for k, v in out.get("candidate", {}).items():
             print(f"{k}: {v}")
         print(f"stage1: {verdict}")

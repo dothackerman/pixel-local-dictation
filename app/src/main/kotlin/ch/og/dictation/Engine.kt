@@ -37,13 +37,16 @@ class ModelFiles(val assets: AssetManager?, private val dir: String, private val
     }
 
     fun tokens(): String = "$dir/" + requireNotNull(names.singleOrNull { it.endsWith("tokens.txt") }) { "no tokens.txt in $dir" }
+    fun suffixed(suffix: String): String = "$dir/" + requireNotNull(names.singleOrNull { it.endsWith(suffix) }) { "no unique *$suffix in $dir" }
     fun file(name: String): String = "$dir/$name"
+    /** The directory itself (Qwen3's tokenizer files live next to the ONNX files). */
+    fun root(): String = dir
 }
 
 /** One sherpa-onnx offline recognizer (Parakeet transducer or Whisper), configured from a [Variant]. */
 class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val label: String) : Recognizer {
     companion object {
-        fun parakeet(v: Variant, m: ModelFiles): SherpaRecognizer {
+        fun parakeet(v: Variant, m: ModelFiles, hotwordsPath: String = ""): SherpaRecognizer {
             val config = OfflineRecognizerConfig()
             config.modelConfig.transducer.encoder = m.onnx("encoder")
             config.modelConfig.transducer.decoder = m.onnx("decoder")
@@ -54,7 +57,39 @@ class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val la
             config.decodingMethod = v.decoding.method
             config.maxActivePaths = v.decoding.maxActivePaths
             config.blankPenalty = v.decoding.blankPenalty
+            if (hotwordsPath.isNotEmpty()) {
+                // Dictionary (ADR-005): hotwords need the model's BPE vocabulary next to the ONNX files.
+                config.hotwordsFile = hotwordsPath
+                config.hotwordsScore = v.hotwords.score
+                config.modelConfig.modelingUnit = "bpe"
+                config.modelConfig.bpeVocab = m.suffixed(".vocab")
+            }
             return load(config, m, "parakeet")
+        }
+
+        fun qwen3(v: Variant, m: ModelFiles, hotwordsPath: String = ""): SherpaRecognizer {
+            val config = OfflineRecognizerConfig()
+            config.modelConfig.qwen3Asr.convFrontend = m.onnx("conv_frontend")
+            config.modelConfig.qwen3Asr.encoder = m.onnx("encoder")
+            config.modelConfig.qwen3Asr.decoder = m.onnx("decoder")
+            config.modelConfig.qwen3Asr.tokenizer = m.root()
+            if (hotwordsPath.isNotEmpty()) {
+                config.modelConfig.qwen3Asr.hotwords = File(hotwordsPath).readLines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
+            }
+            config.modelConfig.numThreads = v.threads
+            return load(config, m, "qwen3")
+        }
+
+        fun cohere(v: Variant, m: ModelFiles, language: String = v.cohere.language): SherpaRecognizer {
+            val config = OfflineRecognizerConfig()
+            config.modelConfig.cohereTranscribe.encoder = m.onnx("encoder")
+            config.modelConfig.cohereTranscribe.decoder = m.onnx("decoder")
+            config.modelConfig.cohereTranscribe.language = language
+            config.modelConfig.cohereTranscribe.usePunct = v.cohere.usePunct
+            config.modelConfig.cohereTranscribe.useItn = v.cohere.useItn
+            config.modelConfig.tokens = m.tokens()
+            config.modelConfig.numThreads = v.threads
+            return load(config, m, "cohere")
         }
 
         fun whisper(v: Variant, m: ModelFiles): SherpaRecognizer {
@@ -107,12 +142,12 @@ class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val la
 }
 
 /**
- * Canary needs the language as input: a Whisper-based spoken-language identifier looks at the
- * first chunk of each take (or its first probe seconds) and picks one of two recognizers.
- * Twin of class Canary in tools/pipeline.py.
+ * Canary and Cohere need the language as input: a Whisper-based spoken-language identifier looks at
+ * the first chunk of each take (or its first probe seconds) and picks one of two recognizers.
+ * Twin of class LanguageSwitched in tools/pipeline.py.
  */
-class CanaryRecognizer(private val v: Variant, model: ModelFiles, lid: ModelFiles) : Recognizer {
-    private val recognizers = mapOf("de" to SherpaRecognizer.canary(v, model, "de"), "en" to SherpaRecognizer.canary(v, model, "en"))
+class LanguageSwitchedRecognizer(private val v: Variant, lid: ModelFiles, build: (String) -> SherpaRecognizer) : Recognizer {
+    private val recognizers = mapOf("de" to build("de"), "en" to build("en"))
     private val identifier: SpokenLanguageIdentification
     @Volatile private var language = v.lid.fallback
 
@@ -167,11 +202,11 @@ class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : S
         Vad(vadModel.assets, config).also { vad = it }
     }
 
-    override fun accept(samples: FloatArray): List<FloatArray> {
-        val out = ArrayList<FloatArray>()
-        chunker.append(samples)?.let(out::add)
+    override fun accept(samples: FloatArray): List<Chunk> {
+        val out = ArrayList<Chunk>()
         val d = vad()
         d.acceptWaveform(samples)
+        chunker.append(samples, d.isSpeechDetected())?.let(out::add)
         while (!d.empty()) {
             val s = d.front(); d.pop()
             chunker.onSpeechEnd(s.start.toLong() + s.samples.size)?.let(out::add)
@@ -179,7 +214,7 @@ class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : S
         return out
     }
 
-    override fun flush(): List<FloatArray> = listOfNotNull(chunker.rest())
+    override fun flush(): List<Chunk> = listOfNotNull(chunker.rest(vad?.isSpeechDetected() ?: false))
 
     /** A fresh detector per take, so its sample positions start at zero again. */
     override fun reset() {
@@ -190,11 +225,14 @@ class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : S
 
 /** Builds the pipeline a [Variant] describes; shared by the daily app (assets) and LabTest (files). */
 object Pipeline {
-    fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?): Recognizer {
+    fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = ""): Recognizer {
         val inner: Recognizer = when (v.family) {
-            "parakeet" -> SherpaRecognizer.parakeet(v, model)
+            "parakeet" -> SherpaRecognizer.parakeet(v, model, hotwordsPath)
             "whisper" -> SherpaRecognizer.whisper(v, model)
-            "canary" -> CanaryRecognizer(v, model, requireNotNull(lid) { "canary needs the language identifier's files" })
+            "canary" -> LanguageSwitchedRecognizer(v, requireNotNull(lid) { "canary needs the language identifier's files" }) { SherpaRecognizer.canary(v, model, it) }
+            "qwen3" -> SherpaRecognizer.qwen3(v, model, hotwordsPath)
+            "cohere" -> if (lid != null && v.cohere.language.isEmpty()) LanguageSwitchedRecognizer(v, lid) { SherpaRecognizer.cohere(v, model, it) }
+                        else SherpaRecognizer.cohere(v, model)
             else -> throw IllegalArgumentException(v.family)
         }
         return if (v.post.swissSs) SwissSpelling(inner) else inner
@@ -204,7 +242,7 @@ object Pipeline {
         when (r) {
             is SwissSpelling -> release(r.inner)
             is SherpaRecognizer -> r.release()
-            is CanaryRecognizer -> r.release()
+            is LanguageSwitchedRecognizer -> r.release()
         }
     }
 }

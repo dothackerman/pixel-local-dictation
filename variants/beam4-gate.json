@@ -1,0 +1,10 @@
+{
+  "schema": 2,
+  "name": "beam4-gate",
+  "description": "modified beam search 4 paths with the no-speech gate, no dictionary: isolates beam search from the silence failure",
+  "family": "parakeet",
+  "model": "parakeet-v3-matmul8",
+  "threads": 4,
+  "decoding": {"method": "modified_beam_search", "max_active_paths": 4},
+  "post": {"skip_silent_chunks": true}
+}

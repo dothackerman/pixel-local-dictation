@@ -17,8 +17,8 @@ class TakeTranscriberTest {
 
     /** Every fed chunk is a segment; flush returns one pending piece. */
     private class ChunkSegmenter(private val pending: FloatArray? = null) : Segmenter {
-        override fun accept(samples: FloatArray) = listOf(samples)
-        override fun flush() = listOfNotNull(pending)
+        override fun accept(samples: FloatArray) = listOf(Chunk(samples, speech = true))
+        override fun flush() = listOfNotNull(pending?.let { Chunk(it, speech = true) })
         override fun reset() {}
     }
 
@@ -63,6 +63,19 @@ class TakeTranscriberTest {
         assertTrue(done!!.isFailure)
     }
 
+    @Test fun silentChunksAreSkippedOnlyWithTheGate() {
+        class Mixed : Segmenter {
+            override fun accept(samples: FloatArray) = listOf(Chunk(seg(1), speech = true), Chunk(seg(2), speech = false))
+            override fun flush() = listOf(Chunk(seg(4), speech = false))
+            override fun reset() {}
+        }
+        var gated: Result<String>? = null; var open: Result<String>? = null
+        TakeTranscriber({ bySample }, Mixed(), direct, direct, Variant.Post(skipSilentChunks = true)) {}.also { it.feed(seg(0)); it.finish { gated = it } }
+        TakeTranscriber({ bySample }, Mixed(), direct, direct, Variant.Post(skipSilentChunks = false)) {}.also { it.feed(seg(0)); it.finish { open = it } }
+        assertEquals("eins", gated!!.getOrThrow())
+        assertEquals("eins zwei vier", open!!.getOrThrow())
+    }
+
     @Test fun swissSpellingReplacesEszett() {
         val r = SwissSpelling(FakeRecognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
         assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))
@@ -73,17 +86,17 @@ class TakeTranscriberTest {
         c.append(FloatArray(8) { it.toFloat() })                 // positions 0..7
         assertNull("too short: pause after 6 samples", c.onSpeechEnd(6))
         c.append(FloatArray(8) { 8f + it })                      // positions 8..15
-        assertArrayEquals(FloatArray(14) { it.toFloat() }, c.onSpeechEnd(12), 0f)   // 12 + pad
+        assertArrayEquals(FloatArray(14) { it.toFloat() }, c.onSpeechEnd(12)!!.samples, 0f)   // 12 + pad
         c.append(FloatArray(4) { 16f + it })                     // positions 16..19
         assertNull(c.onSpeechEnd(18))
-        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), c.rest(), 0f)
+        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), c.rest()!!.samples, 0f)
         assertNull(c.rest())
     }
 
     @Test fun padNeverReachesBeyondRecordedAudio() {
         val c = PauseChunker(minSamples = 4, padSamples = 100)
         c.append(FloatArray(6) { it.toFloat() })
-        assertArrayEquals(FloatArray(6) { it.toFloat() }, c.onSpeechEnd(5), 0f)
+        assertArrayEquals(FloatArray(6) { it.toFloat() }, c.onSpeechEnd(5)!!.samples, 0f)
         assertNull(c.rest())
     }
 }

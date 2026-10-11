@@ -1,0 +1,9 @@
+{
+  "schema": 2,
+  "name": "qwen3",
+  "description": "Qwen3-ASR 0.6B INT8 via sherpa-onnx: language-model decoder, detects the language itself, no dictionary",
+  "family": "qwen3",
+  "model": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+  "threads": 4,
+  "post": {"skip_silent_chunks": true}
+}

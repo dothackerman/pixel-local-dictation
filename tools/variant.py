@@ -6,12 +6,13 @@ laptop runner (tools/pipeline.py) and by the phone (app: Variant.kt), so every k
 Kotlin twin. The loop may change values, never add keys: unknown keys are rejected. Changing
 this file is a setup-session change (it is checksummed by tools/lab.py check).
 
-Schema 1. Defaults are the shipped app (0.2.2, ADR-003).
+Schema 2 (2026-10-11): adds the no-speech gate, hotwords (dictionary), and the qwen3 and cohere
+families. Schema 1 files still load. Defaults are the shipped app (0.2.2, ADR-003).
 """
 import json
 
-SCHEMA = 1
-FAMILIES = ("parakeet", "whisper", "canary")
+SCHEMA = 2
+FAMILIES = ("parakeet", "whisper", "canary", "qwen3", "cohere")
 
 DEFAULT = {
     "schema": SCHEMA,
@@ -21,13 +22,19 @@ DEFAULT = {
     # Directory name under models/ on the laptop; pushed to files/lab/model on the phone.
     "model": "parakeet-v3-matmul8",
     "threads": 4,
-    # Transducer decoding (parakeet only). Whisper and Canary in this runtime are greedy-only.
+    # Transducer decoding (parakeet only). Whisper, Canary, Qwen3 and Cohere in this runtime are greedy-only.
     "decoding": {"method": "greedy_search", "max_active_paths": 4, "blank_penalty": 0.0},
     # Whisper only. language "" = the model detects the language of each chunk itself.
     "whisper": {"language": "", "tail_paddings": -1},
-    # Canary only: spoken-language identification on the first chunk of a take decides the language
+    # Cohere only. language "" = decided per take by lid (required then); or "de" / "en" fixed.
+    "cohere": {"language": "", "use_punct": True, "use_itn": True},
+    # Canary and Cohere: spoken-language identification on the first chunk of a take decides the language
     # for the whole take. probe_seconds 0 = use the whole first chunk. Languages outside de/en fall back.
     "lid": {"model": "", "probe_seconds": 0.0, "fallback": "en"},
+    # Dictionary (ADR-005): a file with one name or term per line, read from corpus/lab/ on the laptop and
+    # files/lab/ on the phone. parakeet needs modified_beam_search for it; qwen3 takes it as a prompt
+    # (score ignored). Judged by the dictionary metrics, not the general keep rule.
+    "hotwords": {"file": "", "score": 1.5},
     # Cutting = app's PauseChunker + silero VAD. A chunk ends pad_s after speech ended at a pause
     # (>= min_silence_s of silence), once it is at least min_chunk_s long. The VAD declares a speech
     # end after vad_max_speech_s of continuous speech. max_chunk_s > 0 adds a hard cut when a chunk
@@ -36,17 +43,20 @@ DEFAULT = {
     "cutting": {"min_chunk_s": 20.0, "pad_s": 0.4, "min_silence_s": 0.8, "min_speech_s": 0.25,
                 "vad_max_speech_s": 20.0, "max_chunk_s": 0.0},
     # Closed set of structural text operations. No lexical substitution exists on purpose.
-    "post": {"swiss_ss": True, "seam_capitalize": False},
+    # skip_silent_chunks: a chunk in which the VAD found no speech is not decoded at all (no-speech gate).
+    "post": {"swiss_ss": True, "seam_capitalize": False, "skip_silent_chunks": False},
 }
 
 _TYPES = {
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
+    "cohere.language": str, "cohere.use_punct": bool, "cohere.use_itn": bool,
     "lid.model": str, "lid.probe_seconds": float, "lid.fallback": str,
+    "hotwords.file": str, "hotwords.score": float,
     "cutting.min_chunk_s": float, "cutting.pad_s": float, "cutting.min_silence_s": float,
     "cutting.min_speech_s": float, "cutting.vad_max_speech_s": float, "cutting.max_chunk_s": float,
-    "post.swiss_ss": bool, "post.seam_capitalize": bool,
+    "post.swiss_ss": bool, "post.seam_capitalize": bool, "post.skip_silent_chunks": bool,
 }
 
 
@@ -72,6 +82,9 @@ def validate(v):
     """Returns a complete variant (defaults filled in) or raises VariantError."""
     if not isinstance(v, dict):
         raise VariantError("variant must be a JSON object")
+    for section in ("decoding", "whisper", "cohere", "lid", "hotwords", "cutting", "post"):
+        if section in v and not isinstance(v[section], dict):
+            raise VariantError(f"{section} must be an object")
     given = dict(_flat(v))
     unknown = sorted(set(given) - set(_TYPES))
     if unknown:
@@ -85,8 +98,9 @@ def validate(v):
             raise VariantError(f"{key}: expected {want.__name__}, got {type(val).__name__}")
         section, _, leaf = key.rpartition(".")
         (out[section] if section else out)[leaf] = val
-    if out["schema"] != SCHEMA:
+    if out["schema"] not in (1, SCHEMA):
         raise VariantError(f"schema {out['schema']} not supported, this runner knows {SCHEMA}")
+    out["schema"] = SCHEMA
     if out["family"] not in FAMILIES:
         raise VariantError(f"family must be one of {FAMILIES}")
     if not out["name"] or any(c in out["name"] for c in " /\\\t\n"):
@@ -104,26 +118,48 @@ def validate(v):
             raise VariantError(f"cutting.{k} must not be negative")
     if c["max_chunk_s"] and c["max_chunk_s"] < c["min_chunk_s"]:
         raise VariantError("cutting.max_chunk_s must be 0 or at least min_chunk_s")
-    if out["family"] == "whisper":
+    fam = out["family"]
+    if fam == "whisper":
         if not (0 < c["max_chunk_s"] <= 28):
             raise VariantError("whisper: cutting.max_chunk_s must be set and at most 28 (runtime drops audio beyond 30 s)")
         if out["whisper"]["language"] not in ("", "de", "en"):
             raise VariantError("whisper.language must be '', 'de' or 'en'")
-    if out["family"] == "canary":
+    if fam == "canary":
         if not out["lid"]["model"]:
             raise VariantError("canary: lid.model is required (the model needs the language as input)")
         if out["lid"]["fallback"] not in ("de", "en"):
             raise VariantError("lid.fallback must be de or en")
         if c["max_chunk_s"] and c["max_chunk_s"] > 40:
             raise VariantError("canary: keep chunks at most 40 s")
-    if out["family"] != "canary" and out["lid"]["model"]:
-        raise VariantError("lid is only used with canary in schema 1")
+    if fam == "cohere":
+        if out["cohere"]["language"] not in ("", "de", "en"):
+            raise VariantError("cohere.language must be '', 'de' or 'en'")
+        if out["cohere"]["language"] == "" and not out["lid"]["model"]:
+            raise VariantError("cohere needs the language: set cohere.language or lid.model (the model decodes nothing without one)")
+        if out["lid"]["fallback"] not in ("de", "en"):
+            raise VariantError("lid.fallback must be de or en")
+    if fam not in ("canary", "cohere") and out["lid"]["model"]:
+        raise VariantError("lid is only used with canary and cohere")
+    h = out["hotwords"]
+    if h["file"]:
+        if any(ch in h["file"] for ch in "/\\") or not h["file"].endswith(".txt"):
+            raise VariantError("hotwords.file is a plain file name ending in .txt, read from corpus/lab/ and files/lab/")
+        if fam == "parakeet" and d["method"] != "modified_beam_search":
+            raise VariantError("parakeet hotwords need decoding.method modified_beam_search")
+        if fam not in ("parakeet", "qwen3"):
+            raise VariantError("hotwords are supported for parakeet and qwen3 only")
+        if not 0 < h["score"] <= 10:
+            raise VariantError("hotwords.score must be in (0, 10]")
     return out
 
 
 def strings(v):
     """All string values of a variant; used by the leak check against the reference texts."""
     return [val for _, val in _flat(v) if isinstance(val, str)]
+
+
+def is_dictionary(v):
+    return bool(v["hotwords"]["file"])
 
 
 if __name__ == "__main__":

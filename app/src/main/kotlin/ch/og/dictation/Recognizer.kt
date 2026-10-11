@@ -5,18 +5,22 @@ interface Recognizer {
     fun transcribe(samples: FloatArray): String
 
     /**
-     * Called on the decode thread with the first chunk of a take, before that chunk is transcribed.
-     * Recognizers that need the language as input decide it here. Returns what was detected, or "".
+     * Called on the decode thread with the first decoded chunk of a take, before that chunk is
+     * transcribed. Recognizers that need the language as input decide it here. Returns what was
+     * detected, or "".
      */
     fun beginTake(firstChunk: FloatArray): String = ""
 }
 
+/** A piece of a take, and whether the voice detector found speech in it (no-speech gate). */
+class Chunk(val samples: FloatArray, val speech: Boolean)
+
 /** Cuts a live stream into pieces that can be decoded while recording continues. */
 interface Segmenter {
-    /** Feeds more audio; returns the segments that became complete. */
-    fun accept(samples: FloatArray): List<FloatArray>
+    /** Feeds more audio; returns the chunks that became complete. */
+    fun accept(samples: FloatArray): List<Chunk>
     /** End of the take: returns whatever audio is still pending. */
-    fun flush(): List<FloatArray>
+    fun flush(): List<Chunk>
     /** Forgets all state before a new take. */
     fun reset()
 }
@@ -55,35 +59,41 @@ fun joinChunks(texts: List<String>, seamCapitalize: Boolean): String {
  * shorter ones (docs/plan.md). A chunk ends [padSamples] after speech ended, once it is
  * at least [minSamples] long; with [maxSamples] > 0 a chunk is also cut as soon as the
  * pending audio reaches that length (Whisper models drop audio beyond 30 s).
- * Positions are sample counts since the start of the take.
+ * Each chunk records whether speech was found in it: a speech end was reported inside it, or
+ * speech was in progress at the cut. Positions are sample counts since the start of the take.
+ * Twin of class Chunker in tools/pipeline.py.
  */
 class PauseChunker(private val minSamples: Int, private val padSamples: Int, private val maxSamples: Int = 0) {
     private var pending = FloatArray(1 shl 16)
     private var size = 0
     private var cutAt = 0L   // position of pending[0]
+    private var speechSeen = false
 
-    /** Appends audio; returns a chunk when the hard length limit is reached. */
-    fun append(samples: FloatArray): FloatArray? {
+    /** Appends audio; [speechNow] is the detector's current state. Returns a chunk when the hard length limit is reached. */
+    fun append(samples: FloatArray, speechNow: Boolean = false): Chunk? {
         if (size + samples.size > pending.size) pending = pending.copyOf(maxOf(pending.size * 2, size + samples.size))
         samples.copyInto(pending, size)
         size += samples.size
-        return if (maxSamples > 0 && size >= maxSamples) take(maxSamples) else null
+        return if (maxSamples > 0 && size >= maxSamples) take(maxSamples, speechNow) else null
     }
 
     /** A pause was found: speech ended at [speechEnd]. Returns a chunk if one is due. */
-    fun onSpeechEnd(speechEnd: Long): FloatArray? {
+    fun onSpeechEnd(speechEnd: Long): Chunk? {
+        speechSeen = true
         val n = (minOf(speechEnd + padSamples, cutAt + size) - cutAt).toInt()
         if (n < minSamples) return null
-        return take(n)
+        return take(n, false)
     }
 
     /** End of the take: everything not yet returned. */
-    fun rest(): FloatArray? = if (size == 0) null else take(size)
+    fun rest(speechNow: Boolean = false): Chunk? = if (size == 0) null else take(size, speechNow)
 
-    private fun take(n: Int): FloatArray {
+    private fun take(n: Int, speechNow: Boolean): Chunk {
         val chunk = pending.copyOfRange(0, n)
         pending.copyInto(pending, 0, n, size)
         size -= n; cutAt += n
-        return chunk
+        val speech = speechSeen || speechNow
+        speechSeen = false
+        return Chunk(chunk, speech)
     }
 }

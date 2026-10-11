@@ -56,7 +56,8 @@ class LabTest {
             val model = ModelFiles.dir(File(labDir, "model"))
             val lid = File(labDir, "lid").takeIf { it.isDirectory }?.let { ModelFiles.dir(it) }
             val t0 = SystemClock.elapsedRealtime()
-            val recognizer = Pipeline.recognizer(v, model, lid)
+            val hotwords = if (v.isDictionary) File(labDir, v.hotwords.file).also { require(it.isFile) { "missing ${it.name} in files/lab" } }.absolutePath else ""
+            val recognizer = Pipeline.recognizer(v, model, lid, hotwords)
             out.put("coldLoadMs", SystemClock.elapsedRealtime() - t0).put("pssAfterLoadKb", pssKb())
             recognizer.transcribe(FloatArray(rate))  // first inference pays one-time allocation, as in the app
 
@@ -105,7 +106,7 @@ class LabTest {
     private fun transcribe(v: Variant, recognizer: Recognizer, x: FloatArray, paced: Boolean): Pair<String, Long> {
         val queue = Executors.newSingleThreadExecutor()
         val segmenter = VadSegmenter(v, ModelFiles.dir(labDir)).also { it.reset() }
-        val take = TakeTranscriber({ recognizer }, segmenter, queue, { it.run() }, v.post.seamCapitalize) {}
+        val take = TakeTranscriber({ recognizer }, segmenter, queue, { it.run() }, v.post) {}
         val start = SystemClock.elapsedRealtime()
         var i = 0
         while (i < x.size) {

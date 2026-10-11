@@ -13,7 +13,7 @@ class TakeTranscriber(
     private val segmenter: Segmenter,
     private val decodeQueue: Executor,
     private val deliver: Executor,
-    private val seamCapitalize: Boolean = false,
+    private val post: Variant.Post = Variant.Post(),
     private val onPreview: (String) -> Unit,
 ) {
     private val texts = ArrayList<String>()   // decode thread only
@@ -24,30 +24,32 @@ class TakeTranscriber(
     /** Recording thread. */
     fun feed(samples: FloatArray) {
         if (cancelled) return
-        for (s in segmenter.accept(samples)) submit(s)
+        for (c in segmenter.accept(samples)) submit(c)
     }
 
     /** After the recording thread has ended. [onDone] gets the text, or the failure of any segment. */
     fun finish(onDone: (Result<String>) -> Unit) {
-        for (s in segmenter.flush()) submit(s)
+        for (c in segmenter.flush()) submit(c)
         decodeQueue.execute {
             if (cancelled) return@execute
-            val result = failure?.let { Result.failure(it) } ?: Result.success(joinChunks(texts, seamCapitalize))
+            val result = failure?.let { Result.failure(it) } ?: Result.success(joinChunks(texts, post.seamCapitalize))
             deliver.execute { if (!cancelled) onDone(result) }
         }
     }
 
     fun cancel() { cancelled = true }
 
-    private fun submit(segment: FloatArray) = decodeQueue.execute {
+    private fun submit(chunk: Chunk) = decodeQueue.execute {
         if (cancelled || failure != null) return@execute
+        // No-speech gate: a chunk without detected speech is not decoded (keeps models from writing on silence).
+        if (post.skipSilentChunks && !chunk.speech) return@execute
         try {
             val rec = recognizer()
-            if (!begun) { begun = true; rec.beginTake(segment) }
-            val text = rec.transcribe(segment).trim()
+            if (!begun) { begun = true; rec.beginTake(chunk.samples) }
+            val text = rec.transcribe(chunk.samples).trim()
             if (text.isEmpty()) return@execute
             texts.add(text)
-            val joined = joinChunks(texts, seamCapitalize)
+            val joined = joinChunks(texts, post.seamCapitalize)
             deliver.execute { if (!cancelled) onPreview(joined) }
         } catch (e: Throwable) {
             failure = e

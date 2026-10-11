@@ -120,7 +120,7 @@ class DictationImeService : InputMethodService() {
         if (!hasMicPermission()) { status?.setText(R.string.status_no_permission); return }
         try {
             val segmenter = Engine.segmenter(this).also { it.reset() }
-            val take = TakeTranscriber({ Engine.recognizer(this) }, segmenter, Engine.decodeQueue, mainExecutor) { text ->
+            val take = TakeTranscriber({ Engine.recognizer(this) }, segmenter, Engine.decodeQueue, mainExecutor, Engine.variant.post) { text ->
                 showPreview(text)
             }
             recorder.start(take::feed)

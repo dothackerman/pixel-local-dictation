@@ -54,12 +54,18 @@ def tokens(model_dir):
 # ---------------------------------------------------------------- recognizers
 
 class Transducer:
-    def __init__(self, v, model_dir):
+    def __init__(self, v, model_dir, hotwords_path=""):
         d = v["decoding"]
+        extra = {}
+        if hotwords_path:
+            # Hotwords need the BPE vocabulary of the model (bpe.vocab next to the ONNX files).
+            vocab = glob.glob(os.path.join(model_dir, "*.vocab"))
+            assert len(vocab) == 1, f"hotwords need exactly one *.vocab in {model_dir}"
+            extra = dict(hotwords_file=hotwords_path, hotwords_score=v["hotwords"]["score"], modeling_unit="bpe", bpe_vocab=vocab[0])
         self.rec = sherpa_onnx.OfflineRecognizer.from_transducer(
             encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), joiner=one(model_dir, "joiner"),
             tokens=tokens(model_dir), num_threads=v["threads"], model_type="nemo_transducer",
-            decoding_method=d["method"], max_active_paths=d["max_active_paths"], blank_penalty=d["blank_penalty"])
+            decoding_method=d["method"], max_active_paths=d["max_active_paths"], blank_penalty=d["blank_penalty"], **extra)
 
     def begin_take(self, first_chunk):
         return ""
@@ -84,15 +90,12 @@ class Whisper:
         return s.result.text.strip()
 
 
-class Canary:
-    """Two recognizers (de, en); spoken-language identification on the first chunk picks one per take."""
+class LanguageSwitched:
+    """Two recognizers (de, en) of a model that needs the language as input; spoken-language
+    identification on the first chunk picks one per take. Used by canary and cohere."""
 
-    def __init__(self, v, model_dir, lid_dir):
-        self.recs = {}
-        for lang in ("de", "en"):
-            self.recs[lang] = sherpa_onnx.OfflineRecognizer.from_nemo_canary(
-                encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
-                src_lang=lang, tgt_lang=lang, num_threads=v["threads"])
+    def __init__(self, v, model_dir, lid_dir, build):
+        self.recs = {lang: build(lang) for lang in ("de", "en")}
         cfg = sherpa_onnx.SpokenLanguageIdentificationConfig(
             whisper=sherpa_onnx.SpokenLanguageIdentificationWhisperConfig(
                 encoder=one(lid_dir, "encoder"), decoder=one(lid_dir, "decoder")),
@@ -115,48 +118,99 @@ class Canary:
         return s.result.text.strip()
 
 
-def recognizer(v, models_root):
+class Qwen3:
+    """Qwen3-ASR: conv frontend + encoder + LLM decoder; hotwords go in as a comma-separated prompt."""
+
+    def __init__(self, v, model_dir, hotwords_path=""):
+        words = ""
+        if hotwords_path:
+            words = ",".join(l.strip() for l in open(hotwords_path, encoding="utf-8") if l.strip())
+        self.rec = sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
+            conv_frontend=one(model_dir, "conv_frontend"), encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"),
+            tokenizer=os.path.join(model_dir, "tokenizer") if os.path.isdir(os.path.join(model_dir, "tokenizer")) else model_dir,
+            num_threads=v["threads"], hotwords=words)
+
+    def begin_take(self, first_chunk):
+        return ""
+
+    def transcribe(self, samples):
+        s = self.rec.create_stream(); s.accept_waveform(RATE, samples); self.rec.decode_stream(s)
+        return s.result.text.strip()
+
+
+class Cohere:
+    def __init__(self, v, model_dir, language=None):
+        c = v["cohere"]
+        self.rec = sherpa_onnx.OfflineRecognizer.from_cohere_transcribe(
+            encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
+            num_threads=v["threads"], language=c["language"] if language is None else language,
+            use_punct=c["use_punct"], use_itn=c["use_itn"])
+
+    def begin_take(self, first_chunk):
+        return ""
+
+    def transcribe(self, samples):
+        s = self.rec.create_stream(); s.accept_waveform(RATE, samples); self.rec.decode_stream(s)
+        return s.result.text.strip()
+
+
+def recognizer(v, models_root, hotwords_path=""):
     model_dir = os.path.join(models_root, v["model"])
     if v["family"] == "parakeet":
-        return Transducer(v, model_dir)
+        return Transducer(v, model_dir, hotwords_path)
     if v["family"] == "whisper":
         return Whisper(v, model_dir)
-    return Canary(v, model_dir, os.path.join(models_root, v["lid"]["model"]))
+    if v["family"] == "qwen3":
+        return Qwen3(v, model_dir, hotwords_path)
+    lid_dir = os.path.join(models_root, v["lid"]["model"]) if v["lid"]["model"] else ""
+    if v["family"] == "cohere":
+        if not lid_dir:
+            return Cohere(v, model_dir)
+        return LanguageSwitched(v, model_dir, lid_dir, lambda lang: Cohere(v, model_dir, lang).rec)
+    return LanguageSwitched(v, model_dir, lid_dir, lambda lang: sherpa_onnx.OfflineRecognizer.from_nemo_canary(
+        encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
+        src_lang=lang, tgt_lang=lang, num_threads=v["threads"]))
 
 
 # ---------------------------------------------------------------- cutting (twin of VadSegmenter + PauseChunker)
 
 class Chunker:
     """PauseChunker: contiguous chunks; a chunk ends pad after a speech end once it is at least
-    min_samples long; max_samples > 0 forces a cut when the pending audio reaches that length."""
+    min_samples long; max_samples > 0 forces a cut when the pending audio reaches that length.
+    Each chunk carries whether the VAD found speech in it: a speech end was reported inside it, or
+    speech was in progress at the cut (no-speech gate, post.skip_silent_chunks)."""
 
     def __init__(self, min_samples, pad_samples, max_samples):
         self.min, self.pad, self.max = min_samples, pad_samples, max_samples
         self.pending = np.zeros(0, dtype=np.float32)
         self.cut_at = 0
+        self.speech_seen = False
 
-    def append(self, samples):
+    def append(self, samples, speech_now):
         self.pending = np.concatenate([self.pending, samples])
         if self.max and len(self.pending) >= self.max:
-            return self._take(self.max)
+            return self._take(self.max, speech_now)
         return None
 
     def on_speech_end(self, speech_end):
+        self.speech_seen = True
         n = min(speech_end + self.pad, self.cut_at + len(self.pending)) - self.cut_at
         if n < self.min:
             return None
-        return self._take(n)
+        return self._take(n, False)
 
-    def rest(self):
+    def rest(self, speech_now):
         if len(self.pending) == 0:
             return None
-        return self._take(len(self.pending))
+        return self._take(len(self.pending), speech_now)
 
-    def _take(self, n):
+    def _take(self, n, speech_now):
         chunk, self.pending = self.pending[:n], self.pending[n:]
         start = self.cut_at
         self.cut_at += n
-        return start, chunk
+        speech = self.speech_seen or speech_now
+        self.speech_seen = False
+        return start, chunk, speech
 
 
 def make_vad(v, vad_model):
@@ -178,16 +232,16 @@ def chunks(v, vad_model, x, feed):
     out = []
     for i in range(0, len(x), feed):
         piece = x[i:i + feed]
-        forced = ch.append(piece)
+        vad.accept_waveform(piece)
+        forced = ch.append(piece, vad.is_speech_detected())
         if forced:
             out.append(forced)
-        vad.accept_waveform(piece)
         while not vad.empty():
             seg = vad.front; vad.pop()
             got = ch.on_speech_end(seg.start + len(seg.samples))
             if got:
                 out.append(got)
-    rest = ch.rest()
+    rest = ch.rest(vad.is_speech_detected())
     if rest:
         out.append(rest)
     return out
@@ -212,9 +266,10 @@ def post_join(v, texts):
 
 # ---------------------------------------------------------------- main
 
-def run(v, models_root, take_files, guard_dir, vad_model):
+def run(v, models_root, take_files, guard_dir, vad_model, hotwords_path=""):
     t0 = time.perf_counter()
-    rec = recognizer(v, models_root)
+    rec = recognizer(v, models_root, hotwords_path)
+    gate = v["post"]["skip_silent_chunks"]
     report = {"variant": v, "side": "laptop", "loadSeconds": time.perf_counter() - t0,
               "runtime": "sherpa-onnx " + sherpa_onnx.__version__, "takes": [], "guard": []}
     rec.transcribe(np.zeros(RATE, dtype=np.float32))  # warm-up, as the app's first decode would
@@ -222,14 +277,17 @@ def run(v, models_root, take_files, guard_dir, vad_model):
         x = read_wav(path)
         runs = []
         for feed in FEEDS:
-            parts, texts, lid = [], [], ""
-            for i, (start, seg) in enumerate(chunks(v, vad_model, x, feed)):
-                if i == 0:
-                    lid = rec.begin_take(seg)
+            parts, texts, lid, begun = [], [], "", False
+            for start, seg, speech in chunks(v, vad_model, x, feed):
+                if gate and not speech:
+                    parts.append({"startSeconds": start / RATE, "audioSeconds": len(seg) / RATE, "decodeSeconds": 0.0, "text": "", "skipped": True})
+                    continue
+                if not begun:
+                    lid = rec.begin_take(seg); begun = True
                 t = time.perf_counter()
                 text = rec.transcribe(seg)
                 secs = time.perf_counter() - t
-                parts.append({"startSeconds": start / RATE, "audioSeconds": len(seg) / RATE, "decodeSeconds": secs, "text": text})
+                parts.append({"startSeconds": start / RATE, "audioSeconds": len(seg) / RATE, "decodeSeconds": secs, "text": text, "speech": speech})
                 texts.append(text)
             runs.append({"feed": feed, "lid": lid, "chunks": parts, "text": post_join(v, texts)})
         primary = runs[0]
@@ -251,8 +309,16 @@ def run(v, models_root, take_files, guard_dir, vad_model):
         print(f"guard: {len(report['guard'])} clips", file=sys.stderr)
     # Silence guard: a model that writes text on silence or faint noise would pass the takes and fail the user.
     rng = np.random.default_rng(0)
-    report["silence"] = {"silent": rec.transcribe(np.zeros(5 * RATE, dtype=np.float32)),
-                         "noise": rec.transcribe((rng.standard_normal(5 * RATE) * 0.003).astype(np.float32))}
+    silent, noise = np.zeros(5 * RATE, dtype=np.float32), (rng.standard_normal(5 * RATE) * 0.003).astype(np.float32)
+    if gate:
+        # The gate decides from the VAD, exactly as the app would for a chunk of this audio.
+        texts = []
+        for x in (silent, noise):
+            got = chunks(v, vad_model, x, FEEDS[0])
+            texts.append(" ".join(rec.transcribe(seg) for _, seg, speech in got if speech))
+        report["silence"] = {"silent": texts[0], "noise": texts[1], "gated": True}
+    else:
+        report["silence"] = {"silent": rec.transcribe(silent), "noise": rec.transcribe(noise)}
     return report
 
 
@@ -263,11 +329,15 @@ def main():
     p.add_argument("--guard", default=None, help="models/guard to also decode the public clips")
     p.add_argument("--models", default="models")
     p.add_argument("--only", default=None, help="substring of take file names to decode (smoke tests)")
+    p.add_argument("--hotwords-dir", default="corpus/lab", help="where hotwords.file is read from")
     a = p.parse_args()
     v = variant_mod.load(a.variant)
+    hot = os.path.join(a.hotwords_dir, v["hotwords"]["file"]) if v["hotwords"]["file"] else ""
+    if hot:
+        assert os.path.isfile(hot), hot
     takes = sorted(f for f in glob.glob(os.path.join(a.takes, "*.wav")) if not a.only or a.only in os.path.basename(f))
     assert takes, a.takes
-    report = run(v, a.models, takes, a.guard, os.path.join(a.models, "silero_vad.onnx"))
+    report = run(v, a.models, takes, a.guard, os.path.join(a.models, "silero_vad.onnx"), hot)
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
 

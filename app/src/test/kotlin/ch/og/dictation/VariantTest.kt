@@ -21,9 +21,10 @@ class VariantTest {
     }
 
     @Test fun unknownKeysAreRejectedBecauseTheSchemaIsClosed() {
-        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": ["Winterthur"]}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"dictionary": ["x"]}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": ["x"]}""") }
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"cutting": {"overlap_s": 1}}""") }
-        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 2}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 3}""") }
     }
 
     @Test fun familyRulesMatchThePythonSchema() {
@@ -32,5 +33,15 @@ class VariantTest {
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"family": "canary", "model": "x"}""") }   // needs lid.model
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"lid": {"model": "tiny"}}""") }           // lid only with canary
         Variant.parse("""{"family": "canary", "model": "x", "lid": {"model": "tiny"}}""")
+    }
+
+    @Test fun dictionaryRules() {
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": {"file": "dictionary.txt"}}""") }  // greedy
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": {"file": "../x.txt"}, "decoding": {"method": "modified_beam_search"}}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"family": "whisper", "model": "x", "cutting": {"max_chunk_s": 26}, "hotwords": {"file": "d.txt"}}""") }
+        val v = Variant.parse("""{"hotwords": {"file": "dictionary.txt", "score": 2.0}, "decoding": {"method": "modified_beam_search"}, "post": {"skip_silent_chunks": true}}""")
+        assertEquals(true, v.isDictionary)
+        assertEquals(true, v.post.skipSilentChunks)
+        assertEquals(Variant.DEFAULT, Variant.parse("""{"schema": 1}"""))
     }
 }

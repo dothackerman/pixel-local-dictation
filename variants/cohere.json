@@ -1,0 +1,16 @@
+{
+  "schema": 2,
+  "name": "cohere",
+  "description": "Cohere Transcribe 14 languages INT8 via sherpa-onnx; needs the language, decided per take by Whisper tiny on the first chunk",
+  "family": "cohere",
+  "model": "sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01",
+  "threads": 4,
+  "post": {
+    "skip_silent_chunks": true
+  },
+  "lid": {
+    "model": "sherpa-onnx-whisper-tiny",
+    "probe_seconds": 0.0,
+    "fallback": "en"
+  }
+}
