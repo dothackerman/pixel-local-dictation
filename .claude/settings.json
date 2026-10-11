@@ -10,7 +10,12 @@
       "Write(.claude/**)",
       "Edit(tools/phone)",
       "Write(tools/phone)"
-    ]
+    ],
+    "allow": [
+  "Bash(tools/phone push-variant:*)",
+  "Bash(tools/phone lab)",
+  "Bash(tools/phone pull-results)"
+]
   },
   "hooks": {
     "PreToolUse": [
