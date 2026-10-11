@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "name": "cohere-noitn",
+  "description": "Cohere without inverse text normalisation: is the gain formatting or recognition?",
+  "family": "cohere",
+  "model": "sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01",
+  "threads": 4,
+  "post": {
+    "skip_silent_chunks": true
+  },
+  "lid": {
+    "model": "sherpa-onnx-whisper-tiny",
+    "probe_seconds": 0.0,
+    "fallback": "en"
+  },
+  "cohere": {
+    "language": "",
+    "use_punct": true,
+    "use_itn": false
+  }
+}

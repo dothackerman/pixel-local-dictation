@@ -18,9 +18,10 @@ in every variant), 10 are numbers and formats, 16 are ordinary words, 3 are inse
 decoding knobs can only reach the 16 ordinary-word errors, and the keep margin is 8 words.
 Consequences, all built into this revision:
 
-- **Range-find before you search.** For any knob family, run its extremes first. If the whole span
-  sits inside the keep margin, the family is not an experiment; log that in the hand-back and move
-  on. `tools/lab.py range NAME...` prints the span over ledger rows. The cutting and decoding
+- **Range-find before you search.** For any knob family, run its extremes first. If the best of
+  them does not beat experiment 0 by the keep margin, the family is not an experiment; log that in
+  the hand-back and move on. `tools/lab.py range NAME...` prints the span and the best gain over
+  ledger rows (total errors; for dictionary variants look at terms recovered instead). The cutting and decoding
   families of schema 1 are already known to be flat (span 68.7 to 86.0, best gain 3.7); do not
   re-run them.
 - **Names are the lever.** Schema 2 adds a dictionary via hotwords ([ADR-005](decisions.md)) with
@@ -107,9 +108,11 @@ Stage 1, laptop, against `corpus/lab/baseline.json` (experiment 0):
 
 Stage 2, phone, from the LabTest result: median real-time factor per chunk under 0.3; wait after
 Stop on the paced longest and shortest take under 2 s; thermal status never above moderate. Peak
-memory above 2 GB is a flag, not a fail. Phone text is compared with the laptop report of the same
-variant; a few words of difference are expected, a larger divergence is flagged and then the phone
-text's numbers count.
+memory above 2 GB is a flag; **a flag above 3.5 GB is not a keep** (an input method holding that
+much is killed in daily use): mark the row `discard` in the note and write the request for a
+single-instance variant into the hand-back. Phone text is compared with the laptop report of the
+same variant; a few words of difference are expected, a larger divergence is flagged and then the
+phone text's numbers count.
 
 Budget: stop after 40 experiments or when the range-finding says nothing left can move, whichever
 comes first, and write the hand-back.
@@ -118,7 +121,8 @@ comes first, and write the hand-back.
 
 Setup, once (steps 2 to 4 are done when the ledger already has the rows; check with `tools/lab.py ledger --all`):
 
-1. `git status` clean on `main`; create the branch `autoresearch/<date>`.
+1. `git status` clean on `main` at the commit "Permission allow rule" or later (schema 2;
+   `tools/variant.py` says `SCHEMA = 2`); create the branch `autoresearch/<date>` from there.
 2. `tools/lab.py check` prints `check ok`.
 3. Experiment 0 exists (`corpus/lab/baseline.json`). Do not re-run it.
 4. Phone control row for the new build: `tools/lab.py phone-prepare variants/baseline.json`, the
@@ -136,7 +140,9 @@ Each experiment:
 3. `stage1: fail`: `git reset --hard HEAD~1`. The ledger row and the report stay (not in git).
 4. `stage1: pass`: stage 2 on the phone. `tools/lab.py phone-prepare variants/<name>.json`, then
    exactly these, one per Bash call, nothing else on the line:
-   `tools/phone push-variant corpus/lab/push/<name>` (minutes; up to 3 GB over USB),
+   `tools/phone push-variant corpus/lab/push/<name>` (run with a 15-minute timeout: up to 3 GB over
+   USB; it ends by printing one line per file with its size, and `lab` is run only after that list
+   appeared; a push that printed no list is not a push),
    `tools/phone lab` (run in the background and poll; 5 to 20 minutes),
    `tools/phone pull-results`, then
    `tools/lab.py phone-score corpus/lab/phone/<file>.json variants/<name>.json`.
@@ -158,17 +164,29 @@ fewer terms missed; dictionary variants rank by terms recovered. `tools/lab.py l
 | dict-beam4 (score 1.5) | 59.7 | 41.0 | 18.7 | 18 | 6.0 / 1.8 | 0.08 | dictionary rule pass against beam4-gate: 6 terms recovered, 1 guard insertion |
 | dict-beam4-s3 (score 3.0) | 69.0 | 42.0 | 27.0 | 22 | 5.7 / 2.6 | 0.08 | fail: 7 guard insertions; score 6 was destructive in the smoke test |
 | beam4-gate | 68.7 | 46.3 | 22.3 | 24 | 6.6 / 1.8 | 0.08 | fail: 2.7 words, and worse on the guard's German |
-| qwen3 | 180.3 | 74.7 | 105.7 | 40 | - | 0.24 | out |
+| qwen3 | 180.3 | 74.7 | 105.7 | 40 | - | 0.24 | out for the night; its German text reads well, so the English figure may be a language or configuration problem: a hand-back item, not an experiment |
 
 Order of work for the night:
 
-1. **Cohere on the phone first.** Its laptop row passes; stage 2 decides. The risk is the wait after
-   Stop: the longest chunk took 6.4 s on the laptop. If stage 2 fails on `phone_stop_max_ms`,
-   range-find `cutting.min_chunk_s` (8, 10, 12, 15) with `vad_max_speech_s` 10 to 15 for cohere: a
-   shorter final chunk is the lever, and cohere's accuracy at shorter chunks is unknown. Also try
-   `cohere.use_itn` false (number formatting off) and `threads` 6 for speed only.
+1. **Cohere on the phone first, as a measurement, not a verdict.** Its laptop row passes stage 1.
+   On the phone it will very likely miss the 2 s wait after Stop by construction: the wait is the
+   real-time factor times the final chunk, a laptop factor of 0.25 maps to about 0.33 on the phone,
+   so a 12 s final chunk waits about 4 s. It also runs two model instances (German and English) plus
+   the identifier, so expect a peak around 6 GB. Run it once, record `phone_rtf_median`,
+   `phone_stop_max_ms`, `phone_vmhwm_mb` and the phone text's accuracy in the hand-back, and spend
+   no further phone cycles on it: each costs a 3 GB push. Whether a 25-word gain is worth a longer
+   wait or a single-instance rebuild is Oriol's decision, not the loop's. Range-find the chunk
+   length for cohere **on the laptop only** (`min_chunk_s` 8, 10, 12, 15 with `vad_max_speech_s`
+   10 to 15): `laptop_last_chunk_max_s` is the wait proxy and the error columns say what short
+   chunks cost. A cohere variant sets either `cohere.language` or `lid.model`, never both (the two
+   sides would disagree on which wins). `cohere.use_itn` false is already in the ledger.
 2. **Dictionary on the shipped model**: scores 1.5, 2.0, 2.5 with beam width 4 and 8, always with
-   `--reference beam4-gate` or `beam8-gate` (run that twin with `--guard` first).
+   `--reference beam4-gate` or `beam8-gate`. A twin (the same pipeline without hotwords) is run once
+   with `--guard`, committed with "twin" in the message, and never reset even though it fails the
+   general rule: the dictionary rows are judged against it. For every dictionary pass, also count
+   the dictionary words in the ten take texts that are not in the take's reference (the logic of the
+   guard-insertion check, applied to `takes` in the report) and write the number into the ledger
+   note; more than 1 is a fail in spirit, say so in the hand-back.
 3. **Dictionary through cohere is not possible** (no hotwords there) and through qwen3 is pointless
    (the model is out). If cohere keeps, the dictionary question moves to a later setup round.
 4. Flat, do not re-run: cutting and decoding knobs on the shipped model, full precision, the spike
@@ -196,6 +214,8 @@ ideas, with evidence, into the hand-back as requests for a setup round.
   again, stop phone runs for the night.
 - Nothing is copied out of `corpus/`, and nothing from `corpus/` goes anywhere but `corpus/lab/`.
   `pull-results` copies JSON only.
+- Last phone action of the night, before 06:30: `tools/phone push-variant corpus/lab/push/baseline`,
+  so that the app's laboratory directory holds 1 GB and not a 3 GB model when Oriol uses the phone.
 
 ## Terminal states and the hand-back
 
@@ -209,8 +229,10 @@ trigger fired, the exact variant to record with.
 Recording trigger (pre-registered): a kept variant under the general rule whose German error count
 is at least 12 words below experiment 0, English not worse by more than 1 word, guard not worse,
 stage 2 passed. For a dictionary variant the trigger is: at least 10 terms recovered, errors outside
-dictionary words not worse by more than 3, no guard insertions, stage 2 passed; the recording then
-also tests names that are not in the list. Then Oriol records the four hold-out scripts once, in the
+dictionary words not worse by more than 3 against the twin, no guard insertions, **guard not worse
+than experiment 0 by more than 1 point** (beam search alone costs 1.8 points of public German, and
+Oriol must not record against a regressed recognizer), stage 2 passed; the recording then also
+tests names that are not in the list. Then Oriol records the four hold-out scripts once, in the
 app, benchmark mode on. The hold-out rule, also pre-registered: on identical audio, the candidate
 must not be worse than the baseline variant on any hold-out take by more than 2 words and must have
 fewer German errors in total; English may be worse by at most 1 point. The verdict is Oriol's.
