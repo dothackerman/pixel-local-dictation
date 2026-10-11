@@ -2,7 +2,7 @@
 """Runner of the experiment loop (docs/autoresearch.md). Frozen: checksummed by `check`.
 
   tools/lab.py check                      freeze, hold-out, leak and asset checks; run before every experiment
-  tools/lab.py run VARIANT.json [--guard] [--note TEXT]
+  tools/lab.py run VARIANT.json [--guard] [--note TEXT] [--reference NAME]
                                           stage 1 on the laptop: decode the ten takes, score, compare with
                                           the baseline report, append a ledger row; --guard adds the public clips
   tools/lab.py phone-prepare VARIANT.json stage the model and variant under corpus/lab/push/<name>/ for the wrapper
@@ -151,12 +151,23 @@ def run(args):
     if os.path.exists(BASELINE) and os.path.abspath(out) != os.path.abspath(BASELINE):
         base = json.load(open(BASELINE, encoding="utf-8"))
         hot = os.path.join(LAB, v["hotwords"]["file"]) if variant_mod.is_dictionary(v) else None
-        verdict, reasons, cmp = evaluate.compare(base, report, hot)
+        ref = None
+        if hot:
+            if not args.reference:
+                fail("a dictionary variant needs --reference NAME: the same pipeline without hotwords, already run with --guard")
+            rrows = [r for r in ledger_rows() if r["variant"] == args.reference and r.get("stage1") in ("pass", "fail", "baseline")]
+            if not rrows:
+                fail(f"no ledger row for reference variant '{args.reference}'")
+            rpath = os.path.join(RUNS, f"{args.reference}-{rrows[-1]['commit']}.json")
+            if not os.path.exists(rpath):
+                fail(f"reference report missing: {os.path.relpath(rpath, ROOT)}")
+            ref = json.load(open(rpath, encoding="utf-8"))
+        verdict, reasons, cmp = evaluate.compare(base, report, hot, ref)
         print()
         print("per-take error delta (candidate minus baseline):")
         for f, d in cmp.get("per_take_delta", {}).items():
             print(f"  {f}: {d:+.2f}")
-        for k in ("rule", "gain", "terms_gain", "other_errors_base", "other_errors", "guard_inserts", "wins", "losses", "guard_checked"):
+        for k in ("rule", "reference", "gain", "terms_gain", "other_errors_base", "other_errors", "guard_inserts", "wins", "losses", "guard_checked"):
             if k in cmp:
                 print(f"{k}: {cmp.get(k)}")
         print(f"stage1: {verdict}")
@@ -164,7 +175,7 @@ def run(args):
         row.update({"stage1": verdict, "gain": fmt(cmp.get("gain")), "wins": cmp.get("wins"), "losses": cmp.get("losses"),
                     "status": "pending-phone" if verdict == "pass" else "discard"})
         if cmp.get("rule") == "dictionary":
-            row["note"] = f"[dictionary: terms +{cmp['terms_gain']}, other {cmp['other_errors_base']}->{cmp['other_errors']}, inserts {cmp['guard_inserts']}] " + row["note"]
+            row["note"] = f"[dictionary vs {cmp['reference']}: terms +{cmp['terms_gain']}, other {cmp['other_errors_base']}->{cmp['other_errors']}, inserts {cmp['guard_inserts']}] " + row["note"]
     else:
         print("stage1: baseline (no comparison)")
         row.update({"stage1": "baseline", "status": "baseline"})
@@ -307,6 +318,7 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
     r = sub.add_parser("run"); r.add_argument("variant"); r.add_argument("--guard", action="store_true"); r.add_argument("--note")
+    r.add_argument("--reference", help="dictionary variants: name of the same pipeline without hotwords (run it with --guard first)")
     pp = sub.add_parser("phone-prepare"); pp.add_argument("variant")
     ps = sub.add_parser("phone-score"); ps.add_argument("result"); ps.add_argument("variant")
     ab = sub.add_parser("adopt-baseline"); ab.add_argument("report")

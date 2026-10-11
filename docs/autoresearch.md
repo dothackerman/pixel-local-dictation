@@ -95,11 +95,15 @@ Stage 1, laptop, against `corpus/lab/baseline.json` (experiment 0):
   improve than get worse, neither language worse by more than 1 word, terms missed grow by at most
   1, punctuation/case issues by at most 2, no letters on 5 s of silence or faint noise, and when
   the guard was run on both, no language's guard word error rate rises by more than 1 point.
-- **Dictionary rule** (variants with `hotwords`, always run with `--guard`): at least 5 more of the
-  130 terms come out right than in experiment 0; errors outside dictionary words grow by at most 3;
-  at most 1 dictionary word appears in the 210 public clips (where none is spoken); silence clean;
-  guard not worse by more than 1 point. The claim a passing dictionary variant earns is "names in
-  the user's list are recognised", not "the recognizer got better"; the ledger note says which.
+- **Dictionary rule** (variants with `hotwords`, always run with `--guard` and
+  `--reference NAME`, where NAME is the same pipeline without hotwords, run with `--guard` before):
+  at least 5 more of the 130 terms come out right than in experiment 0; errors outside dictionary
+  words grow by at most 3 against the reference; at most 1 dictionary word appears in the 210 public
+  clips (where none is spoken); silence clean; guard not worse than the reference by more than 1
+  point. The reference matters: modified beam search by itself raises the guard's German rate from
+  4.8 % to 6.6 %, so a dictionary on beam search carries that regression, and the ledger note shows
+  it. The claim a passing dictionary variant earns is "names in the user's list are recognised", not
+  "the recognizer got better".
 
 Stage 2, phone, from the LabTest result: median real-time factor per chunk under 0.3; wait after
 Stop on the paced longest and shortest take under 2 s; thermal status never above moderate. Peak
@@ -126,8 +130,8 @@ Setup, once (steps 2 to 4 are done when the ledger already has the rows; check w
 Each experiment:
 
 1. Write `variants/<name>.json` with one idea. Commit it (a message that names the idea; no numbers).
-2. `tools/lab.py run variants/<name>.json` (dictionary variants: always `--guard`; others: add
-   `--guard` after a pass and run again). Read the summary block. A crash is a ledger row with
+2. `tools/lab.py run variants/<name>.json` (dictionary variants: always `--guard --reference <twin>`;
+   others: add `--guard` after a pass and run again). Read the summary block. A crash is a ledger row with
    status `crash`; fix a typo, give up on a broken idea after two attempts.
 3. `stage1: fail`: `git reset --hard HEAD~1`. The ledger row and the report stay (not in git).
 4. `stage1: pass`: stage 2 on the phone. `tools/lab.py phone-prepare variants/<name>.json`, then
@@ -145,19 +149,30 @@ Rank order when ideas compete: fewer total errors on the ten takes, then fewer G
 fewer terms missed; dictionary variants rank by terms recovered. `tools/lab.py ledger` shows keeps;
 `--all` is the accuracy-only ranking regardless of the phone budget.
 
-## Ideas, in the order the range-finding suggests
+## Range-finding results of the setup session (2026-10-11, laptop), and the order of work
 
-1. **Dictionary** (`hotwords`): scores between 1.5 and 3.0 on the shipped model with beam search 4;
-   score 6 produced insertions everywhere in the smoke test, so the useful range is narrow. Beam
-   width 8 with the gate. The same list through `qwen3` (prompt hotwords).
-2. **New families on their own**: `qwen3` and `cohere` rows from the setup session say whether
-   either beats the baseline on names at all; if one does by more than the margin on the laptop,
-   its phone row decides (both are near the 0.3 real-time budget; cohere also drops the last word
-   of a chunk in the smoke test, which `pad_s` or `cutting` may fix: range-find it).
-3. **Gate alone** (`beam4-gate`): about 3 words from beam search without the silence failure; it
-   does not pass the margin by itself but combines with the dictionary.
-4. Things that are flat (do not re-run): cutting and decoding knobs on the shipped model, full
-   precision, the spike quantisation variants, Whisper turbo, Canary 180M.
+| Variant | Total | de | en | Terms missed | Guard de / en | Laptop rtf | Verdict |
+|---|---|---|---|---|---|---|---|
+| baseline (experiment 0) | 71.3 | 46.0 | 25.3 | 24 | 4.8 / 2.0 | 0.05 | reference |
+| cohere | 45.7 | 24.3 | 21.3 | 17 | 2.8 / 1.4 | 0.25 | **stage 1 pass**, gain 25.7, 9 takes better; language right on all ten |
+| dict-beam4 (score 1.5) | 59.7 | 41.0 | 18.7 | 18 | 6.0 / 1.8 | 0.08 | dictionary rule pass against beam4-gate: 6 terms recovered, 1 guard insertion |
+| dict-beam4-s3 (score 3.0) | 69.0 | 42.0 | 27.0 | 22 | 5.7 / 2.6 | 0.08 | fail: 7 guard insertions; score 6 was destructive in the smoke test |
+| beam4-gate | 68.7 | 46.3 | 22.3 | 24 | 6.6 / 1.8 | 0.08 | fail: 2.7 words, and worse on the guard's German |
+| qwen3 | 180.3 | 74.7 | 105.7 | 40 | - | 0.24 | out |
+
+Order of work for the night:
+
+1. **Cohere on the phone first.** Its laptop row passes; stage 2 decides. The risk is the wait after
+   Stop: the longest chunk took 6.4 s on the laptop. If stage 2 fails on `phone_stop_max_ms`,
+   range-find `cutting.min_chunk_s` (8, 10, 12, 15) with `vad_max_speech_s` 10 to 15 for cohere: a
+   shorter final chunk is the lever, and cohere's accuracy at shorter chunks is unknown. Also try
+   `cohere.use_itn` false (number formatting off) and `threads` 6 for speed only.
+2. **Dictionary on the shipped model**: scores 1.5, 2.0, 2.5 with beam width 4 and 8, always with
+   `--reference beam4-gate` or `beam8-gate` (run that twin with `--guard` first).
+3. **Dictionary through cohere is not possible** (no hotwords there) and through qwen3 is pointless
+   (the model is out). If cohere keeps, the dictionary question moves to a later setup round.
+4. Flat, do not re-run: cutting and decoding knobs on the shipped model, full precision, the spike
+   quantisation variants, Whisper turbo, Canary 180M, qwen3.
 
 Not in the schema and therefore not experiments: overlapping chunks, number and money formatting
 rules, other runtimes, GPU or neural-core acceleration, new downloads, a bigger Canary. Write such
