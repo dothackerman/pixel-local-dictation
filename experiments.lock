@@ -12,3 +12,7 @@ c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1 116204861 sherp
 2453b62d4a506015678f7f6252680621e880aac0d9038ae7bd08e4df26e7efe5 224781063 guard-src/mls-german-test.parquet https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/german/test-00000-of-00001.parquet
 # Not prepared: NVIDIA Canary 1B v2. sherpa-onnx 1.13.8 runs only the 180M flash Canary (en, de, es, fr);
 # a newer runtime would be a setup-session change of the pinned AAR and Python package.
+# Added 2026-10-11 (ADR-005), downloaded by the setup session:
+393f8a14e2f5fb96746aaab342997a40641001fbd5bf9592a080a8329178ee96 878702423 sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2
+bd582588d50685a795dcd2807ab77e11361b8312d96c53884682def45ab4206d 1699791751 sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01.tar.bz2
+# bpe.vocab for hotwords comes from the fp32 export (models/export/parakeet-tdt-0.6b-v3/bpe.vocab) and is hard-linked into the Parakeet model directories.

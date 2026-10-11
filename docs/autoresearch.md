@@ -1,16 +1,32 @@
 # Experiment loop: instructions for the loop session
 
-Status: written 2026-10-10 by the setup session, agreed with Oriol. This is the whole brief for a
-fresh session that runs accuracy experiments unattended, modelled on karpathy/autoresearch: change
-one thing, measure, keep or discard, log, repeat. Read it completely before the first command.
-Project rules in [AGENTS.md](../AGENTS.md) still apply; where this file is stricter, this file wins.
+Status: revision 2, written 2026-10-11 by the setup session after the first night and its review,
+agreed with Oriol. This is the whole brief for a fresh session that runs accuracy experiments
+unattended, modelled on karpathy/autoresearch: change one thing, measure, keep or discard, log,
+repeat. Read it completely before the first command. Project rules in [AGENTS.md](../AGENTS.md)
+still apply; where this file is stricter, this file wins. The first night is summarised in
+`corpus/lab/handback-2026-10-10.md`; its 41 ledger rows are still in the ledger.
 
-## What you are optimising
+## What you are optimising, and what the first night taught
 
 `ch.og.dictation` dictates German and English on Oriol's phone. Speed is solved (about 1 s after
-Stop). Accuracy is level with the previous recognizer, not better ([results](results.md)). Your job:
-find a pipeline that makes fewer word errors on Oriol's ten saved takes without breaking the speed,
-memory and heat budget on the phone, and without fooling the evaluator.
+Stop). Accuracy is level with the previous recognizer, not better ([results](results.md)).
+
+The first night ran 40 variants of cutting and decoding knobs. None passed. The reason is in the
+error anatomy of the baseline: of its 67 word errors, 38 are names and terms (the same dozen names
+in every variant), 10 are numbers and formats, 16 are ordinary words, 3 are insertions. Cutting and
+decoding knobs can only reach the 16 ordinary-word errors, and the keep margin is 8 words.
+Consequences, all built into this revision:
+
+- **Range-find before you search.** For any knob family, run its extremes first. If the whole span
+  sits inside the keep margin, the family is not an experiment; log that in the hand-back and move
+  on. `tools/lab.py range NAME...` prints the span over ledger rows. The cutting and decoding
+  families of schema 1 are already known to be flat (span 68.7 to 86.0, best gain 3.7); do not
+  re-run them.
+- **Names are the lever.** Schema 2 adds a dictionary via hotwords ([ADR-005](decisions.md)) with
+  its own metrics, and two new model families.
+- **A no-speech gate** (`post.skip_silent_chunks`) stops models from writing on silence, which was
+  the failure of beam search and Whisper.
 
 The evaluator is frozen. The ten takes are the only personal audio. Four more scripts exist as a
 hold-out; they are outside the repository and you never read them. The final word on any winner is
@@ -21,12 +37,12 @@ a recording session by Oriol that only happens when the trigger below fires.
 | Part | File | What it does |
 |---|---|---|
 | Scorer | `tools/score.py` | normalisation and word-error count |
-| Evaluator | `tools/evaluate.py` | per-take scoring, keep rule, phone budget |
+| Evaluator | `tools/evaluate.py` | per-take scoring, keep rules, phone budget |
 | Pipeline | `tools/pipeline.py` | laptop twin of the app's decode path, driven by a variant |
-| Schema | `tools/variant.py` | the closed set of keys a variant may have |
-| Runner | `tools/lab.py` | check, run, phone-prepare, phone-score, ledger |
+| Schema | `tools/variant.py` | the closed set of keys a variant may have (schema 2) |
+| Runner | `tools/lab.py` | check, run, phone-prepare, phone-score, ledger, dictionary, range |
 | Take index | `corpus/takes.json` | which take is which script |
-| Guard | `models/guard/refs.tsv` | 210 public clips used as a breakage detector |
+| Guard | `models/guard/refs.tsv` | 210 public clips used as a breakage and false-insertion detector |
 
 Also fixed: everything under `app/`, `corpus/`, `models/`, `docs/`, the wrapper and the gate.
 If you find a quirk in the normaliser (there are several, for example "I'll" counts as two tokens),
@@ -35,171 +51,158 @@ write it in the ledger note and move on. Do not fix it.
 ## The editable surface
 
 One directory: `variants/`. A variant is a JSON file with the keys documented in
-`tools/variant.py` (schema 1): family and model, thread count, transducer decoding (method, beam
-width, blank penalty), Whisper language, Canary language identification, cutting (minimum chunk,
-pad, silence, speech, VAD maximum, hard maximum) and two post-processing switches. Unknown keys are
-rejected on both the laptop and the phone. There is no lexical post-processing on purpose; a
-variant that contains a reference term is refused.
+`tools/variant.py` (schema 2): family and model, thread count, transducer decoding, Whisper and
+Cohere language, language identification (`lid`), `hotwords` (the dictionary), cutting, and three
+post-processing switches. Unknown keys are rejected on both the laptop and the phone. There is no
+lexical post-processing on purpose; a variant that contains a reference term is refused.
 
-Start from `variants/baseline.json` (the shipped app), `variants/whisper-turbo.json` and
-`variants/canary-180m.json` (prepared families). Each experiment is a new file
-`variants/<name>.json` whose `name` equals the file name. Keep the three starting files unchanged.
+Prepared starting files, all run once by the setup session (their rows are in the ledger):
+
+| File | What it is |
+|---|---|
+| `baseline.json` | the shipped app; experiment 0 |
+| `beam4-gate.json` | modified beam search, 4 paths, with the gate: beam search without its silence failure |
+| `dict-beam4.json`, `dict-beam4-s3.json` | the dictionary mechanism test at hotword scores 1.5 and 3.0 |
+| `qwen3.json` | Qwen3-ASR 0.6B INT8, language-model decoder, detects the language itself |
+| `cohere.json` | Cohere Transcribe 14 languages INT8, language per take from Whisper tiny |
+| `whisper-turbo.json`, `canary-180m.json` | known from night one: not candidates |
+
+Each experiment is a new file `variants/<name>.json` whose `name` equals the file name. Keep the
+starting files unchanged.
 
 Models available under `models/` (nothing else, download nothing):
 
 | Directory | Family | Notes |
 |---|---|---|
-| `parakeet-v3-matmul8` | parakeet | shipped model (ADR-003); the baseline |
-| `parakeet-v3-fp32` | parakeet | full precision, same accuracy on these takes, larger |
-| `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8` | parakeet | published INT8, known to be worse |
-| `var-A-enc8`, `var-B-dec8` | parakeet | quantisation variants from the spike |
-| `sherpa-onnx-whisper-turbo` | whisper | large-v3-turbo INT8; detects the language itself; 30 s limit |
-| `sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8` | canary | needs `lid`; the only Canary this runtime runs |
-| `sherpa-onnx-whisper-tiny` | lid | language identification for Canary |
+| `parakeet-v3-matmul8` | parakeet | shipped model (ADR-003); the baseline; has `bpe.vocab` for hotwords |
+| `parakeet-v3-fp32`, `var-B-dec8` | parakeet | same accuracy within noise; have `bpe.vocab` |
+| `sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25` | qwen3 | 0.9 GB; laptop real-time factor about 0.2; takes `hotwords` as a prompt |
+| `sherpa-onnx-cohere-transcribe-14-lang-int8-2026-04-01` | cohere | 2.9 GB; needs the language, so `lid`; laptop real-time factor about 0.25 |
+| `sherpa-onnx-whisper-turbo` | whisper | night one: level with the baseline at best, half real time, not a candidate |
+| `sherpa-onnx-nemo-canary-180m-flash-en-es-de-fr-int8` | canary | night one: worse; not a candidate |
+| `sherpa-onnx-whisper-tiny` | lid | language identification for canary and cohere |
 
-## Before the first night (Oriol, by hand; the agent may not do these)
-
-1. Hold-out out of reach. From the repository root:
-   `mkdir -p ../pixel-local-dictation-holdout/scripts && mv corpus/scripts/de-4.txt corpus/scripts/de-5.txt corpus/scripts/en-4.txt corpus/scripts/en-5.txt ../pixel-local-dictation-holdout/scripts/`
-   and delete the de-4, de-5, en-4, en-5 sections from `corpus/reading-sheet.md` (keep a copy of them
-   in the hold-out directory for recording day). `tools/lab.py check` confirms.
-2. Wrapper: `cp tools/phone.proposed tools/phone && chmod +x tools/phone && rm tools/phone.proposed`
-   (way back: `git checkout tools/phone`). Read the header of the proposed file first.
-3. Phone: build and install the benchmark build ([setup](setup.md), "Loop nights"); USB debugging
-   on, plug in, allow the laptop. Then one test: lock the screen, wait an hour, and run the wrapper's
-   `status`. If the device is gone, the loop can only run while the screen is unlocked; say so.
-4. Tell the loop session to start.
-
-## The loop
-
-Setup state on 2026-10-10 evening: Oriol did all four steps above except the hour-long lock-screen
-test. The setup session then ran steps 2 to 4 below: `check ok`; experiment 0 is
-`corpus/lab/runs/baseline-2284daa.json`, adopted as `corpus/lab/baseline.json`; the phone control
-row passed (real-time factor 0.064, wait after Stop 0.8 s, peak 1.86 GB, thermal none, phone text
-46 German and 22 English errors against the laptop's 46.0 and 25.3; six of ten texts differ by a few
-words, which is the expected boundary sensitivity). The ledger has that one row. The loop session
-therefore starts at step 1 (branch), confirms with `tools/lab.py ledger`, and skips steps 3 and 4
-unless the ledger is empty.
-
-Setup, once, with Oriol present:
-
-1. `git status` must be clean on `main`. Create the branch `autoresearch/<date>` and work on it.
-2. `tools/lab.py check` must print `check ok`. If it names the hold-out scripts, Oriol has not
-   finished the hold-out move; stop and tell him.
-3. Experiment 0: `tools/lab.py run variants/baseline.json --guard`. It prints the per-take table
-   and a summary block and writes `corpus/lab/runs/baseline-<commit>.json`. Then
-   `tools/lab.py adopt-baseline corpus/lab/runs/baseline-<commit>.json`, which freezes it as
-   `corpus/lab/baseline.json`. Every later stage-1 verdict compares against it.
-4. Phone control row: `tools/lab.py phone-prepare variants/baseline.json`, then the three wrapper
-   commands it prints, then `tools/lab.py phone-score`. This is the parity and timing reference.
-   If the phone is not connected, continue laptop-only and say so in the hand-back.
-5. Confirm with Oriol, then run unattended.
-
-Each experiment:
-
-1. Write `variants/<name>.json` with one idea. Commit it (`git add variants/<name>.json`, a message
-   that names the idea; no numbers yet).
-2. `tools/lab.py run variants/<name>.json` (add `--guard` only when stage 1 passes, then run it
-   again with `--guard`; the guard takes minutes with large models). Read the summary block. A crash
-   is a ledger row with status `crash`; fix a typo, give up on a broken idea after two attempts.
-3. Stage 1 verdict is printed as `stage1: pass|fail` with reasons. Fail: `git reset --hard HEAD~1`
-   (the variant file goes away; the ledger row and the report stay, they are not in git).
-4. Pass: stage 2 on the phone. `tools/lab.py phone-prepare variants/<name>.json`, then exactly
-   these, one per Bash call, nothing else on the line:
-   `tools/phone push-variant corpus/lab/push/<name>` (minutes, 1-3 GB over USB),
-   `tools/phone lab` (run in the background and poll; a run takes 5-20 minutes),
-   `tools/phone pull-results` (prints the result path), then
-   `tools/lab.py phone-score corpus/lab/phone/<file>.json variants/<name>.json`.
-   `stage2: pass` keeps the commit (status `keep`); fail resets it as in step 3.
-5. Append nothing by hand: the ledger `corpus/lab/results.tsv` is written by the runner.
-   Amend the commit message of a keep with the one-line summary the runner printed.
-6. Next idea. The baseline for comparison stays experiment 0 (not the last keep): kept variants
-   are compared against the shipped app, so gains are absolute, and a new variant builds on the
-   best kept one by copying its file.
-
-Rank order when ideas compete: fewer total errors on the ten takes, then fewer German errors, then
-fewer terms missed. `tools/lab.py ledger` shows the ranking; `--all` includes discards, which is
-the accuracy-only ranking regardless of the phone budget.
+The dictionary file is `corpus/lab/dictionary.txt`: the 43 names of the ten scripts, written by
+`tools/lab.py dictionary`. Do not edit it; the mechanism test is "names in the list are recognised".
 
 ## Keep rules (implemented in `tools/evaluate.py`; this is the explanation)
 
-Stage 1, laptop, against `corpus/lab/baseline.json`:
+Stage 1, laptop, against `corpus/lab/baseline.json` (experiment 0):
 
-- Error counts are averaged over three feed sizes per take, because the chunk boundary moves with
-  the recorder's read size and that alone moves the ten-take count by several words.
-- Total errors fall by at least 8 words, and more takes improve than get worse (paired, per take).
-- Neither language gets worse by more than 1 word; terms missed grows by at most 1;
-  punctuation/case issues grow by at most 2; no letters on 5 s of silence or faint noise.
-- When the guard was run on both: no language's guard word error rate rises by more than 1 point.
+- Error counts are averaged over three recorder feed sizes per take, because the chunk boundary
+  alone moves the ten-take count by several words.
+- **General rule** (variants without `hotwords`): total errors fall by at least 8 words, more takes
+  improve than get worse, neither language worse by more than 1 word, terms missed grow by at most
+  1, punctuation/case issues by at most 2, no letters on 5 s of silence or faint noise, and when
+  the guard was run on both, no language's guard word error rate rises by more than 1 point.
+- **Dictionary rule** (variants with `hotwords`, always run with `--guard`): at least 5 more of the
+  130 terms come out right than in experiment 0; errors outside dictionary words grow by at most 3;
+  at most 1 dictionary word appears in the 210 public clips (where none is spoken); silence clean;
+  guard not worse by more than 1 point. The claim a passing dictionary variant earns is "names in
+  the user's list are recognised", not "the recognizer got better"; the ledger note says which.
 
-Stage 2, phone, from the LabTest result:
+Stage 2, phone, from the LabTest result: median real-time factor per chunk under 0.3; wait after
+Stop on the paced longest and shortest take under 2 s; thermal status never above moderate. Peak
+memory above 2 GB is a flag, not a fail. Phone text is compared with the laptop report of the same
+variant; a few words of difference are expected, a larger divergence is flagged and then the phone
+text's numbers count.
 
-- Median real-time factor per chunk under 0.3; wait after Stop on the paced longest and shortest
-  take under 2 s; thermal status never above moderate. Peak memory above 2 GB is a flag in the
-  note, not a fail.
-- Parity: the phone's text is compared with the laptop report of the same variant. Differences of
-  a few words are expected (boundary sensitivity, arm64 arithmetic). A larger divergence is flagged;
-  then the phone text's numbers in the note are the ones that count, and you say so in the hand-back.
-
-Budget exhaustion: stop after 40 experiments or when ideas within the schema are exhausted, whichever
+Budget: stop after 40 experiments or when the range-finding says nothing left can move, whichever
 comes first, and write the hand-back.
 
-## Ideas worth trying first (tier A, cheap, same model)
+## The loop
 
-Cutting: `min_chunk_s` 25 or 30; `pad_s` 0.2, 0.6, 1.0; `min_silence_s` 0.5, 1.2; `vad_max_speech_s`
-15, 30; `max_chunk_s` as a safety cap. Decoding: `modified_beam_search` with `max_active_paths`
-4, 8, 16 (expect a speed cost; the phone decides); `blank_penalty` 0.5, 1.0, 1.5 (fewer dropped words
-at chunk starts?). Threads: speed only, skip stage 1, judge on the phone against the control row.
-Post: `seam_capitalize` true. Combine the winners.
+Setup, once (steps 2 to 4 are done when the ledger already has the rows; check with `tools/lab.py ledger --all`):
 
-Tier B (prepared families, expected to rank on accuracy, not to pass the budget):
+1. `git status` clean on `main`; create the branch `autoresearch/<date>`.
+2. `tools/lab.py check` prints `check ok`.
+3. Experiment 0 exists (`corpus/lab/baseline.json`). Do not re-run it.
+4. Phone control row for the new build: `tools/lab.py phone-prepare variants/baseline.json`, the
+   three wrapper commands it prints, `tools/lab.py phone-score`. If the phone is not reachable,
+   continue laptop-only and say so in the hand-back.
+5. Range-finding results of the setup session are in the ledger (the prepared files above). Read
+   them before choosing the first idea.
 
-- `whisper-turbo`: laptop real-time factor about 0.5, so probably outside the phone budget;
-  wrote "Thank you." on silence in the smoke test, which fails the silence rule. Try it anyway for
-  the accuracy ranking; try `min_chunk_s` 15-20 with `max_chunk_s` 26.
-- `canary-180m`: a small model; the interesting part is whether the language identification holds
-  on every take (`lid` column) and what it does on names.
+Each experiment:
 
-Things that are not in the schema and therefore not experiments: hotwords, overlapping chunks,
-other runtimes, GPU or neural-core acceleration, new model downloads. Write such ideas, with the
-evidence that made you want them, into the hand-back as requests for a setup round.
+1. Write `variants/<name>.json` with one idea. Commit it (a message that names the idea; no numbers).
+2. `tools/lab.py run variants/<name>.json` (dictionary variants: always `--guard`; others: add
+   `--guard` after a pass and run again). Read the summary block. A crash is a ledger row with
+   status `crash`; fix a typo, give up on a broken idea after two attempts.
+3. `stage1: fail`: `git reset --hard HEAD~1`. The ledger row and the report stay (not in git).
+4. `stage1: pass`: stage 2 on the phone. `tools/lab.py phone-prepare variants/<name>.json`, then
+   exactly these, one per Bash call, nothing else on the line:
+   `tools/phone push-variant corpus/lab/push/<name>` (minutes; up to 3 GB over USB),
+   `tools/phone lab` (run in the background and poll; 5 to 20 minutes),
+   `tools/phone pull-results`, then
+   `tools/lab.py phone-score corpus/lab/phone/<file>.json variants/<name>.json`.
+   `stage2: pass` keeps the commit (status `keep`); fail resets it as in step 3.
+5. The ledger is written by the runner only. Amend a keep's commit message with the runner's summary line.
+6. Next idea. Comparison stays against experiment 0, so gains are absolute; build on the best kept
+   variant by copying its file.
+
+Rank order when ideas compete: fewer total errors on the ten takes, then fewer German errors, then
+fewer terms missed; dictionary variants rank by terms recovered. `tools/lab.py ledger` shows keeps;
+`--all` is the accuracy-only ranking regardless of the phone budget.
+
+## Ideas, in the order the range-finding suggests
+
+1. **Dictionary** (`hotwords`): scores between 1.5 and 3.0 on the shipped model with beam search 4;
+   score 6 produced insertions everywhere in the smoke test, so the useful range is narrow. Beam
+   width 8 with the gate. The same list through `qwen3` (prompt hotwords).
+2. **New families on their own**: `qwen3` and `cohere` rows from the setup session say whether
+   either beats the baseline on names at all; if one does by more than the margin on the laptop,
+   its phone row decides (both are near the 0.3 real-time budget; cohere also drops the last word
+   of a chunk in the smoke test, which `pad_s` or `cutting` may fix: range-find it).
+3. **Gate alone** (`beam4-gate`): about 3 words from beam search without the silence failure; it
+   does not pass the margin by itself but combines with the dictionary.
+4. Things that are flat (do not re-run): cutting and decoding knobs on the shipped model, full
+   precision, the spike quantisation variants, Whisper turbo, Canary 180M.
+
+Not in the schema and therefore not experiments: overlapping chunks, number and money formatting
+rules, other runtimes, GPU or neural-core acceleration, new downloads, a bigger Canary. Write such
+ideas, with evidence, into the hand-back as requests for a setup round.
 
 ## Phone rules
 
 - The phone is reached only through the wrapper, one call per Bash command, exactly as printed by
   `phone-prepare`. A hook blocks any other shell command that mentions the wrapper path, the Android
   debug bridge, fastboot or platform-tools, including in commit messages and heredocs. Read the
-  wrapper with the Read tool if you need to see it. Never propose or apply changes to it or to
-  the gate files; write wrapper requests into the hand-back.
-- Never call `install` or `uninstall`. The benchmark build is installed by Oriol before the night
-  and reinstalled with the release build by him afterwards.
-- Serial phone runs only. If a `lab` run fails because the phone is not reachable, do not retry in
-  a loop: note it, continue laptop-only, and tell Oriol in the hand-back.
-- Heat: if `phone_thermal_max` reaches 3, wait 15 minutes and rerun that variant once. If it
-  happens again, stop phone runs for the night.
+  wrapper with the Read tool if you need to see it. Never propose or apply changes to it or to the
+  gate files; write wrapper requests into the hand-back.
+- Never call `install` or `uninstall`. Oriol installs the benchmark build before the night and the
+  release build afterwards.
+- Phone runs only at night: Oriol needs the phone during the day. If a run would start after
+  06:30 local time, skip stage 2, mark the row `pending-phone`, and continue laptop-only.
+- Serial phone runs only. If a `lab` run fails because the phone is not reachable, do not retry in a
+  loop: note it, continue laptop-only, and tell Oriol in the hand-back. If the permission layer
+  refuses a wrapper call, the same: note it, no workaround.
+- Heat: if `phone_thermal_max` reaches 3, wait 15 minutes and rerun that variant once. If it happens
+  again, stop phone runs for the night.
 - Nothing is copied out of `corpus/`, and nothing from `corpus/` goes anywhere but `corpus/lab/`.
   `pull-results` copies JSON only.
 
 ## Terminal states and the hand-back
 
 Stop and write `corpus/lab/handback-<date>.md` when: the phone is unreachable twice in a row,
-parity fails for the baseline control row (then laptop accuracy is not trusted; say so), the
-recording trigger fires, the budget is exhausted, or anything needs Oriol. The hand-back lists:
-the branch and last kept commit; the ledger path and a copy of `tools/lab.py ledger --all`; the
-control rows (baseline on the phone at the start and the end of the night); disk used under
-`corpus/lab/`; which build is on the phone; open requests for a setup round; and, if the trigger
-fired, the exact variant to record with.
+parity fails for the baseline control row, the recording trigger fires, the budget is exhausted, or
+anything needs Oriol. The hand-back lists: the branch and last kept commit; the ledger path and a
+copy of `tools/lab.py ledger --all`; the range-finding verdict per family; the control row; disk
+used under `corpus/lab/`; which build is on the phone; open requests for a setup round; and, if the
+trigger fired, the exact variant to record with.
 
-Recording trigger (pre-registered): a kept variant whose German error count is at least 12 words
-(about 2 points) below experiment 0, English not worse than experiment 0 by more than 1 word,
-guard not worse, stage 2 passed. Then Oriol records the four hold-out scripts once, in the app,
-benchmark mode on. The hold-out rule, also pre-registered: on identical audio, the candidate must not
-be worse than the baseline variant on any hold-out take by more than 2 words and must have fewer
-German errors in total; English may be worse by at most 1 point. The verdict is Oriol's.
+Recording trigger (pre-registered): a kept variant under the general rule whose German error count
+is at least 12 words below experiment 0, English not worse by more than 1 word, guard not worse,
+stage 2 passed. For a dictionary variant the trigger is: at least 10 terms recovered, errors outside
+dictionary words not worse by more than 3, no guard insertions, stage 2 passed; the recording then
+also tests names that are not in the list. Then Oriol records the four hold-out scripts once, in the
+app, benchmark mode on. The hold-out rule, also pre-registered: on identical audio, the candidate
+must not be worse than the baseline variant on any hold-out take by more than 2 words and must have
+fewer German errors in total; English may be worse by at most 1 point. The verdict is Oriol's.
 
 ## What the loop does not do
 
-It does not touch `docs/` (the setup and hand-back sessions do), does not merge to `main`, does not
-commit anything under `corpus/`, does not change the app's default pipeline (porting a winner is a
+It does not touch `docs/`, does not merge to `main`, does not commit anything under `corpus/`,
+does not change the app's default pipeline (porting a winner, including any dictionary UX, is a
 later change with its own decision record), and does not ask whether to continue. It continues
 until a terminal state.

@@ -75,3 +75,23 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 **Trade-offs.** The loop searches a fixed knob space instead of editing code; ideas outside the schema wait for a setup round. Phone and laptop texts differ by a few words for the same variant because of boundary sensitivity, so parity is checked with a tolerance and the phone text counts when they diverge. The benchmark build, debuggable, stays on the phone overnight.
 
 **Revisit when:** a kept variant reaches the recording trigger, the control row shows laptop and phone accuracy diverging, or the schema blocks an idea with evidence behind it.
+
+**Update 2026-10-11, after the first night.** 40 experiments, none kept (`corpus/lab/handback-2026-10-10.md`). The review found the cause: nobody had checked whether any schema-1 knob could move the 8-word margin. It could not; see ADR-005.
+
+## ADR-005 — Schema 2: range-finding, a dictionary as mechanism test, and two new model families
+
+**Date:** 2026-10-11. **Status:** approved by Oriol on 2026-10-11, with the note that the dictionary's user experience is not designed and not decided. **Builds on:** ADR-004.
+
+**Context.** The baseline's 67 word errors on the ten takes are 38 names and terms, 10 numbers and formats, 16 ordinary words and 3 insertions. The same dozen names are missed by all 36 Parakeet variants of the first night; cutting and decoding knobs reach only the ordinary words, and their whole span (68.7 to 86.0 total errors) lies inside the margin. Whisper turbo misses the same names and runs at half real time. Beam search gains about 3 words but writes on silence.
+
+**Decision.**
+
+- **Range-finding is a rule.** The extremes of a knob family are run first; a family whose span stays inside the keep margin is not an experiment (`tools/lab.py range`).
+- **Dictionary via hotwords, judged as a mechanism.** Schema 2 adds `hotwords` (a file of names, read from the laboratory directory on both sides) for Parakeet with modified beam search and for Qwen3 as a prompt. The list is the 43 names of the ten scripts, so the test is "names in the user's list are recognised", with pre-registered metrics: terms recovered, errors outside dictionary words not worse, false insertions in the 210 public clips (where none of the names occur), silence clean, speed on the phone. Oriol lifted the earlier "no hotwords" on this basis. The smoke test shows the mechanism works ("Mrs Keller" recovered at score 3) and that score 6 floods the text with insertions.
+- **No-speech gate** (`post.skip_silent_chunks`): a chunk in which the voice detector found no speech is not decoded. Removes the silence failure of beam search and Whisper on both sides.
+- **Two new families** from the pinned runtime, assets pinned in `experiments.lock`: Qwen3-ASR 0.6B INT8 (laptop real-time factor about 0.2, detects the language itself) and Cohere Transcribe 14 languages INT8 (2.9 GB, laptop real-time factor about 0.25, needs the language, so it shares Canary's language-identification path). Canary 1B stays unavailable in this runtime.
+- Nights only: Oriol needs the phone during the day; the brief tells the loop to skip stage 2 after 06:30.
+
+**Trade-offs.** A dictionary that works on the scripts' names proves the mechanism, not Oriol's real vocabulary; the recording session, if triggered, tests names outside the list. Hotword scores above 3 are destructive, so the useful range is narrow. Cohere is near the phone's speed budget and 2.9 GB. The dictionary's user experience (how names get into the list, how they are edited) is deliberately undecided.
+
+**Revisit when:** the range-finding of the dictionary and the two families is in the ledger, or a dictionary variant reaches the trigger.
