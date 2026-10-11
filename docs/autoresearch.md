@@ -161,6 +161,7 @@ fewer terms missed; dictionary variants rank by terms recovered. `tools/lab.py l
 |---|---|---|---|---|---|---|---|
 | baseline (experiment 0) | 71.3 | 46.0 | 25.3 | 24 | 4.8 / 2.0 | 0.05 | reference |
 | cohere | 45.7 | 24.3 | 21.3 | 17 | 2.8 / 1.4 | 0.25 | **stage 1 pass**, gain 25.7, 9 takes better; language right on all ten |
+| cohere-noitn (number formatting off) | 47.0 | 26.7 | 20.3 | 17 | - | 0.25 | stage 1 pass, gain 24.3: the gain is recognition, not formatting |
 | dict-beam4 (score 1.5) | 59.7 | 41.0 | 18.7 | 18 | 6.0 / 1.8 | 0.08 | dictionary rule pass against beam4-gate: 6 terms recovered, 1 guard insertion |
 | dict-beam4-s3 (score 3.0) | 69.0 | 42.0 | 27.0 | 22 | 5.7 / 2.6 | 0.08 | fail: 7 guard insertions; score 6 was destructive in the smoke test |
 | beam4-gate | 68.7 | 46.3 | 22.3 | 24 | 6.6 / 1.8 | 0.08 | fail: 2.7 words, and worse on the guard's German |
