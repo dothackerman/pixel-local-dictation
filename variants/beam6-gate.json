@@ -1,0 +1,10 @@
+{
+  "schema": 2,
+  "name": "beam6-gate",
+  "description": "modified beam search 6 paths with the no-speech gate, no dictionary: twin for the beam-6 dictionary variants",
+  "family": "parakeet",
+  "model": "parakeet-v3-matmul8",
+  "threads": 4,
+  "decoding": {"method": "modified_beam_search", "max_active_paths": 6},
+  "post": {"skip_silent_chunks": true}
+}
