@@ -49,7 +49,8 @@ exist, the wrapper and the gate. Quirks of the normaliser go into the ledger not
 | `dict-beam4-fp32-s20` | full-precision encoder, beam 4, dictionary 2.0 | 60.0, 6, 4.74 / 2.10 %, 2.2 s; pass, 1 guard insertion |
 | `dict-beam6-fp32-s20` | full-precision encoder, beam 6, dictionary 2.0 | 53.0, 10, 4.71 / 1.81 %, 2.8 s; pass, 1 guard insertion |
 | `dict-beam8-fp32-s20` | full-precision encoder, beam 8, dictionary 2.0 | 47.0, 13, 4.62 / 1.75 %, 3.3 s; pass, 1 guard insertion |
-| `dict-beam8-fp32-s175`, `dict-beam8-fp32-s225` | score neighbours at beam 8 | 52.3, 9 and 45.0, 14; see the ledger for their verdicts |
+| `dict-beam8-fp32-s175` | score neighbour at beam 8, score 1.75 | 52.3, 9, 4.65 / 1.68 %, 3.3 s; pass with **no guard insertion**: one name short of the recording trigger's 10 |
+| `dict-beam8-fp32-s225` | score neighbour at beam 8, score 2.25 | 45.0, 14, but 4 guard insertions: stage 1 fail; run on the phone only if time is left, as a measurement |
 | `beam4-fp32-gate`, `beam6-fp32-gate`, `beam8-fp32-gate` | the no-dictionary twins | 69.7 / 68.0 / 68.7; fail the general rule by design; needed as references |
 | `cohere` | Cohere Transcribe, one instance, language per stream from Whisper tiny | 45.7, 7, 2.75 / 1.36 %, 6.6 s; identical to the two-instance run |
 
