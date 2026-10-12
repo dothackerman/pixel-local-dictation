@@ -33,3 +33,65 @@ Evidence for requirement R4. Raw recordings, transcripts and reports stay in the
 - All negations in the six scripts ("nicht achtzehn", "not eighteen", "nicht beim Hafen") survived in both.
 
 **Not measured.** Short single sentences, noisy surroundings, Oriol's real vocabulary, takes without reading from a script, scripts 4 and 5.
+
+## Laptop setup validation, 2026-10-12
+
+Six complete laptop replays validate the configuration/evaluator changes in commit `c63cb0d`
+on `autoresearch/2026-10-11` (variant schema 3, evaluator revision 3). Each uses the same ten
+personal takes with three feed schedules, all 210 public guard clips (2,491 seconds), and the
+silence/noise checks. Personal error counts are means over the three feeds: 584 German and
+632 English reference words, 1,216 total. The normalizer and acceptance thresholds are unchanged.
+The baseline and existing INT8 controls reproduce their historical accuracy results.
+
+| Variant | German errors | English errors | Total errors | Terms missed / 130 | Guard DE WER | Guard EN WER | Laptop rule |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Baseline | 46.00 | 25.33 | 71.33 | 24 | 4.81% | 2.01% | Control |
+| Qwen, corrected context 1024 | 73.67 | 33.33 | 107.00 | 36 | 12.00% | 2.62% | Fail |
+| INT8 beam 8 | 47.00 | 21.67 | 68.67 | 25 | 6.53% | 1.78% | Fail |
+| INT8 beam 8 + dictionary 2.0 | 37.00 | 13.33 | 50.33 | 15 | 5.98% | 1.88% | Dictionary pass |
+| FP32 beam 8 | 43.33 | 25.33 | 68.66 | 22 | 4.81% | 1.78% | Fail |
+| FP32 beam 8 + dictionary 2.0 | 35.33 | 11.67 | 47.00 | 11 | 4.62% | 1.75% | Dictionary pass |
+
+The two plain-beam totals are both approximately 68.7; their 0.01 difference comes from rounding
+the language means. All six variants emit zero characters on the silence/noise checks.
+
+**Qwen.** Correcting its constructor context budget improves the historical broken result from
+180.34 to 107.00 errors. All 30 take/feed pairs retain identical chunk boundaries, so different
+cutting does not explain the improvement. It still loses to baseline on both languages, terms,
+and the German public guard. This corrected export/configuration does not warrant phone testing
+on this evidence. Configuration contract and limits: [ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence).
+
+**Beam collapse.** Replacing only the encoder with FP32 removes the reproduced catastrophic
+deletion on the public German diagnostic clip: INT8 beam has 62 errors, FP32 beam has 5;
+with dictionary 2.0 the corresponding counts are 44 and 6. The full guard also recovers.
+This isolates a precision/search interaction, not a traced numerical defect or a general decoder
+repair; see the [beam investigation](beam-investigation-2026-10-12.md). Plain FP32 beam still
+fails the general rule: about 2.7 fewer errors is below the eight-word margin, and four takes
+improve while five worsen. Earlier greedy FP32 parity did not establish beam/dictionary parity.
+
+**Best laptop candidate.** FP32 beam with dictionary 2.0 has 47.00 errors versus baseline's
+71.33, recovers 13 additional terms, and improves both public guard scores. Both dictionary
+variants improve all ten takes versus baseline and pass the dictionary mechanism rule against
+their own no-dictionary twin. Non-dictionary errors fall from 63.00 to 44.67 for FP32 and from
+63.33 to 48.00 for INT8. Neither inserts a dictionary word absent from the personal take's
+reference. Each nevertheless has **one false dictionary insertion on the public guard**.
+Consequently the stricter zero-insertion recording trigger is not met. FP32 phone memory and
+latency remain unmeasured; these setup replays are not new stage-2 keeps or a deployment decision.
+
+**Evaluator validation.** Sixteen Python tests and 27 Kotlin tests pass, including configuration
+budgets, evidence coverage, memory accounting, and accuracy checks on actual phone text.
+Independent standards/spec reviews found two evidence holes (baseline exemption by name alone
+and missing per-take timing coverage); both were fixed and regression-tested before these replays.
+The frozen-file check passes. Re-evaluating ten saved phone reports with revision 3 changes no
+verdicts: corrected Parakeet memory peaks are about 2.1 GB, while Cohere's saved peak is about
+5.39 GB and fails the existing memory ceiling as well as stop latency. These are historical
+reports, not new phone measurements. No phone access occurred in this work.
+
+**Reproducibility.** Raw reports remain local under `corpus/lab/runs/`, named
+`setup3-{baseline,qwen3-context1024,beam8-gate,dict-beam8-s20,beam8-fp32-gate,dict-beam8-fp32-s20}-20261012.json`.
+The aggregate comparison is `corpus/lab/setup3-comparisons-20261012.json`; the five candidate
+replays' successful exits and inference-source hashes are in
+`corpus/lab/setup3-replay-manifest-20261012.json`. All hashes match the committed inference code.
+The historical phone re-evaluation is `corpus/lab/setup3-historical-phone-reevaluation-20261012.json`.
+Original ledger rows and reports remain unchanged. No personal audio or transcript was copied
+outside `corpus/`.

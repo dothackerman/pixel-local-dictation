@@ -1,5 +1,9 @@
 # What the autoresearch loop missed
 
+This records the initial research pass. Subsequent authorized implementation is recorded in
+[ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence),
+with laptop follow-up measurements in [results](results.md).
+
 Investigation date: 2026-10-12. This is an evidence review and bounded laptop diagnosis, not a new engine decision or a successful product benchmark. The phone, frozen loop, ledger and production implementation were not changed. Personal audio and diagnostic transcripts remained under `corpus/`; this note contains aggregate findings only.
 
 **Conclusion:** the evidence supports investigating adapter contracts and decoder failures before running another parameter sweep. The loop excluded implementation changes, and several observed failures were interpreted too broadly. Three concrete leads use the already installed runtime and assets. Model and accelerator alternatives remain available, but none is yet an established winner under [the requirements](requirements.md).

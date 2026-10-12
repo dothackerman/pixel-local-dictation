@@ -22,6 +22,11 @@ overflow, and full-precision greedy parity did not validate beam/hotword decodin
 [beam diagnosis](beam-investigation-2026-10-12.md). Do not restart the night-two order or run phone
 stage 2 from this amendment; laptop results are reviewed first.
 
+The six completed setup replays and their limits are in
+[measurement results](results.md#laptop-setup-validation-2026-10-12). FP32 beam with dictionary
+is the strongest laptop candidate, but its one false guard insertion leaves the recording trigger
+unmet; phone memory and latency for that combination remain unmeasured.
+
 Status: revision 2, written 2026-10-11 by the setup session after the first night and its review,
 agreed with Oriol. This is the whole brief for a fresh session that runs accuracy experiments
 unattended, modelled on karpathy/autoresearch: change one thing, measure, keep or discard, log,

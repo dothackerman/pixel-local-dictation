@@ -2,6 +2,10 @@
 
 Status: reproduced and isolated to an encoder-precision/search interaction on one public clip. A general repair is not established. No phone access, production decoder change, fallback implementation, evaluator change, model download or commit was performed by this investigation. See [earlier audit](loop-investigation-2026-10-12.md#2-reproduced-the-beam-search-german-regression-is-concentrated-in-one-collapse) for the full-guard concentration evidence.
 
+Follow-up: the complete paired laptop replays are now recorded in
+[measurement results](results.md#laptop-setup-validation-2026-10-12). The sections below preserve
+the isolated diagnosis and its proposed next checks; the full-suite results supersede that pending status.
+
 ## Discriminating result
 
 The German public guard clip `models/guard/de/140_82_000065.wav` is approximately 20 seconds with 65 normalized reference words. Changing **only encoder precision** removes its catastrophic deletion under beam search:
