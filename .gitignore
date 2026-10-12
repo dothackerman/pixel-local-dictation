@@ -20,3 +20,4 @@ models/
 app/libs/
 app/src/main/assets/
 __pycache__/
+.claude/worktrees/
