@@ -57,22 +57,39 @@ No new variants are written tonight. The phone is the experiment.
 
 ## The night, in order
 
-Setup: `git status` clean on `main` at the commit "Cohere in one instance" or later; create the
-branch `autoresearch/<date>` from it; `tools/lab.py check` prints `check ok`; `tools/lab.py ledger
---all` shows the rows above.
+Setup: `git status` clean on `main` at the commit "Brief revision 3" or later; create the branch
+`autoresearch/<date>` from it; `tools/lab.py check` prints `check ok`; `tools/lab.py ledger --all`
+shows a `pass` row with a filled `reference` column for every dictionary variant above and a row
+for `cohere`, and no laptop decode is still running (the ledger is rewritten whole on every write).
+Reading results: per-take errors and `terms_missed` of a phone result come from
+`tools/evaluate.py takes corpus/lab/phone/<file>.json` (names recovered = 24 minus `terms_missed`);
+both wait readings are `paced[].stopToFinalMs` in the result file (`phone-score` prints only the
+larger one); the upper bound on the wait is the largest `chunks[-1].decodeMs` over the ten takes.
+`phone-score` judges accuracy only when every budget rule passed, so for a run that fails memory or
+wait, those two commands are the source of the accuracy columns.
 
 1. **Control row.** `tools/lab.py phone-prepare variants/baseline.json`, the three wrapper
    commands, `tools/lab.py phone-score`. Expected: real-time factor about 0.06, wait under 1 s,
    peak about 2.1 GB (revision 3 counts the paced run too), thermal 0. If this fails, stop and write
-   the hand-back: the phone or the build is wrong.
+   the hand-back: the phone or the build is wrong. `push-variant` and `lab` run with the Bash tool's
+   background option (a foreground command is capped at 10 minutes; a 2.5 GB push takes up to 5,
+   a `lab` run 8 to 20); `lab` starts only after the push printed its size list.
 2. **Full-precision dictionary, narrowest first.** For `dict-beam4-fp32-s20`, then
-   `dict-beam6-fp32-s20`, then `dict-beam8-fp32-s20`: prepare, push (the model is 2.5 GB; 15-minute
-   timeout; `lab` only after the size list printed), `lab`, pull, `phone-score ... --reference
-   beam<N>-fp32-gate`. **Run each width twice**, the second run at least 10 minutes after the first,
-   so the wait after Stop has two readings and the thermal state of each is known. The runner
-   writes the second run over the same ledger row; copy the first run's `phone_stop_max_ms`,
-   `phone_vmhwm_mb` and `phone_thermal_max` into the hand-back table before the second run. A width
-   is "holding the wait" only if both readings are under 2 s.
+   `dict-beam6-fp32-s20`, then `dict-beam8-fp32-s20`: prepare, push (the model is 2.5 GB), `lab`,
+   pull, `phone-score ... --reference beam<N>-fp32-gate`. **Run each width twice**, the second run at least 10 minutes after the first,
+   so the wait after Stop has two readings and the thermal state of each is known. The second run
+   is `lab` and `pull-results` only (the files are already on the phone); before scoring it, check
+   that `before.elapsedMs` in the new result differs from the first one's, otherwise `lab` did not
+   run and the old result was pulled again. The gap is a background `sleep 600`. The runner writes
+   the second run over the same ledger row; copy the first run's readings into the hand-back table
+   before the second run. A width is "holding the wait" only if both readings are under 2 s.
+   **Memory is a property of the encoder, not of the width:** the beam 4 run answers question 1 for
+   all three widths. If it is above 3.5 GB, `phone-score` will mark every full-precision row
+   `discard`; that is the answer, recorded once, and the sweep continues for the wait and name
+   readings (the laptop needed 2.9 GB for one decode, so the phone may land either side of the
+   limit). A width whose stage-1 row is `fail` is still run and recorded with
+   `tools/evaluate.py phone <result>` (budget only) and `tools/evaluate.py takes <result>`, with
+   "stage 1 fail" in the table.
 3. **Score neighbours** at the widest width that held the wait: `dict-beam8-fp32-s175` and
    `dict-beam8-fp32-s225` if beam 8 held, otherwise skip them (their phone speed equals beam 8's).
 4. **Cohere, one instance, as a measurement.** One run: prepare, push (3 GB), lab, pull,
@@ -112,7 +129,8 @@ unless a phone run changes that; say so plainly in the hand-back rather than ben
   gate files; write wrapper requests into the hand-back.
 - Never call `install` or `uninstall`. Oriol installs benchmark build 0.2.5 before the night and
   the release build afterwards.
-- Phone runs only at night. No stage 2 after 06:30; the phone is Oriol's during the day.
+- Phone runs only at night. No `lab` run starts after 06:00 (a Cohere run lasts up to 20 minutes);
+  the phone is Oriol's during the day.
 - Serial phone runs only. If a `lab` run fails because the phone is not reachable, or the
   permission layer refuses a wrapper call, note it, do not retry in a loop, continue with the
   hand-back.
