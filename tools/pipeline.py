@@ -125,16 +125,26 @@ class Qwen3:
         words = ""
         if hotwords_path:
             words = ",".join(l.strip() for l in open(hotwords_path, encoding="utf-8") if l.strip())
+        self.qwen3 = v["qwen3"]
+        self.max_chunk_s = v["cutting"]["max_chunk_s"]
+        variant_mod.qwen3_check_budget(self.qwen3, self.max_chunk_s, words)
         self.rec = sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
             conv_frontend=one(model_dir, "conv_frontend"), encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"),
             tokenizer=os.path.join(model_dir, "tokenizer") if os.path.isdir(os.path.join(model_dir, "tokenizer")) else model_dir,
-            num_threads=v["threads"], hotwords=words)
+            num_threads=v["threads"], hotwords=words,
+            max_total_len=self.qwen3["max_total_len"], max_new_tokens=self.qwen3["max_new_tokens"])
 
     def begin_take(self, first_chunk):
         return ""
 
     def transcribe(self, samples):
+        if len(samples) > round(self.max_chunk_s * RATE):
+            raise ValueError("qwen3: input exceeds validated chunk duration")
         s = self.rec.create_stream(); s.accept_waveform(RATE, samples); self.rec.decode_stream(s)
+        # sherpa strips up to 16 language/scaffold tokens from the reported tokens. Refuse a
+        # near-limit result rather than returning a possibly truncated transcript as success.
+        if len(s.result.tokens) >= self.qwen3["max_new_tokens"] - 16:
+            raise ValueError("qwen3: result approaches generation limit; increase budget or shorten chunks")
         return s.result.text.strip()
 
 

@@ -44,7 +44,10 @@ class ModelFiles(val assets: AssetManager?, private val dir: String, private val
 }
 
 /** One sherpa-onnx offline recognizer (Parakeet transducer or Whisper), configured from a [Variant]. */
-class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val label: String) : Recognizer {
+class SherpaRecognizer(
+    private val recognizer: OfflineRecognizer, private val label: String,
+    private val qwenVariant: Variant? = null,
+) : Recognizer {
     companion object {
         fun parakeet(v: Variant, m: ModelFiles, hotwordsPath: String = ""): SherpaRecognizer {
             val config = OfflineRecognizerConfig()
@@ -76,8 +79,12 @@ class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val la
             if (hotwordsPath.isNotEmpty()) {
                 config.modelConfig.qwen3Asr.hotwords = File(hotwordsPath).readLines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
             }
+            v.qwen3.checkBudget(v.cutting.maxChunkS, config.modelConfig.qwen3Asr.hotwords)
+            // Dynamic KV dimensions are fixed from these constructor settings by sherpa.
+            config.modelConfig.qwen3Asr.maxTotalLen = v.qwen3.maxTotalLen
+            config.modelConfig.qwen3Asr.maxNewTokens = v.qwen3.maxNewTokens
             config.modelConfig.numThreads = v.threads
-            return load(config, m, "qwen3")
+            return load(config, m, "qwen3", v)
         }
 
         fun cohere(v: Variant, m: ModelFiles, language: String = v.cohere.language): SherpaRecognizer {
@@ -115,21 +122,31 @@ class SherpaRecognizer(private val recognizer: OfflineRecognizer, private val la
             return load(config, m, "canary-$lang")
         }
 
-        private fun load(config: OfflineRecognizerConfig, m: ModelFiles, label: String): SherpaRecognizer {
+        private fun load(config: OfflineRecognizerConfig, m: ModelFiles, label: String, qwenVariant: Variant? = null): SherpaRecognizer {
             val started = SystemClock.elapsedRealtime()
             val rec = OfflineRecognizer(m.assets, config)
             Log.i(TAG, "$label loaded in ${SystemClock.elapsedRealtime() - started} ms, pid ${Process.myPid()}")
-            return SherpaRecognizer(rec, label)
+            return SherpaRecognizer(rec, label, qwenVariant)
         }
     }
 
     override fun transcribe(samples: FloatArray): String {
+        qwenVariant?.let {
+            require(samples.size <= (it.cutting.maxChunkS * SAMPLE_RATE).toInt()) { "qwen3: input exceeds validated chunk duration" }
+        }
         val started = SystemClock.elapsedRealtime()
         val stream = recognizer.createStream()
         try {
             stream.acceptWaveform(samples, SAMPLE_RATE)
             recognizer.decode(stream)
-            val text = recognizer.getResult(stream).text
+            val result = recognizer.getResult(stream)
+            qwenVariant?.let {
+                // sherpa removes up to 16 generated language/scaffold tokens from the result.
+                require(result.tokens.size < it.qwen3.maxNewTokens - 16) {
+                    "qwen3: result approaches generation limit; increase budget or shorten chunks"
+                }
+            }
+            val text = result.text
             Log.i(TAG, "%s decoded %.1f s in %d ms, pid %d".format(
                 label, samples.size / SAMPLE_RATE.toDouble(), SystemClock.elapsedRealtime() - started, Process.myPid()))
             return text

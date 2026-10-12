@@ -1,9 +1,10 @@
 package ch.og.dictation
 
 import org.json.JSONObject
+import kotlin.math.ceil
 
 /**
- * Kotlin twin of tools/variant.py (schema 2): one decode pipeline, fully described. The daily
+ * Kotlin twin of tools/variant.py (schema 3): one decode pipeline, fully described. The daily
  * app runs [DEFAULT]; the laboratory test (LabTest) runs whatever variant.json was pushed.
  * Unknown keys are rejected so that laptop and phone can never silently run different pipelines.
  */
@@ -15,6 +16,7 @@ data class Variant(
     val threads: Int = 4,
     val decoding: Decoding = Decoding(),
     val whisper: Whisper = Whisper(),
+    val qwen3: Qwen3 = Qwen3(),
     val cohere: Cohere = Cohere(),
     val lid: Lid = Lid(),
     val hotwords: Hotwords = Hotwords(),
@@ -23,6 +25,13 @@ data class Variant(
 ) {
     data class Decoding(val method: String = "greedy_search", val maxActivePaths: Int = 4, val blankPenalty: Float = 0f)
     data class Whisper(val language: String = "", val tailPaddings: Int = -1)
+    data class Qwen3(val maxTotalLen: Int = 1024, val maxNewTokens: Int = 256) {
+        /** Conservative bound for the pinned byte-BPE export; includes actual dictionary bytes. */
+        fun checkBudget(seconds: Float, hotwords: String = "") {
+            val required = ceil(seconds.toDouble() * 13) + 64 + hotwords.toByteArray(Charsets.UTF_8).size + maxNewTokens
+            require(required <= maxTotalLen) { "qwen3: audio, hotword prompt and generation reserve exceed max_total_len" }
+        }
+    }
     data class Cohere(val language: String = "", val usePunct: Boolean = true, val useItn: Boolean = true)
     data class Lid(val model: String = "", val probeSeconds: Float = 0f, val fallback: String = "en")
     /** Dictionary (ADR-005): file name under files/lab on the phone, corpus/lab on the laptop. */
@@ -36,13 +45,14 @@ data class Variant(
     val isDictionary: Boolean get() = hotwords.file.isNotEmpty()
 
     companion object {
-        const val SCHEMA = 2
+        const val SCHEMA = 3
         val DEFAULT = Variant()
         val FAMILIES = setOf("parakeet", "whisper", "canary", "qwen3", "cohere")
         private val KEYS = mapOf(
-            "" to setOf("schema", "name", "description", "family", "model", "threads", "decoding", "whisper", "cohere", "lid", "hotwords", "cutting", "post"),
+            "" to setOf("schema", "name", "description", "family", "model", "threads", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
             "decoding" to setOf("method", "max_active_paths", "blank_penalty"),
             "whisper" to setOf("language", "tail_paddings"),
+            "qwen3" to setOf("max_total_len", "max_new_tokens"),
             "cohere" to setOf("language", "use_punct", "use_itn"),
             "lid" to setOf("model", "probe_seconds", "fallback"),
             "hotwords" to setOf("file", "score"),
@@ -59,9 +69,10 @@ data class Variant(
                 o.optJSONObject(section)?.let { checkKeys(it, section) }
             }
             val schema = o.optInt("schema", SCHEMA)
-            require(schema == 1 || schema == SCHEMA) { "variant schema $schema not supported, this app knows $SCHEMA" }
+            require(schema in 1..SCHEMA) { "variant schema $schema not supported, this app knows $SCHEMA" }
             val d = o.optJSONObject("decoding") ?: JSONObject()
             val w = o.optJSONObject("whisper") ?: JSONObject()
+            val q = o.optJSONObject("qwen3") ?: JSONObject()
             val co = o.optJSONObject("cohere") ?: JSONObject()
             val l = o.optJSONObject("lid") ?: JSONObject()
             val h = o.optJSONObject("hotwords") ?: JSONObject()
@@ -69,22 +80,32 @@ data class Variant(
             val p = o.optJSONObject("post") ?: JSONObject()
             val def = DEFAULT
             fun JSONObject.f(key: String, default: Float) = optDouble(key, default.toDouble()).toFloat()
+            fun JSONObject.strictInt(key: String, default: Int): Int {
+                if (!has(key)) return default
+                require(get(key) is Int) { "qwen3.$key must be an integer" }
+                return getInt(key)
+            }
+            val family = o.optString("family", def.family)
+            val maxChunkS = c.f("max_chunk_s", def.cutting.maxChunkS).let {
+                if (schema < 3 && family == "qwen3" && it == 0f) 40f else it
+            }
             val v = Variant(
                 name = o.optString("name", def.name),
                 description = o.optString("description", def.description),
-                family = o.optString("family", def.family),
+                family = family,
                 model = o.optString("model", def.model),
                 threads = o.optInt("threads", def.threads),
                 decoding = Decoding(d.optString("method", def.decoding.method), d.optInt("max_active_paths", def.decoding.maxActivePaths),
                     d.f("blank_penalty", def.decoding.blankPenalty)),
                 whisper = Whisper(w.optString("language", def.whisper.language), w.optInt("tail_paddings", def.whisper.tailPaddings)),
+                qwen3 = Qwen3(q.strictInt("max_total_len", def.qwen3.maxTotalLen), q.strictInt("max_new_tokens", def.qwen3.maxNewTokens)),
                 cohere = Cohere(co.optString("language", def.cohere.language), co.optBoolean("use_punct", def.cohere.usePunct),
                     co.optBoolean("use_itn", def.cohere.useItn)),
                 lid = Lid(l.optString("model", def.lid.model), l.f("probe_seconds", def.lid.probeSeconds), l.optString("fallback", def.lid.fallback)),
                 hotwords = Hotwords(h.optString("file", def.hotwords.file), h.f("score", def.hotwords.score)),
                 cutting = Cutting(
                     c.f("min_chunk_s", def.cutting.minChunkS), c.f("pad_s", def.cutting.padS), c.f("min_silence_s", def.cutting.minSilenceS),
-                    c.f("min_speech_s", def.cutting.minSpeechS), c.f("vad_max_speech_s", def.cutting.vadMaxSpeechS), c.f("max_chunk_s", def.cutting.maxChunkS)),
+                    c.f("min_speech_s", def.cutting.minSpeechS), c.f("vad_max_speech_s", def.cutting.vadMaxSpeechS), maxChunkS),
                 post = Post(p.optBoolean("swiss_ss", def.post.swissSs), p.optBoolean("seam_capitalize", def.post.seamCapitalize),
                     p.optBoolean("skip_silent_chunks", def.post.skipSilentChunks)),
             )
@@ -110,6 +131,11 @@ data class Variant(
         if (family == "whisper") {
             require(cutting.maxChunkS > 0f && cutting.maxChunkS <= 28f) { "whisper: cutting.max_chunk_s must be set and at most 28" }
             require(whisper.language in setOf("", "de", "en")) { "whisper.language must be '', 'de' or 'en'" }
+        }
+        if (family == "qwen3") {
+            require(qwen3.maxTotalLen in 512..8192 && qwen3.maxNewTokens in 256..2048) { "qwen3 budgets out of range" }
+            require(cutting.maxChunkS > 0f && cutting.maxChunkS <= 40f) { "qwen3: cutting.max_chunk_s must be set and at most 40" }
+            qwen3.checkBudget(cutting.maxChunkS)
         }
         if (family == "canary") {
             require(lid.model.isNotEmpty()) { "canary: lid.model is required" }

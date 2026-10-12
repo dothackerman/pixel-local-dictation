@@ -1,0 +1,11 @@
+{
+  "schema": 3,
+  "name": "qwen3-context1024",
+  "description": "Qwen3 INT8 with constructor context 1024, generation 256, bounded 40 s chunks; automatic language, no dictionary",
+  "family": "qwen3",
+  "model": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+  "threads": 4,
+  "qwen3": {"max_total_len": 1024, "max_new_tokens": 256},
+  "cutting": {"max_chunk_s": 40},
+  "post": {"skip_silent_chunks": true}
+}

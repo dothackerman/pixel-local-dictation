@@ -1,0 +1,32 @@
+import unittest
+
+from variant import VariantError, validate
+
+
+class VariantTest(unittest.TestCase):
+    def test_old_qwen_variants_get_bounded_audio_and_generation_headroom(self):
+        for schema in (1, 2):
+            v = validate({"schema": schema, "family": "qwen3"})
+            self.assertEqual(1024, v["qwen3"]["max_total_len"])
+            self.assertEqual(256, v["qwen3"]["max_new_tokens"])
+            self.assertEqual(40, v["cutting"]["max_chunk_s"])
+
+    def test_qwen_rejects_unbounded_or_underbudgeted_audio(self):
+        for extra in ({}, {"cutting": {"max_chunk_s": 41}},
+                      {"cutting": {"max_chunk_s": 40}, "qwen3": {"max_total_len": 512}},
+                      {"cutting": {"max_chunk_s": 40}, "qwen3": {"max_new_tokens": 128}},
+                      {"cutting": {"max_chunk_s": 40}, "qwen3": {"max_total_len": "1024"}}):
+            with self.subTest(extra=extra), self.assertRaises(VariantError):
+                validate({"schema": 3, "family": "qwen3", **extra})
+
+    def test_explicit_qwen_budgets_and_other_family_defaults(self):
+        v = validate({"schema": 3, "family": "qwen3", "cutting": {"max_chunk_s": 25},
+                      "qwen3": {"max_total_len": 2048, "max_new_tokens": 512}})
+        self.assertEqual(2048, v["qwen3"]["max_total_len"])
+        self.assertEqual(512, v["qwen3"]["max_new_tokens"])
+        for schema in (1, 2, 3):
+            self.assertEqual(0, validate({"schema": schema})["cutting"]["max_chunk_s"])
+
+
+if __name__ == "__main__":
+    unittest.main()

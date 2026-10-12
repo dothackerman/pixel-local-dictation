@@ -11,11 +11,14 @@ Usage:
   tools/evaluate.py compare BASELINE.json CANDIDATE.json [HOTWORDS.txt [REFERENCE.json]]
                                                     stage-1 keep rule; with a hotwords file the dictionary rule
                                                     applies, judged against REFERENCE (same pipeline, no dictionary)
-  tools/evaluate.py phone RESULT.json [LAPTOP_REPORT.json]  phone budget and text parity
+  tools/evaluate.py phone RESULT.json [LAPTOP_REPORT.json BASELINE.json [HOTWORDS.txt REFERENCE.json]]
+                                                    budget diagnostics; with reports, full phone acceptance
 Prints a summary block of "key: value" lines last; tools/lab.py reads it. Do not edit during a
 loop: checksummed by tools/lab.py check. Quirks of the normaliser are logged, not fixed.
 """
-import json, os, re, statistics, sys
+import json, math, os, re, statistics, sys
+
+import variant as variant_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -35,11 +38,14 @@ DICT_MIN_TERMS_GAIN = 5   # dictionary terms recovered, out of the baseline's mi
 DICT_MAX_OTHER_LOSS = 3   # errors outside dictionary words may grow by at most this many
 DICT_MAX_GUARD_INSERTS = 1  # dictionary words appearing in public clips where none is spoken
 
-# Phone budget (agreed 2026-10-10). Memory is a flag, not a gate (review finding 9).
+# Phone budget. Preserve the campaign's legacy decimal reporting of /proc kB:
+# 2,000,000 is the warning, 3,500,000 is ADR-005's hard rejection threshold.
 MAX_RTF = 0.30
 MAX_STOP_MS = 2000
 MEMORY_FLAG_KB = 2_000_000
+MAX_MEMORY_KB = 3_500_000
 MAX_THERMAL = 2           # PowerManager: 0 none, 1 light, 2 moderate, 3 severe
+EVALUATOR_REVISION = 3
 
 
 def references():
@@ -181,7 +187,7 @@ def totals(rows):
 def summary(report, rows):
     t = totals(rows)
     g = score_guard(report)
-    s = {}
+    s = {"evaluator_revision": EVALUATOR_REVISION}
     for lang in ("de", "en"):
         a = t.get(lang, {"errors": 0, "words": 0, "termsMissed": 0, "termsTotal": 0, "punctCase": 0})
         s[f"{lang}_errors"] = round(a["errors"], 2); s[f"{lang}_words"] = a["words"]
@@ -218,12 +224,65 @@ def print_takes(report):
     return s
 
 
+def evidence_errors(report, label, guard=False):
+    """Check coverage before scoring; missing observations must never look like zero errors."""
+    with open(os.path.join(ROOT, "corpus", "takes.json"), encoding="utf-8") as f:
+        expected = set(json.load(f))
+    takes = report.get("takes", [])
+    ids = [t.get("file") for t in takes]
+    reasons = []
+    if not expected or set(ids) != expected or len(ids) != len(expected):
+        reasons.append(f"{label}: incomplete, duplicate or unknown takes")
+    if any(not isinstance(t.get("text"), str) for t in takes):
+        reasons.append(f"{label}: missing take text")
+    silence = report.get("silence", {})
+    if any(not isinstance(silence.get(k), str) for k in ("silent", "noise")):
+        reasons.append(f"{label}: missing silence evidence")
+    if guard or report.get("guard"):
+        with open(os.path.join(ROOT, "models", "guard", "refs.tsv"), encoding="utf-8") as f:
+            next(f)
+            expected_guard = {p[0]: p[1] for line in f if (p := line.rstrip("\n").split("\t"))}
+        rows = report.get("guard", [])
+        ids = [g.get("id") for g in rows]
+        if set(ids) != set(expected_guard) or len(ids) != len(expected_guard):
+            reasons.append(f"{label}: incomplete, duplicate or unknown guard clips")
+        if any(g.get("lang") != expected_guard.get(g.get("id")) or not isinstance(g.get("text"), str) for g in rows):
+            reasons.append(f"{label}: missing guard text or incorrect language")
+    return reasons
+
+
+def same_pipeline(left, right, dictionary_twin=False):
+    """Ignore report labels, but compare every effective pipeline setting."""
+    try:
+        a, b = variant_mod.validate(left), variant_mod.validate(right)
+    except (variant_mod.VariantError, TypeError):
+        return False
+    # Schema 3 fixes Qwen's constructor budgets. Migrating a variant is useful for new
+    # runs, but cannot retroactively change what a historical report actually ran.
+    if a["family"] == "qwen3" or b["family"] == "qwen3":
+        if (left.get("schema", 1) < 3) != (right.get("schema", 1) < 3):
+            return False
+    for v in (a, b):
+        v.pop("name"); v.pop("description")
+    if dictionary_twin:
+        if b["hotwords"]["file"]:
+            return False
+        a.pop("hotwords"); b.pop("hotwords")
+    return a == b
+
+
 def compare(base_report, cand_report, hotwords_path=None, reference_report=None):
     """Stage-1 keep rule. Returns (verdict, reasons, summary). With hotwords_path the dictionary rule
     applies; reference_report is then the same pipeline without the dictionary, so that the guard and
     the errors outside dictionary words are judged against it and not against experiment 0."""
     if hotwords_path:
-        return compare_dictionary(base_report, cand_report, hotwords_path, reference_report or base_report)
+        return compare_dictionary(base_report, cand_report, hotwords_path, reference_report)
+    if cand_report.get("variant", {}).get("hotwords", {}).get("file"):
+        reasons = ["dictionary candidate requires its hotwords file and no-dictionary reference"]
+        return "invalid", reasons, {"reasons": reasons, "evaluator_revision": EVALUATOR_REVISION}
+    reasons = evidence_errors(base_report, "baseline") + evidence_errors(cand_report, "candidate")
+    if reasons:
+        return "invalid", reasons, {"reasons": reasons, "evaluator_revision": EVALUATOR_REVISION}
     b_rows, c_rows = score_takes(base_report), score_takes(cand_report)
     b, c = {r["file"]: r for r in b_rows}, {r["file"]: r for r in c_rows}
     reasons = []
@@ -254,7 +313,7 @@ def compare(base_report, cand_report, hotwords_path=None, reference_report=None)
             if cs[f"guard_{lang}_wer"] - bs[f"guard_{lang}_wer"] > MAX_GUARD_LOSS:
                 ok = False; reasons.append(f"guard {lang} {bs[f'guard_{lang}_wer']} -> {cs[f'guard_{lang}_wer']}")
     per_take = {f: round(c[f]["errors"] - b[f]["errors"], 2) for f in sorted(b)}
-    out = {"verdict": "pass" if ok else "fail", "gain": gain, "wins": wins, "losses": losses,
+    out = {"evaluator_revision": EVALUATOR_REVISION, "verdict": "pass" if ok else "fail", "gain": gain, "wins": wins, "losses": losses,
            "guard_checked": guard_checked, "per_take_delta": per_take, "reasons": reasons, "candidate": cs, "baseline": bs}
     return out["verdict"], reasons, out
 
@@ -262,6 +321,15 @@ def compare(base_report, cand_report, hotwords_path=None, reference_report=None)
 def compare_dictionary(base_report, cand_report, hotwords_path, reference_report):
     """Dictionary rule: terms recovered against experiment 0; other words and guard not worse than the
     reference (the same pipeline without the dictionary); no insertions in the guard; silence clean."""
+    reasons = evidence_errors(base_report, "baseline") + evidence_errors(cand_report, "candidate", guard=True)
+    if reference_report is None:
+        reasons.append("dictionary: missing no-dictionary reference report")
+    else:
+        reasons += evidence_errors(reference_report, "reference", guard=True)
+        if not same_pipeline(cand_report.get("variant"), reference_report.get("variant"), dictionary_twin=True):
+            reasons.append("dictionary: reference is not the same pipeline without hotwords")
+    if reasons:
+        return "invalid", reasons, {"reasons": reasons, "evaluator_revision": EVALUATOR_REVISION}
     b_rows, c_rows = score_takes(base_report), score_takes(cand_report)
     bs, cs = summary(base_report, b_rows), summary(cand_report, c_rows)
     rs = summary(reference_report, score_takes(reference_report))
@@ -286,7 +354,7 @@ def compare_dictionary(base_report, cand_report, hotwords_path, reference_report
         elif cs[f"guard_{lang}_wer"] is not None and cs[f"guard_{lang}_wer"] - rs[f"guard_{lang}_wer"] > MAX_GUARD_LOSS:
             ok = False; reasons.append(f"guard {lang} {rs[f'guard_{lang}_wer']} -> {cs[f'guard_{lang}_wer']} (against the reference)")
     b, c = {r["file"]: r for r in b_rows}, {r["file"]: r for r in c_rows}
-    out = {"verdict": "pass" if ok else "fail", "rule": "dictionary", "reference": reference_report.get("variant", {}).get("name"), "gain": round(bs["total_errors"] - cs["total_errors"], 2),
+    out = {"evaluator_revision": EVALUATOR_REVISION, "verdict": "pass" if ok else "fail", "rule": "dictionary", "reference": reference_report.get("variant", {}).get("name"), "gain": round(bs["total_errors"] - cs["total_errors"], 2),
            "terms_gain": terms_gain, "other_errors_base": b_other, "other_errors": c_other, "guard_inserts": inserts,
            "wins": sum(1 for f in b if c[f]["errors"] < b[f]["errors"]), "losses": sum(1 for f in b if c[f]["errors"] > b[f]["errors"]),
            "guard_checked": inserts is not None, "per_take_delta": {f: round(c[f]["errors"] - b[f]["errors"], 2) for f in sorted(b)},
@@ -294,31 +362,90 @@ def compare_dictionary(base_report, cand_report, hotwords_path, reference_report
     return out["verdict"], reasons, out
 
 
-def phone_check(result, laptop_report=None):
-    """Phone budget on a LabTest result file; text parity with the laptop report of the same variant."""
+def phone_check(result, laptop_report=None, baseline_report=None, hotwords_path=None, reference_report=None):
+    """Phone budget, and acceptance of actual phone text when comparison reports are supplied.
+
+    Guard and silence evidence remain laptop measurements: LabTest does not collect them.
+    Both unpaced text and the actual paced replacements must satisfy the same accuracy rule.
+    With no laptop report this entry point provides budget diagnostics only, never a lab keep.
+    """
     reasons, flags = [], []
-    rtfs = [c["rtf"] for t in result["takes"] for c in t["chunks"]]
+    finite = lambda n: type(n) in (int, float) and math.isfinite(n) and n >= 0
+    if any(not t.get("chunks") for t in result.get("takes", [])):
+        reasons.append("missing per-take chunk timing evidence")
+    rtfs = [c.get("rtf") for t in result.get("takes", []) for c in t.get("chunks", [])]
+    if any(not finite(n) for n in rtfs):
+        reasons.append("invalid chunk rtf evidence")
+    rtfs = [n for n in rtfs if finite(n)]
     rtf_med = statistics.median(rtfs) if rtfs else None
     if rtf_med is None or rtf_med > MAX_RTF:
         reasons.append(f"median chunk rtf {rtf_med} > {MAX_RTF}")
     paced = result.get("paced", [])
-    stop_max = max((p["stopToFinalMs"] for p in paced), default=None)
+    stops = [p.get("stopToFinalMs") for p in paced]
+    if any(not finite(n) for n in stops):
+        reasons.append("invalid stop-to-final evidence")
+    stop_max = max((n for n in stops if finite(n)), default=None)
     if stop_max is None or stop_max > MAX_STOP_MS:
         reasons.append(f"stop-to-final {stop_max} ms > {MAX_STOP_MS}")
-    thermal_max = max([result.get("before", {}).get("thermalStatus", 0), result.get("after", {}).get("thermalStatus", 0)]
-                      + [p.get("thermalAfter", 0) for p in paced])
+    thermals = [result.get("before", {}).get("thermalStatus"), result.get("after", {}).get("thermalStatus")]
+    thermals += [p.get("thermalAfter") for p in paced]
+    if any(type(n) is not int or not 0 <= n <= 6 for n in thermals):
+        reasons.append("missing or invalid thermal evidence")
+    thermal_max = max((n for n in thermals if type(n) is int and 0 <= n <= 6), default=0)
     if thermal_max > MAX_THERMAL:
         reasons.append(f"thermal status reached {thermal_max}")
-    vm = result.get("vmHwmKb")
+    peaks = [result.get("vmHwmKb"), result.get("vmHwmAfterPacedKb")]
+    if any(not finite(n) or n == 0 for n in peaks):
+        reasons.append("missing or invalid full-run memory evidence")
+    vm = max((n for n in peaks if finite(n)), default=0)
+    if vm > MAX_MEMORY_KB:
+        reasons.append(f"memory: full-run peak {vm / 1e6:.2f} GB above the {MAX_MEMORY_KB / 1e6:.1f} GB limit")
     if vm and vm > MEMORY_FLAG_KB:
         flags.append(f"memory: peak {vm / 1e6:.2f} GB above the {MEMORY_FLAG_KB / 1e6:.0f} GB flag")
     parity = None
     if laptop_report:
+        reasons += evidence_errors(laptop_report, "laptop", guard=True)
+        if baseline_report is None:
+            reasons.append("missing baseline report for phone accuracy")
+        else:
+            reasons += evidence_errors(baseline_report, "baseline", guard=True)
+        if not same_pipeline(result.get("variant"), laptop_report.get("variant")):
+            reasons.append("phone and laptop pipeline settings differ")
+        phone_report = dict(laptop_report, takes=result.get("takes", []))
+        reasons += evidence_errors(phone_report, "phone", guard=True)
+        lap_takes = laptop_report.get("takes", [])
+        if not lap_takes or any(not finite(t.get("audioSeconds")) or not t["audioSeconds"] for t in lap_takes):
+            reasons.append("missing or invalid take durations for paced coverage")
+        else:
+            expected = {min(lap_takes, key=lambda t: t["audioSeconds"])["file"],
+                        max(lap_takes, key=lambda t: t["audioSeconds"])["file"]}
+            ids = [p.get("file") for p in paced]
+            if set(ids) != expected or len(ids) != len(expected):
+                reasons.append("paced evidence must cover the shortest and longest takes exactly once")
+        if any(not isinstance(p.get("text"), str) for p in paced):
+            reasons.append("missing paced text")
         fold = lambda s: " ".join((s or "").replace("ß", "ss").split())
-        lap = {t["file"]: fold(t["text"]) for t in laptop_report["takes"]}
-        diff = [t["file"] for t in result["takes"] if t["file"] in lap and fold(t["text"]) != lap[t["file"]]]
+        lap = {t["file"]: fold(t.get("text")) for t in lap_takes}
+        diff = [t["file"] for t in result.get("takes", []) if t.get("file") in lap and fold(t.get("text")) != lap[t["file"]]]
         parity = "identical" if not diff else f"{len(diff)} of {len(result['takes'])} takes differ: " + ", ".join(diff)
-    s = {"phone_rtf_median": round(rtf_med, 4) if rtf_med is not None else None, "phone_stop_max_ms": stop_max,
+        if not reasons:
+            paced_text = {p["file"]: p["text"] for p in paced}
+            paced_report = dict(phone_report, takes=[dict(t, text=paced_text.get(t["file"], t["text"])) for t in phone_report["takes"]])
+            control = (laptop_report.get("variant", {}).get("name") == "baseline"
+                       and baseline_report.get("variant", {}).get("name") == "baseline"
+                       and same_pipeline(laptop_report.get("variant"), baseline_report.get("variant")))
+            for label, report in (("unpaced", phone_report), ("paced", paced_report)):
+                if control:
+                    ls = summary(laptop_report, score_takes(laptop_report))
+                    ps = summary(report, score_takes(report))
+                    if abs(ps["total_errors"] - ls["total_errors"]) > 3 + ls["errors_spread"]:
+                        reasons.append(f"{label} baseline accuracy diverges beyond the control tolerance")
+                else:
+                    verdict, why, _ = compare(baseline_report, report, hotwords_path, reference_report)
+                    if verdict != "pass":
+                        reasons.extend(f"{label} phone accuracy: {r}" for r in why)
+            flags.append("phone accuracy uses phone text; guard and silence evidence are from the matching laptop run")
+    s = {"evaluator_revision": EVALUATOR_REVISION, "phone_rtf_median": round(rtf_med, 4) if rtf_med is not None else None, "phone_stop_max_ms": stop_max,
          "phone_vmhwm_mb": round(vm / 1000) if vm else None, "phone_thermal_max": thermal_max,
          "phone_cold_load_ms": result.get("coldLoadMs"), "phone_parity": parity}
     return ("pass" if not reasons else "fail"), reasons, flags, s
@@ -346,10 +473,13 @@ def main():
     elif cmd == "phone":
         result = json.load(open(sys.argv[2], encoding="utf-8"))
         lap = json.load(open(sys.argv[3], encoding="utf-8")) if len(sys.argv) > 3 else None
-        verdict, reasons, flags, s = phone_check(result, lap)
+        base = json.load(open(sys.argv[4], encoding="utf-8")) if len(sys.argv) > 4 else None
+        hot = sys.argv[5] if len(sys.argv) > 5 else None
+        ref = json.load(open(sys.argv[6], encoding="utf-8")) if len(sys.argv) > 6 else None
+        verdict, reasons, flags, s = phone_check(result, lap, base, hot, ref)
         for k, v in s.items():
             print(f"{k}: {v}")
-        print(f"stage2: {verdict}")
+        print(f"{'stage2' if lap is not None else 'budget_only'}: {verdict}")
         print("reasons: " + ("; ".join(reasons) if reasons else "-"))
         print("flags: " + ("; ".join(flags) if flags else "-"))
     else:

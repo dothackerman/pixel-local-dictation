@@ -24,7 +24,7 @@ class VariantTest {
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"dictionary": ["x"]}""") }
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": ["x"]}""") }
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"cutting": {"overlap_s": 1}}""") }
-        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 3}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 4}""") }
     }
 
     @Test fun familyRulesMatchThePythonSchema() {
@@ -43,5 +43,32 @@ class VariantTest {
         assertEquals(true, v.isDictionary)
         assertEquals(true, v.post.skipSilentChunks)
         assertEquals(Variant.DEFAULT, Variant.parse("""{"schema": 1}"""))
+    }
+
+    @Test fun oldQwenVariantsGetBoundedAudioAndGenerationHeadroom() {
+        for (schema in listOf(1, 2)) {
+            val v = Variant.parse("""{"schema": $schema, "family": "qwen3"}""")
+            assertEquals(1024, v.qwen3.maxTotalLen)
+            assertEquals(256, v.qwen3.maxNewTokens)
+            assertEquals(40f, v.cutting.maxChunkS)
+        }
+    }
+
+    @Test fun qwenRejectsUnboundedOrUnderbudgetedAudio() {
+        for (json in listOf(
+            """{"family":"qwen3"}""",
+            """{"family":"qwen3","cutting":{"max_chunk_s":41}}""",
+            """{"family":"qwen3","cutting":{"max_chunk_s":40},"qwen3":{"max_total_len":512}}""",
+            """{"family":"qwen3","cutting":{"max_chunk_s":40},"qwen3":{"max_new_tokens":128}}""",
+            """{"family":"qwen3","cutting":{"max_chunk_s":40},"qwen3":{"max_total_len":"1024"}}""",
+        )) assertThrows(IllegalArgumentException::class.java) { Variant.parse(json) }
+    }
+
+    @Test fun explicitQwenBudgetsAndOtherFamilyDefaults() {
+        val v = Variant.parse("""{"schema":3,"family":"qwen3","cutting":{"max_chunk_s":25},
+            "qwen3":{"max_total_len":2048,"max_new_tokens":512}}""")
+        assertEquals(2048, v.qwen3.maxTotalLen)
+        assertEquals(512, v.qwen3.maxNewTokens)
+        for (schema in listOf(1, 2, 3)) assertEquals(Variant.DEFAULT, Variant.parse("""{"schema":$schema}"""))
     }
 }

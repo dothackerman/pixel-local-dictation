@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "name": "beam8-fp32-gate",
+  "description": "Encoder precision isolation: same settings as beam8-gate with the fp32 encoder; decoder/joiner hashes identical",
+  "family": "parakeet",
+  "model": "parakeet-v3-fp32",
+  "threads": 4,
+  "decoding": {
+    "method": "modified_beam_search",
+    "max_active_paths": 8
+  },
+  "post": {
+    "skip_silent_chunks": true
+  }
+}

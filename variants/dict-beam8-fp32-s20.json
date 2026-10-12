@@ -1,0 +1,19 @@
+{
+  "schema": 2,
+  "name": "dict-beam8-fp32-s20",
+  "description": "Encoder precision isolation: same settings as dict-beam8-s20 with the fp32 encoder; decoder/joiner hashes identical",
+  "family": "parakeet",
+  "model": "parakeet-v3-fp32",
+  "threads": 4,
+  "decoding": {
+    "method": "modified_beam_search",
+    "max_active_paths": 8
+  },
+  "hotwords": {
+    "file": "dictionary.txt",
+    "score": 2.0
+  },
+  "post": {
+    "skip_silent_chunks": true
+  }
+}

@@ -2,6 +2,8 @@
 
 Source review: 2026-10-09. This is documentation/source evidence, **not** a phone benchmark. Inspect current upstream and pin the versions actually used. No candidate is proven to beat Oriol's installed baseline in both languages.
 
+Follow-up, 2026-10-12: [investigation of the autoresearch loop](loop-investigation-2026-10-12.md), with reproduced adapter/decoder failures and linked model/runtime research. The original review below remains dated evidence; the follow-up does not select a new engine.
+
 ## Baseline and candidates
 
 | Option | Evidence relevant to this project | What remains unproven |

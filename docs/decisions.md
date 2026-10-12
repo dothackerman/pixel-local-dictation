@@ -97,3 +97,39 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 **Update 2026-10-11, after the first dictionary run and a second adversarial review.** The comparison point for the dictionary rule's other-word errors and guard was changed from experiment 0 to the no-dictionary twin (the same pipeline without hotwords), because modified beam search by itself raises the guard's German rate from 4.8 % to 6.6 % and the rule is meant to isolate the dictionary's effect. The terms metric still compares with experiment 0. Consequence: the beam-search regression rides along into any dictionary keep and is not judged by the rule; the recording trigger therefore additionally requires the guard not to be worse than experiment 0, and Oriol weighs the regression before any port. Also from the review: Cohere's first phone run is a measurement (two model instances, about 6 GB; wait after Stop about 4 s by construction), a memory flag above 3.5 GB is not a keep, and a cohere variant sets either a fixed language or the identifier, never both (the two sides would disagree; validator gap to close in a setup round). Laptop falsification of Cohere's gain before the phone: language identification right on all 210 public clips, insertions in the ten texts 1 against the baseline's 5; the run without number formatting is in the ledger.
 
 **Revisit when:** Cohere's phone measurement is in the hand-back, or a dictionary variant reaches the trigger.
+
+## ADR-006 — Validate Qwen input budgets and enforce complete phone evidence
+
+**Date:** 2026-10-12. **Status:** implementation authorized by Oriol on the existing feature branch;
+laptop validation only, no engine selection or phone deployment. **Builds on:** ADR-004/005.
+
+**Context.** The [loop investigation](loop-investigation-2026-10-12.md) reproduced a Qwen chunk
+whose audio consumed its 512-token context, leaving almost no transcription. Raising the budget
+only on an audio stream could not enlarge the already-created model's cache. The evaluator also
+ignored a later memory peak and did not enforce its own stated requirement to judge divergent
+phone text. A separate beam investigation found that greedy precision parity did not establish
+beam-search precision parity.
+
+**Decision.** Schema 3 exposes Qwen's context and generation budgets identically in Python and
+Kotlin, initializes the recognizer with them, bounds chunk duration, and reserves space for the
+actual hotword prompt and generated output. Legacy Qwen variants migrate to bounded settings;
+the explicitly named corrected variant distinguishes new results from historical reports. The
+guard rejects near-generation-limit output rather than accepting possibly truncated text.
+
+Evaluator revision 3 uses the complete recorded memory peak and enforces the already documented
+3.5 GB rejection limit while preserving the 2 GB warning. It requires matching complete laptop
+evidence before phone acceptance and applies the unchanged accuracy rules to phone output, with
+paced replacements checked as well. The public guard and silence evidence remain laptop-only.
+Dictionary comparisons must identify their genuine no-dictionary reference and include the full
+expected take/guard sets. Existing reports and ledger rows are not retroactively rewritten.
+
+**Trade-offs.** Qwen budget bounds are conservative for the pinned dynamic-cache export; a
+near-limit rejection may also reject valid output and requires a larger budget or shorter chunk.
+These checks do not certify every export or detect every model hallucination. Correctly completing
+a transcript costs more inference than the broken early cutoff. Stricter evidence checks can reject
+historical incomplete reports that previously passed. No word-error thresholds or normalization
+rules change, and no recording trigger is relaxed.
+
+**Revisit when:** full laptop comparisons exist, an export changes its input contract, or the
+later authorized phone validation exposes a mismatch. Beam precision and Cohere allocation remain
+separate experiments; this decision does not change the daily app's Parakeet default.

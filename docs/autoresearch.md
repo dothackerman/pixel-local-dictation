@@ -1,5 +1,27 @@
 # Experiment loop: instructions for the loop session
 
+## Setup amendment, 2026-10-12
+
+Oriol authorized fixing Qwen configuration and evaluator gaps and investigating beam collapse on
+the existing feature branch, with laptop comparisons before any new phone work. Schema 3 adds
+explicit Qwen context/generation budgets and a validated chunk cap; schema 1/2 variants still load,
+but their unbounded Qwen settings migrate to the safe configuration. Historical Qwen scores do
+not describe that migrated configuration. Use `qwen3-context1024.json` for the corrected candidate.
+The source rationale and limitations are in [ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence).
+
+Evaluator revision 3 uses the maximum memory high-water mark across unpaced and paced runs and
+enforces the existing 3.5 GB ceiling. Phone scoring requires the matching laptop evidence and
+reapplies the existing accuracy rules to actual phone text, including paced final text; laptop
+guard/silence evidence remains explicitly laptop evidence. Dictionary comparisons require complete
+guard/take coverage and the actual no-dictionary twin. Original ledger rows and reports remain
+historical; re-evaluation must identify its evaluator revision.
+
+The instructions below record revision 2 and its night-two experiment order. Their exclusion of
+Qwen and full precision is superseded for this authorized setup investigation: Qwen had a context
+overflow, and full-precision greedy parity did not validate beam/hotword decoding. See the
+[beam diagnosis](beam-investigation-2026-10-12.md). Do not restart the night-two order or run phone
+stage 2 from this amendment; laptop results are reviewed first.
+
 Status: revision 2, written 2026-10-11 by the setup session after the first night and its review,
 agreed with Oriol. This is the whole brief for a fresh session that runs accuracy experiments
 unattended, modelled on karpathy/autoresearch: change one thing, measure, keep or discard, log,

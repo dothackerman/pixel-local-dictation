@@ -6,12 +6,13 @@ laptop runner (tools/pipeline.py) and by the phone (app: Variant.kt), so every k
 Kotlin twin. The loop may change values, never add keys: unknown keys are rejected. Changing
 this file is a setup-session change (it is checksummed by tools/lab.py check).
 
-Schema 2 (2026-10-11): adds the no-speech gate, hotwords (dictionary), and the qwen3 and cohere
-families. Schema 1 files still load. Defaults are the shipped app (0.2.2, ADR-003).
+Schema 3 adds explicit Qwen context/generation budgets and bounded chunks. Schema 1/2 files
+still load; their unbounded Qwen chunks migrate to a 40 s cap. Other defaults stay unchanged.
 """
 import json
+import math
 
-SCHEMA = 2
+SCHEMA = 3
 FAMILIES = ("parakeet", "whisper", "canary", "qwen3", "cohere")
 
 DEFAULT = {
@@ -26,6 +27,7 @@ DEFAULT = {
     "decoding": {"method": "greedy_search", "max_active_paths": 4, "blank_penalty": 0.0},
     # Whisper only. language "" = the model detects the language of each chunk itself.
     "whisper": {"language": "", "tail_paddings": -1},
+    "qwen3": {"max_total_len": 1024, "max_new_tokens": 256},
     # Cohere only. language "" = decided per take by lid (required then); or "de" / "en" fixed.
     "cohere": {"language": "", "use_punct": True, "use_itn": True},
     # Canary and Cohere: spoken-language identification on the first chunk of a take decides the language
@@ -51,6 +53,7 @@ _TYPES = {
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
+    "qwen3.max_total_len": int, "qwen3.max_new_tokens": int,
     "cohere.language": str, "cohere.use_punct": bool, "cohere.use_itn": bool,
     "lid.model": str, "lid.probe_seconds": float, "lid.fallback": str,
     "hotwords.file": str, "hotwords.score": float,
@@ -82,7 +85,7 @@ def validate(v):
     """Returns a complete variant (defaults filled in) or raises VariantError."""
     if not isinstance(v, dict):
         raise VariantError("variant must be a JSON object")
-    for section in ("decoding", "whisper", "cohere", "lid", "hotwords", "cutting", "post"):
+    for section in ("decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"):
         if section in v and not isinstance(v[section], dict):
             raise VariantError(f"{section} must be an object")
     given = dict(_flat(v))
@@ -98,8 +101,10 @@ def validate(v):
             raise VariantError(f"{key}: expected {want.__name__}, got {type(val).__name__}")
         section, _, leaf = key.rpartition(".")
         (out[section] if section else out)[leaf] = val
-    if out["schema"] not in (1, SCHEMA):
+    if out["schema"] not in (1, 2, SCHEMA):
         raise VariantError(f"schema {out['schema']} not supported, this runner knows {SCHEMA}")
+    if out["schema"] < 3 and out["family"] == "qwen3" and out["cutting"]["max_chunk_s"] == 0:
+        out["cutting"]["max_chunk_s"] = 40.0
     out["schema"] = SCHEMA
     if out["family"] not in FAMILIES:
         raise VariantError(f"family must be one of {FAMILIES}")
@@ -119,6 +124,13 @@ def validate(v):
     if c["max_chunk_s"] and c["max_chunk_s"] < c["min_chunk_s"]:
         raise VariantError("cutting.max_chunk_s must be 0 or at least min_chunk_s")
     fam = out["family"]
+    if fam == "qwen3":
+        q = out["qwen3"]
+        if not 512 <= q["max_total_len"] <= 8192 or not 256 <= q["max_new_tokens"] <= 2048:
+            raise VariantError("qwen3 budgets: max_total_len must be 512..8192, max_new_tokens 256..2048")
+        if not (0 < c["max_chunk_s"] <= 40):
+            raise VariantError("qwen3: cutting.max_chunk_s must be set and at most 40")
+        qwen3_check_budget(q, c["max_chunk_s"])
     if fam == "whisper":
         if not (0 < c["max_chunk_s"] <= 28):
             raise VariantError("whisper: cutting.max_chunk_s must be set and at most 28 (runtime drops audio beyond 30 s)")
@@ -151,6 +163,19 @@ def validate(v):
         if not 0 < h["score"] <= 10:
             raise VariantError("hotwords.score must be in (0, 10]")
     return out
+
+
+def qwen3_check_budget(q, seconds, hotwords=""):
+    """Conservative bound for the pinned export: <=13 audio tokens/s, 64 scaffold tokens.
+
+    UTF-8 byte length bounds the byte-BPE hotword tokens. Called again with the actual prompt
+    when loading, because a duration cap alone cannot make arbitrary dictionaries safe.
+    The dynamic KV export must be initialized with max_total_len, not overridden per stream.
+    """
+    required = math.ceil(seconds * 13) + 64 + len(hotwords.encode("utf-8")) + q["max_new_tokens"]
+    if required > q["max_total_len"]:
+        raise VariantError("qwen3: audio, hotword prompt and generation reserve exceed max_total_len; "
+                           "increase the constructor budget, shorten chunks or reduce hotwords")
 
 
 def strings(v):

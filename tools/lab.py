@@ -6,8 +6,8 @@
                                           stage 1 on the laptop: decode the ten takes, score, compare with
                                           the baseline report, append a ledger row; --guard adds the public clips
   tools/lab.py phone-prepare VARIANT.json stage the model and variant under corpus/lab/push/<name>/ for the wrapper
-  tools/lab.py phone-score RESULT.json VARIANT.json
-                                          stage 2: budget on the phone result, parity with the laptop report, ledger
+  tools/lab.py phone-score RESULT.json VARIANT.json [--reference NAME]
+                                          stage 2: phone budget and accuracy; --reference supplies a historical dictionary twin
   tools/lab.py adopt-baseline REPORT.json freeze a stage-1 report of variants/baseline.json as the comparison point
   tools/lab.py ledger [--all]             ranking of kept and discarded experiments
   tools/lab.py dictionary                 write corpus/lab/dictionary.txt (names of the ten scripts) for hotword variants
@@ -32,7 +32,8 @@ FROZEN = os.path.join(ROOT, "tools", "frozen.sha256")
 HOLDOUT = ("de-4", "de-5", "en-4", "en-5")
 COLUMNS = ["when", "commit", "variant", "stage1", "de_errors", "en_errors", "total_errors", "gain", "wins", "losses",
            "terms_missed", "punct_case", "guard_de_wer", "guard_en_wer", "silence_chars", "laptop_rtf", "laptop_last_s",
-           "stage2", "phone_rtf", "phone_stop_ms", "phone_vmhwm_mb", "phone_thermal", "phone_parity", "status", "note"]
+           "stage2", "phone_rtf", "phone_stop_ms", "phone_vmhwm_mb", "phone_thermal", "phone_parity", "status", "note",
+           "reference", "reference_commit", "evaluator_revision"]
 
 
 def sha(path):
@@ -137,7 +138,8 @@ def run(args):
         fail(f"hotwords file corpus/lab/{v['hotwords']['file']} missing; tools/lab.py dictionary writes dictionary.txt")
     print("decoding:", " ".join(os.path.relpath(x, ROOT) if x.startswith(ROOT) else x for x in cmd), file=sys.stderr)
     r = subprocess.run(cmd, cwd=ROOT)
-    row = {"when": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "commit": c, "variant": v["name"], "note": args.note or v["description"]}
+    row = {"when": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "commit": c, "variant": v["name"],
+           "note": args.note or v["description"], "evaluator_revision": evaluate.EVALUATOR_REVISION}
     if r.returncode != 0:
         row.update({"stage1": "crash", "status": "crash"})
         ledger_write(ledger_rows() + [row])
@@ -162,6 +164,7 @@ def run(args):
             if not os.path.exists(rpath):
                 fail(f"reference report missing: {os.path.relpath(rpath, ROOT)}")
             ref = json.load(open(rpath, encoding="utf-8"))
+            row.update(reference=args.reference, reference_commit=rrows[-1]["commit"])
         verdict, reasons, cmp = evaluate.compare(base, report, hot, ref)
         print()
         print("per-take error delta (candidate minus baseline):")
@@ -224,33 +227,54 @@ def phone_score(args):
     result = json.load(open(args.result, encoding="utf-8"))
     if result.get("variant", {}).get("name") != v["name"]:
         fail(f"result is for variant '{result.get('variant', {}).get('name')}', not '{v['name']}'")
+    if not evaluate.same_pipeline(result.get("variant"), v):
+        fail("phone result settings do not match the requested variant")
     rows = ledger_rows()
     mine = [r for r in rows if r["variant"] == v["name"] and r.get("stage1") in ("pass", "baseline")]
     if not mine:
         fail("no stage-1 pass or baseline row for this variant in the ledger; run stage 1 first")
     row = mine[-1]
     lap_path = os.path.join(RUNS, f"{v['name']}-{row['commit']}.json")
-    lap = json.load(open(lap_path, encoding="utf-8")) if os.path.exists(lap_path) else None
-    verdict, reasons, flags, s = evaluate.phone_check(result, lap)
-    # Accuracy of the phone's own text, for the record and for the divergence check.
-    ps = evaluate.summary(result, evaluate.score_takes(result))
-    print(f"phone text: de {ps['de_errors']} en {ps['en_errors']} total {ps['total_errors']} (laptop row: {row['total_errors']})")
-    if lap is not None:
-        ls = evaluate.summary(lap, evaluate.score_takes(lap))
-        if abs(ps["total_errors"] - ls["total_errors"]) > 3 + ls["errors_spread"]:
-            flags.append(f"divergence: phone total {ps['total_errors']} vs laptop {ls['total_errors']} (spread {ls['errors_spread']}); "
-                         "judge this variant on the phone text")
+    if not os.path.isfile(lap_path):
+        fail("matching laptop report missing; no phone keep without stage-1 evidence")
+    lap = json.load(open(lap_path, encoding="utf-8"))
+    if not evaluate.same_pipeline(lap.get("variant"), v):
+        fail("saved laptop report settings do not match the requested variant; rerun stage 1")
+    if not os.path.isfile(BASELINE):
+        fail("frozen baseline report missing")
+    base = json.load(open(BASELINE, encoding="utf-8"))
+    hot, ref = None, None
+    if variant_mod.is_dictionary(v):
+        hot = os.path.join(LAB, v["hotwords"]["file"])
+        if not os.path.isfile(hot):
+            fail("dictionary file missing")
+        requested = getattr(args, "reference", None)
+        name = row.get("reference") or requested
+        if not name or (requested and requested != name):
+            fail("dictionary phone scoring needs its original no-dictionary twin; use --reference NAME for historical rows")
+        matching = [r for r in rows if r["variant"] == name and r.get("stage1") in ("pass", "fail", "baseline")
+                    and (not row.get("reference_commit") or r["commit"] == row["reference_commit"])]
+        if not matching:
+            fail(f"no saved stage-1 reference row for '{name}'")
+        ref_commit = matching[-1]["commit"]
+        ref_path = os.path.join(RUNS, f"{name}-{ref_commit}.json")
+        if not os.path.isfile(ref_path):
+            fail("dictionary reference report missing")
+        ref = json.load(open(ref_path, encoding="utf-8"))
+        row.update(reference=name, reference_commit=ref_commit)
+    verdict, reasons, flags, s = evaluate.phone_check(result, lap, base, hot, ref)
     for k, val in s.items():
         print(f"{k}: {val}")
     print(f"stage2: {verdict}")
     print("reasons: " + ("; ".join(reasons) if reasons else "-"))
     print("flags: " + ("; ".join(flags) if flags else "-"))
-    row.update({"stage2": verdict, "phone_rtf": fmt(s["phone_rtf_median"]), "phone_stop_ms": s["phone_stop_max_ms"],
+    row.update({"evaluator_revision": evaluate.EVALUATOR_REVISION, "stage2": verdict, "phone_rtf": fmt(s["phone_rtf_median"]), "phone_stop_ms": s["phone_stop_max_ms"],
                 "phone_vmhwm_mb": s["phone_vmhwm_mb"], "phone_thermal": s["phone_thermal_max"],
                 "phone_parity": (s["phone_parity"] or "").replace("\t", " "),
                 "status": ("keep" if verdict == "pass" else "discard") if row["status"] != "baseline" else "baseline"})
-    if flags:
-        row["note"] = (row.get("note", "") + " | " + "; ".join(flags)).strip(" |")
+    notes = [f"stage2: {reason}" for reason in reasons] + flags
+    if notes:
+        row["note"] = (row.get("note", "") + " | " + "; ".join(notes)).strip(" |")
     ledger_write(rows)
     print(f"ledger updated: {row['status']}")
 
@@ -321,6 +345,7 @@ def main():
     r.add_argument("--reference", help="dictionary variants: name of the same pipeline without hotwords (run it with --guard first)")
     pp = sub.add_parser("phone-prepare"); pp.add_argument("variant")
     ps = sub.add_parser("phone-score"); ps.add_argument("result"); ps.add_argument("variant")
+    ps.add_argument("--reference", help="historical dictionary rows: original no-dictionary twin name")
     ab = sub.add_parser("adopt-baseline"); ab.add_argument("report")
     sub.add_parser("dictionary")
     rg = sub.add_parser("range"); rg.add_argument("variants", nargs="+")
