@@ -133,3 +133,18 @@ rules change, and no recording trigger is relaxed.
 **Revisit when:** full laptop comparisons exist, an export changes its input contract, or the
 later authorized phone validation exposes a mismatch. Beam precision and Cohere allocation remain
 separate experiments; this decision does not change the daily app's Parakeet default.
+
+## ADR-007 — Night three: the full-precision dictionary family and single-instance Cohere go to the phone
+
+**Date:** 2026-10-12. **Status:** approved by Oriol on 2026-10-12 as the next step; no engine decision. **Builds on:** ADR-005, ADR-006, the research round of 2026-10-12 (sherpa-onnx capabilities, model landscape, comparable tools; summaries in the three investigation notes and the setup session's transcript).
+
+**Context.** With the INT8-encoder beam collapse isolated (ADR-006), the best laptop candidate is the full-precision encoder with beam 8 and the dictionary at score 2.0: 47.0 errors against 71.3, 13 names recovered, public guard 4.62 % / 1.75 % against 4.81 % / 2.01 %. Night two had measured the INT8 dictionary's wait after Stop at 1.4 to 2.4 s depending on beam width and phone temperature. Cohere Transcribe, the most accurate model (45.7), had been run as two instances (5.4 GB); the research round verified from the pinned runtime's source and from the Kotlin and Python bindings that the language is read per stream, so one instance suffices.
+
+**Decision.**
+- Cohere runs as one instance with the language set on each stream (`LanguageSwitched` in the pipeline, `LanguageSwitchedRecognizer` in the app). Laptop texts of the single instance are identical to the saved two-instance texts on the public clips tested. Canary keeps two instances.
+- Night three is a measurement night with no new variants: the control row, the full-precision dictionary family at beam 4, 6 and 8 (each width run twice on the phone so the wait reading repeats), the score neighbours at the widest width that held the wait, and one Cohere run. The decision table for Oriol is the product.
+- Not done tonight, because they are design changes outside the schema: phonetic post-matching of names on the greedy output, overlapping windows so that Cohere's tail at Stop is short, per-name normalised hotword boost, the evaluator's paired bootstrap. Each has a laptop experiment described in the research summaries; they are the candidates for the next setup round.
+
+**Trade-offs.** The full-precision encoder is 2.4 GB on disk and the phone's memory for it is unmeasured; the evaluator's 3.5 GB limit decides. The one false dictionary insertion in the public clips keeps the recording trigger shut regardless of the phone result; that is left as is rather than relaxed.
+
+**Revisit when:** the night-three hand-back exists.
