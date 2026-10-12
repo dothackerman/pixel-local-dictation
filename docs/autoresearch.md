@@ -43,15 +43,19 @@ exist, the wrapper and the gate. Quirks of the normaliser go into the ledger not
 
 ## The night's variants (all stage-1 rows exist in the ledger; do not re-run stage 1)
 
-| Variant | What it is | Stage 1 (laptop) |
+| Variant | What it is | Stage 1 (laptop, 2026-10-12): total errors, names recovered of 24, guard de / en, last-chunk decode |
 |---|---|---|
-| `baseline` | shipped app; control row on the phone first | experiment 0 |
-| `dict-beam4-fp32-s20` | full-precision encoder, beam 4, dictionary 2.0 | see ledger |
-| `dict-beam6-fp32-s20` | full-precision encoder, beam 6, dictionary 2.0 | see ledger |
-| `dict-beam8-fp32-s20` | full-precision encoder, beam 8, dictionary 2.0 | 47.0, 13 names recovered, guard 4.62 / 1.75 |
-| `dict-beam8-fp32-s175`, `dict-beam8-fp32-s225` | score neighbours at beam 8 | see ledger |
-| `beam4-fp32-gate`, `beam6-fp32-gate`, `beam8-fp32-gate` | the no-dictionary twins | fail the general rule by design; needed as references |
-| `cohere` | Cohere Transcribe, one instance, language per stream from Whisper tiny | 45.7 (two-instance run); single-instance row in the ledger |
+| `baseline` | shipped app; control row on the phone first | 71.3, 0, 4.81 / 2.01 %, 1.2 s |
+| `dict-beam4-fp32-s20` | full-precision encoder, beam 4, dictionary 2.0 | 60.0, 6, 4.74 / 2.10 %, 2.2 s; pass, 1 guard insertion |
+| `dict-beam6-fp32-s20` | full-precision encoder, beam 6, dictionary 2.0 | 53.0, 10, 4.71 / 1.81 %, 2.8 s; pass, 1 guard insertion |
+| `dict-beam8-fp32-s20` | full-precision encoder, beam 8, dictionary 2.0 | 47.0, 13, 4.62 / 1.75 %, 3.3 s; pass, 1 guard insertion |
+| `dict-beam8-fp32-s175`, `dict-beam8-fp32-s225` | score neighbours at beam 8 | 52.3, 9 and 45.0, 14; see the ledger for their verdicts |
+| `beam4-fp32-gate`, `beam6-fp32-gate`, `beam8-fp32-gate` | the no-dictionary twins | 69.7 / 68.0 / 68.7; fail the general rule by design; needed as references |
+| `cohere` | Cohere Transcribe, one instance, language per stream from Whisper tiny | 45.7, 7, 2.75 / 1.36 %, 6.6 s; identical to the two-instance run |
+
+Laptop last-chunk decode times map to the phone roughly 1 to 1 for INT8; the full-precision encoder
+has no INT8 kernel advantage on the phone, so expect it slower there. That is why the width sweep is
+the night's question.
 
 No new variants are written tonight. The phone is the experiment.
 
