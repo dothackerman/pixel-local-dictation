@@ -2,7 +2,7 @@
 # Regenerate only in a setup session: sha256sum <files> > tools/frozen.sha256
 2841aa1c756c70c11b5c1bbe719cb0aaba93918f4212e47d2e48cdb3379e6d73  tools/score.py
 9073f85216bc3e9581fac172db0dafcaeabb63698d904aa4eb0e8829fa609ccf  tools/evaluate.py
-55bf68d839968ad2c72205627df2936b1ac5920db5f2e84e26b7b963b16a4d3a  tools/pipeline.py
+e108e969d904b7e3e78251613c01ed931d99b4c003192f81c77b4de7cf404f64  tools/pipeline.py
 5d165934190e97f5411ecb009437c16e8806c8660c0a702eb27330ab90764f15  tools/variant.py
 c57d16605a8bad86d7fbcab476d0dd3bdc0509f01e48367cef75a795115fef00  tools/lab.py
 64e6bff8f57e6914b4cc067dc2f23f86f6aa6ca78d7707c5eedf9262a963b7e5  corpus/takes.json

@@ -91,11 +91,14 @@ class Whisper:
 
 
 class LanguageSwitched:
-    """Two recognizers (de, en) of a model that needs the language as input; spoken-language
-    identification on the first chunk picks one per take. Used by canary and cohere."""
+    """A model that needs the language as input; spoken-language identification on the first chunk
+    picks the language per take. Cohere: one recognizer, the language is set on each stream
+    (verified 2026-10-12: the runtime reads it per stream). Canary: one recognizer per language."""
 
-    def __init__(self, v, model_dir, lid_dir, build):
-        self.recs = {lang: build(lang) for lang in ("de", "en")}
+    def __init__(self, v, model_dir, lid_dir, build, per_stream=False):
+        self.per_stream = per_stream
+        self.recs = {"de": build("de")} if per_stream else {lang: build(lang) for lang in ("de", "en")}
+        self.recs = {"de": self.recs["de"], "en": self.recs["de"]} if per_stream else self.recs
         cfg = sherpa_onnx.SpokenLanguageIdentificationConfig(
             whisper=sherpa_onnx.SpokenLanguageIdentificationWhisperConfig(
                 encoder=one(lid_dir, "encoder"), decoder=one(lid_dir, "decoder")),
@@ -114,7 +117,10 @@ class LanguageSwitched:
 
     def transcribe(self, samples):
         rec = self.recs[self.lang]
-        s = rec.create_stream(); s.accept_waveform(RATE, samples); rec.decode_stream(s)
+        s = rec.create_stream()
+        if self.per_stream:
+            s.set_option("language", self.lang)
+        s.accept_waveform(RATE, samples); rec.decode_stream(s)
         return s.result.text.strip()
 
 
@@ -176,7 +182,7 @@ def recognizer(v, models_root, hotwords_path=""):
     if v["family"] == "cohere":
         if not lid_dir:
             return Cohere(v, model_dir)
-        return LanguageSwitched(v, model_dir, lid_dir, lambda lang: Cohere(v, model_dir, lang).rec)
+        return LanguageSwitched(v, model_dir, lid_dir, lambda lang: Cohere(v, model_dir, lang).rec, per_stream=True)
     return LanguageSwitched(v, model_dir, lid_dir, lambda lang: sherpa_onnx.OfflineRecognizer.from_nemo_canary(
         encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
         src_lang=lang, tgt_lang=lang, num_threads=v["threads"]))

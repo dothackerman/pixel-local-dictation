@@ -130,13 +130,17 @@ class SherpaRecognizer(
         }
     }
 
-    override fun transcribe(samples: FloatArray): String {
+    override fun transcribe(samples: FloatArray): String = transcribe(samples, emptyMap())
+
+    /** [options] are set on the stream before decoding (Cohere: "language"). */
+    fun transcribe(samples: FloatArray, options: Map<String, String>): String {
         qwenVariant?.let {
             require(samples.size <= (it.cutting.maxChunkS * SAMPLE_RATE).toInt()) { "qwen3: input exceeds validated chunk duration" }
         }
         val started = SystemClock.elapsedRealtime()
         val stream = recognizer.createStream()
         try {
+            for ((k, value) in options) stream.setOption(k, value)
             stream.acceptWaveform(samples, SAMPLE_RATE)
             recognizer.decode(stream)
             val result = recognizer.getResult(stream)
@@ -163,8 +167,12 @@ class SherpaRecognizer(
  * the first chunk of each take (or its first probe seconds) and picks one of two recognizers.
  * Twin of class LanguageSwitched in tools/pipeline.py.
  */
-class LanguageSwitchedRecognizer(private val v: Variant, lid: ModelFiles, build: (String) -> SherpaRecognizer) : Recognizer {
-    private val recognizers = mapOf("de" to build("de"), "en" to build("en"))
+class LanguageSwitchedRecognizer(
+    private val v: Variant, lid: ModelFiles, build: (String) -> SherpaRecognizer,
+    /** Cohere reads the language from each stream, so one instance serves both languages (2026-10-12). */
+    private val perStream: Boolean = false,
+) : Recognizer {
+    private val recognizers = if (perStream) build("de").let { mapOf("de" to it, "en" to it) } else mapOf("de" to build("de"), "en" to build("en"))
     private val identifier: SpokenLanguageIdentification
     @Volatile private var language = v.lid.fallback
 
@@ -191,9 +199,10 @@ class LanguageSwitchedRecognizer(private val v: Variant, lid: ModelFiles, build:
         return detected
     }
 
-    override fun transcribe(samples: FloatArray): String = recognizers.getValue(language).transcribe(samples)
+    override fun transcribe(samples: FloatArray): String =
+        recognizers.getValue(language).transcribe(samples, if (perStream) mapOf("language" to language) else emptyMap())
 
-    fun release() { recognizers.values.forEach { it.release() }; identifier.release() }
+    fun release() { recognizers.values.toSet().forEach { it.release() }; identifier.release() }
 }
 
 /**
@@ -246,9 +255,9 @@ object Pipeline {
         val inner: Recognizer = when (v.family) {
             "parakeet" -> SherpaRecognizer.parakeet(v, model, hotwordsPath)
             "whisper" -> SherpaRecognizer.whisper(v, model)
-            "canary" -> LanguageSwitchedRecognizer(v, requireNotNull(lid) { "canary needs the language identifier's files" }) { SherpaRecognizer.canary(v, model, it) }
+            "canary" -> LanguageSwitchedRecognizer(v, requireNotNull(lid) { "canary needs the language identifier's files" }, { SherpaRecognizer.canary(v, model, it) })
             "qwen3" -> SherpaRecognizer.qwen3(v, model, hotwordsPath)
-            "cohere" -> if (lid != null && v.cohere.language.isEmpty()) LanguageSwitchedRecognizer(v, lid) { SherpaRecognizer.cohere(v, model, it) }
+            "cohere" -> if (lid != null && v.cohere.language.isEmpty()) LanguageSwitchedRecognizer(v, lid, { SherpaRecognizer.cohere(v, model, it) }, perStream = true)
                         else SherpaRecognizer.cohere(v, model)
             else -> throw IllegalArgumentException(v.family)
         }

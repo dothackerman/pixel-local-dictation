@@ -1,0 +1,15 @@
+{
+  "schema": 3,
+  "name": "beam4-fp32-gate",
+  "description": "twin: full-precision encoder, modified beam search 4 paths, gate, no dictionary",
+  "family": "parakeet",
+  "model": "parakeet-v3-fp32",
+  "threads": 4,
+  "decoding": {
+    "method": "modified_beam_search",
+    "max_active_paths": 4
+  },
+  "post": {
+    "skip_silent_chunks": true
+  }
+}

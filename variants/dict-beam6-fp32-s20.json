@@ -1,0 +1,19 @@
+{
+  "schema": 3,
+  "name": "dict-beam6-fp32-s20",
+  "description": "dictionary on the full-precision encoder: beam 6, hotword score 2.0",
+  "family": "parakeet",
+  "model": "parakeet-v3-fp32",
+  "threads": 4,
+  "decoding": {
+    "method": "modified_beam_search",
+    "max_active_paths": 6
+  },
+  "post": {
+    "skip_silent_chunks": true
+  },
+  "hotwords": {
+    "file": "dictionary.txt",
+    "score": 2.0
+  }
+}
