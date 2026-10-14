@@ -108,6 +108,18 @@ class GuardTests(unittest.TestCase):
                                         input='{}', text=True, capture_output=True)
                 self.assertEqual(result.returncode, 2)
 
+    def test_registered_hooks_allow_normal_calls_and_block_forbidden_calls(self):
+        for file in ['.claude/settings.json', '.codex/hooks.json']:
+            config = json.loads((ROOT/file).read_text())
+            command = config['hooks']['PreToolUse'][0]['hooks'][0]['command']
+            for cwd in [ROOT, ROOT/'app']:
+                for pending, expected in [('git status --short', 0), ('adb devices', 2)]:
+                    with self.subTest(config=file, cwd=cwd, pending=pending):
+                        payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': pending}, 'cwd': str(cwd)})
+                        result = subprocess.run(['bash', '-c', command], cwd=cwd,
+                                                input=payload, text=True, capture_output=True)
+                        self.assertEqual(result.returncode, expected, result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

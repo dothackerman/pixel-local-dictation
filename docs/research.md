@@ -4,6 +4,20 @@ Source review: 2026-10-09. This is documentation/source evidence, **not** a phon
 
 Follow-up, 2026-10-12: [investigation of the autoresearch loop](loop-investigation-2026-10-12.md), with reproduced adapter/decoder failures and linked model/runtime research. The original review below remains dated evidence; the follow-up does not select a new engine.
 
+Follow-up, 2026-10-14, after the third experiment night: [evaluation audit](evaluation-audit-2026-10-14.md), [runtime and memory experiments](runtime-options-2026-10-14.md), and [model alternatives outside the current runtime](model-options-2026-10-14.md). These distinguish observed accuracy gains from deployment-budget failures and propose the next bounded experiments. They do not change the requirements, frozen acceptance rules, or daily engine.
+
+## Reading the earlier Claude research correctly (2026-10-14)
+
+The setup/review transcript `c8cb31bb-cad2-4a11-aa4c-1a030eed2ba5.jsonl` and latest loop transcript `4616df77-4a59-477a-8e2d-0b5447ba1588.jsonl`, under the project's directory in `~/.claude/projects/`, were reviewed against the saved reports. The October 13 handback is local at `corpus/lab/handback-2026-10-13.md`. Earlier conversational estimates are hypotheses, not substitutes for those measurements. In particular, the prediction that one Cohere instance would fit around 2.5 GB was not borne out by the subsequent phone run; the current measured interpretation is in the runtime note linked above.
+
+One tempting recommendation also needs a source correction. Apple's phonetic-retrieval paper does report a simple-replacement ablation with entity error reduced from 37.61% to 12.60%. However, this operates on named-entity spans produced by a trained, tagged LLM-ASR system, evaluated on English assistant queries. It does **not** establish that arbitrary windows of this app's greedy German/English output can safely be replaced by the nearest dictionary name, or that the dictionary leaves ordinary-word accuracy unchanged. Treat phonetic matching as a later, separately measured experiment requiring entity detection, abstention, and false-replacement evaluation. [Primary paper, sections II-B and III, Table II](https://arxiv.org/html/2409.15353v1).
+
+The runtime note separately corrects the earlier assumption that overlap alone makes final inference cost proportional to only the newly received audio. Buffered offline inference and inference with reusable encoder state are different mechanisms; [NVIDIA's inference documentation](https://docs.nvidia.com/nemo/speech/nightly/asr/inference.html) explicitly distinguishes them. Neither a claimed universal CPU speedup ceiling nor a promised one-second overlap result is established for this phone.
+
+### Recommended next setup round (proposal)
+
+The [next experiment plan](next-experiment-plan.md) owns sequencing and handoff: the primary assistant prepares each batch, then GPT 6.1 Sol executes only its frozen experiments. It covers measurement repair, allocation controls, selective precision, hardware feasibility and new-model screening. The current request authorizes planning and isolated Astra review only; neither phase starts yet. The research notes above supply evidence and proposed mechanisms, not execution permission. Oriol's Unsloth and Cactus suggestions are assessed in the runtime and model notes respectively.
+
 ## Baseline and candidates
 
 | Option | Evidence relevant to this project | What remains unproven |

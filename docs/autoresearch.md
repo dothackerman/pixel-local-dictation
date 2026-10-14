@@ -1,5 +1,7 @@
 # Experiment loop: instructions for the loop session
 
+**Historical brief:** revision 3 below governed the completed third night. For the proposed next round, read [setup and experiment execution plan](next-experiment-plan.md). Its setup handoff must produce a new frozen batch brief before GPT 6.1 Sol is launched; this file does not authorize rerunning night three or beginning the new work.
+
 Status: revision 3, written 2026-10-12 by the setup session after two nights, two reviews and a
 research round, agreed with Oriol. This is the whole brief for a fresh session that runs the third
 night unattended. Read it completely before the first command. Project rules in
