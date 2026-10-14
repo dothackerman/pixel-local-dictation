@@ -10,6 +10,8 @@ import json
 import statistics
 import math
 import re
+from pathlib import Path
+import measurement_identity as identity
 import evaluate as historical
 
 REVISION = 4
@@ -64,7 +66,33 @@ def evidence_errors(envelope, expected):
         ref = expected.get("endpoint_references", {}).get(row.get("id"))
         if not isinstance(ref, dict) or not isinstance(ref.get("reference"), str) or ref.get("lang") not in ("de", "en") or "cut_word" not in ref:
             errors.append("missing or malformed prefix reference: " + str(row.get("id")))
+    dictionary = expected.get('scoring_dictionary')
+    if dictionary and (not Path(dictionary['path']).is_file() or identity.sha(dictionary['path']) != dictionary['sha256']):
+        errors.append('scoring dictionary changed')
     return errors
+
+
+def quality_summary(report, expected):
+    rows = historical.score_takes(report)
+    result = historical.summary(report, rows)
+    result['per_language'] = historical.totals(rows)
+    if not all(isinstance(report.get('silence', {}).get(k), str) for k in ('silent', 'noise')):
+        result['silence_chars'] = None
+    result['guard_evidence'] = 'measured on this platform' if report.get('guard') else 'unavailable on this platform'
+    result['silence_evidence'] = 'measured on this platform' if result['silence_chars'] is not None else 'unavailable on this platform'
+    dictionary = expected.get('scoring_dictionary')
+    result['non_term_errors'] = None
+    result['guard_dictionary_insertions'] = None
+    if dictionary:
+        words = historical.dictionary_words(dictionary['path'])
+        result['non_term_errors'] = {}
+        languages = expected['take_languages']
+        for lang in ('de', 'en'):
+            selected = [row for row in report['takes'] if languages[row['file']] == lang]
+            result['non_term_errors'][lang] = historical.other_errors(dict(report, takes=selected), words) if selected else None
+        result['guard_dictionary_insertions'] = historical.guard_inserts(report, words)
+        result['scoring_dictionary_sha256'] = dictionary['sha256']
+    return result
 
 
 def repeat_errors(candidate, control, expected, rule):
@@ -125,8 +153,8 @@ def compare(candidate, control, expected_candidate, expected_control, repeat_rul
         for repetition in repetitions:
             candidate_take_report = dict(cr, takes=[r for r in cr["takes"] if r.get("repetition", 0) == repetition])
             control_take_report = dict(br, takes=[r for r in br["takes"] if r.get("repetition", 0) == repetition])
-            cs = historical.summary(candidate_take_report, historical.score_takes(candidate_take_report))
-            bs = historical.summary(control_take_report, historical.score_takes(control_take_report))
+            cs = quality_summary(candidate_take_report, expected_candidate)
+            bs = quality_summary(control_take_report, expected_control)
             scores.append({"repetition": repetition, "candidate": cs, "control": bs,
                 "delta_errors": {lang: cs[lang + "_errors"] - bs[lang + "_errors"] for lang in ("de", "en")}})
         result["quality"] = {"status": "scored", "repetitions": scores}
@@ -135,7 +163,8 @@ def compare(candidate, control, expected_candidate, expected_control, repeat_rul
         result['paced_quality'] = {}
         for label, report in (('candidate', cr), ('control', br)):
             paced_report = dict(report, takes=report['paced'])
-            result['paced_quality'][label] = historical.score_takes(paced_report)
+            expected = expected_candidate if label == 'candidate' else expected_control
+            result['paced_quality'][label] = quality_summary(paced_report, expected)
     return result
 
 

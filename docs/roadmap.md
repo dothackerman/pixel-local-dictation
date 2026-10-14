@@ -1,6 +1,6 @@
 # Proposed implementation roadmap
 
-All milestones are unimplemented. Oriol requested a project handoff, not a phone deployment. Requirements are authoritative; the engine order is the proposal in [ADR-002](decisions.md#adr-002--parakeet-first-automatic-language-prototype).
+This is the original milestone design, retained to explain the requirements and gates; its future-tense sections are not current implementation status. See [results](results.md) for the first milestone evidence and [the next-experiment plan](next-experiment-plan.md) for current work. A fresh experiment session follows [release 1a's brief](batch-1a-v1.md), not this roadmap as a command list. Requirements remain authoritative; the original engine order is preserved in [ADR-002](decisions.md#adr-002--parakeet-first-automatic-language-prototype).
 
 ## 1. Establish the baseline and prove FUTO integration
 

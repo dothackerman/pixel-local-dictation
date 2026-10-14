@@ -49,6 +49,13 @@ class LabTest {
         assumeTrue("no files/lab/variant.json: run tools/phone push-variant first", variantFile.isFile)
         val v = Variant.parse(variantFile.readText())
         val out = JSONObject().put("variant", JSONObject(variantFile.readText())).put("side", "phone")
+        // The new release requires measured content identities before any inference.
+        // Old invocations remain historical-only and cannot be wrapped as release evidence.
+        if (File(labDir, "historical-manifest.json").isFile) {
+            val verified = MeasurementRun(ctx, labDir).verifyHistorical(takes.toList())
+            out.put("verifiedArtifacts", verified.getJSONObject("verifiedArtifacts"))
+                .put("verifiedInputs", verified.getJSONObject("verifiedInputs"))
+        }
         out.put("app", ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName)
         out.put("before", state())
 

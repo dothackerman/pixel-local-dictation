@@ -20,6 +20,43 @@ import org.json.JSONObject
 
 /** Separate diagnostic protocol. LabTest's historical full-run procedure remains available. */
 class MeasurementRun(private val context: Context, private val lab: File) {
+    /** Preflight only: keep hashing outside the historical load/timing sequence. */
+    fun verifyHistorical(takes: List<File>): JSONObject {
+        val manifest = JSONObject(File(lab, "historical-manifest.json").readText())
+        require(manifest.getString("mode") == "historical-full")
+        val measuredArtifacts = JSONObject()
+        val artifacts = manifest.getJSONObject("artifacts")
+        require(artifacts.length() > 0)
+        for (path in artifacts.keys()) {
+            val file = File(lab, path).canonicalFile
+            require(file.toPath().startsWith(lab.canonicalFile.toPath()))
+            val actual = sha(file)
+            require(actual == artifacts.getString(path)) { "historical artifact mismatch: $path" }
+            measuredArtifacts.put(path, actual)
+        }
+        val measuredInputs = JSONObject()
+        val expectedFiles = mutableSetOf<File>()
+        val inputs = manifest.getJSONArray("inputs")
+        for (i in 0 until inputs.length()) {
+            val item = inputs.getJSONObject(i)
+            require(!item.has("reference")) { "historical inputs must be full takes" }
+            val path = item.getString("path")
+            val file = File(lab, path).canonicalFile
+            require(file.parentFile == File(context.filesDir, "benchmark").canonicalFile)
+            require(expectedFiles.add(file)) { "duplicate historical input" }
+            val actual = sha(file)
+            require(actual == item.getString("sha256")) { "historical input mismatch: $path" }
+            measuredInputs.put(path, actual)
+        }
+        require(expectedFiles.isNotEmpty() && expectedFiles == takes.map { it.canonicalFile }.toSet()) {
+            "historical take inventory differs from manifest"
+        }
+        val provenance = manifest.getJSONObject("provenance")
+        require(sha(File(context.packageCodePath)) == provenance.getString("build_sha256"))
+        require(instrumentationSha() == provenance.getString("test_build_sha256"))
+        return JSONObject().put("verifiedArtifacts", measuredArtifacts).put("verifiedInputs", measuredInputs)
+    }
+
     private val memory = JSONArray()
     private fun memory(phase: String) {
         val status = File("/proc/self/status").readLines()
@@ -57,6 +94,15 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         }
         val rawVariant = JSONObject(File(lab, "variant.json").readText())
         val variant = Variant.parse(rawVariant)
+        val expectedProvenance = manifest.getJSONObject("provenance")
+        require(sha(File(context.packageCodePath)) == expectedProvenance.getString("build_sha256"))
+        require(instrumentationSha() == expectedProvenance.getString("test_build_sha256"))
+        for (i in 0 until inputs.length()) {
+            val item = inputs.getJSONObject(i)
+            val file = File(lab, item.getString("path")).canonicalFile
+            require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
+            require(sha(file) == item.getString("sha256")) { "input hash mismatch before inference" }
+        }
         val provenance = manifest.getJSONObject("provenance")
             .put("platform", "phone").put("mode", mode).put("feed", 640)
             .put("run_id", UUID.randomUUID().toString()).put("process_start_id", processStart)

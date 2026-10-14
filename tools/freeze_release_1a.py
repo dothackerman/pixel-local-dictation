@@ -37,6 +37,8 @@ def main():
     with (ROOT / "models/guard/refs.tsv").open() as source:
         guards = list(csv.DictReader(source, delimiter="\t"))
     contracts = {}
+    scoring_dictionary = dict(path=str(ROOT / 'corpus/lab/dictionary.txt'),
+                              sha256=identity.sha(ROOT / 'corpus/lab/dictionary.txt'))
     runs = []
     families = [("baseline-stock", "quality-full"), ("dict-beam8-fp32-s20-stock", "quality-full")]
     families += [("dict-beam8-fp32-s20-stock", mode) for mode in ("unpaced-only", "paced-only", "persistent")]
@@ -90,6 +92,9 @@ def main():
         stage = LAB / "push" / mode
         filename = "historical-manifest.json" if mode == "historical-full" else "measurement.json"
         spec = json.loads((stage / filename).read_text())
+        if mode == 'historical-full':
+            spec['inputs'] = [item for item in spec['inputs'] if 'reference' not in item]
+            spec['provenance']['inputs_sha256'] = identity.digest(spec['inputs'])
         spec["provenance"].update(build_sha256=manifest["apk"]["sha256"],
             test_build_sha256=manifest["test_apk"]["sha256"],
             evaluator_sha256=identity.digest(identity.evaluator_files(ROOT)))
@@ -128,6 +133,14 @@ def main():
         pairs.append(("laptop-dict-beam8-fp32-s20-stock-quality-full-" + str(repeat),
                       "laptop-baseline-stock-quality-full-" + str(repeat), "quality-delta"))
     by_id = {r["id"]: r for r in runs}
+    for run in runs:
+        expected = contracts[run['id']]
+        expected['scoring_dictionary'] = scoring_dictionary
+        path = LAB / 'contracts' / (run['id'] + '.json')
+        save(path, expected)
+        run['expected_manifest'] = str(path)
+        run['validation_output'] = str(LAB / 'reports' / (run['id'] + '-validation.json'))
+        run['validate_command'] = [PYTHON, str(ROOT / 'tools/release_report.py'), run['id']]
     for candidate, control, purpose in pairs:
         name = candidate + "-vs-" + control
         path = LAB / "comparisons" / (name + ".json")
@@ -135,6 +148,7 @@ def main():
             repeat_rule={"normalized_text_mismatches_allowed": 0} if purpose == "repeat" else None))
         output = LAB / "reports" / (name + ".json")
         comparisons.append(dict(purpose=purpose, candidate=candidate, control=control, manifest=str(path),
+            id=name,
             output=str(output), command=[PYTHON, str(ROOT / "tools/evaluate_v4.py"),
                 by_id[candidate]["output"], by_id[control]["output"], str(path), str(output)]))
     for directory in ("runs", "reports"):
@@ -145,6 +159,8 @@ def main():
             retry = copy.deepcopy(run)
             retry.update(id=run['id'] + '-retry-' + str(slot), retry_of=run['id'], retry_slot=slot)
             retry['output'] = str(Path(run['output']).with_stem(retry['id']))
+            retry['validation_output'] = str(LAB / 'reports' / (retry['id'] + '-validation.json'))
+            retry['validate_command'] = [PYTHON, str(ROOT / 'tools/release_report.py'), retry['id']]
             if run['platform'] == 'laptop':
                 retry['command'] = [retry['output'] if arg == run['output'] else arg for arg in run['command']]
             else:
@@ -153,8 +169,28 @@ def main():
                 if 'wrap_command' in retry:
                     retry['wrap_command'][2] = retry['raw_output']
                     retry['wrap_command'][-1] = retry['output']
+            retry['comparisons'] = []
+            for comparison in comparisons:
+                if run['id'] not in (comparison['candidate'], comparison['control']):
+                    continue
+                replacement = copy.deepcopy(comparison)
+                replacement['output'] = str(Path(comparison['output']).with_stem(comparison['id'] + '-' + retry['id']))
+                replacement['command'] = [retry['output'] if arg == run['output'] else arg for arg in comparison['command']]
+                replacement['command'][-1] = replacement['output']
+                retry['comparisons'].append(replacement)
             retry_options.append(retry)
+    steps = []
+    completed = set()
+    for run in runs:
+        steps.append(dict(run=run['id'], immediately_validate=run['validate_command'],
+                          on_invalid='stop batch; preserve evidence and return to setup'))
+        completed.add(run['id'])
+        for comparison in comparisons:
+            if run['id'] in (comparison['candidate'], comparison['control']) and {comparison['candidate'], comparison['control']} <= completed:
+                steps.append(dict(compare=comparison['id'], command=comparison['command'],
+                                  on_invalid='stop batch; preserve evidence and return to setup'))
     manifest.update(runs=runs, comparisons=comparisons,
+        execution_steps=steps,
         retry_options=retry_options,
         repeat_rule=dict(normalized_text_mismatches_allowed=0, resource_failures_allowed_as_diagnostics=True),
         retry_rule=dict(laptop_processes=2, phone_processes=2, thermal_retries_per_configuration=1,
@@ -162,10 +198,22 @@ def main():
         restoration=manifest.get('restoration', dict(owner=None, procedure=None, artifact_sha256=None)),
         brief="docs/batch-1a-v1.md", brief_sha256=identity.sha(ROOT / "docs/batch-1a-v1.md"))
     contract_paths = [Path(c['manifest']) for c in comparisons]
+    contract_paths += [Path(run['expected_manifest']) for run in runs]
     contract_paths += [LAB / name for name in ('quality-suite.json', 'diagnostic-suite.json')]
     contract_paths += [LAB / 'push' / mode / ('historical-manifest.json' if mode == 'historical-full' else 'measurement.json')
                        for mode in set(manifest['phone_order'])]
     manifest['frozen_contracts'] = identity.files(contract_paths)
+    for key in ('phone_window', 'phone_build_verified', 'phone_activation_verified', 'restoration', 'outstanding'):
+        manifest.pop(key, None)
+    manifest['status'] = 'prepared; separate fresh-session launch record required'
+    manifest['launch_record'] = str(LAB / 'launch.json')
+    manifest['launch_requirements'] = [
+        'Oriol authorizes this release and its dated Europe/Zurich phone window',
+        'Oriol names restoration owner, procedure and existing artifact',
+        'Sol records fresh session ID and user-confirmed hook activation; synthetic guard checks pass',
+        'Sol verifies device connection/version read-only; each measured process verifies actual APK and input hashes before inference']
+    manifest['validation_note'] = ('Public device smoke belongs to its recorded APK hashes. '
+        'Review revised instrumentation was compiled locally; no additional device inference was authorized or run.')
     save(LAB / "manifest.json", manifest)
     print("Frozen", len(runs), "planned processes and", len(comparisons), "comparison contracts; no runs launched.")
 

@@ -3,12 +3,52 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timezone, timedelta
 
 import measurement_identity as identity
 import record_release_result as recorder
+from wrap_historical_measurement import wrap
+from check_release_1a import launch_errors
 
 
 class SetupEvidenceTests(unittest.TestCase):
+    def test_historical_report_requires_measured_input_and_artifact_hashes(self):
+        manifest = {'provenance': {'build_sha256': 'app', 'test_build_sha256': 'test', 'configuration_sha256': 'config'},
+                    'artifacts': {'model/encoder.onnx': 'model'},
+                    'inputs': [{'path': '../benchmark/take.wav', 'sha256': 'audio'}]}
+        raw = {'measurementProtocol': 'historical-full-v1', 'buildSha256': 'app',
+               'testBuildSha256': 'test', 'configurationSha256': 'config', 'runId': 'run', 'processStartId': 'process'}
+        with self.assertRaisesRegex(ValueError, 'measured artifact'):
+            wrap(raw, manifest)
+        raw['verifiedArtifacts'] = manifest['artifacts']
+        raw['verifiedInputs'] = {'../benchmark/take.wav': 'changed'}
+        with self.assertRaisesRegex(ValueError, 'measured input'):
+            wrap(raw, manifest)
+        raw['verifiedInputs']['../benchmark/take.wav'] = 'audio'
+        self.assertEqual(wrap(raw, manifest)['outcome'], 'complete')
+
+    def test_launch_requires_real_window_fresh_session_and_restoration_artifact(self):
+        now = datetime(2026, 10, 14, 10, tzinfo=timezone(timedelta(hours=2)))
+        manifest = {'source_commit': 'commit', 'limits': {'restoration_margin_seconds': 900}}
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / 'restore.apk'
+            artifact.write_bytes(b'fixture')
+            launch = {'authorized_by': 'Oriol', 'authorized': True, 'source_commit': 'commit',
+                      'session_id': 'fresh', 'hook_confirmed': True, 'guard_tests_passed': True,
+                      'device_connection_and_versions_checked': True, 'checked_at': now.isoformat(),
+                      'phone_window': {'timezone': 'Europe/Zurich', 'start': now.isoformat(),
+                                       'end': (now+timedelta(hours=3)).isoformat()},
+                      'restoration': {'owner': 'Oriol', 'procedure': 'Owner restores the approved build',
+                                      'artifact_path': str(artifact), 'artifact_sha256': identity.sha(artifact)}}
+            self.assertEqual(launch_errors(manifest, launch, 'fresh', now), [])
+            self.assertTrue(launch_errors(manifest, launch, 'old', now))
+            artifact.write_bytes(b'changed')
+            self.assertIn('restoration artifact hash mismatch', launch_errors(manifest, launch, 'fresh', now))
+            launch['phone_window']['end'] = now.isoformat()
+            self.assertIn('phone window has no measurement time', launch_errors(manifest, launch, 'fresh', now))
+            launch['phone_window'] = 'TBD'
+            self.assertTrue(launch_errors(manifest, launch, 'fresh', now))
+
     def test_guard_audio_change_changes_quality_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -34,6 +34,19 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(result["acceptance"], "diagnostic-only")
 
 class EndpointTests(unittest.TestCase):
+    def test_missing_silence_is_unavailable_and_dictionary_diagnostics_are_scored(self):
+        report = {'takes': [{'file': 'a.wav', 'text': 'hello'}]}
+        expected = {'take_languages': {'a.wav': 'en'}, 'scoring_dictionary': {'path': 'fixture', 'sha256': 'hash'}}
+        with patch.object(ev.historical, 'score_takes', return_value=[]), \
+             patch.object(ev.historical, 'summary', return_value={'silence_chars': 0}), \
+             patch.object(ev.historical, 'dictionary_words', return_value={'hello'}), \
+             patch.object(ev.historical, 'other_errors', return_value=2), \
+             patch.object(ev.historical, 'guard_inserts', return_value=None):
+            result = ev.quality_summary(report, expected)
+        self.assertIsNone(result['silence_chars'])
+        self.assertIsNone(result['guard_dictionary_insertions'])
+        self.assertEqual(result['non_term_errors'], {'de': None, 'en': 2})
+
     def test_repeat_requires_fresh_process_and_matching_normalized_outputs(self):
         a = {'provenance': {'run_id': 'one', 'process_start_id': 'one'},
              'report': {'endpoints': [{'id': 'early', 'text': 'Hello world!'}]}}
