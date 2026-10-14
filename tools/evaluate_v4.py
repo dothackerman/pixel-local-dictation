@@ -35,6 +35,9 @@ def evidence_errors(envelope, expected):
     for key in IDENTITY + ("model_sha256", "configuration_sha256", "run_id", "process_start_id"):
         if not provenance.get(key):
             errors.append("missing provenance: " + key)
+    for key in ('run_id', 'process_start_id', 'platform', 'mode', 'timing_protocol'):
+        if not isinstance(provenance.get(key), str) or not provenance[key].strip():
+            errors.append('invalid provenance identity: ' + key)
     for key, value in provenance.items():
         if key.endswith("_sha256") and (not isinstance(value, str) or not re.fullmatch("[0-9a-f]{64}", value)):
             errors.append("invalid hash: " + key)
@@ -45,6 +48,8 @@ def evidence_errors(envelope, expected):
         if provenance.get(key) != value:
             errors.append("unexpected provenance: " + key)
     report = envelope.get("report", {})
+    if provenance.get('mode') not in ('quality-full', 'historical-full', 'unpaced-only', 'paced-only', 'persistent'):
+        errors.append('unsupported report mode')
     for section, id_key in (("takes", "file"), ("guard", "id"), ("endpoints", "id"), ('paced', 'file')):
         wanted = expected.get(section)
         if wanted is None:
@@ -55,6 +60,16 @@ def evidence_errors(envelope, expected):
             errors.append("incomplete or duplicate " + section)
         if any(not isinstance(r.get("text"), str) for r in rows):
             errors.append("missing text: " + section)
+        if provenance.get('mode') == 'persistent' and wanted:
+            from collections import Counter
+            counts = Counter(wanted)
+            repetitions = set(counts.values())
+            passes = {r.get('repetition') for r in rows}
+            if len(repetitions) != 1 or passes != set(range(next(iter(repetitions)))) or any(
+                    type(r.get('repetition')) is not int or r['repetition'] < 0 for r in rows):
+                errors.append('incomplete persistent repetitions: ' + section)
+            elif any(Counter(r.get(id_key) for r in rows if r.get('repetition') == rep) != Counter(counts.keys()) for rep in passes):
+                errors.append('incomplete persistent pass: ' + section)
     if envelope.get("provenance", {}).get("mode") == "quality-full":
         errors += historical.evidence_errors(report, "quality-full", guard=True)
         for take in report.get("takes", []):
@@ -133,6 +148,17 @@ def repeat_errors(candidate, control, expected, rule):
 
 
 def compare(candidate, control, expected_candidate, expected_control, repeat_rule=None):
+    """Malformed evidence is an incomplete result, never an exception or a pass."""
+    try:
+        return _compare(candidate, control, expected_candidate, expected_control, repeat_rule)
+    except (KeyError, TypeError, ValueError, AttributeError, OSError) as error:
+        return {'evaluator_revision': REVISION, 'evidence': 'incomplete',
+                'evidence_errors': ['malformed or unavailable evidence: ' + str(error)],
+                'quality': {'status': 'incomplete'}, 'resources': {'status': 'incomplete'},
+                'acceptance': 'diagnostic-only', 'recording_trigger': 'unchanged; not evaluated'}
+
+
+def _compare(candidate, control, expected_candidate, expected_control, repeat_rule=None):
     errors = evidence_errors(candidate, expected_candidate) + evidence_errors(control, expected_control)
     cp, bp = candidate.get("provenance", {}), control.get("provenance", {})
     errors += ["unmatched control: " + k for k in IDENTITY if cp.get(k) != bp.get(k)]

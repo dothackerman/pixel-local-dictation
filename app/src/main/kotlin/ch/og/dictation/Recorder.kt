@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -28,6 +29,8 @@ class Recorder {
      * [onSamples] is called on the recording thread with each chunk as floats in [-1, 1].
      * @throws SecurityException when RECORD_AUDIO is not granted.
      */
+    // Sole caller checks microphone permission and catches SecurityException via Exception.
+    @SuppressLint("MissingPermission")
     fun start(onSamples: (FloatArray) -> Unit = {}) {
         if (thread != null) return
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)

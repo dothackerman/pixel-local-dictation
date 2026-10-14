@@ -26,3 +26,12 @@ Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/
 Build: `tools/fetch-assets.sh` (pinned downloads, see `assets.lock`; the shipped model is built once with `tools/export-fp32.sh` and `tools/quant_variant.py`), `tools/set-signing-password.sh`, then `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
 
 Oriol supplies representative speech and judges correction effort. The implementer owns build tooling, engine integration, measurements and rollback instructions. Current setup evidence and phone state are recorded in [the setup work order](docs/setup-release-1a.md); authorization for setup does not launch an experiment.
+
+Host quality gate: `python3 tools/quality.py` runs the existing Python regressions,
+Kotlin benchmark unit tests and Android lint with offline Gradle. The local
+pre-commit gate invokes it with `--staged`: stage or stash tracked edits and stage
+new source/test/build inputs first so the tested checkout matches the index. It
+also detects index changes during the run. This command runs no device tests.
+The recorder's host lint annotation documents its existing caller permission
+check/exception boundary; saved release APK and setup smoke identities remain
+historical and have not been rebuilt from that annotation-only source edit.

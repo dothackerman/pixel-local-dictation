@@ -19,7 +19,7 @@ Evaluator 4 is `tools/evaluate_v4.py`. Historical `evaluate.py`, the normalizer 
 3. Complete [fresh-session safeguard activation and verification](agent-safeguards.md). Run its synthetic guard tests. Only then use the permitted read-only status/version commands to confirm the connection and record versions. Sol records what it observed; Oriol supplies hook trust confirmation if needed. A denied action stops the affected work.
 4. Create the private `launch.json` described below from Oriol's actual authorization and this session's observations. Only this launch record and new run/report evidence are mutable during execution. Do not edit the frozen manifest to manufacture readiness.
 5. Run `python3 tools/check_release_1a.py --session-id SESSION_ID`, using this chat's actual stable ID in both places. A nonzero result stops execution. The checker validates artifacts, a future usable window, session checks and the restoration artifact. It cannot independently prove consent or hook trust: those are explicit human/session attestations.
-6. Follow `execution_steps` in order. Complete laptop controls and their barriers before any phone run. Wait until the authorized phone start time. Record start/end times, elapsed budgets, retries and outcomes in a new private `execution-log.json`; do not create another chat or automation.
+6. Follow `execution_steps` in order. Complete laptop controls and their barriers before any phone run. Wait until the authorized phone start time. Record start/end times, elapsed budgets, retries and outcomes in a new private `execution-events.jsonl`; do not create another chat or automation.
 
 ### Launch record ownership and schema
 
@@ -78,6 +78,34 @@ Controls run first. Identical repetitions must reproduce normalized text exactly
 
 ### Execution and validation barriers
 
+Use the host-only `tools/release_execution.py` CLI to reserve this output namespace
+and obtain each permitted next step. Its `--owner` is the fresh session ID in the
+separate launch record; ownership alone supplies no authorization. After readiness
+and launch authorization are complete, call `acquire --owner SESSION`, then `next
+--owner SESSION`. For a returned run, call `start --owner SESSION --run RUN_ID`
+before its first command; execute only that returned run's frozen commands. Once
+the process has actually exited, record `finish --owner SESSION --run RUN_ID
+--outcome complete` (or the observed `transient`, `thermal`, `failed`, `timeout`
+outcome). Execute the returned validation/comparison barrier and ask `next` again.
+Use `retry --owner SESSION --run PREDECLARED_RETRY_ID` only for the failure table's
+eligible failure, then resume `next`. A thermal retry requires saved valid evidence
+and its immediate validation; its five-minute cooldown still applies. Measured hot
+phone evidence forces that retry or restoration handback even when labelled
+`complete`. A second transient laptop failure anywhere in the batch stops work;
+two retry slots are an upper ceiling, not an entitlement to recover twice.
+
+The helper serializes append-only `execution-events.jsonl` transitions with an
+advisory host lock and retains ownership between calls. It counts every started
+process, spans platform wall time across overhead/cooldowns, checks additional
+storage growth, and requires the whole timeout to fit the window/restoration
+margin. It re-evaluates saved validations/comparisons against current run evidence.
+An active or overdue reservation remains blocked until its owner confirms exit.
+Use `release --owner SESSION` for explicit handback only after all processes have
+exited; a stale owner is never silently replaced. This is cooperative scheduling,
+not exclusion of arbitrary tools or guaranteed device termination. The CLI never
+launches a command. This implementation has synthetic host tests; it has not been
+validated by running this batch on the phone.
+
 Every run entry has `validate_command`, `validation_output` and `expected_manifest`. Run validation immediately after saving that run, before the next inference process. It checks that run independently against the frozen contract; it is explicitly not an independent repetition. Each comparison step follows as soon as both inputs exist. A nonzero validation/comparison exit stops downstream work; only the failure table's explicitly bounded transient-process retry can resume it. Never skip a barrier. Successful diagnostic resource/accuracy failures are reportable outcomes, not invalid evidence.
 
 | Ordered group | Required barrier before advancing |
@@ -126,7 +154,7 @@ Stop the affected stage on missing evidence/output, reproducible truncation, une
 
 Count a failed or timed-out process against its platform budget. The run deadline starts before its command; phone wall time includes push/build/pull overhead and cooldowns. The manifest's timeout is a scheduling deadline, not permission to start another process while the preceding command still runs. The current command interface has no approved device-abort operation: if a process overruns, report it immediately and hand control to the restoration owner. Do not claim guaranteed hard termination at the window boundary.
 
-Use the named validation/comparison outputs under `reports/`, plus `execution-log.json`, for the handback. The evaluator supplies per-language full-take/term counts, non-term errors against the pinned scoring dictionary, guard dictionary insertions, and silence. Missing guard/silence evidence is null/unavailable, not zero. Phone results cite the two matching FP32 laptop quality run IDs for those companion diagnostics; those results remain laptop evidence. Historical paced hypotheses are scored separately. The scoring dictionary is the same for candidate and control and does not imply a mechanism-acceptance decision.
+Use the named validation/comparison outputs under `reports/`, plus `execution-events.jsonl`, for the handback. The evaluator supplies per-language full-take/term counts, non-term errors against the pinned scoring dictionary, guard dictionary insertions, and silence. Missing guard/silence evidence is null/unavailable, not zero. Phone results cite the two matching FP32 laptop quality run IDs for those companion diagnostics; those results remain laptop evidence. Historical paced hypotheses are scored separately. The scoring dictionary is the same for candidate and control and does not imply a mechanism-acceptance decision.
 
 Also include artifact/protocol identities; all failures/deviations and consumed budgets; every endpoint wait and prefix check; memory/load/thermal repetitions; backend/profile availability; the historical gate beside diagnostic readings; unchanged recording-trigger status; final build/device state and restoration handoff; and supported/rejected/unresolved conclusions with the smallest next setup change. No mandatory field may be filled by an invented result.
 
