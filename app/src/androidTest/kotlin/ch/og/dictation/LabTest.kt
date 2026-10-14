@@ -90,6 +90,7 @@ class LabTest {
             .put("runId", java.util.UUID.randomUUID().toString())
             .put("processStartId", "${android.os.Process.myPid()}:${File("/proc/self/stat").readText().substringAfterLast(") ").split(' ')[19]}")
             .put("buildSha256", MeasurementRun(ctx, labDir).artifactSha(File(ctx.packageCodePath)))
+            .put("testBuildSha256", MeasurementRun(ctx, labDir).instrumentationSha())
             .put("configurationSha256", MeasurementRun(ctx, labDir).artifactSha(variantFile))
         File(labDir, "result.json").writeText(out.toString(1))
         Log.i(tag, "done: ${out.getJSONArray("takes").length()} takes, vmHwmKb=${out.optLong("vmHwmKb")}")

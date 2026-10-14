@@ -30,6 +30,9 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             .put("pssKb", Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }.totalPss)
             .put("javaUsedBytes", runtime.totalMemory() - runtime.freeMemory())
             .put("nativeAllocatedBytes", Debug.getNativeHeapAllocatedSize())
+            .put("thermalStatus", context.getSystemService(android.os.PowerManager::class.java).currentThermalStatus)
+            .put("batteryPercent", context.getSystemService(android.os.BatteryManager::class.java)
+                .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
         synchronized(memory) { memory.put(row) }
     }
 
@@ -58,6 +61,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             .put("platform", "phone").put("mode", mode).put("feed", 640)
             .put("run_id", UUID.randomUUID().toString()).put("process_start_id", processStart)
             .put("build_sha256", sha(File(context.packageCodePath)))
+            .put("test_build_sha256", instrumentationSha())
             .put("configuration_sha256", sha(File(lab, "variant.json")))
         val report = JSONObject().put("variant", rawVariant).put("memory", memory)
             .put("takes", JSONArray()).put("endpoints", JSONArray())
@@ -202,6 +206,9 @@ class MeasurementRun(private val context: Context, private val lab: File) {
     }
 
     fun artifactSha(file: File): String = sha(file)
+
+    fun instrumentationSha(): String = sha(File(androidx.test.platform.app.InstrumentationRegistry
+        .getInstrumentation().context.packageCodePath))
 
     private fun sha(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

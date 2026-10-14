@@ -34,6 +34,34 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(result["acceptance"], "diagnostic-only")
 
 class EndpointTests(unittest.TestCase):
+    def test_repeat_requires_fresh_process_and_matching_normalized_outputs(self):
+        a = {'provenance': {'run_id': 'one', 'process_start_id': 'one'},
+             'report': {'endpoints': [{'id': 'early', 'text': 'Hello world!'}]}}
+        b = copy.deepcopy(a)
+        expected = {'endpoint_references': {'early': {'lang': 'en'}}}
+        rule = {'normalized_text_mismatches_allowed': 0}
+        self.assertEqual(len(ev.repeat_errors(a,b,expected,rule)),2)
+        b['provenance'] = {'run_id':'two','process_start_id':'two'}
+        b['report']['endpoints'][0]['text'] = 'hello world'
+        self.assertEqual(ev.repeat_errors(a,b,expected,rule),[])
+        b['report']['endpoints'][0]['text'] = 'hello'
+        self.assertIn('repeat normalized output mismatch',ev.repeat_errors(a,b,expected,rule))
+        b['report']['endpoints'][0].pop('text')
+        self.assertIn('incomplete repeat output evidence',ev.repeat_errors(a,b,expected,rule))
+
+    def test_historical_paced_output_cannot_bypass_repeat_check(self):
+        a = {'provenance': {'run_id': 'one', 'process_start_id': 'one'},
+             'report': {'paced': [{'file': 'short.wav', 'text': 'hello world'}]}}
+        b = copy.deepcopy(a)
+        b['provenance'] = {'run_id': 'two', 'process_start_id': 'two'}
+        expected = {'take_languages': {'short.wav': 'en'}}
+        rule = {'normalized_text_mismatches_allowed': 0}
+        self.assertEqual(ev.repeat_errors(a,b,expected,rule), [])
+        b['report']['paced'][0]['text'] = 'hello'
+        self.assertIn('repeat normalized output mismatch', ev.repeat_errors(a,b,expected,rule))
+        b['report']['paced'][0].pop('text')
+        self.assertIn('missing text: paced', ev.evidence_errors(b, {'paced': ['short.wav']}))
+
     def test_waits_and_tail_checks_are_reported_together(self):
         rows = [{"id": "early", "text": "hello", "stopToFinalMs": 120},
                 {"id": "late", "text": "hello world world", "stopToFinalMs": 360}]

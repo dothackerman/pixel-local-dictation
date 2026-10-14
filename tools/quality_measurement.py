@@ -34,7 +34,9 @@ def main():
         evaluator_sha256=identity.digest(identity.evaluator_files(ROOT)), run_id=str(uuid.uuid4()),
         process_start_id=f"{os.getpid()}:{Path('/proc/self/stat').read_text().split()[21]}")
     provenance['dictionary_sha256'] = identity.sha(ROOT / 'corpus/lab' / v['hotwords']['file']) if v['hotwords']['file'] else identity.digest([])
-    provenance['inputs_sha256'] = identity.digest(manifest['inputs'])
+    provenance['inputs_sha256'] = identity.quality_inputs(ROOT, manifest['inputs'])
+    if provenance['inputs_sha256'] != manifest['quality_inputs_sha256']:
+        raise ValueError('quality inputs changed since freeze')
     provenance['references_sha256'] = identity.digest(identity.reference_files(ROOT))
     result = dict(schema=4, outcome='running', provenance=provenance)
     with open(args.output, 'x') as destination:

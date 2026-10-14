@@ -14,6 +14,8 @@ def wrap(raw, manifest):
     expected = manifest['provenance']
     if raw.get('buildSha256') != expected['build_sha256'] or raw.get('configurationSha256') != expected['configuration_sha256']:
         raise ValueError('unexpected build or variant')
+    if raw.get('testBuildSha256') != expected.get('test_build_sha256') or not raw.get('testBuildSha256'):
+        raise ValueError('unexpected instrumentation build')
     if not raw.get('runId') or not raw.get('processStartId'):
         raise ValueError('missing fresh-process identity')
     provenance = dict(expected, platform='phone', mode='historical-full', feed=640,

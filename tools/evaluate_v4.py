@@ -43,7 +43,7 @@ def evidence_errors(envelope, expected):
         if provenance.get(key) != value:
             errors.append("unexpected provenance: " + key)
     report = envelope.get("report", {})
-    for section, id_key in (("takes", "file"), ("guard", "id"), ("endpoints", "id")):
+    for section, id_key in (("takes", "file"), ("guard", "id"), ("endpoints", "id"), ('paced', 'file')):
         wanted = expected.get(section)
         if wanted is None:
             continue
@@ -67,10 +67,49 @@ def evidence_errors(envelope, expected):
     return errors
 
 
-def compare(candidate, control, expected_candidate, expected_control):
+def repeat_errors(candidate, control, expected, rule):
+    errors = []
+    if rule != {'normalized_text_mismatches_allowed': 0}:
+        return ['unsupported repeat tolerance']
+    for key in ('run_id', 'process_start_id'):
+        if candidate['provenance'].get(key) == control['provenance'].get(key):
+            errors.append('repeat reused ' + key)
+    for key in ('model_sha256', 'configuration_sha256', 'dictionary_sha256', 'test_build_sha256'):
+        if candidate['provenance'].get(key) != control['provenance'].get(key):
+            errors.append('repeat changed ' + key)
+
+    def outputs(envelope):
+        rows = []
+        report = envelope['report']
+        for section, key in (('takes', 'file'), ('guard', 'id'), ('endpoints', 'id'), ('paced', 'file')):
+            for row in report.get(section, []):
+                lang = (expected.get('endpoint_references', {}).get(row[key], {}).get('lang')
+                        if section == 'endpoints' else expected.get('take_languages', {}).get(row[key])
+                        if section in ('takes', 'paced') else row.get('lang'))
+                if lang not in ('de', 'en'):
+                    raise ValueError('missing repeat language')
+                for feed, text in [(640, row['text'])] + [(j['feed'], j['text']) for j in row.get('jitter', [])]:
+                    rows.append((section, row[key], row.get('repetition', 0), feed,
+                                 historical.score.normalise(text, lang)))
+        for key in ('silent', 'noise'):
+            if key in report.get('silence', {}):
+                rows.append(('silence', key, 0, 640,
+                             historical.score.normalise(report['silence'][key], 'en')))
+        return sorted(rows)
+    try:
+        if outputs(candidate) != outputs(control):
+            errors.append('repeat normalized output mismatch')
+    except (KeyError, ValueError, TypeError):
+        errors.append('incomplete repeat output evidence')
+    return errors
+
+
+def compare(candidate, control, expected_candidate, expected_control, repeat_rule=None):
     errors = evidence_errors(candidate, expected_candidate) + evidence_errors(control, expected_control)
     cp, bp = candidate.get("provenance", {}), control.get("provenance", {})
     errors += ["unmatched control: " + k for k in IDENTITY if cp.get(k) != bp.get(k)]
+    if repeat_rule is not None and not errors:
+        errors += repeat_errors(candidate, control, expected_candidate, repeat_rule)
     measurement_issues = measurement_errors(candidate) + measurement_errors(control)
     result = {"evaluator_revision": REVISION, "evidence": "incomplete" if errors or measurement_issues else "complete",
               "evidence_errors": errors + measurement_issues, "quality": {"status": "incomplete"},
@@ -92,6 +131,11 @@ def compare(candidate, control, expected_candidate, expected_control):
                 "delta_errors": {lang: cs[lang + "_errors"] - bs[lang + "_errors"] for lang in ("de", "en")}})
         result["quality"] = {"status": "scored", "repetitions": scores}
     result["endpoints"] = endpoint_checks(cr.get("endpoints", []), expected_candidate.get("endpoint_references", {}))
+    if cr.get('paced') and br.get('paced'):
+        result['paced_quality'] = {}
+        for label, report in (('candidate', cr), ('control', br)):
+            paced_report = dict(report, takes=report['paced'])
+            result['paced_quality'][label] = historical.score_takes(paced_report)
     return result
 
 
@@ -182,9 +226,10 @@ def main():
         with open(path) as source:
             return json.load(source)
     manifest = read(args.manifest)
-    output = compare(read(args.candidate), read(args.control), manifest["candidate"], manifest["control"])
+    output = compare(read(args.candidate), read(args.control), manifest["candidate"], manifest["control"], manifest.get('repeat_rule'))
     with open(args.output, "x") as destination:
         json.dump(output, destination, indent=2)
+    raise SystemExit(output['evidence'] != 'complete')
 
 if __name__ == "__main__":
     main()

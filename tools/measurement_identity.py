@@ -1,5 +1,6 @@
 """Content identities for setup manifests and measured reports (no inference)."""
 import hashlib
+import csv
 import json
 from pathlib import Path
 
@@ -48,3 +49,13 @@ def reference_files(root):
     root = Path(root)
     return files(list((root / 'corpus/scripts').glob('*.txt')) + list((root / 'corpus/scripts').glob('*.terms')) +
                  [root / 'corpus/takes.json', root / 'models/guard/refs.tsv', root / 'docs/baseline.md'])
+
+
+def quality_inputs(root, takes):
+    root = Path(root)
+    with (root / 'models/guard/refs.tsv').open() as source:
+        rows = list(csv.DictReader(source, delimiter='\t'))
+    return digest({'takes': takes, 'guard': files(root / 'models/guard' / row['lang'] /
+        (row['id'] + '.wav') for row in rows),
+        'synthetic': {'rate': 16000, 'warmup_seconds': 1, 'silence_seconds': 5,
+                      'noise_seconds': 5, 'noise_seed': 0, 'noise_scale': 0.003}})
