@@ -39,6 +39,10 @@ class LabTest {
     private val labDir = File(ctx.filesDir, "lab")
 
     @Test fun variantOnSavedTakes() {
+        if (File(labDir, "measurement.json").isFile) {
+            MeasurementRun(ctx, labDir).run()
+            return
+        }
         val takes = takesDir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
         val variantFile = File(labDir, "variant.json")
@@ -81,6 +85,12 @@ class LabTest {
             wakeLock.release()
         }
         out.put("after", state())
+        // Fresh provenance is additive; the historical allocation/timing sequence above is unchanged.
+        out.put("measurementProtocol", "historical-full-v1")
+            .put("runId", java.util.UUID.randomUUID().toString())
+            .put("processStartId", "${android.os.Process.myPid()}:${File("/proc/self/stat").readText().substringAfterLast(") ").split(' ')[19]}")
+            .put("buildSha256", MeasurementRun(ctx, labDir).artifactSha(File(ctx.packageCodePath)))
+            .put("configurationSha256", MeasurementRun(ctx, labDir).artifactSha(variantFile))
         File(labDir, "result.json").writeText(out.toString(1))
         Log.i(tag, "done: ${out.getJSONArray("takes").length()} takes, vmHwmKb=${out.optLong("vmHwmKb")}")
         assertTrue(out.getJSONArray("takes").length() > 0)

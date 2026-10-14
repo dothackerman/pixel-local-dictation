@@ -57,6 +57,7 @@ class SherpaRecognizer(
             config.modelConfig.tokens = m.tokens()
             config.modelConfig.modelType = "nemo_transducer"
             config.modelConfig.numThreads = v.threads
+            config.modelConfig.provider = RuntimeConfig.provider(v, m)
             config.decodingMethod = v.decoding.method
             config.maxActivePaths = v.decoding.maxActivePaths
             config.blankPenalty = v.decoding.blankPenalty
@@ -84,6 +85,7 @@ class SherpaRecognizer(
             config.modelConfig.qwen3Asr.maxTotalLen = v.qwen3.maxTotalLen
             config.modelConfig.qwen3Asr.maxNewTokens = v.qwen3.maxNewTokens
             config.modelConfig.numThreads = v.threads
+            config.modelConfig.provider = RuntimeConfig.provider(v, m)
             return load(config, m, "qwen3", v)
         }
 
@@ -96,6 +98,7 @@ class SherpaRecognizer(
             config.modelConfig.cohereTranscribe.useItn = v.cohere.useItn
             config.modelConfig.tokens = m.tokens()
             config.modelConfig.numThreads = v.threads
+            config.modelConfig.provider = RuntimeConfig.provider(v, m)
             return load(config, m, "cohere")
         }
 
@@ -108,6 +111,7 @@ class SherpaRecognizer(
             config.modelConfig.whisper.tailPaddings = v.whisper.tailPaddings
             config.modelConfig.tokens = m.tokens()
             config.modelConfig.numThreads = v.threads
+            config.modelConfig.provider = RuntimeConfig.provider(v, m)
             return load(config, m, "whisper")
         }
 
@@ -119,6 +123,7 @@ class SherpaRecognizer(
             config.modelConfig.canary.tgtLang = lang
             config.modelConfig.tokens = m.tokens()
             config.modelConfig.numThreads = v.threads
+            config.modelConfig.provider = RuntimeConfig.provider(v, m)
             return load(config, m, "canary-$lang")
         }
 
@@ -181,6 +186,7 @@ class LanguageSwitchedRecognizer(
         config.whisper.encoder = lid.onnx("encoder")
         config.whisper.decoder = lid.onnx("decoder")
         config.numThreads = v.threads
+        config.provider = RuntimeConfig.provider(v, lid, lid = true)
         identifier = SpokenLanguageIdentification(lid.assets, config)
     }
 

@@ -1,0 +1,13 @@
+# Release 1a setup work order
+
+Authorized by Oriol on 2026-10-14: setup only, following [the experiment plan](next-experiment-plan.md). No loop launch or phone window is authorized. Status: local implementation and validation complete; handoff incomplete and not ready for execution.
+
+Deliverables: a separately versioned evaluator with matched-platform provenance and independent evidence/quality/resource results; explicit recognizer and language-identifier allocation controls; fresh unpaced, fresh paced and persistent one-buffer harness modes; deterministic annotated endpoint fixtures; local benchmark builds and artifact identities; a bounded batch brief and private manifest. Preserve historical evaluator/report semantics and production defaults.
+
+Dependencies: existing pinned model assets, Python sherpa-onnx environment, Android SDK/JDK/Gradle and existing AAR. Inspect these before repair. No model download or export is needed. Limits: eight active setup hours, zero model downloads, zero exports, 10 GB additional storage, two repair attempts per dependency, at most 12 measured smoke processes and 60 minutes of inference. Public German/English guard fixtures and synthetic silence are the only setup inference inputs. Personal corpus inputs may be inventoried and hashed in place; no ranking inference or export.
+
+Release 1a prepares the stock FP32 beam-8 dictionary quality control in three diagnostic modes and the historical full-run mode. Sol's eventual phone budget is eight planned processes plus two retries; no phone measurements are part of this setup. Phone activation, build verification, provisioning and an explicit Europe/Zurich window remain prerequisites. Missing prerequisites must produce a not-ready handback, never guessed values.
+
+Validation: focused evaluator/provenance and harness regressions, existing Python and Kotlin suites, offline build when available, bounded public-fixture smoke validation. Keep evidence private under corpus/lab/release-1a/. Freeze exact identities and commands only after artifacts and tests exist.
+
+Setup checkpoint: 35 Python and 28 Kotlin tests passed; both benchmark APKs built offline. Eleven public/synthetic smoke processes ran, within the twelve-process cap. No development-corpus ranking, device access, model download or export occurred. Private identities, staging and smoke evidence are under corpus/lab/release-1a/. The attempted batch handoff document save was rejected by the shared pre-tool policy and was not retried. That document, frozen comparison/run commands, device activation/build validation and a dated authorized window remain prerequisites. No loop has been launched.

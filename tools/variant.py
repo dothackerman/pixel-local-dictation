@@ -6,17 +6,19 @@ laptop runner (tools/pipeline.py) and by the phone (app: Variant.kt), so every k
 Kotlin twin. The loop may change values, never add keys: unknown keys are rejected. Changing
 this file is a setup-session change (it is checksummed by tools/lab.py check).
 
+Schema 4 adds independent model/LID CPU arena, memory pattern and profiling controls.
 Schema 3 adds explicit Qwen context/generation budgets and bounded chunks. Schema 1/2 files
 still load; their unbounded Qwen chunks migrate to a 40 s cap. Other defaults stay unchanged.
 """
 import json
 import math
 
-SCHEMA = 3
+SCHEMA = 4
 FAMILIES = ("parakeet", "whisper", "canary", "qwen3", "cohere")
 
 DEFAULT = {
     "schema": SCHEMA,
+    "runtime": {"model_arena": True, "model_pattern": True, "lid_arena": True, "lid_pattern": True, "profile": False},
     "name": "baseline",
     "description": "app 0.2.2 as shipped: Parakeet v3 MatMul-only INT8, greedy, chunks of 20 s at pauses",
     "family": "parakeet",
@@ -50,6 +52,7 @@ DEFAULT = {
 }
 
 _TYPES = {
+    "runtime.model_arena": bool, "runtime.model_pattern": bool, "runtime.lid_arena": bool, "runtime.lid_pattern": bool, "runtime.profile": bool,
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
@@ -85,7 +88,7 @@ def validate(v):
     """Returns a complete variant (defaults filled in) or raises VariantError."""
     if not isinstance(v, dict):
         raise VariantError("variant must be a JSON object")
-    for section in ("decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"):
+    for section in ("runtime", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"):
         if section in v and not isinstance(v[section], dict):
             raise VariantError(f"{section} must be an object")
     given = dict(_flat(v))
@@ -101,7 +104,7 @@ def validate(v):
             raise VariantError(f"{key}: expected {want.__name__}, got {type(val).__name__}")
         section, _, leaf = key.rpartition(".")
         (out[section] if section else out)[leaf] = val
-    if out["schema"] not in (1, 2, SCHEMA):
+    if out["schema"] not in (1, 2, 3, SCHEMA):
         raise VariantError(f"schema {out['schema']} not supported, this runner knows {SCHEMA}")
     if out["schema"] < 3 and out["family"] == "qwen3" and out["cutting"]["max_chunk_s"] == 0:
         out["cutting"]["max_chunk_s"] = 40.0

@@ -4,7 +4,7 @@ import org.json.JSONObject
 import kotlin.math.ceil
 
 /**
- * Kotlin twin of tools/variant.py (schema 3): one decode pipeline, fully described. The daily
+ * Kotlin twin of tools/variant.py (schema 4): one decode pipeline, fully described. The daily
  * app runs [DEFAULT]; the laboratory test (LabTest) runs whatever variant.json was pushed.
  * Unknown keys are rejected so that laptop and phone can never silently run different pipelines.
  */
@@ -14,6 +14,7 @@ data class Variant(
     val family: String = "parakeet",
     val model: String = "parakeet-v3-matmul8",
     val threads: Int = 4,
+    val runtime: Runtime = Runtime(),
     val decoding: Decoding = Decoding(),
     val whisper: Whisper = Whisper(),
     val qwen3: Qwen3 = Qwen3(),
@@ -23,6 +24,8 @@ data class Variant(
     val cutting: Cutting = Cutting(),
     val post: Post = Post(),
 ) {
+    data class Runtime(val modelArena: Boolean = true, val modelPattern: Boolean = true,
+        val lidArena: Boolean = true, val lidPattern: Boolean = true, val profile: Boolean = false)
     data class Decoding(val method: String = "greedy_search", val maxActivePaths: Int = 4, val blankPenalty: Float = 0f)
     data class Whisper(val language: String = "", val tailPaddings: Int = -1)
     data class Qwen3(val maxTotalLen: Int = 1024, val maxNewTokens: Int = 256) {
@@ -45,11 +48,12 @@ data class Variant(
     val isDictionary: Boolean get() = hotwords.file.isNotEmpty()
 
     companion object {
-        const val SCHEMA = 3
+        const val SCHEMA = 4
         val DEFAULT = Variant()
         val FAMILIES = setOf("parakeet", "whisper", "canary", "qwen3", "cohere")
         private val KEYS = mapOf(
-            "" to setOf("schema", "name", "description", "family", "model", "threads", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
+            "" to setOf("schema", "name", "description", "family", "model", "threads", "runtime", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
+            "runtime" to setOf("model_arena", "model_pattern", "lid_arena", "lid_pattern", "profile"),
             "decoding" to setOf("method", "max_active_paths", "blank_penalty"),
             "whisper" to setOf("language", "tail_paddings"),
             "qwen3" to setOf("max_total_len", "max_new_tokens"),
@@ -70,6 +74,12 @@ data class Variant(
             }
             val schema = o.optInt("schema", SCHEMA)
             require(schema in 1..SCHEMA) { "variant schema $schema not supported, this app knows $SCHEMA" }
+            val rt = o.optJSONObject("runtime") ?: JSONObject()
+            fun runtimeBool(key: String): Boolean {
+                if (!rt.has(key)) return key != "profile"
+                require(rt.get(key) is Boolean) { "runtime.$key must be boolean" }
+                return rt.getBoolean(key)
+            }
             val d = o.optJSONObject("decoding") ?: JSONObject()
             val w = o.optJSONObject("whisper") ?: JSONObject()
             val q = o.optJSONObject("qwen3") ?: JSONObject()
@@ -94,6 +104,8 @@ data class Variant(
                 description = o.optString("description", def.description),
                 family = family,
                 model = o.optString("model", def.model),
+                runtime = Runtime(runtimeBool("model_arena"), runtimeBool("model_pattern"),
+                    runtimeBool("lid_arena"), runtimeBool("lid_pattern"), runtimeBool("profile")),
                 threads = o.optInt("threads", def.threads),
                 decoding = Decoding(d.optString("method", def.decoding.method), d.optInt("max_active_paths", def.decoding.maxActivePaths),
                     d.f("blank_penalty", def.decoding.blankPenalty)),

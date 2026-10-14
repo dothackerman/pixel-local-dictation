@@ -24,7 +24,7 @@ class VariantTest {
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"dictionary": ["x"]}""") }
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"hotwords": ["x"]}""") }
         assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"cutting": {"overlap_s": 1}}""") }
-        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 4}""") }
+        assertThrows(IllegalArgumentException::class.java) { Variant.parse("""{"schema": 5}""") }
     }
 
     @Test fun familyRulesMatchThePythonSchema() {
@@ -70,5 +70,14 @@ class VariantTest {
         assertEquals(2048, v.qwen3.maxTotalLen)
         assertEquals(512, v.qwen3.maxNewTokens)
         for (schema in listOf(1, 2, 3)) assertEquals(Variant.DEFAULT, Variant.parse("""{"schema":$schema}"""))
+    }
+    @org.junit.Test fun allocationSettingsAreExplicitAndStrict() {
+        val v = Variant.parse("""{"schema":4,"runtime":{"model_arena":false,"lid_pattern":false}}""")
+        assertEquals(false, v.runtime.modelArena)
+        assertEquals(true, v.runtime.modelPattern)
+        assertEquals(false, v.runtime.lidPattern)
+        assertThrows(IllegalArgumentException::class.java) {
+            Variant.parse("""{"runtime":{"model_arena":"false"}}""")
+        }
     }
 }

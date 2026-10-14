@@ -15,6 +15,7 @@ import numpy as np
 import sherpa_onnx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from runtime_config import provider
 import variant as variant_mod  # noqa: E402
 
 RATE = 16000
@@ -64,7 +65,7 @@ class Transducer:
             extra = dict(hotwords_file=hotwords_path, hotwords_score=v["hotwords"]["score"], modeling_unit="bpe", bpe_vocab=vocab[0])
         self.rec = sherpa_onnx.OfflineRecognizer.from_transducer(
             encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), joiner=one(model_dir, "joiner"),
-            tokens=tokens(model_dir), num_threads=v["threads"], model_type="nemo_transducer",
+            tokens=tokens(model_dir), num_threads=v["threads"], provider=provider(v), model_type="nemo_transducer",
             decoding_method=d["method"], max_active_paths=d["max_active_paths"], blank_penalty=d["blank_penalty"], **extra)
 
     def begin_take(self, first_chunk):
@@ -80,7 +81,7 @@ class Whisper:
         w = v["whisper"]
         self.rec = sherpa_onnx.OfflineRecognizer.from_whisper(
             encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
-            language=w["language"], task="transcribe", num_threads=v["threads"], tail_paddings=w["tail_paddings"])
+            language=w["language"], task="transcribe", num_threads=v["threads"], provider=provider(v), tail_paddings=w["tail_paddings"])
 
     def begin_take(self, first_chunk):
         return ""
@@ -102,7 +103,7 @@ class LanguageSwitched:
         cfg = sherpa_onnx.SpokenLanguageIdentificationConfig(
             whisper=sherpa_onnx.SpokenLanguageIdentificationWhisperConfig(
                 encoder=one(lid_dir, "encoder"), decoder=one(lid_dir, "decoder")),
-            num_threads=v["threads"])
+            num_threads=v["threads"], provider=provider(v, "lid"))
         self.lid = sherpa_onnx.SpokenLanguageIdentification(cfg)
         self.probe = v["lid"]["probe_seconds"]
         self.fallback = v["lid"]["fallback"]
@@ -137,7 +138,7 @@ class Qwen3:
         self.rec = sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
             conv_frontend=one(model_dir, "conv_frontend"), encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"),
             tokenizer=os.path.join(model_dir, "tokenizer") if os.path.isdir(os.path.join(model_dir, "tokenizer")) else model_dir,
-            num_threads=v["threads"], hotwords=words,
+            num_threads=v["threads"], provider=provider(v), hotwords=words,
             max_total_len=self.qwen3["max_total_len"], max_new_tokens=self.qwen3["max_new_tokens"])
 
     def begin_take(self, first_chunk):
@@ -159,7 +160,7 @@ class Cohere:
         c = v["cohere"]
         self.rec = sherpa_onnx.OfflineRecognizer.from_cohere_transcribe(
             encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
-            num_threads=v["threads"], language=c["language"] if language is None else language,
+            num_threads=v["threads"], provider=provider(v), language=c["language"] if language is None else language,
             use_punct=c["use_punct"], use_itn=c["use_itn"])
 
     def begin_take(self, first_chunk):
@@ -185,7 +186,7 @@ def recognizer(v, models_root, hotwords_path=""):
         return LanguageSwitched(v, model_dir, lid_dir, lambda lang: Cohere(v, model_dir, lang).rec, per_stream=True)
     return LanguageSwitched(v, model_dir, lid_dir, lambda lang: sherpa_onnx.OfflineRecognizer.from_nemo_canary(
         encoder=one(model_dir, "encoder"), decoder=one(model_dir, "decoder"), tokens=tokens(model_dir),
-        src_lang=lang, tgt_lang=lang, num_threads=v["threads"]))
+        src_lang=lang, tgt_lang=lang, num_threads=v["threads"], provider=provider(v)))
 
 
 # ---------------------------------------------------------------- cutting (twin of VadSegmenter + PauseChunker)
@@ -348,6 +349,8 @@ def main():
     p.add_argument("--hotwords-dir", default="corpus/lab", help="where hotwords.file is read from")
     a = p.parse_args()
     v = variant_mod.load(a.variant)
+    from runtime_config import set_profile_directory
+    set_profile_directory(os.path.abspath(a.out) + ".profiles")
     hot = os.path.join(a.hotwords_dir, v["hotwords"]["file"]) if v["hotwords"]["file"] else ""
     if hot:
         assert os.path.isfile(hot), hot

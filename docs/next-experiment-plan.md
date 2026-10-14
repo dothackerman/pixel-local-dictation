@@ -1,6 +1,6 @@
 # Next accuracy experiments: setup and execution
 
-**Status: proposed plan, 2026-10-14. Planning and an isolated Astra review only are authorized now. Neither setup nor the experiment loop has started.**
+**Status: setup authorized by Oriol on 2026-10-14; release 1a local preparation is in progress. The experiment loop is not authorized or launched. See [the setup work order](setup-release-1a.md).**
 
 The objective is to preserve or improve recognition in both languages while making an accuracy winner practical on the phone. [Requirements](requirements.md) remain authoritative. This plan governs the next round; [the old loop brief](autoresearch.md) describes the completed third night and is not its launch instruction. Historical ADRs and results retain their original meaning.
 
@@ -15,7 +15,7 @@ The objective is to preserve or improve recognition in both languages while maki
 
 Setup owns changes to code, schema, scoring implementation, adapters, model downloads/conversions, Android builds and dependency pins. Sol owns measurement with the prepared artifacts. New code, a new model, an unlisted variant, or a changed decision rule returns to setup rather than being improvised inside the loop.
 
-The current request authorizes writing/reviewing this plan only. A later instruction to start setup starts Phase A; it does not implicitly launch Sol or reserve the phone. A later instruction to start the loop must identify a ready batch and its permitted phone window. No automatic overnight scheduling or recursive handoff is created by this plan.
+The original planning request authorized writing/reviewing this plan only; Oriol subsequently authorized setup on 2026-10-14. A later instruction to start setup starts Phase A; it does not implicitly launch Sol or reserve the phone. A later instruction to start the loop must identify a ready batch and its permitted phone window. No automatic overnight scheduling or recursive handoff is created by this plan.
 
 ## Evidence to consult
 
