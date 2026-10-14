@@ -1,6 +1,6 @@
 # Architecture decision records
 
-ADR status is independent of implementation. Product commitments live in [requirements](requirements.md); this file records design rationale. Supersede changed decisions without erasing the reason for the earlier choice.
+ADR status is independent of implementation. Product commitments live in [requirements](requirements.md); this file records design rationale. Entries retain their dated rationale. Later updates below identify changed scope; [the experiment plan](next-experiment-plan.md) and [frozen batch](batch-1a-v1.md) own current execution.
 
 ## ADR-001 — Manually routed streaming candidates
 
@@ -10,7 +10,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 ## ADR-002 — Parakeet-first automatic-language prototype
 
-**Date:** 2026-10-09. **Status:** proposed; documentation preparation authorized, engine choice not yet validated or explicitly approved. **Implementation:** none. **Supersedes:** ADR-001's implementation priority.
+**Date:** 2026-10-09. **Status:** originally proposed; the working engine choice was subsequently approved in ADR-003. This does not retroactively approve every part of the proposal. **Implementation:** the Parakeet/FUTO prototype reached milestone 2 (`m2`); [history](plan.md) records its limits. **Supersedes:** ADR-001's implementation priority.
 
 **Context:** R1–R3 need an offline recognizer that detects language without user input. Parakeet TDT v3 documents automatic detection and both languages; Moonshine's published streaming models are language-specific.
 
@@ -24,7 +24,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 ## ADR-003 — Parakeet v3 via sherpa-onnx with a MatMul-only INT8 encoder
 
-**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the working choice for milestone 2 ("for now"), knowing that the English accuracy criterion failed; not a permanent engine decision. **Implementation:** spike only (`ReplayTest`, benchmark build). **Builds on:** ADR-002.
+**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the working choice for milestone 2 ("for now"), knowing that the English accuracy criterion failed; not a permanent engine decision. **Implementation:** integrated in milestone 2 (`m2`) and retained as the app's working default; the table below is the earlier spike evidence. **Builds on:** ADR-002.
 
 **Evidence.** Pixel 10 Pro XL, app 0.1.5 benchmark build, sherpa-onnx 1.13.8, 4 threads, four takes by Oriol (D6 twice, E6 twice, 28–34 s, 242 reference words). Raw files: `corpus/files/benchmark/spike-*.json` (not in Git). Four takes are anecdotal; FUTO's figures are one different take per script from [baseline](baseline.md).
 
@@ -43,7 +43,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 MB. Battery is not assessable: the phone was charging over USB and the level rose. One whole-take decode with 2, 6 and 8 threads was slower than the 4-thread decodes in both models.
 
-**Proposal.** Continue milestone 2 with sherpa-onnx and the MatMul-only encoder (built by `tools/export-fp32.sh` and `tools/quant_variant.py` from the official checkpoint; encoder SHA-256 `d5be30ebe93c940eddfeb5c6ce2bf67cdbe5d80b2c5a0256a1bbd6c1f6d27da6`). The published INT8 files are dropped: they fail parity and are worse in both languages.
+**Approved working choice.** Continue milestone 2 with sherpa-onnx and the MatMul-only encoder (built by `tools/export-fp32.sh` and `tools/quant_variant.py` from the official checkpoint; encoder SHA-256 `d5be30ebe93c940eddfeb5c6ce2bf67cdbe5d80b2c5a0256a1bbd6c1f6d27da6`). The published INT8 files are dropped: they fail parity and are worse in both languages.
 
 **Why despite the failed English criterion.** The English shortfall is two words in each of two takes, "Miss Keller" for "Mrs Keller" and "Wintertour" for "Winterthur"; FUTO's take also has "Miss Keller", and FUTO wrote "Wintertour" in its German single sentences. Two takes cannot settle R4 for English; milestone 3 measures it on a real corpus. Speed exceeds the interim target by an order of magnitude, so the remaining question is accuracy on names, not the runtime.
 
@@ -57,9 +57,9 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 
 ## ADR-004 — Experiment loop with a closed variant schema and the phone as second judge
 
-**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the method for the accuracy experiments; no engine decision. **Builds on:** ADR-003's revisit condition. **Instructions for the loop:** [autoresearch](autoresearch.md).
+**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the method for the accuracy experiments; no engine decision. **Builds on:** ADR-003's revisit condition. **Campaign record:** [history](autoresearch.md). The decision below describes the October 10 scope.
 
-**Context.** Accuracy is level with FUTO, speed is solved, and Oriol wants the experiments to run without him, phone included, with no new recordings until a candidate has earned them. An adversarial review of the first design (2026-10-10) found that a free-form editable pipeline and a 5-word keep rule would overfit ten takes, that a laptop-only pipeline cannot be the same product as the phone's, and that the chunk boundary alone moves the error count by several words.
+**Context at approval.** Accuracy was comparable with FUTO and the tested Stop waits were fast, and Oriol wants the experiments to run without him, phone included, with no new recordings until a candidate has earned them. An adversarial review of the first design (2026-10-10) found that a free-form editable pipeline and a 5-word keep rule would overfit ten takes, that a laptop-only pipeline cannot be the same product as the phone's, and that the chunk boundary alone moves the error count by several words.
 
 **Decision.**
 
@@ -75,6 +75,8 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 **Trade-offs.** The loop searches a fixed knob space instead of editing code; ideas outside the schema wait for a setup round. Phone and laptop texts differ by a few words for the same variant because of boundary sensitivity, so parity is checked with a tolerance and the phone text counts when they diverge. The benchmark build, debuggable, stays on the phone overnight.
 
 **Revisit when:** a kept variant reaches the recording trigger, the control row shows laptop and phone accuracy diverging, or the schema blocks an idea with evidence behind it.
+
+**Scope supersession:** ADR-005 lifted the hotword exclusion and introduced the 3.5 GB rejection policy; ADR-006 corrected enforcement. Hardware/runtime work is now scheduled by the experiment plan. The closed-loop/setup separation remains; these earlier exclusions are not current blanket bans.
 
 **Update 2026-10-11, after the first night.** 40 experiments, none kept (`corpus/lab/handback-2026-10-10.md`). The review found the cause: nobody had checked whether any schema-1 knob could move the 8-word margin. It could not; see ADR-005.
 
@@ -92,6 +94,8 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 - **Two new families** from the pinned runtime, assets pinned in `experiments.lock`: Qwen3-ASR 0.6B INT8 (laptop real-time factor about 0.2, detects the language itself) and Cohere Transcribe 14 languages INT8 (2.9 GB, laptop real-time factor about 0.25, needs the language, so it shares Canary's language-identification path). Canary 1B stays unavailable in this runtime.
 - Nights only: Oriol needs the phone during the day; the brief tells the loop to skip stage 2 after 06:30.
 
+**Current scope:** dictionary mechanism approval remains; UI design remains undecided. Current execution needs each batch's dated authorized window; Oriol's daytime phone needs still apply unless he explicitly authorizes a different arrangement. [The current recording policy](next-experiment-plan.md#recording-policy) preserves the stricter trigger.
+
 **Trade-offs.** A dictionary that works on the scripts' names proves the mechanism, not Oriol's real vocabulary; the recording session, if triggered, tests names outside the list. Hotword scores above 3 are destructive, so the useful range is narrow. Cohere is near the phone's speed budget and 2.9 GB. The dictionary's user experience (how names get into the list, how they are edited) is deliberately undecided.
 
 **Update 2026-10-11, after the first dictionary run and a second adversarial review.** The comparison point for the dictionary rule's other-word errors and guard was changed from experiment 0 to the no-dictionary twin (the same pipeline without hotwords), because modified beam search by itself raises the guard's German rate from 4.8 % to 6.6 % and the rule is meant to isolate the dictionary's effect. The terms metric still compares with experiment 0. Consequence: the beam-search regression rides along into any dictionary keep and is not judged by the rule; the recording trigger therefore additionally requires the guard not to be worse than experiment 0, and Oriol weighs the regression before any port. Also from the review: Cohere's first phone run is a measurement (two model instances, about 6 GB; wait after Stop about 4 s by construction), a memory flag above 3.5 GB is not a keep, and a cohere variant sets either a fixed language or the identifier, never both (the two sides would disagree; validator gap to close in a setup round). Laptop falsification of Cohere's gain before the phone: language identification right on all 210 public clips, insertions in the ten texts 1 against the baseline's 5; the run without number formatting is in the ledger.
@@ -101,7 +105,7 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 ## ADR-006 — Validate Qwen input budgets and enforce complete phone evidence
 
 **Date:** 2026-10-12. **Status:** implementation authorized by Oriol on the existing feature branch;
-laptop validation only, no engine selection or phone deployment. **Builds on:** ADR-004/005.
+no engine selection or daily deployment. **Implementation:** schema/evaluator revision 3 in `c63cb0d`, laptop validation in [results](results.md#laptop-setup-validation-2026-10-12), followed by the night-three campaign. **Builds on:** ADR-004/005.
 
 **Context.** The [loop investigation](loop-investigation-2026-10-12.md) reproduced a Qwen chunk
 whose audio consumed its 512-token context, leaving almost no transcription. Raising the budget
@@ -136,7 +140,7 @@ separate experiments; this decision does not change the daily app's Parakeet def
 
 ## ADR-007 — Night three: the full-precision dictionary family and single-instance Cohere go to the phone
 
-**Date:** 2026-10-12. **Status:** approved by Oriol on 2026-10-12 as the next step; no engine decision. **Builds on:** ADR-005, ADR-006, the research round of 2026-10-12 (sherpa-onnx capabilities, model landscape, comparable tools; summaries in the three investigation notes and the setup session's transcript).
+**Date:** 2026-10-12. **Status:** approved by Oriol on 2026-10-12 as the next step; no engine decision. **Builds on:** ADR-005, ADR-006, the October 12 [failure diagnosis](loop-investigation-2026-10-12.md), [beam investigation](beam-investigation-2026-10-12.md) and [Cohere source evidence](runtime-options-2026-10-14.md#cohere-single-instance-evidence-2026-10-12).
 
 **Context.** With the INT8-encoder beam collapse isolated (ADR-006), the best laptop candidate is the full-precision encoder with beam 8 and the dictionary at score 2.0: 47.0 errors against 71.3, 13 names recovered, public guard 4.62 % / 1.75 % against 4.81 % / 2.01 %. Night two had measured the INT8 dictionary's wait after Stop at 1.4 to 2.4 s depending on beam width and phone temperature. Cohere Transcribe, the most accurate model (45.7), had been run as two instances (5.4 GB); the research round verified from the pinned runtime's source and from the Kotlin and Python bindings that the language is read per stream, so one instance suffices.
 
@@ -145,6 +149,6 @@ separate experiments; this decision does not change the daily app's Parakeet def
 - Night three is a measurement night with no new variants: the control row, the full-precision dictionary family at beam 4, 6 and 8 (each width run twice on the phone so the wait reading repeats), the score neighbours at the widest width that held the wait, and one Cohere run. The decision table for Oriol is the product.
 - Not done tonight, because they are design changes outside the schema: phonetic post-matching of names on the greedy output, overlapping windows so that Cohere's tail at Stop is short, per-name normalised hotword boost, the evaluator's paired bootstrap. Each has a laptop experiment described in the research summaries; they are the candidates for the next setup round.
 
-**Trade-offs.** The full-precision encoder is 2.4 GB on disk and the phone's memory for it is unmeasured; the evaluator's 3.5 GB limit decides. The one false dictionary insertion in the public clips keeps the recording trigger shut regardless of the phone result; that is left as is rather than relaxed.
+**Trade-offs at approval.** The full-precision encoder is 2.4 GB on disk and its phone memory was then unmeasured; the evaluator's 3.5 GB limit decides. The one false dictionary insertion in the public clips keeps the recording trigger shut regardless of the phone result; that is left as is rather than relaxed.
 
-**Revisit when:** the night-three hand-back exists.
+**Outcome:** night three completed; `corpus/lab/handback-2026-10-13.md` and [the audit](evaluation-audit-2026-10-14.md) record development accuracy gains with resource failures. The one-instance change is implemented. The dated sweep is complete; [release 1a](batch-1a-v1.md) supersedes its execution schedule. Deferred design ideas remain proposals in the experiment plan, not automatic follow-on work.

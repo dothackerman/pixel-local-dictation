@@ -1,8 +1,8 @@
 # Model options after night three
 
-Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](requirements.md) remain authoritative; earlier reasoning remains in [the October 12 model investigation](model-investigation-2026-10-12.md).
+Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](requirements.md) remain authoritative; [the adapter diagnosis](loop-investigation-2026-10-12.md) retains the earlier Qwen failure evidence. [The experiment plan](next-experiment-plan.md#batch-sequence-and-purpose) owns execution order; the tests below are inputs to future setup, not additions to release 1a.
 
-**Recommendation:** stop treating the pinned sherpa runtime's model menu as the accuracy frontier. Screen Moonshine streaming and Cactus Whistle, then Qwen3-ASR 1.7B in its appropriate runtime, followed by one bounded reference comparison of Canary 1B v2 and full Whisper large-v3. Keep deployment engineering separate from the question of whether a checkpoint can improve these recordings. Whistle's explicit screening proposal below was added following Oriol's suggestion on 2026-10-14.
+The pinned sherpa model menu does not bound checkpoint quality. Screen reference quality before deployment engineering; Whistle's proposal below follows Oriol's October 14 suggestion.
 
 ## What the latest evidence changes
 
@@ -22,7 +22,7 @@ Use the publisher's own runtime first: it provides Android integration through `
 
 **Falsification:** if oracle routing cannot deliver a useful per-language accuracy advantage, stop before implementing a router. If it can, evaluate automatic routing and replay of buffered initial audio, including short ambiguous utterances; oracle language cannot satisfy R2. Pin a released runtime and exact model artifacts before any Android port. Both accuracy and complete-path speed remain unknown.
 
-### 1b. Cactus Whistle: an early, bounded challenger beside Moonshine
+### 1b. Cactus Whistle
 
 Cactus's new speech model is **Whistle**, released October 2, 2026. It is distinct from Needle's text/tool-calling model. The publisher describes a 16.9 MB CPU model supporting English and German, automatic language detection and keyword biasing. This combination earns a cheap quality screen; size alone establishes neither resident RAM nor recognition quality. [Release](https://www.cactuscompute.com/blog/whistle), [model card](https://huggingface.co/Cactus-Compute/whistle).
 

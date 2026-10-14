@@ -1,7 +1,7 @@
 # Runtime and deployment options, 2026-10-14
 
 Research and local public-audio diagnostics; no phone access or production changes. This note
-updates the *next experiments*, not the requirements or the selected engine. The latest phone
+provides evidence for [the experiment plan](next-experiment-plan.md), which owns sequencing. Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](batch-1a-v1.md); their comparison loop has not run. The latest phone
 evidence is the private `corpus/lab/handback-2026-10-13.md` and its linked raw reports; earlier
 precision evidence remains authoritative in [beam investigation](beam-investigation-2026-10-12.md).
 
@@ -13,7 +13,7 @@ problem. The highest-value missing work is **runtime allocation measurement and 
 precision under the actual beam decoder**, followed by a measured finalization design.
 
 The exact 2 s Stop limit, 0.3 real-time factor and 3.5-million-kB peak are experimental acceptance
-rules in [autoresearch](autoresearch.md) and [evaluator](../tools/evaluate.py), not numerical
+rules in [the historical evaluator](../tools/evaluate.py), not numerical
 product commitments in [requirements](requirements.md). Keep reporting failures honestly. If
 Oriol later chooses a different trade-off, change the design rule explicitly; do not reinterpret
 past failures as passes. Passing these rules also would not prove improvement over FUTO in
@@ -23,8 +23,7 @@ both languages.
 
 Pinned sherpa-onnx accepts `cpu:/absolute/path/session.config` as its provider string. Its
 session setup supports `EnableCpuMemArena=0`, `EnableMemPattern=0`, `ProfilingFilePrefix`, and
-`SessionConfig.*` entries forwarded to ONNX Runtime. The app and Python adapters currently
-do not expose these controls. The actual local Android AAR's JNI library contains the arena
+`SessionConfig.*` entries forwarded to ONNX Runtime. At the research checkpoint the app and Python adapters did not expose these controls. They now do through [Kotlin RuntimeConfig](../app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and [Python runtime_config](../tools/runtime_config.py); this is setup completion, not measured allocation savings. The actual local Android AAR's JNI library contains the arena
 and session-config keys, so this is stronger evidence than finding an API only on upstream
 main. Binary strings establish presence, not successful Android operation.
 [Pinned session implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/session.cc),
@@ -57,14 +56,29 @@ controlled phone comparison. Load times were 5.50 / 3.50 / 3.55 s, confounded by
 The diagnostic and raw aggregate outputs remain at `/tmp/runtime-ab-20261014.py` and
 `/tmp/runtime-ab-{stock,arena-off,pattern-off}.json`; they contain no personal audio or text.
 
-**Proposed setup change:** introduce explicit, mirrored runtime settings in the variant schema,
-write a controlled local config file, and pass its path to each intended model session. Keep
-the language identifier and recognizer configurations distinguishable. First compare stock,
+**Prepared controls; comparison pending:** independent recognizer/LID settings now exist. Compare stock,
 arena-off only, and memory-pattern-off only with unchanged weights/search/chunks. Collect
 load, encoder/decoder time, memory after load, per-chunk peak, and repeated warm runs. Disabling
 an arena can reduce retention while increasing allocation cost; it is an experiment, not a
 recommended production default. ORT documents session/shared arena allocation as a memory
 tuning mechanism. [ORT memory guidance](https://onnxruntime.ai/docs/performance/tune-performance/memory.html).
+
+## Cohere single-instance evidence, 2026-10-12
+
+The pre-change Kotlin and Python adapters allocated one full model per language. This section retains the API, smoke-test and loading evidence that justified replacing that duplication; later phone outcomes are in [the audit](evaluation-audit-2026-10-14.md).
+
+The **already pinned sherpa-onnx v1.13.8** supports per-stream language selection:
+
+- Cohere's `DecodeStream` reads `s->GetOption("language")` before falling back to the model configuration, then builds the language tokens for that decode. It also accepts per-stream `use_itn` and `use_punct`. [Pinned implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/offline-recognizer-cohere-transcribe-impl.h).
+- Kotlin exposes `OfflineStream.setOption(key, value)`; Python exposes `set_option`. The locally installed AAR contains both the Kotlin method name and the native `OfflineStream_setOption` symbol. This verifies API presence, **not successful inference**. [Kotlin API](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/kotlin-api/OfflineStream.kt), [Python binding](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/python/csrc/offline-stream.cc).
+
+**Original proposal, implemented by [ADR-007](decisions.md#adr-007--night-three-the-full-precision-dictionary-family-and-single-instance-cohere-go-to-the-phone):** retain the existing local language identifier and one Cohere recognizer; set `language` on every new stream before decoding. Keep language fixed within a take, reset it between takes, and preserve the current serial decode queue. No new weights or runtime upgrade should be necessary. Removing a duplicate model should materially reduce memory, but it does not imply exactly half the measured process peak: buffers, the identifier, session arenas, and temporary allocations remain. It does not inherently halve decode latency, since the existing code decodes only one selected instance.
+
+**Executed laptop smoke test:** using installed sherpa-onnx 1.13.8 and the existing INT8 assets, constructed one recognizer with default language `en`, then set explicit per-stream languages `de/en/de/en`. Public guard clips were `de/7406_6765_000098.wav` (10.09 s) and `en/7021-85628-0005.wav` (5.01 s). All four outputs matched the saved two-instance Cohere guard outputs exactly after the existing Swiss-spelling normalization. Only parity booleans, timings and memory were emitted; no text was copied into this report. This validates actual Python inference and language alternation, not just API presence. The source comparison is `corpus/lab/runs/cohere-1f31656.json`'s public `guard` entries, not its personal takes.
+
+The smoke process peaked at 3,465.4 MiB RSS, **without** a loaded language identifier. Load was 10.072 s; decode times were 6.017/2.376/4.165/1.800 s in that order. These are unisolated laptop observations during concurrent investigation, not comparable phone performance results. The memory result specifically prevents promising that one instance will necessarily meet the 3.5 GB phone criterion: it removes known duplication but leaves little apparent headroom, and platform-specific measurement remains necessary. No frozen pipeline/evaluator files or ledger rows were changed.
+
+**Production-port trap:** Cohere's pinned model constructor explicitly rejects `AssetManager` loading. It loads encoder and decoder from filesystem paths. LabTest already uses private filesystem paths; the daily app's default asset path cannot be assumed to work. This calls for private local provisioning, not a storage permission or literal external SD card requirement. [Model implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/offline-cohere-transcribe-model.cc), [LabTest](../app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt).
 
 ## The benchmark's extra memory is not yet explained
 
@@ -80,7 +94,7 @@ The similar paced increase in baseline and FP32 is a useful diagnostic clue, not
 the increase is artificial or safely subtractable. Cohere already exceeds its budget before
 the paced phase, so a paced-only explanation cannot rescue that result.
 
-**Next measurement:** fresh process for paced-only; fresh process for unpaced-only; and repeated
+**Prepared measurement modes:** fresh process for paced-only; fresh process for unpaced-only; and repeated
 production-like takes with one audio buffer and one persistent decode executor. Record current
 RSS, PSS, Java/native allocations and high-water memory around load, VAD, each inference and
 release. Preserve the existing full-run result alongside these diagnostics. Only a controlled
@@ -170,9 +184,7 @@ latency. Dynamic decoder conversion and fallback remain separate problems. No so
 this ASR workload will run on this phone's NPU. [Tensor setup](https://developers.google.com/edge/litert/next/tensor-sdk),
 [NPU deployment](https://developers.google.com/edge/litert/next/npu).
 
-Priority: measure/ablate existing allocation controls; screen selective precision with beam
-parity; profile and simulate Stop latency; then choose CPU-provider or Tensor work from the
-actual bottleneck. A new runtime is useful when it makes a measured accuracy gain deployable.
+Choose provider/runtime work from the measured bottleneck; batch ordering belongs to the experiment plan.
 
 ## Unsloth quantization applicability (2026-10-14)
 
@@ -225,9 +237,9 @@ parity plus actual runtime memory/latency before accepting either. Any custom ca
 use representative public speech and remain separate from evaluation data. Unsloth branding
 alone does not justify another experiment or a switch away from ONNX.
 
-## Bounded acceleration experiment: start now alongside allocation work
+## Proposed acceleration experiment
 
-Observed accuracy gains justify a hardware feasibility track now. ONNX Runtime is the current
+Observed accuracy gains justify a hardware feasibility track. The experiment plan schedules it after batch 1 profiling review; this research note does not start parallel work. ONNX Runtime is the current
 tensor execution engine; sherpa adds speech preprocessing, model adapters and search. Replacing
 sherpa while retaining ORT differs from replacing ORT with LiteRT, and either differs from
 upgrading their versions. A hybrid could run the encoder in LiteRT while retaining the proven

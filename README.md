@@ -1,37 +1,24 @@
 # Pixel Local Dictation
 
-Replace the speech recognizer, not FUTO Keyboard: faster, more accurate English/German dictation entirely on Oriol's Pixel 10 Pro XL.
+Goal: faster, more accurate English/German dictation entirely on Oriol's Pixel 10 Pro XL, launched from FUTO Keyboard's existing microphone key.
 
-**AS-IS — 2026-10-09:** GrapheneOS, FUTO Keyboard, Multilingual-244. Press microphone and speak one language per recording; English/German detection is automatic. Oriol reports slow recognition and wants fewer corrections. Installed versions, timings and correction rates have not been measured.
+**Next execution: [release 1a](docs/batch-1a-v1.md), in a fresh GPT 6.1 Sol session.** Setup is complete; launch still requires Oriol's instruction, a dated phone window and the brief's fresh-session checks. Follow its frozen manifest, not the historical milestone or night-loop recipes. Git remains local-only.
 
-**Current entry point:** read [the next-experiment plan](docs/next-experiment-plan.md), then [release 1a's execution brief](docs/batch-1a-v1.md). The release is prepared locally; a fresh GPT 6.1 Sol session needs separate launch authorization and the brief's launch record before running it. The old autoresearch brief and old plan's preparation steps are historical, not current launch instructions. Git remains local-only.
+The Parakeet app passed the first integration milestones. [Measured results](docs/results.md) establish faster Stop response, but R4's accuracy improvement over FUTO in both languages remains unproven. [Night-three audit](docs/evaluation-audit-2026-10-14.md) separates development-set accuracy gains from resource failures. Latest recorded build/setup evidence is in [the setup record](docs/setup-release-1a.md); it is not a live phone-state check.
 
-**Historical milestone checkpoint (2026-10-10):** milestones 1 and 2 were completed (tags `m1`, `m2`). The first measurement against FUTO is retained in [results](docs/results.md); it established faster Stop response but did not establish better accuracy in both languages. Later experiment evidence does not redefine the [requirements](docs/requirements.md).
-
-## Read by need
-
-| Reader need | Source of truth |
+| Reader need | Start here |
 |---|---|
-| What must remain true? | [Requirements](docs/requirements.md) |
-| What should the implementer do next, and when is it done? | [Roadmap](docs/roadmap.md) |
-| Why this approach; what was superseded? | [Decision records](docs/decisions.md) |
-| Which evidence and upstream projects should be inspected? | [Research](docs/research.md) |
-| What should the next experiment session execute? | [Release 1a brief](docs/batch-1a-v1.md), [next-experiment plan](docs/next-experiment-plan.md) |
-| How were the first milestones executed? | [Historical plan](docs/plan.md) |
-| How is the phone set up, and how is it put back? | [Setup and rollback](docs/setup.md) |
-| What was measured against FUTO? | [Results](docs/results.md) |
-| Which accuracy experiments are on the table? | [Experiment ideas](docs/experiments.md) |
-| What governed the earlier unattended campaigns? | [Historical autoresearch loop](docs/autoresearch.md), [ADR-004](docs/decisions.md#adr-004--experiment-loop-with-a-closed-variant-schema-and-the-phone-as-second-judge) |
+| Product constraints | [Requirements](docs/requirements.md) |
+| Remaining milestones and validation gaps | [Roadmap](docs/roadmap.md) |
+| Execute the prepared experiment | [Release 1a brief](docs/batch-1a-v1.md) |
+| Prepare later batches; check the recording policy | [Experiment plan](docs/next-experiment-plan.md) |
+| Understand design choices and supersession | [ADRs](docs/decisions.md) |
+| Investigate a model, runtime or evaluation question | [Research index](docs/research.md) |
+| Use the app or restore FUTO | [Setup and rollback](docs/setup.md) |
+| Understand early implementation or campaign evidence | [Milestone history](docs/plan.md), [campaign history](docs/autoresearch.md) |
 
-Build: `tools/fetch-assets.sh` (pinned downloads, see `assets.lock`; the shipped model is built once with `tools/export-fp32.sh` and `tools/quant_variant.py`), `tools/set-signing-password.sh`, then `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
+## Build and host checks
 
-Oriol supplies representative speech and judges correction effort. The implementer owns build tooling, engine integration, measurements and rollback instructions. Current setup evidence and phone state are recorded in [the setup work order](docs/setup-release-1a.md); authorization for setup does not launch an experiment.
+Fetch pinned assets with `tools/fetch-assets.sh` (see `assets.lock`). The shipped selective encoder uses `tools/export-fp32.sh` and `tools/quant_variant.py`; the full export's reproducibility gap is recorded in the roadmap. Configure signing with `tools/set-signing-password.sh`, then build with `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`. Signing configuration lives in gitignored `local.properties`; [the build file](app/build.gradle.kts) owns its keys and failure behavior.
 
-Host quality gate: `python3 tools/quality.py` runs the existing Python regressions,
-Kotlin benchmark unit tests and Android lint with offline Gradle. The local
-pre-commit gate invokes it with `--staged`: stage or stash tracked edits and stage
-new source/test/build inputs first so the tested checkout matches the index. It
-also detects index changes during the run. This command runs no device tests.
-The recorder's host lint annotation documents its existing caller permission
-check/exception boundary; saved release APK and setup smoke identities remain
-historical and have not been rebuilt from that annotation-only source edit.
+`python3 tools/quality.py` runs Python regressions, Kotlin benchmark unit tests and Android lint offline, without device tests. The local pre-commit gate invokes it with `--staged`: stage tracked edits and new source/test/build inputs first so the checkout matches the index. It rejects index changes during the run.

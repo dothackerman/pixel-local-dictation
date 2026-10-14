@@ -1,6 +1,14 @@
 # Measurement results
 
-Evidence for requirement R4. Raw recordings, transcripts and reports stay in the gitignored `corpus/`; this file holds the aggregate numbers and how they were obtained. Protocol and its limits: [plan](plan.md), milestone 3.
+Evidence for requirement R4. Raw recordings, transcripts and reports stay in the gitignored `corpus/`; this file holds the aggregate numbers and how they were obtained. The approved protocol and its limits are below; [the October 14 audit](evaluation-audit-2026-10-14.md) owns the later phone comparisons.
+
+## Approved measurement protocol
+
+Revised with Oriol on 2026-10-10: five German and five English scripts about his topics, planned at 45–60 s, with names, dates, amounts and technical terms. Each was to be read into the benchmark app and FUTO on the same day, timing FUTO from Stop by stopwatch. This is matched live speech, not identical audio. Benchmark copies require per-run agreement; return to the release build afterwards.
+
+The agreed expansion rule was five more scripts in a language if its difference fell within about two WER percentage points before a verdict. Only three scripts per language were recorded, and actual takes lasted 90–110 s. The later [recording policy](next-experiment-plan.md#recording-policy) restricted new collection; explicit reconciliation of that restriction with this expansion agreement is not recorded. Keep the accuracy verdict unresolved rather than silently cancelling either.
+
+Private references, terms, FUTO outputs/times and take mappings live in `corpus/scripts/`, `corpus/futo/` and `corpus/takes.json`; [score.py](../tools/score.py) owns normalization. The scorer also parses [baseline.md](baseline.md) for D6/E6 references and outputs. That legacy tracked transcript/fixture coupling conflicts with the current privacy boundary; moving it requires a separate code-and-fixture migration. It is left unchanged to preserve the frozen experiment inputs.
 
 ## Run of 2026-10-10
 
@@ -19,10 +27,9 @@ Evidence for requirement R4. Raw recordings, transcripts and reports stay in the
 | FUTO, its own takes | 48/468 = 10.3 % | 19/506 = 3.8 % |
 | Our app 0.2.1 as recorded on the phone | 40/468 = 8.5 % | 35/506 = 6.9 % |
 | Same audio, 0.2.2 cutting, laptop replay | 43/468 = 9.2 % | 20/506 = 4.0 % |
-
 | Same audio, 0.2.2 cutting, full-precision fp32 model, laptop | 41/468 = 8.8 % | 19/506 = 3.8 % |
 
-0.2.1 lost words at the start of segments; 0.2.2 cuts contiguous chunks at pauses instead. The 0.2.2 rows are laptop replays of the phone's audio, not phone runs; on the phone, 0.2.2 cut the same takes into the same number of chunks (`PipelineTest` log), its texts were not copied. The fp32 row is within noise of the shipped model, so the quantisation of [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder) is not what limits accuracy on these takes.
+0.2.1 lost words at the start of segments; 0.2.2 cuts contiguous chunks at pauses instead. The 0.2.2 rows are laptop replays of the phone's audio, not phone runs; on the phone, 0.2.2 cut the same takes into the same number of chunks (`PipelineTest` log), its texts were not copied. For these greedy replays, the fp32 row is close to the shipped model, so the quantisation of [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder) does not explain a substantial accuracy gap. This does not establish beam-search parity; see the later precision diagnosis below.
 
 **Reading.** Neither language shows a difference larger than the 2 points the plan requires for a verdict from this few takes; the German and English differences are one to five words out of about 500. Accuracy is therefore "comparable", not "better", and R4's accuracy half is not established. Speed is better by about two orders of magnitude.
 
@@ -75,8 +82,8 @@ variants improve all ten takes versus baseline and pass the dictionary mechanism
 their own no-dictionary twin. Non-dictionary errors fall from 63.00 to 44.67 for FP32 and from
 63.33 to 48.00 for INT8. Neither inserts a dictionary word absent from the personal take's
 reference. Each nevertheless has **one false dictionary insertion on the public guard**.
-Consequently the stricter zero-insertion recording trigger is not met. FP32 phone memory and
-latency remain unmeasured; these setup replays are not new stage-2 keeps or a deployment decision.
+Consequently the stricter zero-insertion recording trigger is not met. At this setup checkpoint FP32 phone memory and
+latency were unmeasured; subsequent phone evidence is in [the October 14 audit](evaluation-audit-2026-10-14.md). These replays did not grant deployment acceptance.
 
 **Evaluator validation.** Sixteen Python tests and 27 Kotlin tests pass, including configuration
 budgets, evidence coverage, memory accounting, and accuracy checks on actual phone text.

@@ -1,51 +1,37 @@
-# Proposed implementation roadmap
+# Milestones and remaining work
 
-This is the original milestone design, retained to explain the requirements and gates; its future-tense sections are not current implementation status. See [results](results.md) for the first milestone evidence and [the next-experiment plan](next-experiment-plan.md) for current work. A fresh experiment session follows [release 1a's brief](batch-1a-v1.md), not this roadmap as a command list. Requirements remain authoritative; the original engine order is preserved in [ADR-002](decisions.md#adr-002--parakeet-first-automatic-language-prototype).
+[Requirements](requirements.md) define product commitments. This roadmap retains the original milestone gates and unfinished obligations; [the experiment plan](next-experiment-plan.md) owns the current batch sequence. **Run [release 1a](batch-1a-v1.md) next when its launch prerequisites are met.** Later work below is not part of that frozen batch.
 
-## 1. Establish the baseline and prove FUTO integration
+## 1–2. Integration and local recognition — completed prototype gates
 
-Record installed FUTO/GrapheneOS versions, current model/settings, and cold/warm live timings before changing phone settings. Build an independently signed `arm64-v8a` Android app with its own application ID.
+Tags `m1` and `m2` record FUTO launch/insertion and local English/German recognition, including replay, microphone flow and privacy checks. [Milestone history](plan.md) owns the evidence and integration rationale; [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder) records the provisional engine approval. These gates prove operation, not superiority or permanent deployment.
 
-Inspect the installed FUTO launch path. Start with a voice-only `InputMethodService`/voice subtype; use `InputConnection` for final text. Implement `RECOGNIZE_SPEECH` activity/results if the actual keyboard path requires it. Locale declarations must not force recognition language. Test the shell in a dedicated test field before real messages.
+## 3. Personal improvement — open
 
-Provide recording, stop, cancel and return-to-FUTO. Verify browser, messaging and multiline fields; denied permissions, interruption and changed focus must not cause crashes, duplicate insertion or insertion into the wrong field. Document one-time external-provider setup and original settings. For stable FUTO, the documented switch is disabling built-in voice input; verify actual provider discovery rather than assume it works.
+R4 still needs speed **and** accuracy improvement over installed FUTO in each language. [Results](results.md) own the approved reduced-corpus protocol and first comparison; [the audit](evaluation-audit-2026-10-14.md) explains why later development-set wins do not close this gate.
 
-**Gate:** existing microphone launches the app without a new per-recording step; correct insertion/cancel/return work on the phone. Deliver APK plus setup/rollback notes. Rollback restores FUTO built-in voice input; retain original keyboard and model.
+The original coverage proposal was 20 English and 20 German clips of 5–30 s, plus several 60 s recordings, with actual accent, names, technical vocabulary, dates/numbers, quiet/noisy conditions and ambiguous starts. The reduced October 10 corpus did not cover all of that. Preserve the coverage need; any new collection follows [the recording policy](next-experiment-plan.md#recording-policy), not this old sample-count proposal.
 
-## 2. Add local Parakeet recognition
+Compare identical audio where feasible. Matching FUTO weights/settings in a harness is only a model baseline; FUTO WAV import remains unestablished. Otherwise use matched live trials and label the different-take limitation. Report each language's word errors, correction effort, names/numbers, meaning errors, punctuation/capitalization and wrong-language choices. Measure tap-to-ready, cold load, first useful partial when available, Stop-to-final and last-word-to-final, with median/slow tail, cold/warm conditions, memory and repeated-session heat/battery. Include silence, cancel, focus changes and interruption.
 
-Use TDT **0.6B v3**, not English-only v2. Inspect [upstream Android precedent](research.md#implementation-references), licenses and buildability before reusing code. Pin source commit, runtime version, model conversion/precision and asset checksums. Bundle or locally import assets to satisfy R3.
+**Gate:** the complete automatic phone path satisfies R4 without violating other requirements. Marginal or inconsistent evidence remains unresolved; it does not justify a winner. [The experiment plan's final validation](next-experiment-plan.md#primary-assistants-review-and-final-validation) applies this gate after a technically plausible candidate exists.
 
-Capture mono audio and convert to the model's required 16 kHz. Begin with an optimized CPU/INT8 implementation; validate against reference outputs. Keep automatic language detection. Reuse the loaded model where Android lifecycle permits; separate cold-load timing from warm recognition. Background listening is unnecessary.
+## 4. Alternative recognition paths — pending experiments
 
-Implement local WAV replay for controlled testing. Start with end-of-recording decoding unless a tested incremental runtime is available: Parakeet v3's throughput claims do not establish native streaming. If repeated partial decoding is added, measure its compute, heat and finalization cost.
+Moonshine German Small Streaming plus English Small/Medium remains the conditional alternative from the original roadmap. Oracle-language quality screening is diagnostic; a product path needs automatic local routing, buffered/replayed first words, and measured short-utterance fallback. No router is selected. If parallel decoding is considered, model confidence scores need calibration and compute must be measured.
 
-**Gate:** live English/German recognition and replay work on the Pro XL; complete microphone flow and manifest/privacy review pass. Deliver APK, reproducible build instructions and engine/model inventory. This gate proves operation, not superiority.
+**Gate:** evaluate the complete router/recognizer, including detection delay, wrong routes, fallback frequency and language alternation. Apply the same requirements. Whistle, larger models and accelerated Whisper remain challengers; [model research](model-options-2026-10-14.md) supplies tests and [the batch sequence](next-experiment-plan.md#batch-sequence-and-purpose) supplies order.
 
-## 3. Measure the personal improvement
+## 5. Runtime optimization and handoff — pending
 
-Start with 20 English and 20 German clips, 5–30 seconds each, plus several 60-second recordings. Include actual accent, names, technical vocabulary, dates, numbers, quiet/noisy conditions and ambiguous starts. Interleave languages. Oriol reviews reference text and counts corrections; the implementer supplies tooling.
+Oriol requested comparisons of quantization schemes (selective MatMul, finer per-layer choices, accelerator-required precision) and alternative runtimes on 2026-10-10. Compare against FP32 on the personal corpus, including beam/dictionary parity; greedy parity alone is insufficient. Tune CPU threads on the phone. Vulkan needs a supported runtime; Tensor G5 needs a verified official sample on this GrapheneOS build before model conversion. Confirm actual backend execution and numerical correctness, including any CPU fallback. [Runtime research](runtime-options-2026-10-14.md) owns feasibility evidence; the current plan schedules bounded releases.
 
-Use identical audio for candidate/model comparisons. A harness with matching FUTO weights and decoding settings is a **model-level** baseline, not proof of installed-app equivalence. FUTO WAV import has not been established: if identical-audio baseline reproduction fails, document that limitation and supplement with matched live trials. Do not call distinct spoken takes an identical-input comparison.
+**Gate:** repeat milestone 3 after material changes. Deliver reproducible source/build instructions, pinned dependencies/assets and licenses, signed APK, per-language results, setup instructions and tested rollback to FUTO with its baseline model retained. Keep the key outside Git. Record explicit engine approval separately from implementation.
 
-Export per-clip engine/asset versions, language, reference/output and timing only with agreed handling. Report English/German separately: word errors, editing corrections, names/numbers, punctuation/capitalization and wrong-language choices. Record tap-to-ready, model load, first useful partial where available, manual-stop-to-final and last-word-to-final. Include median, slow-tail, cold/warm runs, memory and repeated-session heat/battery observations. Silence, cancellation, focus changes and interruption belong in end-to-end checks.
+## Validation gaps and unscheduled request
 
-**Gate:** a phone report supports R4 in both languages without violating other requirements. Expand the corpus if the apparent gain is marginal or inconsistent; retain uncertainty instead of declaring a winner. If unsuccessful, proceed to milestone 4 or report the unmet goal.
+These are retained obligations or uncertainties, not instructions to expand release 1a:
 
-## 4. Conditional alternative: Moonshine with invisible routing
-
-First replay the corpus through German Small Streaming and English Small/Medium Streaming with known language in the **test harness**. This screens model quality but is not an acceptable product workflow.
-
-If promising, identify a buildable on-device English/German detector; none is selected or validated. Buffer initial audio, automatically route and replay it so first words survive. Short ambiguous utterances need a measured automatic fallback, potentially Parakeet. Parallel decoding is an alternative, but raw confidence scores across models are not comparable without calibration and it consumes more compute.
-
-**Gate:** evaluate the complete router-plus-recognizer path, including detection delay, routing errors, fallback frequency and language alternation. It must satisfy the same requirements; oracle-language scores alone cannot pass. Whistle or accelerated Whisper remain optional challengers if evidence warrants them, not commitments cancelled by their deferred position.
-
-## 5. Conditional Pixel optimization and final handoff
-
-Once an engine demonstrates better accuracy, tune CPU threads using on-phone measurements. Investigate Vulkan only with an actual supported runtime. For Tensor G5, first validate an official Tensor SDK sample on the installed GrapheneOS build; then assess model conversion and compilation. Verify real accelerator execution, not an availability label or silent CPU fallback. Keep CPU fallback within R3. Requested by Oriol on 2026-10-10: this milestone also compares quantisation schemes (the selective scheme of [ADR-003](decisions.md#adr-003--parakeet-v3-via-sherpa-onnx-with-a-matmul-only-int8-encoder), finer per-layer ones, what accelerators require) and alternative runtimes, each checked against the fp32 export on the personal corpus.
-
-**Gate:** repeat milestone 3 after material changes. Deliver source, pinned dependencies/assets and licenses, build/install instructions, signed APK, per-language results and tested rollback. Store the signing key outside Git. Record remaining limitations and the chosen architecture's ADR status from explicit evidence; prototype selection does not approve permanent deployment.
-
-## Later features requested by Oriol (not scheduled)
-
-- **Personal dictionary (2026-10-10).** A list of names and terms Oriol maintains in the app, passed to the recognizer as hotwords. sherpa-onnx offers hotwords for transducer models with modified beam search; whether it works with this model, how much it helps names such as "Winterthur" or "Keller", and what it costs in speed are untested. Measure it on the milestone 3 corpus before building any settings screen for it.
+- Answered-call interruption, longer and battery-only model survival, repeated-session heat/battery, and short/spontaneous/noisy or ambiguous-language use remain unverified by the milestone evidence. The one-hour locked-screen connection test had no completion evidence in the old plan; fresh-session connection checks do not establish unattended survival.
+- The assembled `tools/export-fp32.sh` was not rerun end to end in the recorded milestone work. The quantization step reproduced its encoder checksum; that does not prove a clean full export.
+- **Personal dictionary:** requested by Oriol on 2026-10-10, unscheduled. Mechanism experiments are approved ([ADR-005](decisions.md#adr-005--schema-2-range-finding-a-dictionary-as-mechanism-test-and-two-new-model-families)); user editing/entry UX is undecided. Measure the mechanism before building a settings screen.
