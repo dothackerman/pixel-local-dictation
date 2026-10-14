@@ -1,141 +1,67 @@
-# Experiment plan: batches and handoff
+# CURRENT EXPERIMENT — Allocation and measurement
 
-**Current execution: [release 1a's frozen brief](batch-1a-v1.md).** Its [setup record](setup-release-1a.md) is complete; launch remains separate. This document governs later setup, batch scope and acceptance policy. Phase A is a reusable setup process, not work to repeat before 1a.
+**Plan approved for one loop with three stages on 2026-10-14. Execution has not started.** Stage 1 is prepared; stages 2–3 and cross-window continuation still need executable contracts. This documentation revision does not launch measurements or authorize phone access.
 
-The objective is to preserve or improve recognition in both languages while making an accuracy winner practical on the phone. [Requirements](requirements.md) remain authoritative. This plan governs the next round; [the old loop brief](autoresearch.md) describes the completed third night and is not its launch instruction. Historical ADRs and results retain their original meaning.
+**Question:** can allocation changes make the FP32 Parakeet and single-instance Cohere quality controls cheaper on the phone without losing their demonstrated development-set accuracy?
 
-## Ownership and boundaries
+**Deliverable:** one decision table separating quality, memory, load/Stop latency, heat and evidence completeness, with all repetitions and a recommendation for the next experiment. Completing the loop does not mean a candidate passes; this is diagnostic work, not deployment or R4 acceptance.
 
-| Phase | Owner | Deliverable |
+## Scope and readiness
+
+| Stage | Measurements | Preparation status |
 |---|---|---|
-| Setup | The primary assistant in this chat | Correct measurement tools, prepared model/runtime variants, verified adapters, and a frozen batch brief |
-| Experiment loop | **GPT 6.1 Sol**, in a fresh session | Execute that batch, preserve all evidence, and return a decision table and handback |
-| Interpretation and next setup | Primary assistant | Review Sol's evidence, diagnose surprises, and prepare the next bounded batch |
-| Independent plan review | **GPT 6 Astra**, isolated from this conversation | Adversarial critique of this document; no setup or experiments |
+| **1. Characterize measurement** (legacy artifact name `release-1a`) | Frozen laptop controls; stock FP32 phone control in fresh unpaced, fresh paced, persistent and historical-full modes, twice each | Prepared. [Frozen stage-1 runbook](batch-1a-v1.md) and private manifest own exact commands, barriers and limits; [setup evidence](setup-release-1a.md) records tested modes. Launch prerequisites remain. |
+| **2. Compare FP32 allocations** (formerly 1b) | FP32 beam-8 dictionary: stock, arena-off only, pattern-off only in the selected mode, twice each; app baseline twice | Variants/adapters prepared; exact run manifests, quality controls, comparison barriers and transition checks are not frozen. |
+| **3. Compare Cohere allocations** (formerly 1c) | Single-instance Cohere with the same three settings and selected mode, twice each; app baseline twice | Same remaining preparation as stage 2. |
 
-Setup owns changes to code, schema, scoring implementation, adapters, model downloads/conversions, Android builds and dependency pins. Sol owns measurement with the prepared artifacts. New code, a new model, an unlisted variant, or a changed decision rule returns to setup rather than being improvised inside the loop.
+All stages retain complete quality checks. New models, combined arena/pattern disabling, precision exports, production changes, fresh recordings and mechanism/deployment acceptance are outside this loop. No-dictionary phone twins and historical-gate confirmation for a finalist remain separately budgeted acceptance work. [The roadmap](roadmap.md#future-experiments) owns subsequent experiments and deferred ideas.
 
-Setup and loop authorization are separate. A loop instruction identifies a ready batch and its permitted phone window; it does not create automatic scheduling or recursive handoff.
+One loop means one objective and cumulative evidence, not one night or automatic expansion of a frozen manifest. The legacy 1a/1b/1c names identify artifacts only; they no longer require three independently commissioned experiment loops. [ADR-008](decisions.md#adr-008--one-allocation-experiment-with-three-stages) records why the old split changed.
 
-## Evidence to consult
+## Next implementer: finish preparation
 
-- [Evaluation audit](evaluation-audit-2026-10-14.md): matching phone controls, development-set limitations, and endpoint coverage.
-- [Runtime investigation](runtime-options-2026-10-14.md): measured allocation-control lead, selective precision, alternative runtimes and hardware-acceleration feasibility.
-- [Model screening proposals](model-options-2026-10-14.md): Moonshine, Whistle, Qwen, and conditional larger-model comparisons.
-- [Decision records](decisions.md): why earlier loops had a closed schema and what was subsequently fixed.
+Read [the shared protocol](experiment-protocol.md) for preparation and execution rules. Preserve the already prepared stage-1 artifacts. Before claiming the **whole loop** is ready:
 
-Those documents own the measurements and source claims. This document owns sequencing, responsibilities and handoff conditions. The current gains are development evidence; none is a new R4 acceptance result.
+1. Freeze stage-2/3 commands, exact fixtures, quality/guard/silence controls, output namespaces, counterbalanced order, repetitions, cooldowns, timeouts and comparison tolerances. Keep the endpoint suite fixed across settings. Itemize all measured subprocesses, audio minutes, decodes and retries inside the budgets below.
+2. Implement and validate the stage transition rule below against synthetic valid, incomplete and contradictory reports. The executor must receive a concrete permitted next step or an explicit handback, not interpret research notes as additional tasks.
+3. Provide append-only cumulative accounting and a checked continuation record across windows/stages. Retain completed evidence, failed attempts, consumed budgets, ownership and the next run. Validate restoration, fresh-session checks and artifact identity on resumption.
+4. Run the protocol's setup checks and report readiness per stage. Advance from a valid stage directly to the next prepared stage; ask for interpretation only at an unresolved decision or when a new authorization is needed.
 
-## Phase A — setup by the primary assistant
+**AS-IS limitation:** `tools/release_execution.py` executes the frozen stage-1 manifest. Its platform wall clock runs from the first reservation through pauses, and its ledger binds the manifest hash. It does not implement a combined three-stage plan or pause the clock overnight. Editing the manifest, resetting the ledger or changing the window cannot supply that capability. Code/manifest work is required; none is performed by this documentation-only change.
 
-Work in small releases. **Prepare batch 1 first; delivering it must not wait for every model or accelerator to be integrated.** Later batches repeat this setup/handoff process after reviewing the preceding evidence.
+If Oriol launches only the prepared stage 1 before that work is complete, execute its frozen runbook unchanged and hand back at its boundary. Record that as a partial execution of this experiment, not completion of the whole loop.
 
-Before costly work, write a setup work order naming that release's deliverables, dependencies, download/storage/export limits and smoke fixtures. Proposed ceilings per release are eight hours of active setup work, 50 GB downloaded, 100 GB additional storage, 24 export attempts and two repair attempts per failing dependency or conversion path; the allocation-only release needs no new model downloads or exports. Smoke validation is capped at 12 process measurements and 60 minutes of inference, using public/synthetic fixtures. Lower limits are preferred. At a limit, report ready artifacts and defer the blocked path; do not silently renew the budget. These are limits for future setup releases, not a renewed allowance for completed 1a setup.
+## Stage transition rule
 
-### A1. Establish a reproducible environment and comparison protocol
+The intended comparison mode is **persistent**, because the allocation question concerns repeated dictation with one loaded recognizer/executor and one audio buffer at a time. Stage 1 tests whether that measurement is trustworthy; it is not a contest to select whichever mode reports the smallest memory.
 
-Inspect the working tree, preserve existing work, and identify the actual laptop and Android runtime versions. Repair missing local dependencies in a pinned environment when setup is authorized. Record source/build/model checksums and the exact device benchmark build; a sherpa version alone does not identify its embedded ONNX Runtime.
+After all required stage-1 validation/comparison barriers pass, select persistent mode only if both phone repetitions have complete provenance, expected take/endpoint coverage, valid required memory/timing counters, identical normalized text under the frozen repeat rule, and no unexplained output/coverage failure. Retain fresh-process and historical-full results as diagnostic context. Failing a historical resource ceiling is a measured result, not a reason to reject a valid diagnostic control.
 
-Version the next evaluator and report schema explicitly. Retain historical reports and verdicts. Change comparison provenance so phone candidates use the matching phone baseline under the same feed, timing protocol and build; laptop candidates use matching laptop controls. Dictionary mechanism acceptance requires genuine no-dictionary twins on the same platform. Resource-only diagnostics may retain dictionary settings without re-establishing dictionary benefit, but cannot earn new mechanism or product acceptance. Reuse a twin only when model, build, evaluator, inputs, feed, process mode, search, allocation settings and timing protocol match; the dictionary switch must be the sole difference. The normalizer and existing quality thresholds stay unchanged.
+Missing or contradictory evidence, or an unsuitable persistent mode, produces an interpretation handback before allocation comparisons. Do not switch modes or loosen a threshold after seeing results. An alternative needs a documented protocol revision and prepared contracts. This rule is specified here but is **not yet implemented** by the stage-1 helper.
 
-Record quality, resource cost and evidence completeness independently: a memory failure must still produce an accuracy report. Missing evidence is `incomplete`, not an accuracy failure. Old rows cannot be accepted under a new protocol merely because their filenames match.
+Stage 2 precedes stage 3. Advance after its required evidence is complete, even if allocation changes show no benefit. Unexpected text changes from an allocation setting require diagnosis before treating the setting as transparent. An invalid comparison stops downstream work; adding a model, changing acceptance or repairing an adapter belongs to preparation.
 
-**Done:** regression checks establish correct control selection, complete evidence validation, full memory accounting and separate quality/resource reporting. Versioned controls can be reproduced; this is not yet a model ranking run.
+## Budgets and phone windows
 
-### A2. Prepare memory and finalization instrumentation
+The former release caps are retained as stage caps, with one cumulative envelope. Controls, repeats, failures and retries all count; stage transitions and new windows never renew them.
 
-Expose CPU arena and memory-pattern settings explicitly on both laptop and Android, keeping model and language-identifier sessions distinguishable. Provide profiling with encoder, decoder/search, language identification, queue wait and transfers separated where the runtime exposes them. Preserve cold-load and total Stop-to-final timing.
-
-Prepare three separate harness modes: fresh-process unpaced-only, fresh-process paced-only, and repeated takes with a persistent recognizer/executor and one recording buffered at a time. Record current RSS/PSS, high-water memory and available Java/native allocation counters at defined phases. The historical full-run peak and its original measurement procedure retain the existing memory gate. New modes are diagnostic until a replacement rule is explicitly versioned and, if it changes acceptance, approved by Oriol. Report both when making an acceptance claim; applying the old numeric ceiling to a different metric does not preserve the old gate. Do not subtract the paced increase on assumption.
-
-Freeze a deterministic set of extra Stop positions before candidate results are inspected. Include early, middle and near-boundary endpoints, covering different residual-chunk lengths and both idle and in-flight decoding states; clock position alone is insufficient. Use the same input prefixes for every configuration. Prepare prefix references/check annotations, marking any word cut mid-utterance separately from fully audible words. Record missing final output, tail omissions and duplicated words beside each wait, so losing the tail cannot appear as a speed win. Do not score a partial recording against its full-script reference. Full-take accuracy remains a separate measurement. Report median, maximum and all individual endpoint waits; a small endpoint set does not establish a population p95.
-
-**Done:** timing boundaries, process-reset mechanics and endpoint manifest are documented and exercised on public/synthetic fixtures; runs can distinguish genuine memory savings from retained benchmark allocations.
-
-### A3. Prepare the next batch and its checks
-
-Setup smoke tests validate loading, API contracts, complete audio coverage, language alternation, deterministic configuration and output/report generation. They may use public fixtures and the known public collapse case. Label them setup validation; do not use them to quietly tune the personal-corpus ranking. Full development/guard comparisons and resource rankings belong to Sol.
-
-For each new runtime/model, verify a trustworthy reference or publisher runtime, sample rate, preprocessing, chunk/context/output limits, finalization and silence handling. For native streaming models, use their streaming API rather than forcing Parakeet's chunk policy. Record both native-pipeline and matched-input comparisons where needed to separate runtime from pipeline effects.
-
-Setup prepares Android paths only for candidates that have earned them or for explicitly labelled feasibility measurements. An oracle-language laptop model can be screened, but needs an automatic routing implementation and validation before product-path phone acceptance.
-
-**Done:** every listed run has available, checksummed artifacts and a callable adapter. Unsupported candidates are deferred with a reason; they cannot block delivery of a ready independent batch.
-
-### A4. Freeze and hand off
-
-Produce one versioned batch brief under `docs/` and its private run manifest under `corpus/lab/`. The brief must contain:
-
-- source commit, environment lock, evaluator/schema version, APK identity, model and configuration hashes;
-- exact commands and input/control/reference identifiers for every permitted run, including all output locations;
-- comparison rules, laptop-to-phone advancement rules, endpoint list, run order, repetitions, timeout/storage/run-count limits and any predeclared adaptive branches;
-- phone window with date and Europe/Zurich times, current build verification, approved access procedure and end-of-window restoration procedure;
-- completed smoke-check evidence, expected output/report structure, failure/stop rules, and a handback template;
-- a ready-to-paste prompt selecting **GPT 6.1 Sol** and naming this one batch.
-
-All numerical advancement tolerances must be executable and frozen before Sol starts. Keep the existing experimental resource ceilings (including their exact units from the evaluator), quality rules and recording trigger unless Oriol explicitly approves a separately justified protocol revision. A new measurement protocol is reported alongside historical values, never used to retroactively relabel them.
-
-Sol must have an isolated execution context and a stable checkout. Pin the checkout and give the batch exclusive ownership of its output/ledger namespace; setup does not edit shared code, models or ledger while it runs. Isolation must not copy personal corpus content out of `corpus/`. If managed worktree plumbing cannot satisfy that boundary, use the existing checkout with exclusive ownership and a fresh Sol context.
-
-**Ready means every required field is filled, tests pass and all required artifacts exist.** Otherwise hand back `not ready` with a specific missing item. Once ready, the primary assistant reports readiness and waits for the user's instruction to launch the loop. Deployment is a separate decision.
-
-## Batch sequence and purpose
-
-Each row is a separate setup release and Sol loop, not one unbounded overnight search. Setup sets exact run/storage/time budgets within the caps below; stop earlier when the prepared question is answered.
-
-| Batch | Setup prepares | Sol measures | Purpose / next decision |
-|---|---|---|---|
-| **1. Allocation and measurement** | A1–A2; baseline, FP32 beam-8 dictionary control, single-instance Cohere; stock, arena-off only, pattern-off only settings | Complete laptop quality/guard comparisons, memory modes, varied endpoints; eligible phone configurations with repeat measurements | Determine whether allocation changes reduce the deployment cost while retaining the demonstrated quality; identify the actual latency bottleneck |
-| **2. Small-model challengers** | Whistle and Moonshine adapters, pinned full models, unbiased and dictionary twins; Moonshine oracle-language screen distinguished from automatic routing | Per-language quality, terms, false insertions, silence and native finalization; phone only for a prepared complete automatic path | Find a simpler model/runtime path with useful accuracy and phone headroom |
-| **3. Precision and execution alternatives** | A finite set of per-channel/selective-layer Parakeet exports; relevant CPU-provider/version comparison; a hardware feasibility sub-batch | Public collapse regression plus full development/guard quality, size, memory, speed and backend assignment | Preserve FP32 beam quality with lower costs, or establish whether a different execution path is worth a port |
-| **4. Larger-model quality screen** | Qwen 1.7B reference/native pair and a 0.6B reference diagnostic; conditional Canary 1B v2/full Whisper large-v3 | Complete transcription and per-language quality first; phone work only after a quality result and prepared adapter | Determine whether model capacity or conversion is limiting accuracy before expensive deployment work |
-
-A **process measurement** is one measured process lifetime in one harness mode with a frozen, finite input suite. A wrapper call that starts three measured processes costs three measurements. Repeated takes within a persistent process have a fixed count and count toward the audio/time budget; they are not fresh-process repeats. Every brief itemizes subprocesses, decodes, input minutes and elapsed-time limits, including controls and retries.
-
-Batch 1 is split into three independently handed-off releases; it is not promised to fit one night:
-
-| Release | Phone allocation | Maximum |
+| Stage | Laptop limit | Phone limit |
 |---|---|---|
-| **1a: characterize measurement** | One preselected stock quality control in the three new modes, twice each (6), plus its historical full-run protocol twice (2) | 8 planned + 2 retries = **10 process measurements** |
-| **1b: allocation comparison** | FP32 beam-8 dictionary control: stock, arena-off and pattern-off in one mode chosen from 1a, twice each (6), plus the app baseline twice (2) | 8 planned + 2 retries = **10 process measurements** |
-| **1c: second quality control** | Single-instance Cohere: the same three settings in the selected mode, twice each (6), plus the app baseline twice (2) | 8 planned + 2 retries = **10 process measurements** |
+| 1 | Frozen manifest: 10 planned processes + 2 retry slots, 8 hours, 10 GB additional storage | 8 planned + 2 retries; at most 4 hours and within the authorized window minus restoration margin |
+| 2 | At most 12 configurations, 40 processes and 8 hours; exact count/storage must be frozen in setup | 8 planned + 2 retries; same 4-hour/window ceiling |
+| 3 | At most 12 configurations, 40 processes and 8 hours; exact count/storage must be frozen in setup | 8 planned + 2 retries; same 4-hour/window ceiling |
+| **Whole loop ceiling** | **92 processes and 24 hours**, plus an explicit combined storage ceiling before full-loop launch | **30 processes and 12 hours**, within separately authorized windows |
 
-Releases 1b/1c are resource diagnostics with full quality checks, not new dictionary-mechanism or deployment acceptance. No-dictionary phone twins and historical-gate confirmation for a finalist require a separately budgeted follow-up release before acceptance. The endpoint suite is fixed within the selected mode; if it requires extra process starts, reduce the listed configurations or move that coverage to another release. Combined arena/pattern disabling is deferred until individual effects are understood.
+These are ceilings, not an instruction to fill them. Stage 1's stricter retry rules still apply. For stages 2–3, at most one thermal retry per affected configuration fits within their two retry slots; other retry cases must be frozen before execution. Extra endpoint process starts consume the same cap: reduce configurations or leave that coverage unresolved.
 
-Each release, including 1a–1c, has a ceiling of **12 laptop configurations, 40 total laptop process measurements and eight hours of laptop inference**, with controls/repeats/retries included. The phone elapsed-time ceiling is the smaller of four hours and its authorized window minus restoration margin. Later releases allow **eight total phone process measurements** each, including controls/repeats/retries. Setup may choose smaller limits; incomplete coverage produces an unresolved result, not relaxed checks. Fine-grained layer sweeps use a predeclared grouped search within the export/run caps. A new hypothesis after a cap requires another setup release. Laptop inference benchmarks are serial unless a batch explicitly studies concurrency; model preparation may be parallel only while it cannot contaminate measurements.
+The combined runner must define measured work time across windows, including build/push/pull overhead and cooldowns while working, without charging planned overnight pauses as inference or silently resetting elapsed work. Until it exists, stage 1 retains its current wall-time accounting and single-window stop rules. Do not promise all planned processes fit: stage 1's summed timeouts already exceed four hours.
 
-Hardware feasibility preparation can proceed alongside batch 2 **after batch 1 profiling is reviewed**; it does not wait for all larger models. Setup prepares an official Tensor G5 sample within the permitted benchmark package. Sol performs the frozen phone feasibility measurements. If actual accelerator execution and correct output are established, setup prepares one fixed-shape encoder plus the existing CPU search, and Sol measures it in the next hardware sub-batch. GPU or CPU alternatives likewise need a named supported backend, not a generic availability flag. Every sub-batch counts as a release with its own cap and handoff.
+At each window boundary, finish validation, preserve state and hand restoration to the named owner. Resume only with the next authorized dated window, verified artifacts and fresh applicable safeguards. A timeout is not proof that the device process exited; the frozen access path has no guaranteed hard-abort operation.
 
-Quantization and acceleration comparisons keep weights/search/chunks fixed wherever possible and explain any unavoidable conversion/precision difference. Allocation changes should preserve output; unexpected text changes trigger diagnosis before accepting them as transparent runtime optimizations. Different model architectures are ranked through their documented complete paths. The Unsloth/Qwen artifact overlap is already covered in the runtime research; identical files are one experiment.
+## Completion and handback
 
-## Phase B — frozen experiment execution
+The loop is **completed** when all required comparisons in the prepared three-stage manifest have valid evidence and the decision table answers each hypothesis, including negative results. It is **partial** if a budget/window ends before that point, and **blocked** if invalid evidence or missing preparation prevents continuation. Report which stages completed; never label the whole loop complete because stage 1 ended.
 
-For release 1a, [the brief](batch-1a-v1.md) owns the full entry sequence, controls, validation barriers, retry/stop rules, budgets and handback. Sol executes only that batch's manifest in a fresh context.
+Use the [protocol's handback fields](experiment-protocol.md#handback). Preserve individual waits and quality checks beside each setting, matched-platform deltas, fresh versus persistent memory and the unchanged historical gate. Recommend the smallest next investigation; the [recording policy](experiment-protocol.md#recording-policy) and final FUTO validation remain unchanged.
 
-Each later brief must likewise require matched controls with frozen reproduction tolerances before comparisons, immediate evidence validation, complete guard/silence checks before acceptance, serial phone runs within a dated window, and unique append-only reports including failures and all repeats. Expected control resource/guard failures are diagnostic evidence; failure to reproduce the specified control stops its stage. Independent laptop work can continue only if the brief permits it.
-
-Pin repetition counts, cooldowns and counterbalanced order. Permit at most one thermal retry per affected configuration within the release cap; otherwise record the limit and stop. Stop the affected stage on failed evidence validation, reproducible truncation, missing output, inaccessible phone, permission refusal, unexpected build/configuration or unhandled decoder failure. Permission refusal is never retried through another access path. No run starts unless its timeout plus restoration margin fits; hand back on completion, a stop condition, exhausted budget or window closure.
-
-Setup/user provisioning precedes the loop. Sol does not install/uninstall apps independently, change settings or safeguards, obtain new phone permissions, merge branches or install a daily build. Any instrumentation provisioning intrinsic to an authorized lab operation must be explicit in that batch, as it is in release 1a.
-
-Handback must separate per-language quality, terms/non-term errors and false insertions from memory/load/endpoint/heat costs and evidence completeness; include identities, repetitions, backend/fallback evidence, deviations, recording-trigger status and final phone/restoration state. Each hypothesis is supported on development data, rejected by its test or unresolved. Changes to code, models, acceptance rules or production defaults return to setup/user review; Sol does not launch the next batch or request recordings.
-
-## Recording policy
-
-The pre-registered dictionary trigger from [ADR-005](decisions.md#adr-005--schema-2-range-finding-a-dictionary-as-mechanism-test-and-two-new-model-families) and the [historical campaign](autoresearch.md) remains: **at least ten terms recovered, zero public-guard dictionary insertions, guard WER no worse than experiment 0 by more than one percentage point, and stage 2 passed.** This is a manual policy check, distinct from the evaluator's five-term dictionary mechanism rule; the complete trigger is not enforced by that evaluator. Release 1a is diagnostic and cannot make a new trigger decision.
-
-The four reserved scripts stay outside the repository during development. Oriol supplies recordings and reviews references once a candidate earns validation; a different recording policy requires his explicit approval. The older approximately two-point corpus-expansion agreement remains recorded in [results](results.md#approved-measurement-protocol). Its sample expansion and the later restricted recording policy have not been explicitly reconciled. Neither authorizes a new collection during the loop.
-
-## Primary assistant's review and final validation
-
-Review the full handback and raw evidence before choosing the next setup batch. Keep confidence proportional to eight distinct scripts, repeated takes and an already inspected public guard. Use script-level paired sensitivity summaries as descriptive evidence, not proof of generalization. A routed German-only winner remains a design hypothesis until the complete automatic path improves both languages.
-
-Once one candidate is technically plausible, freeze its settings and vocabulary and design one small reserved validation session covering the missing short/spontaneous use. Compare the complete automatic phone path against the installed FUTO Multilingual-244, establishing speed and accuracy separately in English and German as R4 requires. Use identical audio where feasible within the phone boundary; otherwise label matched live trials and their different-take limitation. Include correction effort and meaning/formatting errors alongside normalized word errors and latency. Leave R4 unresolved if these comparisons cannot establish it; winning against the app baseline alone is insufficient.
-
-Oriol supplies speech, operates FUTO manually and checks references; the assistant owns evaluation design and interpretation. Any new recordings remain subject to the existing recording trigger or an explicitly approved revision. No new recording request is part of this planning task.
-
-## Deferred hypotheses outside the frozen batch
-
-These remain proposals, not execution tasks for Sol: idle-pause warm-up (the cause of the extra first-decode delay is unknown); asset versus private-file loading; generic greedy fallback or reference-TDT search comparison; per-name normalized hotword boost; and phonetic entity matching with abstention. [Beam diagnosis](beam-investigation-2026-10-12.md), [runtime research](runtime-options-2026-10-14.md) and [phonetic-source limits](research.md#reading-the-earlier-claude-research-correctly-2026-10-14) provide the evidence needed before preparing a bounded test. Overlap/tail scheduling belongs to the runtime research and must preserve boundary words. The dictionary UI request remains in the roadmap.
-
-The isolated Astra plan review required matched dictionary twins, feasible process budgets, final FUTO validation, complete endpoint prefixes, explicit control-failure semantics, preserved historical memory gates and bounded setup work. Those constraints are incorporated above; the review did not authorize execution.
+On completion, move this plan to `docs/archive/` with its execution status, dates, evidence location, outcome and successor link. Completed execution, a supported hypothesis and deployment approval are separate facts.

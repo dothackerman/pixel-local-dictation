@@ -12,7 +12,7 @@ Investigation date: 2026-10-12. This is an evidence review and bounded laptop di
 
 Relevant sessions are in `~/.claude/projects/-home-oriol-Projects-private-pixel-local-dictation/`: setup/review `c8cb31bb-cad2-4a11-aa4c-1a030eed2ba5.jsonl`, night-two loop `3161711b-114d-416a-87f7-8ab87eef87ea.jsonl`. These were read alongside both handbacks and saved reports under `corpus/lab/`.
 
-The [loop brief](autoresearch.md) intentionally disallowed changing adapters, adding runtimes, downloading models, or changing the schema. That containment was useful for comparable experiments, but a negative result only covers the permitted search space. It cannot rule out an implementation fix or an untested model family.
+The [loop brief](archive/campaigns-2026-10-13.md) intentionally disallowed changing adapters, adding runtimes, downloading models, or changing the schema. That containment was useful for comparable experiments, but a negative result only covers the permitted search space. It cannot rule out an implementation fix or an untested model family.
 
 ## 1. Confirmed: Qwen's English catastrophe was context exhaustion
 

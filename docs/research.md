@@ -1,6 +1,6 @@
 # Research index
 
-Research notes are dated evidence and proposed tests, not execution instructions. [The experiment plan](next-experiment-plan.md) owns sequencing; [release 1a](batch-1a-v1.md) is the prepared batch. Consult and pin current upstream before implementing a later proposal.
+Research notes are dated evidence and proposed tests, not execution instructions. [The current experiment](next-experiment-plan.md) owns scope and readiness; [the roadmap](roadmap.md#future-experiments) owns future sequencing. Consult and pin current upstream before implementing a later proposal.
 
 | Question | Evidence owner |
 |---|---|
@@ -8,7 +8,7 @@ Research notes are dated evidence and proposed tests, not execution instructions
 | Why did Qwen truncate and beam search delete speech? | [Adapter diagnosis](loop-investigation-2026-10-12.md), [precision diagnosis](beam-investigation-2026-10-12.md) |
 | Can allocation, precision, scheduling or another backend make a winner deployable? | [Runtime research, October 14](runtime-options-2026-10-14.md) |
 | Which untested checkpoints and reference runtimes deserve screening? | [Model research, October 14](model-options-2026-10-14.md) |
-| What selected the existing prototype? | [ADR-002/003](decisions.md), [milestone history](plan.md) |
+| What selected the existing prototype? | [ADR-002/003](decisions.md), [milestone history](archive/milestones-2026-10-10.md) |
 | What was measured against installed FUTO? | [Baseline](baseline.md), [results](results.md) |
 
 ## Reading the earlier Claude research correctly (2026-10-14)

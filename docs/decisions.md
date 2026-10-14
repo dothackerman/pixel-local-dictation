@@ -1,6 +1,6 @@
 # Architecture decision records
 
-ADR status is independent of implementation. Product commitments live in [requirements](requirements.md); this file records design rationale. Entries retain their dated rationale. Later updates below identify changed scope; [the experiment plan](next-experiment-plan.md) and [frozen batch](batch-1a-v1.md) own current execution.
+ADR status is independent of implementation. Product commitments live in [requirements](requirements.md); this file records design rationale. Entries retain their dated rationale. Later updates below identify changed scope; [the current experiment](next-experiment-plan.md) owns execution scope and readiness.
 
 ## ADR-001 — Manually routed streaming candidates
 
@@ -10,7 +10,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 ## ADR-002 — Parakeet-first automatic-language prototype
 
-**Date:** 2026-10-09. **Status:** originally proposed; the working engine choice was subsequently approved in ADR-003. This does not retroactively approve every part of the proposal. **Implementation:** the Parakeet/FUTO prototype reached milestone 2 (`m2`); [history](plan.md) records its limits. **Supersedes:** ADR-001's implementation priority.
+**Date:** 2026-10-09. **Status:** originally proposed; the working engine choice was subsequently approved in ADR-003. This does not retroactively approve every part of the proposal. **Implementation:** the Parakeet/FUTO prototype reached milestone 2 (`m2`); [history](archive/milestones-2026-10-10.md) records its limits. **Supersedes:** ADR-001's implementation priority.
 
 **Context:** R1–R3 need an offline recognizer that detects language without user input. Parakeet TDT v3 documents automatic detection and both languages; Moonshine's published streaming models are language-specific.
 
@@ -28,7 +28,7 @@ The original research suggested trying FUTO nightly Nemotron and language-specif
 
 **Evidence.** Pixel 10 Pro XL, app 0.1.5 benchmark build, sherpa-onnx 1.13.8, 4 threads, four takes by Oriol (D6 twice, E6 twice, 28–34 s, 242 reference words). Raw files: `corpus/files/benchmark/spike-*.json` (not in Git). Four takes are anecdotal; FUTO's figures are one different take per script from [baseline](baseline.md).
 
-| Gate from [plan](plan.md) | Published INT8 | MatMul-only INT8 encoder, fp32 decoder and joiner |
+| Gate from [plan](archive/milestones-2026-10-10.md) | Published INT8 | MatMul-only INT8 encoder, fp32 decoder and joiner |
 |---|---|---|
 | Under 10 s after stop, 35 s take, segmented, ten takes at real-time pace | 0.53–1.00 s, median 0.63 s: pass | 0.59–1.04 s, median 0.65 s: pass |
 | Whole-take decode of the same takes (not a gate) | 1.6–2.3 s | 1.7–2.2 s |
@@ -57,7 +57,7 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 
 ## ADR-004 — Experiment loop with a closed variant schema and the phone as second judge
 
-**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the method for the accuracy experiments; no engine decision. **Builds on:** ADR-003's revisit condition. **Campaign record:** [history](autoresearch.md). The decision below describes the October 10 scope.
+**Date:** 2026-10-10. **Status:** approved by Oriol on 2026-10-10 as the method for the accuracy experiments; no engine decision. **Builds on:** ADR-003's revisit condition. **Campaign record:** [history](archive/campaigns-2026-10-13.md). The decision below describes the October 10 scope.
 
 **Context at approval.** Accuracy was comparable with FUTO and the tested Stop waits were fast, and Oriol wants the experiments to run without him, phone included, with no new recordings until a candidate has earned them. An adversarial review of the first design (2026-10-10) found that a free-form editable pipeline and a 5-word keep rule would overfit ten takes, that a laptop-only pipeline cannot be the same product as the phone's, and that the chunk boundary alone moves the error count by several words.
 
@@ -76,7 +76,7 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 
 **Revisit when:** a kept variant reaches the recording trigger, the control row shows laptop and phone accuracy diverging, or the schema blocks an idea with evidence behind it.
 
-**Scope supersession:** ADR-005 lifted the hotword exclusion and introduced the 3.5 GB rejection policy; ADR-006 corrected enforcement. Hardware/runtime work is now scheduled by the experiment plan. The closed-loop/setup separation remains; these earlier exclusions are not current blanket bans.
+**Scope supersession:** ADR-005 lifted the hotword exclusion and introduced the 3.5 GB rejection policy; ADR-006 corrected enforcement. Hardware/runtime proposals are now sequenced in the roadmap. The closed-loop/setup separation remains; these earlier exclusions are not current blanket bans.
 
 **Update 2026-10-11, after the first night.** 40 experiments, none kept (`corpus/lab/handback-2026-10-10.md`). The review found the cause: nobody had checked whether any schema-1 knob could move the 8-word margin. It could not; see ADR-005.
 
@@ -94,7 +94,7 @@ Also measured: cold load 3.9 s and 4.2 s; total PSS after load 764 MB and 1,045 
 - **Two new families** from the pinned runtime, assets pinned in `experiments.lock`: Qwen3-ASR 0.6B INT8 (laptop real-time factor about 0.2, detects the language itself) and Cohere Transcribe 14 languages INT8 (2.9 GB, laptop real-time factor about 0.25, needs the language, so it shares Canary's language-identification path). Canary 1B stays unavailable in this runtime.
 - Nights only: Oriol needs the phone during the day; the brief tells the loop to skip stage 2 after 06:30.
 
-**Current scope:** dictionary mechanism approval remains; UI design remains undecided. Current execution needs each batch's dated authorized window; Oriol's daytime phone needs still apply unless he explicitly authorizes a different arrangement. [The current recording policy](next-experiment-plan.md#recording-policy) preserves the stricter trigger.
+**Current scope:** dictionary mechanism approval remains; UI design remains undecided. Current execution needs each batch's dated authorized window; Oriol's daytime phone needs still apply unless he explicitly authorizes a different arrangement. [The current recording policy](experiment-protocol.md#recording-policy) preserves the stricter trigger.
 
 **Trade-offs.** A dictionary that works on the scripts' names proves the mechanism, not Oriol's real vocabulary; the recording session, if triggered, tests names outside the list. Hotword scores above 3 are destructive, so the useful range is narrow. Cohere is near the phone's speed budget and 2.9 GB. The dictionary's user experience (how names get into the list, how they are edited) is deliberately undecided.
 
@@ -151,4 +151,12 @@ separate experiments; this decision does not change the daily app's Parakeet def
 
 **Trade-offs at approval.** The full-precision encoder is 2.4 GB on disk and its phone memory was then unmeasured; the evaluator's 3.5 GB limit decides. The one false dictionary insertion in the public clips keeps the recording trigger shut regardless of the phone result; that is left as is rather than relaxed.
 
-**Outcome:** night three completed; `corpus/lab/handback-2026-10-13.md` and [the audit](evaluation-audit-2026-10-14.md) record development accuracy gains with resource failures. The one-instance change is implemented. The dated sweep is complete; [release 1a](batch-1a-v1.md) supersedes its execution schedule. Deferred design ideas remain proposals in the experiment plan, not automatic follow-on work.
+**Outcome:** night three completed; `corpus/lab/handback-2026-10-13.md` and [the audit](evaluation-audit-2026-10-14.md) record development accuracy gains with resource failures. The one-instance change is implemented. The dated sweep is complete; [release 1a](batch-1a-v1.md) supersedes its execution schedule. Deferred design ideas remain proposals in the roadmap, not automatic follow-on work.
+
+## ADR-008 — One allocation experiment with three stages
+
+**Date:** 2026-10-14. **Status:** approved by Oriol in the documentation restructuring request; no inference launch or engine approval. **Implementation:** only the legacy stage-1 run manifest is prepared. The combined stage transitions and continuation accounting are not implemented.
+
+**Context and decision:** the earlier plan split measurement characterization, FP32 allocation comparison and Cohere allocation comparison into releases 1a/1b/1c to bound phone work and require interpretation between them. The dependency is real, but three independent loops are unnecessary when the transition is specified. [One current experiment](next-experiment-plan.md) now contains all three stages, preserves their individual caps and adds cumulative accounting. A valid result advances to the next prepared stage; ambiguity returns for interpretation.
+
+**Consequences:** the experiment may span authorized phone windows without renewing budgets. Preparation must freeze later-stage contracts and support checked continuation before claiming full-loop readiness. The existing stage-1 runbook remains valid under its original narrower scope; finishing it alone is partial execution of the combined experiment. This supersedes the administrative three-release split, not historical evidence, acceptance rules, deferred work or phone authorization.

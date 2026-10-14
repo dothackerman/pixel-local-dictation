@@ -52,4 +52,4 @@ models/venv/bin/python corpus/lab/probe-beam-precision.py beam8-fp32-gate dict-b
 
 The diagnostic variants [beam8-fp32-gate](../variants/beam8-fp32-gate.json) and [dict-beam8-fp32-s20](../variants/dict-beam8-fp32-s20.json) changed only model directory and identity from the INT8 pair. Their completed full-suite comparison is in [results](results.md#laptop-setup-validation-2026-10-12). Use those paired controls when interpreting the single-clip result.
 
-Selective precision must now pass both greedy and beam/dictionary checks; [runtime research](runtime-options-2026-10-14.md#precision-should-be-searched-by-sensitivity-not-only-operator-type) owns that proposal. Generic greedy fallback and a reference-search comparison remain untested alternatives, outside release 1a.
+Selective precision must now pass both greedy and beam/dictionary checks; [runtime research](runtime-options-2026-10-14.md#precision-should-be-searched-by-sensitivity-not-only-operator-type) owns that proposal. Generic greedy fallback and a reference-search comparison remain untested alternatives, outside the current allocation experiment.

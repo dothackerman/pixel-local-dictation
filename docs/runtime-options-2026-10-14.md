@@ -1,7 +1,7 @@
 # Runtime and deployment options, 2026-10-14
 
 Research and local public-audio diagnostics; no phone access or production changes. This note
-provides evidence for [the experiment plan](next-experiment-plan.md), which owns sequencing. Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](batch-1a-v1.md); their comparison loop has not run. The latest phone
+provides evidence for [the current experiment](next-experiment-plan.md) and [future work](roadmap.md#future-experiments). Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](batch-1a-v1.md); their comparison loop has not run. The latest phone
 evidence is the private `corpus/lab/handback-2026-10-13.md` and its linked raw reports; earlier
 precision evidence remains authoritative in [beam investigation](beam-investigation-2026-10-12.md).
 
@@ -239,7 +239,7 @@ alone does not justify another experiment or a switch away from ONNX.
 
 ## Proposed acceleration experiment
 
-Observed accuracy gains justify a hardware feasibility track. The experiment plan schedules it after batch 1 profiling review; this research note does not start parallel work. ONNX Runtime is the current
+Observed accuracy gains justify a hardware feasibility track. The roadmap schedules it after allocation/profiling review; this research note does not start parallel work. ONNX Runtime is the current
 tensor execution engine; sherpa adds speech preprocessing, model adapters and search. Replacing
 sherpa while retaining ORT differs from replacing ORT with LiteRT, and either differs from
 upgrading their versions. A hybrid could run the encoder in LiteRT while retaining the proven

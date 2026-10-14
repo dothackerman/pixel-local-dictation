@@ -1,6 +1,6 @@
 # Model options after night three
 
-Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](requirements.md) remain authoritative; [the adapter diagnosis](loop-investigation-2026-10-12.md) retains the earlier Qwen failure evidence. [The experiment plan](next-experiment-plan.md#batch-sequence-and-purpose) owns execution order; the tests below are inputs to future setup, not additions to release 1a.
+Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](requirements.md) remain authoritative; [the adapter diagnosis](loop-investigation-2026-10-12.md) retains the earlier Qwen failure evidence. [The roadmap](roadmap.md#future-experiments) owns future order; these proposals are outside the current allocation experiment.
 
 The pinned sherpa model menu does not bound checkpoint quality. Screen reference quality before deployment engineering; Whistle's proposal below follows Oriol's October 14 suggestion.
 
