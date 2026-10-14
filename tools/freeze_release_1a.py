@@ -212,8 +212,8 @@ def main():
         'Oriol names restoration owner, procedure and existing artifact',
         'Sol records fresh session ID and user-confirmed hook activation; synthetic guard checks pass',
         'Sol verifies device connection/version read-only; each measured process verifies actual APK and input hashes before inference']
-    manifest['validation_note'] = ('Public device smoke belongs to its recorded APK hashes. '
-        'Review revised instrumentation was compiled locally; no additional device inference was authorized or run.')
+    manifest['validation_note'] = ('Device smoke evidence and its tested modes are recorded in device_setup. '
+        'Compare its APK hashes with this freeze; never relabel earlier smoke evidence as validation of a changed build.')
     save(LAB / "manifest.json", manifest)
     print("Frozen", len(runs), "planned processes and", len(comparisons), "comparison contracts; no runs launched.")
 

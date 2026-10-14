@@ -1,6 +1,6 @@
 # Next accuracy experiments: setup and execution
 
-**Status: release 1a setup completed on 2026-10-14, including the separately authorized public/synthetic phone smoke. The experiment loop is not authorized or launched. See [the frozen batch brief](batch-1a-v1.md) and [setup work order](setup-release-1a.md).**
+**Status: release 1a setup completed on 2026-10-14, including the separately authorized additional public/synthetic phone smoke with the reviewed instrumentation. The experiment loop is not authorized or launched. See [the frozen batch brief](batch-1a-v1.md) and [setup work order](setup-release-1a.md).**
 
 The objective is to preserve or improve recognition in both languages while making an accuracy winner practical on the phone. [Requirements](requirements.md) remain authoritative. This plan governs the next round; [the old loop brief](autoresearch.md) describes the completed third night and is not its launch instruction. Historical ADRs and results retain their original meaning.
 

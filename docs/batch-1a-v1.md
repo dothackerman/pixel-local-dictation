@@ -4,7 +4,7 @@
 
 ## Authoritative artifacts
 
-The private manifest is `corpus/lab/release-1a/manifest.json`. Its source commit, artifact hashes, `execution_steps`, commands, output paths and comparison contracts govern execution. `environment.json` pins packages and native libraries. `smoke-summary.json` records twelve setup processes, including one successful six-result phone smoke. These files and all personal inputs/results remain inside `corpus/`. The review revised instrumentation after that smoke; its local build is prepared, but no further device inference was authorized or performed. Preserve the smoke's original APK identities. Setup evidence is not product acceptance.
+The private manifest is `corpus/lab/release-1a/manifest.json`. Its source commit, artifact hashes, `execution_steps`, commands, output paths and comparison contracts govern execution. `environment.json` pins packages and native libraries. `smoke-summary.json` records thirteen setup processes, including the separately authorized additional phone smoke with the revised instrumentation. That persistent-mode smoke verified six public/synthetic results, full audio coverage, both current APK hashes, memory readings and empty silence output. It did not exercise historical-full mode. Original and revised-build evidence are preserved separately. These files and all personal inputs/results remain inside `corpus/`. Setup evidence is not product acceptance.
 
 Python 3.12.3 and sherpa-onnx 1.13.8 load successfully; the API reports ONNX Runtime 1.28.2. The Android AAR contains the same version string and independently recorded arm64 library hashes. The app version remains 0.2.5: use APK hashes to identify this build. No model downloads or exports were required.
 
@@ -107,7 +107,7 @@ Run the following as separate invocations, substituting only the staged director
 
 Use each run's `record_command`, substituting the result path actually returned by the preceding pull. It preserves raw bytes under the unique run ID and rejects reused run/process identities; it wraps historical output with its exact staged manifest. Then run `validate_command` immediately. Guards and silence from the laptop must remain explicitly labelled as laptop evidence.
 
-The previous setup authorization was consumed by benchmark provisioning and one public/synthetic smoke. It reserves no loop window. `launch_requirements` is the authoritative remaining prerequisite list; the old setup checkpoint is not a live checklist. Readiness remains false without the separate launch record.
+The setup authorizations were consumed by benchmark provisioning, the original public/synthetic smoke and the one additional revised-instrumentation smoke. They reserve no loop window. `launch_requirements` is the authoritative remaining prerequisite list; the old setup checkpoint is not a live checklist. Readiness remains false without the separate launch record.
 
 Run `python3 tools/check_release_1a.py --setup-only` to verify prepared artifacts. Without that option, supply the current `--session-id` and the launch record. The setup smoke's measured identities remain unchanged by review revisions.
 
