@@ -1,6 +1,6 @@
 # Experiment protocol
 
-For the setup implementer preparing a runnable experiment and the executor preserving valid evidence. Scope and readiness live in [the current plan](next-experiment-plan.md); future work lives in [the roadmap](roadmap.md). Requirements and safeguards retain their own authority.
+For the setup implementer preparing a runnable experiment and the executor preserving valid evidence. Scope and readiness live in [the current plan](current.md); future work lives in [the roadmap](../roadmap.md). Requirements and safeguards retain their own authority.
 
 ## Roles and setup limits
 
@@ -69,6 +69,6 @@ Use the frozen experiment's completion criteria. Execution completion is separat
 
 ## Recording policy
 
-The pre-registered dictionary trigger from [ADR-005](decisions.md#adr-005--schema-2-range-finding-a-dictionary-as-mechanism-test-and-two-new-model-families) and the [historical campaign](archive/campaigns-2026-10-13.md) remains: **at least ten terms recovered, zero public-guard dictionary insertions, guard WER no worse than experiment 0 by more than one percentage point, and historical stage-2 phone acceptance passed.** That last condition is not stage 2 of the allocation experiment. This is a manual policy check, distinct from the evaluator's five-term dictionary mechanism rule; the complete trigger is not enforced by that evaluator. The allocation experiment is diagnostic and cannot make a new trigger decision.
+The pre-registered dictionary trigger from [ADR-005](../decisions.md#adr-005--schema-2-range-finding-a-dictionary-as-mechanism-test-and-two-new-model-families) and the [historical campaign](../archive/campaigns-2026-10-13.md) remains: **at least ten terms recovered, zero public-guard dictionary insertions, guard WER no worse than experiment 0 by more than one percentage point, and historical stage-2 phone acceptance passed.** That last condition is not stage 2 of the allocation experiment. This is a manual policy check, distinct from the evaluator's five-term dictionary mechanism rule; the complete trigger is not enforced by that evaluator. The allocation experiment is diagnostic and cannot make a new trigger decision.
 
-The four reserved scripts stay outside the repository during development. Oriol supplies recordings and reviews references once a candidate earns validation; a different recording policy requires his explicit approval. The older approximately two-point corpus-expansion agreement remains recorded in [results](results.md#approved-measurement-protocol). Its sample expansion and the later restricted recording policy have not been explicitly reconciled. Neither authorizes a new collection during the loop.
+The four reserved scripts stay outside the repository during development. Oriol supplies recordings and reviews references once a candidate earns validation; a different recording policy requires his explicit approval. The older approximately two-point corpus-expansion agreement remains recorded in [results](../evaluation/results.md#approved-measurement-protocol). Its sample expansion and the later restricted recording policy have not been explicitly reconciled. Neither authorizes a new collection during the loop.

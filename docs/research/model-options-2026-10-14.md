@@ -1,12 +1,12 @@
 # Model options after night three
 
-Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](requirements.md) remain authoritative; [the adapter diagnosis](loop-investigation-2026-10-12.md) retains the earlier Qwen failure evidence. [The roadmap](roadmap.md#future-experiments) owns future order; these proposals are outside the current allocation experiment.
+Research checked 2026-10-14 against publisher documentation and runtime source. These are proposed experiments, not measured accuracy or Android performance. No model downloads, inference, phone access or corpus export occurred in this research. [Requirements](../requirements.md) remain authoritative; [the adapter diagnosis](loop-investigation-2026-10-12.md) retains the earlier Qwen failure evidence. [The roadmap](../roadmap.md#future-experiments) owns future order; these proposals are outside the current allocation experiment.
 
 The pinned sherpa model menu does not bound checkpoint quality. Screen reference quality before deployment engineering; Whistle's proposal below follows Oriol's October 14 suggestion.
 
 ## What the latest evidence changes
 
-The corrected Qwen 0.6B run has already happened and still loses; rerunning the same context fix is stale advice. Its aggregate results and precision failure findings are authoritative in [results](results.md#laptop-setup-validation-2026-10-12). They reject that export/configuration, not every Qwen checkpoint or implementation.
+The corrected Qwen 0.6B run has already happened and still loses; rerunning the same context fix is stale advice. Its aggregate results and precision failure findings are authoritative in [results](../evaluation/results.md#laptop-setup-validation-2026-10-12). They reject that export/configuration, not every Qwen checkpoint or implementation.
 
 Night three also already measured one-instance Cohere and FP32 dictionary decoding. The local handback, `corpus/lab/handback-2026-10-13.md`, records better phone transcripts than the control, but failed resource/finalization gates. Thus “no accuracy gain exists” and “no candidate passes the complete product gates” are different claims. Rescue of those candidates belongs to the runtime investigation; another model search is an independent track.
 

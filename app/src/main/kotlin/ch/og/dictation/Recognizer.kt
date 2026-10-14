@@ -56,7 +56,7 @@ fun joinChunks(texts: List<String>, seamCapitalize: Boolean): String {
  * Cuts a take into contiguous chunks at pauses, so no audio is dropped between chunks.
  * Measured on Oriol's takes of 2026-10-10: decoding only the speech found by the VAD lost
  * words at the start of segments, and chunks of at least 20 s gave fewer errors than
- * shorter ones (docs/plan.md). A chunk ends [padSamples] after speech ended, once it is
+ * shorter ones (docs/archive/milestones-2026-10-10.md). A chunk ends [padSamples] after speech ended, once it is
  * at least [minSamples] long; with [maxSamples] > 0 a chunk is also cut as soon as the
  * pending audio reaches that length (Whisper models drop audio beyond 30 s).
  * Each chunk records whether speech was found in it: a speech end was reported inside it, or

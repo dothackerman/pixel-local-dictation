@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Word error rate of replay reports against the reference scripts in docs/baseline.md.
+"""Word error rate of replay reports against the reference scripts in docs/evaluation/baseline.md.
 
 Usage: tools/score.py TAKES.json REPORT.json [REPORT.json ...]
        tools/score.py --corpus corpus        (milestone 3: Oriol's scripts, FUTO against the app)
 TAKES.json maps a take's file name to its script id, e.g. {"20261010-080909-723.wav": "D6"}.
 Reports come from tools/replay.py. Prints one row per take and decode path, and FUTO's
-row from the raw output recorded in docs/baseline.md.
+row from the raw output recorded in docs/evaluation/baseline.md.
 
 Normalisation before counting: lower case, punctuation removed, hyphens become spaces,
 spoken numbers below 1000 and ordinals up to twelfth become digits, gigabyte(s) becomes gb,
@@ -168,7 +168,7 @@ def errors(ref, hyp):
 
 
 def baseline():
-    text = open(os.path.join(ROOT, "docs", "baseline.md"), encoding="utf-8").read()
+    text = open(os.path.join(ROOT, "docs", "evaluation", "baseline.md"), encoding="utf-8").read()
     refs, futo = {}, {}
     for lang, label in (("de", "German"), ("en", "English")):
         line = re.search(rf"^{label}: (.+)$", text, re.M).group(1)

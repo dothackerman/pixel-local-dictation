@@ -1,18 +1,18 @@
 # Adapter and evaluation failure diagnosis, 2026-10-12
 
 This records the initial research pass. Subsequent authorized implementation is recorded in
-[ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence),
-with laptop follow-up measurements in [results](results.md).
+[ADR-006](../decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence),
+with laptop follow-up measurements in [results](../evaluation/results.md).
 
 Investigation date: 2026-10-12. This is an evidence review and bounded laptop diagnosis, not a new engine decision or a successful product benchmark. The phone, frozen loop, ledger and production implementation were not changed. Personal audio and diagnostic transcripts remained under `corpus/`; this note contains aggregate findings only.
 
-**Conclusion:** the evidence supports investigating adapter contracts and decoder failures before running another parameter sweep. The loop excluded implementation changes, and several observed failures were interpreted too broadly. Three concrete leads use the already installed runtime and assets. Model and accelerator alternatives remain available, but none is yet an established winner under [the requirements](requirements.md).
+**Conclusion:** the evidence supports investigating adapter contracts and decoder failures before running another parameter sweep. The loop excluded implementation changes, and several observed failures were interpreted too broadly. Three concrete leads use the already installed runtime and assets. Model and accelerator alternatives remain available, but none is yet an established winner under [the requirements](../requirements.md).
 
 ## Evidence provenance
 
 Relevant sessions are in `~/.claude/projects/-home-oriol-Projects-private-pixel-local-dictation/`: setup/review `c8cb31bb-cad2-4a11-aa4c-1a030eed2ba5.jsonl`, night-two loop `3161711b-114d-416a-87f7-8ab87eef87ea.jsonl`. These were read alongside both handbacks and saved reports under `corpus/lab/`.
 
-The [loop brief](archive/campaigns-2026-10-13.md) intentionally disallowed changing adapters, adding runtimes, downloading models, or changing the schema. That containment was useful for comparable experiments, but a negative result only covers the permitted search space. It cannot rule out an implementation fix or an untested model family.
+The [loop brief](../archive/campaigns-2026-10-13.md) intentionally disallowed changing adapters, adding runtimes, downloading models, or changing the schema. That containment was useful for comparable experiments, but a negative result only covers the permitted search space. It cannot rule out an implementation fix or an untested model family.
 
 ## 1. Confirmed: Qwen's English catastrophe was context exhaustion
 
@@ -34,7 +34,7 @@ Reproduce from the repository root: `models/venv/bin/python corpus/lab/probe-qwe
 
 There is an important distinction between fixed and dynamic exports: if the decoder's cache dimension is dynamic, the runtime sets its model object's ceiling from the **constructor's** `max_total_len`; otherwise it uses the fixed export dimension. Raising only the per-stream option cannot exceed the already-created object's ceiling. A dynamic export may need only reconstruction with a larger budget, not re-export. [Pinned model-loading code, lines 311–323](https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.8/sherpa-onnx/csrc/offline-qwen3-asr-model.cc#L311).
 
-**Resolved setup work:** [ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence) added constructor/generation budgets, bounded chunks and truncation rejection. [Full replays](results.md#laptop-setup-validation-2026-10-12) still rejected this export/configuration; the diagnostic was not spliced into a score. Reference-checkpoint parity remains a separate [model experiment](model-options-2026-10-14.md#2-qwen3-asr-17b-with-a-reference-to-runtime-parity-check).
+**Resolved setup work:** [ADR-006](../decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence) added constructor/generation budgets, bounded chunks and truncation rejection. [Full replays](../evaluation/results.md#laptop-setup-validation-2026-10-12) still rejected this export/configuration; the diagnostic was not spliced into a score. Reference-checkpoint parity remains a separate [model experiment](model-options-2026-10-14.md#2-qwen3-asr-17b-with-a-reference-to-runtime-parity-check).
 
 Pinned sherpa also reads a per-stream Qwen language option ([prompt implementation](https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.8/sherpa-onnx/csrc/offline-recognizer-qwen3-asr-impl.cc#L459)); that was not exposed by the inspected adapter. Oracle language remains diagnostic. The centered-STFT and silent-input fixes in [v1.13.7](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.7) already preceded the pinned v1.13.8, so they were not missing fixes.
 
@@ -71,6 +71,6 @@ Removing the second instance did not inherently speed up the selected decoder. Q
 
 ## Evaluation findings and disposition
 
-Revision 3 addressed two concrete gaps: `phone_check` had ignored the later `vmHwmAfterPacedKb` peak (baseline 1,846,396 → 2,131,232 kB), and merely printed phone/laptop text differences without applying accuracy rules to phone output. Existing paced/unpaced texts matched, so the latter was a latent validation gap. [ADR-006](decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence) owns the repair and [results](results.md#laptop-setup-validation-2026-10-12) its validation.
+Revision 3 addressed two concrete gaps: `phone_check` had ignored the later `vmHwmAfterPacedKb` peak (baseline 1,846,396 → 2,131,232 kB), and merely printed phone/laptop text differences without applying accuracy rules to phone output. Existing paced/unpaced texts matched, so the latter was a latent validation gap. [ADR-006](../decisions.md#adr-006--validate-qwen-input-budgets-and-enforce-complete-phone-evidence) owns the repair and [results](../evaluation/results.md#laptop-setup-validation-2026-10-12) its validation.
 
 The remaining limitations—dependent feed schedules, uncontrolled thermal attribution and missing short/spontaneous/noisy coverage—are consolidated in [the evaluation audit](evaluation-audit-2026-10-14.md). They remain limitations, not explanations invented for every disappointing score.

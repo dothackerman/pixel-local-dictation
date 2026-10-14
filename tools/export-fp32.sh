@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Laptop only: export Parakeet TDT 0.6B v3 to fp32 ONNX with sherpa-onnx's own script
-# (tag v1.13.8), for the INT8 parity check in docs/plan.md. Needs about 12 GB of disk
+# (tag v1.13.8), for the INT8 parity check in docs/archive/milestones-2026-10-10.md. Needs about 12 GB of disk
 # and downloads the official 2.5 GB checkpoint. Result: models/parakeet-v3-fp32/.
 # Pins that upstream leaves open: torch 2.7.1 (newer torch switches to an exporter the
 # script was not written for), pyarrow<18 (newer needs NumPy 2, upstream pins NumPy 1),

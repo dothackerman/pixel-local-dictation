@@ -20,7 +20,7 @@ Not measured: E3–E5 as single sentences (stopped once the length effect was cl
 
 ## Reading
 
-- Wait grows roughly with recording length: about 3 to 4 s for a 4 to 5 s sentence, about 35 s for about 35 s of speech. FUTO decodes after stop at close to one times real time on this phone. The speed target in [requirements](requirements.md) therefore means a much lower real-time factor, not a faster start.
+- Wait grows roughly with recording length: about 3 to 4 s for a 4 to 5 s sentence, about 35 s for about 35 s of speech. FUTO decodes after stop at close to one times real time on this phone. The speed target in [requirements](../requirements.md) therefore means a much lower real-time factor, not a faster start.
 - Short single sentences are nearly error-free in both languages. The long German recording degraded badly on names and one common word (Gleis), the long English one only on a title.
 - Digit rendering of spoken numbers and dates is a formatting convention, not a recognition error; the milestone 3 scoring must normalise it before counting word errors, and report it separately.
 

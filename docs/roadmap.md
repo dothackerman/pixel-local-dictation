@@ -1,6 +1,6 @@
 # Milestones and remaining work
 
-[Requirements](requirements.md) define product commitments. This roadmap retains the original milestone gates and unfinished obligations; **The only current execution plan is [Allocation and measurement](next-experiment-plan.md).** It owns the next implementer's task and readiness. This roadmap owns unfinished product gates and future work; it supplies no additional runs.
+[Requirements](requirements.md) define product commitments. This roadmap retains the original milestone gates and unfinished obligations; **The only current execution plan is [Allocation and measurement](experiments/current.md).** It owns the next implementer's task and readiness. This roadmap owns unfinished product gates and future work; it supplies no additional runs.
 
 ## 1–2. Integration and local recognition — completed prototype gates
 
@@ -8,9 +8,9 @@ Tags `m1` and `m2` record FUTO launch/insertion and local English/German recogni
 
 ## 3. Personal improvement — open
 
-R4 still needs speed **and** accuracy improvement over installed FUTO in each language. [Results](results.md) own the approved reduced-corpus protocol and first comparison; [the audit](evaluation-audit-2026-10-14.md) explains why later development-set wins do not close this gate.
+R4 still needs speed **and** accuracy improvement over installed FUTO in each language. [Results](evaluation/results.md) own the approved reduced-corpus protocol and first comparison; [the audit](research/evaluation-audit-2026-10-14.md) explains why later development-set wins do not close this gate.
 
-The original coverage proposal was 20 English and 20 German clips of 5–30 s, plus several 60 s recordings, with actual accent, names, technical vocabulary, dates/numbers, quiet/noisy conditions and ambiguous starts. The reduced October 10 corpus did not cover all of that. Preserve the coverage need; any new collection follows [the recording policy](experiment-protocol.md#recording-policy), not this old sample-count proposal.
+The original coverage proposal was 20 English and 20 German clips of 5–30 s, plus several 60 s recordings, with actual accent, names, technical vocabulary, dates/numbers, quiet/noisy conditions and ambiguous starts. The reduced October 10 corpus did not cover all of that. Preserve the coverage need; any new collection follows [the recording policy](experiments/protocol.md#recording-policy), not this old sample-count proposal.
 
 Compare identical audio where feasible. Matching FUTO weights/settings in a harness is only a model baseline; FUTO WAV import remains unestablished. Otherwise use matched live trials and label the different-take limitation. Report each language's word errors, correction effort, names/numbers, meaning errors, punctuation/capitalization and wrong-language choices. Measure tap-to-ready, cold load, first useful partial when available, Stop-to-final and last-word-to-final, with median/slow tail, cold/warm conditions, memory and repeated-session heat/battery. Include silence, cancel, focus changes and interruption.
 
@@ -20,11 +20,11 @@ Compare identical audio where feasible. Matching FUTO weights/settings in a harn
 
 Moonshine German Small Streaming plus English Small/Medium remains the conditional alternative from the original roadmap. Oracle-language quality screening is diagnostic; a product path needs automatic local routing, buffered/replayed first words, and measured short-utterance fallback. No router is selected. If parallel decoding is considered, model confidence scores need calibration and compute must be measured.
 
-**Gate:** evaluate the complete router/recognizer, including detection delay, wrong routes, fallback frequency and language alternation. Apply the same requirements. Whistle, larger models and accelerated Whisper remain challengers; [model research](model-options-2026-10-14.md) supplies tests and the future-work sequence below supplies order.
+**Gate:** evaluate the complete router/recognizer, including detection delay, wrong routes, fallback frequency and language alternation. Apply the same requirements. Whistle, larger models and accelerated Whisper remain challengers; [model research](research/model-options-2026-10-14.md) supplies tests and the future-work sequence below supplies order.
 
 ## 5. Runtime optimization and handoff — pending
 
-Oriol requested comparisons of quantization schemes (selective MatMul, finer per-layer choices, accelerator-required precision) and alternative runtimes on 2026-10-10. Compare against FP32 on the personal corpus, including beam/dictionary parity; greedy parity alone is insufficient. Tune CPU threads on the phone. Vulkan needs a supported runtime; Tensor G5 needs a verified official sample on this GrapheneOS build before model conversion. Confirm actual backend execution and numerical correctness, including any CPU fallback. [Runtime research](runtime-options-2026-10-14.md) owns feasibility evidence; future work follows the sequence below.
+Oriol requested comparisons of quantization schemes (selective MatMul, finer per-layer choices, accelerator-required precision) and alternative runtimes on 2026-10-10. Compare against FP32 on the personal corpus, including beam/dictionary parity; greedy parity alone is insufficient. Tune CPU threads on the phone. Vulkan needs a supported runtime; Tensor G5 needs a verified official sample on this GrapheneOS build before model conversion. Confirm actual backend execution and numerical correctness, including any CPU fallback. [Runtime research](research/runtime-options-2026-10-14.md) owns feasibility evidence; future work follows the sequence below.
 
 **Gate:** repeat milestone 3 after material changes. Deliver reproducible source/build instructions, pinned dependencies/assets and licenses, signed APK, per-language results, setup instructions and tested rollback to FUTO with its baseline model retained. Keep the key outside Git. Record explicit engine approval separately from implementation.
 
@@ -48,6 +48,6 @@ These are planned directions from the earlier experiment strategy, **not prepare
 
 Hardware feasibility may proceed beside the small-model work **after allocation/profiling evidence is reviewed**. The current stage-1 comparisons have profiling off; if their evidence cannot identify the bottleneck, prepare a bounded profiling follow-up. First test an official Tensor G5 sample in the permitted benchmark package; only verified execution/output earns a fixed-shape encoder with CPU search. GPU/CPU paths likewise need a named supported backend and actual assignment evidence.
 
-Retained ceilings for each later bounded experiment are 12 laptop configurations, 40 laptop processes/eight inference hours, and eight phone processes total, including controls/retries. Phone work is limited to the smaller of four hours or its authorized window minus restoration margin. Setup freezes smaller concrete budgets where possible under [the protocol](experiment-protocol.md). Group layer sweeps in advance; a new hypothesis after the cap needs a new plan, not a reset.
+Retained ceilings for each later bounded experiment are 12 laptop configurations, 40 laptop processes/eight inference hours, and eight phone processes total, including controls/retries. Phone work is limited to the smaller of four hours or its authorized window minus restoration margin. Setup freezes smaller concrete budgets where possible under [the protocol](experiments/protocol.md). Group layer sweeps in advance; a new hypothesis after the cap needs a new plan, not a reset.
 
 Unscheduled hypotheses remain: idle-pause warm-up, asset versus file loading, generic greedy fallback/reference-TDT search, per-name normalized hotword boosts, phonetic entity matching with abstention, and overlap/short-tail scheduling with omission/duplication checks. [Research](research.md) owns their evidence and limitations; the dictionary UI request above is distinct from mechanism tests.

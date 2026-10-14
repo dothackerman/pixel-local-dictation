@@ -2,7 +2,7 @@
 """Frozen evaluator of the experiment loop: scores a pipeline report against the references.
 
 One code path for all ten takes: corpus/takes.json maps take files to script ids; references are
-corpus/scripts/<id>.txt for de-*/en-* and docs/baseline.md for D6/E6 (via tools/score.py);
+corpus/scripts/<id>.txt for de-*/en-* and docs/evaluation/baseline.md for D6/E6 (via tools/score.py);
 corpus/scripts/<id>.terms lists the names and numbers that must come out right.
 Normalisation and word error counting are tools/score.py's, unchanged.
 

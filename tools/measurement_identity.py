@@ -48,7 +48,7 @@ def evaluator_files(root):
 def reference_files(root):
     root = Path(root)
     return files(list((root / 'corpus/scripts').glob('*.txt')) + list((root / 'corpus/scripts').glob('*.terms')) +
-                 [root / 'corpus/takes.json', root / 'models/guard/refs.tsv', root / 'docs/baseline.md'])
+                 [root / 'corpus/takes.json', root / 'models/guard/refs.tsv', root / 'docs/evaluation/baseline.md'])
 
 
 def quality_inputs(root, takes):

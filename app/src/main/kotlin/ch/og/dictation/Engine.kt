@@ -213,7 +213,7 @@ class LanguageSwitchedRecognizer(
 
 /**
  * Silero VAD on the live stream finds the pauses; [PauseChunker] cuts there (parameters from the
- * [Variant], defaults from docs/plan.md). One thread at a time: the recording thread during a
+ * [Variant], which defines the defaults). One thread at a time: the recording thread during a
  * take, the main thread around it.
  */
 class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : Segmenter {

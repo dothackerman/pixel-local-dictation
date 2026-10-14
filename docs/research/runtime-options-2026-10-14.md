@@ -1,7 +1,7 @@
 # Runtime and deployment options, 2026-10-14
 
 Research and local public-audio diagnostics; no phone access or production changes. This note
-provides evidence for [the current experiment](next-experiment-plan.md) and [future work](roadmap.md#future-experiments). Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](batch-1a-v1.md); their comparison loop has not run. The latest phone
+provides evidence for [the current experiment](../experiments/current.md) and [future work](../roadmap.md#future-experiments). Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](../experiments/allocation/stage-1-runbook.md); their comparison loop has not run. The latest phone
 evidence is the private `corpus/lab/handback-2026-10-13.md` and its linked raw reports; earlier
 precision evidence remains authoritative in [beam investigation](beam-investigation-2026-10-12.md).
 
@@ -13,8 +13,8 @@ problem. The highest-value missing work is **runtime allocation measurement and 
 precision under the actual beam decoder**, followed by a measured finalization design.
 
 The exact 2 s Stop limit, 0.3 real-time factor and 3.5-million-kB peak are experimental acceptance
-rules in [the historical evaluator](../tools/evaluate.py), not numerical
-product commitments in [requirements](requirements.md). Keep reporting failures honestly. If
+rules in [the historical evaluator](../../tools/evaluate.py), not numerical
+product commitments in [requirements](../requirements.md). Keep reporting failures honestly. If
 Oriol later chooses a different trade-off, change the design rule explicitly; do not reinterpret
 past failures as passes. Passing these rules also would not prove improvement over FUTO in
 both languages.
@@ -23,12 +23,12 @@ both languages.
 
 Pinned sherpa-onnx accepts `cpu:/absolute/path/session.config` as its provider string. Its
 session setup supports `EnableCpuMemArena=0`, `EnableMemPattern=0`, `ProfilingFilePrefix`, and
-`SessionConfig.*` entries forwarded to ONNX Runtime. At the research checkpoint the app and Python adapters did not expose these controls. They now do through [Kotlin RuntimeConfig](../app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and [Python runtime_config](../tools/runtime_config.py); this is setup completion, not measured allocation savings. The actual local Android AAR's JNI library contains the arena
+`SessionConfig.*` entries forwarded to ONNX Runtime. At the research checkpoint the app and Python adapters did not expose these controls. They now do through [Kotlin RuntimeConfig](../../app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and [Python runtime_config](../../tools/runtime_config.py); this is setup completion, not measured allocation savings. The actual local Android AAR's JNI library contains the arena
 and session-config keys, so this is stronger evidence than finding an API only on upstream
 main. Binary strings establish presence, not successful Android operation.
 [Pinned session implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/session.cc),
-[Kotlin adapter](../app/src/main/kotlin/ch/og/dictation/Engine.kt),
-[Python adapter](../tools/pipeline.py).
+[Kotlin adapter](../../app/src/main/kotlin/ch/og/dictation/Engine.kt),
+[Python adapter](../../tools/pipeline.py).
 
 An executed laptop smoke test used the existing selective-INT8 Parakeet model on the public
 German collapse clip, with arena and memory pattern both disabled and profiling enabled.
@@ -72,19 +72,19 @@ The **already pinned sherpa-onnx v1.13.8** supports per-stream language selectio
 - Cohere's `DecodeStream` reads `s->GetOption("language")` before falling back to the model configuration, then builds the language tokens for that decode. It also accepts per-stream `use_itn` and `use_punct`. [Pinned implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/offline-recognizer-cohere-transcribe-impl.h).
 - Kotlin exposes `OfflineStream.setOption(key, value)`; Python exposes `set_option`. The locally installed AAR contains both the Kotlin method name and the native `OfflineStream_setOption` symbol. This verifies API presence, **not successful inference**. [Kotlin API](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/kotlin-api/OfflineStream.kt), [Python binding](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/python/csrc/offline-stream.cc).
 
-**Original proposal, implemented by [ADR-007](decisions.md#adr-007--night-three-the-full-precision-dictionary-family-and-single-instance-cohere-go-to-the-phone):** retain the existing local language identifier and one Cohere recognizer; set `language` on every new stream before decoding. Keep language fixed within a take, reset it between takes, and preserve the current serial decode queue. No new weights or runtime upgrade should be necessary. Removing a duplicate model should materially reduce memory, but it does not imply exactly half the measured process peak: buffers, the identifier, session arenas, and temporary allocations remain. It does not inherently halve decode latency, since the existing code decodes only one selected instance.
+**Original proposal, implemented by [ADR-007](../decisions.md#adr-007--night-three-the-full-precision-dictionary-family-and-single-instance-cohere-go-to-the-phone):** retain the existing local language identifier and one Cohere recognizer; set `language` on every new stream before decoding. Keep language fixed within a take, reset it between takes, and preserve the current serial decode queue. No new weights or runtime upgrade should be necessary. Removing a duplicate model should materially reduce memory, but it does not imply exactly half the measured process peak: buffers, the identifier, session arenas, and temporary allocations remain. It does not inherently halve decode latency, since the existing code decodes only one selected instance.
 
 **Executed laptop smoke test:** using installed sherpa-onnx 1.13.8 and the existing INT8 assets, constructed one recognizer with default language `en`, then set explicit per-stream languages `de/en/de/en`. Public guard clips were `de/7406_6765_000098.wav` (10.09 s) and `en/7021-85628-0005.wav` (5.01 s). All four outputs matched the saved two-instance Cohere guard outputs exactly after the existing Swiss-spelling normalization. Only parity booleans, timings and memory were emitted; no text was copied into this report. This validates actual Python inference and language alternation, not just API presence. The source comparison is `corpus/lab/runs/cohere-1f31656.json`'s public `guard` entries, not its personal takes.
 
 The smoke process peaked at 3,465.4 MiB RSS, **without** a loaded language identifier. Load was 10.072 s; decode times were 6.017/2.376/4.165/1.800 s in that order. These are unisolated laptop observations during concurrent investigation, not comparable phone performance results. The memory result specifically prevents promising that one instance will necessarily meet the 3.5 GB phone criterion: it removes known duplication but leaves little apparent headroom, and platform-specific measurement remains necessary. No frozen pipeline/evaluator files or ledger rows were changed.
 
-**Production-port trap:** Cohere's pinned model constructor explicitly rejects `AssetManager` loading. It loads encoder and decoder from filesystem paths. LabTest already uses private filesystem paths; the daily app's default asset path cannot be assumed to work. This calls for private local provisioning, not a storage permission or literal external SD card requirement. [Model implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/offline-cohere-transcribe-model.cc), [LabTest](../app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt).
+**Production-port trap:** Cohere's pinned model constructor explicitly rejects `AssetManager` loading. It loads encoder and decoder from filesystem paths. LabTest already uses private filesystem paths; the daily app's default asset path cannot be assumed to work. This calls for private local provisioning, not a storage permission or literal external SD card requirement. [Model implementation](https://github.com/k2-fsa/sherpa-onnx/blob/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf/sherpa-onnx/csrc/offline-cohere-transcribe-model.cc), [LabTest](../../app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt).
 
 ## The benchmark's extra memory is not yet explained
 
-[LabTest](../app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt) creates one recognizer and
+[LabTest](../../app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt) creates one recognizer and
 reuses it throughout. It creates a VAD per take but calls `segmenter.reset()` after each, which
-releases the detector in [VadSegmenter](../app/src/main/kotlin/ch/og/dictation/Engine.kt).
+releases the detector in [VadSegmenter](../../app/src/main/kotlin/ch/og/dictation/Engine.kt).
 There is no obvious extra recognizer or unreleased VAD explaining the paced-phase increase.
 
 The harness does preload every recording into FloatArrays, retain them through both phases,
@@ -102,7 +102,7 @@ comparison can justify a benchmark correction or a memory optimization.
 
 ## Precision should be searched by sensitivity, not only operator type
 
-The current [quantization tool](../tools/quant_variant.py) exposes only operator-type selection
+The current [quantization tool](../../tools/quant_variant.py) exposes only operator-type selection
 and fixes unsigned dynamic INT8. It does not expose per-channel weights or node exclusions.
 ORT's quantizer supports both; its guidance recommends locating damaging weight/activation
 differences and leaving those tensors unquantized. This opens a concrete route between the
@@ -134,7 +134,7 @@ weights and comparable search settings. [Issue 3267](https://github.com/k2-fsa/s
 
 ## Overlap alone does not make the final decode cheap
 
-Current [TakeTranscriber](../app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt) serially
+Current [TakeTranscriber](../../app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt) serially
 decodes independent closed chunks; Stop queues the remainder. The interface returns text,
 with no encoder-cache reuse or ownership/timestamp information for overlap merging.
 

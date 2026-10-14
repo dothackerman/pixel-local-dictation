@@ -1,6 +1,6 @@
 # Phone setup and rollback
 
-For Oriol's Pixel 10 Pro XL on GrapheneOS with FUTO Keyboard (Play Store build 0.1.30). Oriol performs the manual settings steps; reversals are listed beside them. Before agent phone access, follow [safeguard activation](agent-safeguards.md). This guide supplies no authorization to install or change settings.
+For Oriol's Pixel 10 Pro XL on GrapheneOS with FUTO Keyboard (Play Store build 0.1.30). Oriol performs the manual settings steps; reversals are listed beside them. Before agent phone access, follow [safeguard activation](../agent-safeguards.md). This guide supplies no authorization to install or change settings.
 
 ## Setup (one time)
 
@@ -23,7 +23,7 @@ Settings, System, Keyboard, On-screen keyboard, **Local dictation** opens the ap
 
 ## Experiment builds
 
-The benchmark build is debuggable and shares the release signing key, so it updates the release build in place. Provisioning, the authorized window and restoration are specified by [the current batch](batch-1a-v1.md); the [setup record](setup-release-1a.md) owns the last observed build state. The old overnight setup instructions are retired.
+The benchmark build is debuggable and shares the release signing key, so it updates the release build in place. Provisioning, the authorized window and restoration are specified by [the current batch](../experiments/allocation/stage-1-runbook.md); the [setup record](../experiments/allocation/stage-1-setup.md) owns the last observed build state. The old overnight setup instructions are retired.
 
 ## Development connection — Oriol only
 

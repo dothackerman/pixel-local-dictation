@@ -15,8 +15,8 @@ class SyntheticReportTests(unittest.TestCase):
         root = Path(self.temp.name)
         (root / 'corpus/scripts').mkdir(parents=True)
         (root / 'models/guard').mkdir(parents=True)
-        (root / 'docs').mkdir()
-        (root / 'docs/baseline.md').write_text('German: D1 Hallo Welt.\nEnglish: E1 Hello world.\n')
+        (root / 'docs/evaluation').mkdir(parents=True)
+        (root / 'docs/evaluation/baseline.md').write_text('German: D1 Hallo Welt.\nEnglish: E1 Hello world.\n')
         (root / 'corpus/takes.json').write_text(json.dumps({'de.wav': 'de-1', 'en.wav': 'en-1'}))
         for lang, text in [('de', 'Hallo Welt.'), ('en', 'Hello world.')]:
             (root / f'corpus/scripts/{lang}-1.txt').write_text(text)

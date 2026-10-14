@@ -1,6 +1,6 @@
-# Release 1a setup record
+# Completed preparation — stage 1
 
-**Completed 2026-10-14; experiment launch remains separate.** [The frozen brief](batch-1a-v1.md) and private `corpus/lab/release-1a/manifest.json` own execution commands, artifact identities and remaining launch prerequisites. Completed setup is not a checklist for the next Sol session.
+**Completed 2026-10-14; experiment launch remains separate.** [The frozen brief](stage-1-runbook.md) and private `corpus/lab/release-1a/manifest.json` own execution commands, artifact identities and remaining launch prerequisites. Completed setup is not a checklist for the next Sol session.
 
 Oriol authorized measurement/evaluator setup, later benchmark provisioning and one public/synthetic phone smoke, then one additional smoke of revised instrumentation. Scope excluded personal-corpus ranking, model downloads/exports and experiment execution. Original limits were eight active setup hours, 10 GB additional storage, two dependency repair attempts, twelve smoke processes and sixty inference minutes; the final authorization extended only the process allowance to thirteen for that additional smoke.
 
@@ -8,7 +8,7 @@ Oriol authorized measurement/evaluator setup, later benchmark provisioning and o
 
 | Deliverable | Evidence / limit |
 |---|---|
-| Matched-platform evaluator, allocation controls, three diagnostic process modes, annotated endpoints and frozen commands | [Brief](batch-1a-v1.md); private environment, manifest and smoke records under `corpus/lab/release-1a/` |
+| Matched-platform evaluator, allocation controls, three diagnostic process modes, annotated endpoints and frozen commands | [Brief](stage-1-runbook.md); private environment, manifest and smoke records under `corpus/lab/release-1a/` |
 | Host validation | Review checkpoint: 42 Python tests passed; benchmark unit tests and instrumentation built offline. Later execution-helper checks are recorded in commit `0cc6dc8`. No batch inference validated that helper. |
 | Original device smoke | `device-setup.json`: one persistent process, two passes over German, English and silence; six results, coverage, counters and APK hashes checked. |
 | Revised instrumentation smoke | `device-setup-reviewed.json`: fresh process/run identities, six valid results, matching revised APK hashes, empty silence, no missing speech output or prefix-tail mismatch, valid memory counters, thermal maximum 0. **Historical-full mode was not exercised.** |

@@ -196,7 +196,7 @@ def main():
         retry_rule=dict(laptop_processes=2, phone_processes=2, thermal_retries_per_configuration=1,
                         output_suffixes=["-retry-1", "-retry-2"], reuse_completed_output=False),
         restoration=manifest.get('restoration', dict(owner=None, procedure=None, artifact_sha256=None)),
-        brief="docs/batch-1a-v1.md", brief_sha256=identity.sha(ROOT / "docs/batch-1a-v1.md"))
+        brief="docs/experiments/allocation/stage-1-runbook.md", brief_sha256=identity.sha(ROOT / "docs/experiments/allocation/stage-1-runbook.md"))
     contract_paths = [Path(c['manifest']) for c in comparisons]
     contract_paths += [Path(run['expected_manifest']) for run in runs]
     contract_paths += [LAB / name for name in ('quality-suite.json', 'diagnostic-suite.json')]
