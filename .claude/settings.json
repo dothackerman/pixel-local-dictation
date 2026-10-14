@@ -6,25 +6,60 @@
       "Bash(*platform-tools/adb*)",
       "Bash(*platform-tools/fastboot*)",
       "Bash(sudo:*)",
-      "Edit(.claude/**)",
-      "Write(.claude/**)",
-      "Edit(tools/phone)",
-      "Write(tools/phone)"
+      "Edit(/.claude)",
+      "Edit(/.claude/**)",
+      "Edit(/.codex)",
+      "Edit(/.codex/**)",
+      "Edit(/.agents)",
+      "Edit(/.agents/**)",
+      "Edit(/.git)",
+      "Edit(/.git/**)",
+      "Edit(/.aws)",
+      "Edit(/.aws/**)",
+      "Edit(/tools/phone)",
+      "Edit(/tools/git-hooks)",
+      "Edit(/tools/git-hooks/**)",
+      "Edit(/AGENTS.md)",
+      "Edit(/CLAUDE.md)"
     ],
     "allow": [
-  "Bash(tools/phone push-variant:*)",
-  "Bash(tools/phone lab)",
-  "Bash(tools/phone pull-results)"
-]
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone push-variant *)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone lab)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone pull-results)"
+    ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|apply_patch",
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/phone-guard.sh" }
+          {
+            "type": "command",
+            "command": "project_root=$(git rev-parse --show-toplevel) || exit 2; bash \"$project_root/.claude/hooks/phone-guard.sh\" || exit 2",
+            "timeout": 10
+          }
         ]
       }
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false,
+    "allowUnsandboxedCommands": true,
+    "excludedCommands": [
+      "/home/oriol/Projects/private/pixel-local-dictation/tools/phone *"
+    ],
+    "filesystem": {
+      "denyWrite": [
+        "./.claude",
+        "./.codex",
+        "./.agents",
+        "./.git",
+        "./.aws",
+        "./tools/phone",
+        "./tools/git-hooks",
+        "./AGENTS.md"
+      ]
+    }
   }
 }

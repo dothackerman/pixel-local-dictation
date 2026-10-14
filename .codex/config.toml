@@ -1,0 +1,20 @@
+default_permissions = "dictation"
+
+[features]
+hooks = true
+
+[permissions.dictation]
+extends = ":workspace"
+
+[permissions.dictation.filesystem.":workspace_roots"]
+".claude" = "read"
+".codex" = "read"
+".agents" = "read"
+".git" = "read"
+".aws" = "read"
+"tools/phone" = "read"
+"tools/git-hooks" = "read"
+"AGENTS.md" = "read"
+
+[permissions.dictation.network]
+enabled = true
