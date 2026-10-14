@@ -3,8 +3,8 @@
 Both harnesses use the same pre-tool policy in
 [phone_guard.py](../.claude/hooks/phone_guard.py). Codex's hook directory links to
 Claude's; registration and permission configuration remain harness-specific.
-The wrapper and existing Git pre-commit check are unchanged. `AGENTS.md` remains
-unchanged pending its separate follow-up.
+The wrapper and existing Git pre-commit check are unchanged. [AGENTS.md](../AGENTS.md)
+owns the shared phone boundary; this document covers setup and enforcement limits.
 
 ## Activation
 
