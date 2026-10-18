@@ -23,6 +23,7 @@ usage() {
   cat >&2 <<USAGE
 usage: tools/phone <subcommand>
   status            connected devices (read-only)
+  thermal           validated current thermal severity only (read-only)
   versions          Android/GrapheneOS build, API level, FUTO versions, input methods (read-only)
   install <apk>     install an APK whose package is exactly $PKG
   uninstall         uninstall $PKG only
@@ -41,6 +42,11 @@ USAGE
 }
 
 case "${1:-}" in
+  thermal)
+    [ "$#" -eq 1 ] || usage
+    # Read only the service status; no override/reset command is exposed.
+    dump=$("$ADB" shell dumpsys thermalservice)
+    printf '%s\n' "$dump" | python3 "$(dirname "$0")/thermal_status.py" ;;
   status)
     "$ADB" devices -l ;;
   versions)
