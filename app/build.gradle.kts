@@ -80,7 +80,7 @@ tasks.matching { it.name.matches(Regex("pre(Release|Benchmark)(AndroidTest)?Buil
 
 dependencies {
     // Recognizer runtime (ADR-003). tools/fetch-assets.sh provides the AAR and the model assets.
-    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
+    implementation(files(providers.gradleProperty("nativeRoleProfilerAar").orElse("libs/sherpa-onnx-1.13.8.aar").get()))
     testImplementation("junit:junit:4.13.2")
     // Real org.json for laptop unit tests of Variant.parse (the Android stub throws "not mocked").
     testImplementation("org.json:json:20240303")

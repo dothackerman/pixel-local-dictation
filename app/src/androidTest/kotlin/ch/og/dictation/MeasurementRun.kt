@@ -74,6 +74,12 @@ class MeasurementRun(private val context: Context, private val lab: File) {
     }
 
     fun run() {
+        val nativeRoleProfiling = when (val argument = androidx.test.platform.app.InstrumentationRegistry
+            .getArguments().getString("nativeRoleProfiler")) {
+            null -> false
+            "true" -> true
+            else -> error("unsupported nativeRoleProfiler argument: $argument")
+        }
         val manifest = JSONObject(File(lab, "measurement.json").readText())
         val mode = manifest.getString("mode")
         require(mode in setOf("unpaced-only", "paced-only", "persistent"))
@@ -87,34 +93,64 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         require(inputs.length() in 1..32)
         val artifacts = manifest.getJSONObject("artifacts")
         require(artifacts.length() > 0) { "missing artifact inventory" }
+        val measuredArtifacts = JSONObject()
         for (path in artifacts.keys()) {
             val file = File(lab, path).canonicalFile
             require(file.toPath().startsWith(lab.canonicalFile.toPath()))
-            require(sha(file) == artifacts.getString(path)) { "artifact hash mismatch: $path" }
+            val actual = sha(file)
+            require(actual == artifacts.getString(path)) { "artifact hash mismatch: $path" }
+            measuredArtifacts.put(path, actual)
         }
         val rawVariant = JSONObject(File(lab, "variant.json").readText())
         val variant = Variant.parse(rawVariant)
         val expectedProvenance = manifest.getJSONObject("provenance")
-        require(sha(File(context.packageCodePath)) == expectedProvenance.getString("build_sha256"))
-        require(instrumentationSha() == expectedProvenance.getString("test_build_sha256"))
+        val buildSha = sha(File(context.applicationInfo.sourceDir))
+        val testBuildSha = instrumentationSha()
+        require(buildSha == expectedProvenance.getString("build_sha256"))
+        require(testBuildSha == expectedProvenance.getString("test_build_sha256"))
+        val measuredInputs = JSONObject()
         for (i in 0 until inputs.length()) {
             val item = inputs.getJSONObject(i)
-            val file = File(lab, item.getString("path")).canonicalFile
-            require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
-            require(sha(file) == item.getString("sha256")) { "input hash mismatch before inference" }
+            val path = item.getString("path")
+            val actual = if (measuredInputs.has(path)) {
+                measuredInputs.getString(path)
+            } else {
+                val file = File(lab, path).canonicalFile
+                require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
+                sha(file)
+            }
+            require(actual == item.getString("sha256")) { "input hash mismatch before inference" }
+            measuredInputs.put(path, actual)
         }
+        val runId = UUID.randomUUID().toString()
         val provenance = manifest.getJSONObject("provenance")
             .put("platform", "phone").put("mode", mode).put("feed", 640)
-            .put("run_id", UUID.randomUUID().toString()).put("process_start_id", processStart)
-            .put("build_sha256", sha(File(context.packageCodePath)))
-            .put("test_build_sha256", instrumentationSha())
+            .put("run_id", runId).put("process_start_id", processStart)
+            .put("build_sha256", buildSha)
+            .put("test_build_sha256", testBuildSha)
             .put("configuration_sha256", sha(File(lab, "variant.json")))
         val report = JSONObject().put("variant", rawVariant).put("memory", memory)
             .put("takes", JSONArray()).put("endpoints", JSONArray())
+            .put("verifiedArtifacts", measuredArtifacts).put("verifiedInputs", measuredInputs)
+            .put("buildSha256", buildSha).put("testBuildSha256", testBuildSha)
+            .put("runId", runId).put("processStartId", processStart)
         val events = JSONArray()
         var droppedEvents = 0
         val timelineReport = JSONObject().put("clock", "CLOCK_MONOTONIC").put("events", events).put("eventLimit", 65536)
             .put("nativeAttribution", "absent").put("nativeClockAlignment", "unverified")
+            .put("nativeRoleProfilerRequested", nativeRoleProfiling)
+        val nativeClockSamples = JSONArray()
+        timelineReport.put("nativeClockSamples", nativeClockSamples)
+        var nativeClockAligned = true
+        fun sampleNativeClock(phase: String) {
+            val before = System.nanoTime()
+            val native = NativeRoleProfiler.clockNs()
+            val after = System.nanoTime()
+            val valid = after >= before && native in before..after
+            nativeClockAligned = nativeClockAligned && valid
+            nativeClockSamples.put(JSONObject().put("phase", phase).put("beforeNs", before)
+                .put("nativeNs", native).put("afterNs", after).put("valid", valid))
+        }
         report.put("timeline", timelineReport)
         fun record(event: TimelineEvent, input: Int? = null, repetition: Int? = null) = synchronized(events) {
             if (events.length() == 65536) { droppedEvents++; return@synchronized }
@@ -138,8 +174,16 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         wakeLock.acquire(60 * 60 * 1000L)
         val queue = Executors.newSingleThreadExecutor()
         var recognizer: Recognizer? = null
+        var nativeStarted = false
+        val profileFile = File(lab, "profile.json")
         File(lab, "result.json").writeText(result.toString(1))
         try {
+            if (nativeRoleProfiling) {
+                require(!profileFile.exists()) { "profile output already exists; stage a fresh lab" }
+                check(NativeRoleProfiler.start(variant.runtime.profile)) { "native collector was already active" }
+                nativeStarted = true
+                sampleNativeClock("beforeModelConstruction")
+            }
             memory("before-load")
             val started = SystemClock.elapsedRealtime()
             val model = ModelFiles.dir(File(lab, "model"))
@@ -191,6 +235,32 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 result.put("outcome", "failed")
                 result.put("cleanupFailure", cleanup.toString())
             } finally {
+                if (nativeStarted) {
+                    try {
+                        timeline.record(TimelineEvent("profileFlushStart"))
+                        sampleNativeClock("beforeNativeFlush")
+                        val complete = NativeRoleProfiler.finish(profileFile.absolutePath)
+                        sampleNativeClock("afterNativeFlush")
+                        timelineReport.put("nativeProfile", JSONObject().put("path", "profile.json")
+                            .put("enabled", variant.runtime.profile).put("complete", complete)
+                            .put("byteLimit", 64L * 1024 * 1024))
+                        check(complete) { "native collector reported incomplete or invalid spans" }
+                        check(profileFile.isFile && profileFile.length() <= 64L * 1024 * 1024) {
+                            "native profile missing or exceeds its byte limit"
+                        }
+                        timelineReport.getJSONObject("nativeProfile").put("bytes", profileFile.length())
+                            .put("sha256", sha(profileFile))
+                        check(nativeClockAligned) { "native clock is outside monotonic brackets" }
+                        timelineReport.put("nativeAttribution", if (variant.runtime.profile) "actual-ort-session-run" else "disabled-control")
+                            .put("nativeClockAlignment", "verified-brackets")
+                        memory("profile-flushed")
+                    } catch (profileFailure: Throwable) {
+                        result.put("outcome", "failed").put("nativeFailure", profileFailure.toString())
+                        timelineReport.put("nativeClockAlignment", if (nativeClockAligned) "unverified" else "invalid-brackets")
+                    } finally {
+                        timeline.record(TimelineEvent("profileFlushEnd"))
+                    }
+                }
                 timelineReport.put("valid", droppedEvents == 0).put("droppedEvents", droppedEvents)
                 if (droppedEvents > 0 && result.getString("outcome") == "complete") result.put("outcome", "invalid-timeline")
                 File(lab, "result.json").writeText(result.toString(1))
@@ -294,7 +364,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
     fun artifactSha(file: File): String = sha(file)
 
     fun instrumentationSha(): String = sha(File(androidx.test.platform.app.InstrumentationRegistry
-        .getInstrumentation().context.packageCodePath))
+        .getInstrumentation().context.applicationInfo.sourceDir))
 
     private fun sha(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
