@@ -1,6 +1,8 @@
 # Three-stage allocation workflow, version 1
 
-This is the executable contract for [the current experiment](../current.md). The private `corpus/lab/allocation-v1/manifest.json` owns exact commands, checksums, inputs, ordering, output paths, decode/audio bounds and budgets. Actual experiment execution has not started; public setup validation is recorded below.
+**Historical contract — experiment closed on 2026-10-19.** The [completed allocation archive](../../archive/allocation-2026-10-19.md) owns execution results, dated amendments and restoration. The remaining body preserves the original prepared workflow, including its original cooldown, time-cap and window rules; later amendments are retained in that archive. It is not a new launch authorization.
+
+The private `corpus/lab/allocation-v1/manifest.json` retains exact commands, checksums, inputs, ordering, output paths, decode/audio bounds and original budgets. Git snapshots and the pinned executed-plan copy identify the actual execution contract; this post-closure navigation edit does not refreeze it. Public setup validation is recorded below as historical preparation evidence.
 
 ## Frozen design
 

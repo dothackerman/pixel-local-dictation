@@ -1,6 +1,6 @@
 # Milestones and remaining work
 
-[Requirements](requirements.md) define product commitments. This roadmap retains the original milestone gates and unfinished obligations; **The only current execution plan is [Allocation and measurement](experiments/current.md).** It owns the next implementer's task and readiness. This roadmap owns unfinished product gates and future work; it supplies no additional runs.
+[Requirements](requirements.md) define product commitments. The [Allocation and measurement loop is complete](archive/allocation-2026-10-19.md); its archive owns the results and limitations. [Current status](experiments/current.md) records that no successor experiment is commissioned. This roadmap retains unfinished product gates and future directions; it supplies no additional runs.
 
 ## 1–2. Integration and local recognition — completed prototype gates
 
@@ -30,7 +30,7 @@ Oriol requested comparisons of quantization schemes (selective MatMul, finer per
 
 ## Validation gaps and unscheduled request
 
-These are retained obligations or uncertainties, outside the current allocation experiment:
+These are retained obligations or uncertainties, unresolved by the completed allocation experiment:
 
 - Answered-call interruption, longer and battery-only model survival, repeated-session heat/battery, and short/spontaneous/noisy or ambiguous-language use remain unverified by the milestone evidence. The one-hour locked-screen connection test had no completion evidence in the old plan; fresh-session connection checks do not establish unattended survival.
 - The assembled `tools/export-fp32.sh` was not rerun end to end in the recorded milestone work. The quantization step reproduced its encoder checksum; that does not prove a clean full export.
@@ -38,7 +38,7 @@ These are retained obligations or uncertainties, outside the current allocation 
 
 ## Future experiments
 
-These are planned directions from the earlier experiment strategy, **not prepared execution plans**. Review the current experiment's handback before freezing the next one; deferral does not cancel a commitment.
+These are planned directions from the earlier experiment strategy, **not prepared execution plans**. Review the [completed allocation handback and proposed next investigation](archive/allocation-2026-10-19.md#evidence-and-next-investigation) before freezing a successor; deferral does not cancel a commitment.
 
 | Order | Work to prepare | Decision sought |
 |---|---|---|

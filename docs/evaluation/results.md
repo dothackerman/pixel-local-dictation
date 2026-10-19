@@ -2,6 +2,8 @@
 
 Evidence for requirement R4. Raw recordings, transcripts and reports stay in the gitignored `corpus/`; this file holds the aggregate numbers and how they were obtained. The approved protocol and its limits are below; [the October 14 audit](../research/evaluation-audit-2026-10-14.md) owns the later phone comparisons.
 
+The **[completed allocation loop, 14–19 October 2026](../archive/allocation-2026-10-19.md)** owns the subsequent all-engine quality, laptop/phone resource tradeoffs, environment/control limitations and final restoration evidence. Those diagnostic results do not close R4's comparison through the installed FUTO path. The sections below retain their dated historical scope.
+
 ## Approved measurement protocol
 
 Revised with Oriol on 2026-10-10: five German and five English scripts about his topics, planned at 45–60 s, with names, dates, amounts and technical terms. Each was to be read into the benchmark app and FUTO on the same day, timing FUTO from Stop by stopwatch. This is matched live speech, not identical audio. Benchmark copies require per-run agreement; return to the release build afterwards.
