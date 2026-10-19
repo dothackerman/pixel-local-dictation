@@ -111,6 +111,27 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             .put("configuration_sha256", sha(File(lab, "variant.json")))
         val report = JSONObject().put("variant", rawVariant).put("memory", memory)
             .put("takes", JSONArray()).put("endpoints", JSONArray())
+        val events = JSONArray()
+        var droppedEvents = 0
+        val timelineReport = JSONObject().put("clock", "CLOCK_MONOTONIC").put("events", events).put("eventLimit", 65536)
+            .put("nativeAttribution", "absent").put("nativeClockAlignment", "unverified")
+        report.put("timeline", timelineReport)
+        fun record(event: TimelineEvent, input: Int? = null, repetition: Int? = null) = synchronized(events) {
+            if (events.length() == 65536) { droppedEvents++; return@synchronized }
+            val row = JSONObject().put("phase", event.phase).put("ns", event.ns)
+            event.chunkId?.let { row.put("chunkId", it) }
+            event.samples?.let { row.put("samples", it) }
+            event.active?.let { row.put("active", it) }
+            event.queued?.let { row.put("queued", it) }
+            event.scheduledNs?.let { row.put("scheduledNs", it).put("latenessNs", event.ns - it) }
+            event.language?.let { row.put("language", it) }
+            event.fallback?.let { row.put("fallback", it) }
+            input?.let { row.put("inputIndex", it) }
+            repetition?.let { row.put("repetition", it) }
+            events.put(row)
+            Unit
+        }
+        val timeline = TimelineObserver { record(it) }
         val result = JSONObject().put("schema", 4).put("outcome", "running").put("provenance", provenance).put("report", report)
         val wakeLock = context.getSystemService(android.os.PowerManager::class.java)
             .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "dictation:measurement")
@@ -123,11 +144,16 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             val started = SystemClock.elapsedRealtime()
             val model = ModelFiles.dir(File(lab, "model"))
             val lid = File(lab, "lid").takeIf { it.isDirectory }?.let { ModelFiles.dir(it) }
-            recognizer = Pipeline.recognizer(variant, model, lid,
-                if (variant.isDictionary) File(lab, variant.hotwords.file).absolutePath else "")
+            timeline.record(TimelineEvent("modelConstructionStart"))
+            try {
+                recognizer = Pipeline.recognizer(variant, model, lid,
+                    if (variant.isDictionary) File(lab, variant.hotwords.file).absolutePath else "", timeline)
+            } finally { timeline.record(TimelineEvent("modelConstructionEnd")) }
             report.put("coldLoadMs", SystemClock.elapsedRealtime() - started)
             memory("after-load")
-            recognizer.transcribe(FloatArray(SAMPLE_RATE))
+            timeline.record(TimelineEvent("silenceWarmupStart", samples = SAMPLE_RATE))
+            try { recognizer.transcribe(FloatArray(SAMPLE_RATE)) }
+            finally { timeline.record(TimelineEvent("silenceWarmupEnd", samples = SAMPLE_RATE)) }
             memory("after-warmup")
             repeat(repetitions) { repetition ->
                 for (i in 0 until inputs.length()) {
@@ -135,14 +161,15 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                     val file = File(lab, item.getString("path")).canonicalFile
                     require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
                     require(sha(file) == item.getString("sha256")) { "input hash mismatch" }
-                    val row = runInput(variant, recognizer, file, item, queue, mode != "unpaced-only")
+                    val inputTimeline = TimelineObserver { record(it, i, repetition) }
+                    val row = runInput(variant, recognizer, file, item, queue, mode != "unpaced-only", inputTimeline)
                         .put("id", item.getString("id")).put("file", file.name).put("repetition", repetition)
                     report.getJSONArray(if (item.has("reference")) "endpoints" else "takes").put(row)
                     memory("buffer-released")
                     File(lab, "result.json").writeText(result.toString(1))
                 }
             }
-            result.put("outcome", "complete")
+            result.put("outcome", if (droppedEvents == 0) "complete" else "invalid-timeline")
         } catch (failure: Throwable) {
             result.put("outcome", "failed")
             result.put("failure", failure.toString())
@@ -151,14 +178,21 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             try {
                 queue.shutdown()
                 if (queue.awaitTermination(10, TimeUnit.MINUTES)) {
-                    recognizer?.let { Pipeline.release(it) }
+                    recognizer?.let {
+                        timeline.record(TimelineEvent("recognizerReleaseStart"))
+                        try { Pipeline.release(it) } finally { timeline.record(TimelineEvent("recognizerReleaseEnd")) }
+                    }
                     memory("recognizer-released")
                 } else {
+                    result.put("outcome", "failed")
                     result.put("failure", "decode executor did not terminate; recognizer retained until process exit")
                 }
             } catch (cleanup: Throwable) {
+                result.put("outcome", "failed")
                 result.put("cleanupFailure", cleanup.toString())
             } finally {
+                timelineReport.put("valid", droppedEvents == 0).put("droppedEvents", droppedEvents)
+                if (droppedEvents > 0 && result.getString("outcome") == "complete") result.put("outcome", "invalid-timeline")
                 File(lab, "result.json").writeText(result.toString(1))
                 wakeLock.release()
             }
@@ -166,7 +200,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
     }
 
     private fun runInput(v: Variant, recognizer: Recognizer, file: File, item: JSONObject,
-                         queue: java.util.concurrent.ExecutorService, paced: Boolean): JSONObject {
+                         queue: java.util.concurrent.ExecutorService, paced: Boolean, timeline: TimelineObserver): JSONObject {
         val audio = readAudio(file, item)
         val count = audio.size
         memory("buffer-loaded")
@@ -207,7 +241,9 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 return text
             }
         }
-        val transcriber = TakeTranscriber({ timed }, segmenter, measuredQueue, { it.run() }, v.post) {}
+        val transcriber = TakeTranscriber({ timed }, segmenter, measuredQueue, { it.run() }, v.post, timeline) {}
+        val captureStartNs = System.nanoTime()
+        timeline.record(TimelineEvent("captureStart", ns = captureStartNs))
         val start = SystemClock.elapsedRealtime()
         var i = 0
         while (i < audio.size) {
@@ -216,8 +252,12 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 val wait = start + (i + n) * 1000L / SAMPLE_RATE - SystemClock.elapsedRealtime()
                 if (wait > 0) Thread.sleep(wait)
             }
-            transcriber.feed(audio.copyOfRange(i, i + n)); i += n
+            val frame = audio.copyOfRange(i, i + n)
+            timeline.record(TimelineEvent("feedStart", samples = n,
+                scheduledNs = if (paced) captureStartNs + (i + n) * 1_000_000_000L / SAMPLE_RATE else null))
+            transcriber.feed(frame); i += n
         }
+        transcriber.timelineSnapshot("producerStop", captureStartNs + count * 1_000_000_000L / SAMPLE_RATE)
         val stopped = SystemClock.elapsedRealtime()
         val stopState = synchronized(stateLock) { JSONObject().put("active", active.get()).put("queued", pending.get()) }
         val residual = count - covered

@@ -176,31 +176,43 @@ class LanguageSwitchedRecognizer(
     private val v: Variant, lid: ModelFiles, build: (String) -> SherpaRecognizer,
     /** Cohere reads the language from each stream, so one instance serves both languages (2026-10-12). */
     private val perStream: Boolean = false,
+    private val timeline: TimelineObserver? = null,
 ) : Recognizer {
     private val recognizers = if (perStream) build("de").let { mapOf("de" to it, "en" to it) } else mapOf("de" to build("de"), "en" to build("en"))
     private val identifier: SpokenLanguageIdentification
     @Volatile private var language = v.lid.fallback
 
     init {
-        val config = SpokenLanguageIdentificationConfig()
-        config.whisper.encoder = lid.onnx("encoder")
-        config.whisper.decoder = lid.onnx("decoder")
-        config.numThreads = v.threads
-        config.provider = RuntimeConfig.provider(v, lid, lid = true)
-        identifier = SpokenLanguageIdentification(lid.assets, config)
+        timeline?.emit(TimelineEvent("lidLoadStart"))
+        try {
+            val config = SpokenLanguageIdentificationConfig()
+            config.whisper.encoder = lid.onnx("encoder")
+            config.whisper.decoder = lid.onnx("decoder")
+            config.numThreads = v.threads
+            config.provider = RuntimeConfig.provider(v, lid, lid = true)
+            identifier = SpokenLanguageIdentification(lid.assets, config)
+            timeline?.emit(TimelineEvent("lidReady"))
+        } catch (failure: Throwable) {
+            recognizers.values.toSet().forEach { runCatching { it.release() } }
+            throw failure
+        }
     }
 
     override fun beginTake(firstChunk: FloatArray): String {
         val probe = (v.lid.probeSeconds * SAMPLE_RATE).toInt()
         val x = if (probe > 0 && probe < firstChunk.size) firstChunk.copyOfRange(0, probe) else firstChunk
-        val stream = identifier.createStream()
+        timeline?.emit(TimelineEvent("lidStart", samples = x.size))
         val detected = try {
-            stream.acceptWaveform(x, SAMPLE_RATE)
-            identifier.compute(stream)
+            val stream = identifier.createStream()
+            try {
+                stream.acceptWaveform(x, SAMPLE_RATE)
+                identifier.compute(stream)
+            } finally { stream.release() }
         } finally {
-            stream.release()
+            timeline?.emit(TimelineEvent("lidEnd", samples = x.size))
         }
         language = if (detected in recognizers) detected else v.lid.fallback
+        timeline?.emit(TimelineEvent("lidDecision", samples = x.size, language = language, fallback = detected !in recognizers))
         Log.i(TAG, "language detected: '$detected', using $language")
         return detected
     }
@@ -208,7 +220,7 @@ class LanguageSwitchedRecognizer(
     override fun transcribe(samples: FloatArray): String =
         recognizers.getValue(language).transcribe(samples, if (perStream) mapOf("language" to language) else emptyMap())
 
-    fun release() { recognizers.values.toSet().forEach { it.release() }; identifier.release() }
+    fun release() { try { recognizers.values.toSet().forEach { it.release() } } finally { identifier.release() } }
 }
 
 /**
@@ -257,14 +269,21 @@ class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : S
 
 /** Builds the pipeline a [Variant] describes; shared by the daily app (assets) and LabTest (files). */
 object Pipeline {
-    fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = ""): Recognizer {
+    fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = "", timeline: TimelineObserver? = null): Recognizer {
+        fun buildAsr(build: () -> SherpaRecognizer): SherpaRecognizer {
+            timeline?.emit(TimelineEvent("asrLoadStart"))
+            val recognizer = try { build() }
+                finally { timeline?.emit(TimelineEvent("asrLoadEnd")) }
+            timeline?.emit(TimelineEvent("asrReady"))
+            return recognizer
+        }
         val inner: Recognizer = when (v.family) {
-            "parakeet" -> SherpaRecognizer.parakeet(v, model, hotwordsPath)
+            "parakeet" -> buildAsr { SherpaRecognizer.parakeet(v, model, hotwordsPath) }
             "whisper" -> SherpaRecognizer.whisper(v, model)
-            "canary" -> LanguageSwitchedRecognizer(v, requireNotNull(lid) { "canary needs the language identifier's files" }, { SherpaRecognizer.canary(v, model, it) })
+            "canary" -> LanguageSwitchedRecognizer(v, requireNotNull(lid) { "canary needs the language identifier's files" }, { lang -> buildAsr { SherpaRecognizer.canary(v, model, lang) } }, timeline = timeline)
             "qwen3" -> SherpaRecognizer.qwen3(v, model, hotwordsPath)
-            "cohere" -> if (lid != null && v.cohere.language.isEmpty()) LanguageSwitchedRecognizer(v, lid, { SherpaRecognizer.cohere(v, model, it) }, perStream = true)
-                        else SherpaRecognizer.cohere(v, model)
+            "cohere" -> if (lid != null && v.cohere.language.isEmpty()) LanguageSwitchedRecognizer(v, lid, { lang -> buildAsr { SherpaRecognizer.cohere(v, model, lang) } }, perStream = true, timeline = timeline)
+                        else buildAsr { SherpaRecognizer.cohere(v, model) }
             else -> throw IllegalArgumentException(v.family)
         }
         return if (v.post.swissSs) SwissSpelling(inner) else inner

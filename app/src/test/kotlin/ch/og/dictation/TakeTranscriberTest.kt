@@ -1,6 +1,10 @@
 package ch.og.dictation
 
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.Collections
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -8,6 +12,59 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TakeTranscriberTest {
+    @Test fun stopReportsActiveAndQueuedWorkAndFinalWaitsForDrain() {
+        val queue = Executors.newSingleThreadExecutor()
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val done = CountDownLatch(1)
+        val events = Collections.synchronizedList(ArrayList<TimelineEvent>())
+        val rec = FakeRecognizer {
+            if (it[0] == 1f) { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
+            "word"
+        }
+        try {
+            val take = TakeTranscriber({ rec }, ChunkSegmenter(pending = seg(4)), queue, direct,
+                timeline = TimelineObserver { events.add(it) }) {}
+            take.feed(seg(1)); assertTrue(entered.await(5, TimeUnit.SECONDS))
+            take.feed(seg(2)); take.timelineSnapshot("producerStop")
+            take.finish { assertEquals("word word word", it.getOrThrow()); done.countDown() }
+            assertEquals(1L, done.count)
+            val stopped = events.single { it.phase == "producerStop" }
+            assertEquals(true, stopped.active); assertEquals(1, stopped.queued)
+            release.countDown(); assertTrue(done.await(5, TimeUnit.SECONDS))
+            val phases = events.map { it.phase }
+            assertTrue(phases.indexOf("firstUsablePreview") > phases.indexOf("producerStop"))
+            assertTrue(phases.indexOf("finishDrain") > phases.lastIndexOf("chunkWorkerEnd"))
+            assertTrue(phases.indexOf("finalCallback") > phases.indexOf("finishDrain"))
+            assertEquals(listOf(0, 1, 2), events.filter { it.phase == "chunkReady" }.map { it.chunkId })
+            assertEquals(1, events.count { it.phase == "firstUsablePreview" })
+        } finally { release.countDown(); queue.shutdownNow(); queue.awaitTermination(5, TimeUnit.SECONDS) }
+    }
+
+    @Test fun languageGateKeepsTheFullOpeningChunkAndBlankOutputIsNotUsable() {
+        val events = ArrayList<TimelineEvent>(); val decoded = ArrayList<FloatArray>()
+        val opening = floatArrayOf(1f, 2f, 3f, 4f)
+        var gate: FloatArray? = null; var result: String? = null
+        val rec = object : Recognizer {
+            override fun beginTake(firstChunk: FloatArray): String { gate = firstChunk; return "unsupported" }
+            override fun transcribe(samples: FloatArray): String {
+                decoded.add(samples); return if (samples === opening) " " else "usable"
+            }
+        }
+        val take = TakeTranscriber({ rec }, ChunkSegmenter(), direct, direct,
+            timeline = TimelineObserver { events.add(it) }) {}
+        take.feed(opening); take.feed(seg(2)); take.finish { result = it.getOrThrow() }
+        assertTrue(gate === opening); assertTrue(decoded.first() === opening)
+        assertEquals("usable", result)
+        assertEquals(1, events.single { it.phase == "firstUsablePreview" }.chunkId)
+    }
+
+    @Test fun diagnosticFailureDoesNotChangeRecognitionOrDelivery() {
+        var result: String? = null
+        val take = TakeTranscriber({ bySample }, ChunkSegmenter(), direct, direct,
+            timeline = TimelineObserver { error("diagnostic failure") }) {}
+        take.feed(seg(1)); take.finish { result = it.getOrThrow() }
+        assertEquals("eins", result)
+    }
+
     /** Runs jobs only when told to, like a busy decode thread. */
     private class Queue : Executor {
         val jobs = ArrayDeque<Runnable>()
