@@ -23,7 +23,7 @@ Settings, System, Keyboard, On-screen keyboard, **Local dictation** opens the ap
 
 ## Experiment builds
 
-The benchmark build is debuggable and shares the release signing key, so it updates the release build in place. Provisioning, the authorized window and restoration are specified by [the current batch](../experiments/allocation/stage-1-runbook.md); the [setup record](../experiments/allocation/stage-1-setup.md) owns the last observed build state. The old overnight setup instructions are retired.
+The benchmark build is debuggable and shares the release signing key, so it updates the release build in place. The [completed allocation archive](../archive/allocation-2026-10-19.md) records the last verified restoration to the original setup baseline. Any future provisioning and restoration belong to a separately authorized work order under [the protocol](../experiments/protocol.md).
 
 ## Development connection — Oriol only
 

@@ -4,6 +4,7 @@ Research notes are dated evidence and proposed tests, not execution instructions
 
 | Question | Evidence owner |
 |---|---|
+| What improvement lever remains after the completed allocation loop? | [Remaining levers, October 19](research/remaining-improvement-levers-2026-10-19.md) |
 | What improved on the development set, and what can it establish? | [Evaluation audit, October 14](research/evaluation-audit-2026-10-14.md) |
 | Why did Qwen truncate and beam search delete speech? | [Adapter diagnosis](research/loop-investigation-2026-10-12.md), [precision diagnosis](research/beam-investigation-2026-10-12.md) |
 | Can allocation, precision, scheduling or another backend make a winner deployable? | [Runtime research, October 14](research/runtime-options-2026-10-14.md) |

@@ -1,9 +1,7 @@
 # Runtime and deployment options, 2026-10-14
 
 Research and local public-audio diagnostics; no phone access or production changes. This note
-provides evidence for [the current experiment](../experiments/current.md) and [future work](../roadmap.md#future-experiments). Allocation adapters and measurement modes proposed here were subsequently prepared for [release 1a](../experiments/allocation/stage-1-runbook.md); their comparison loop has not run. The latest phone
-evidence is the private `corpus/lab/handback-2026-10-13.md` and its linked raw reports; earlier
-precision evidence remains authoritative in [beam investigation](beam-investigation-2026-10-12.md).
+provides evidence for [the current experiment](../experiments/current.md) and [future work](../roadmap.md#future-experiments). Allocation adapters and measurement modes proposed here were subsequently tested in [the completed allocation experiment](../archive/allocation-2026-10-19.md). Its archive owns newer results and cohort limitations; the analysis below records the preparation-time evidence and proposals. Earlier precision evidence remains authoritative in [beam investigation](beam-investigation-2026-10-12.md).
 
 ## What is actually missing
 

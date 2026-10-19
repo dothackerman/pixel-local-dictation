@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Frozen allocation barriers and aggregate diagnostic handback; never infer."""
+"""Offline allocation evidence checks and scientific summary; never infer.
+
+Historical execution accounting remains in the immutable completed handback.
+Outputs are exclusively created; no ledger or launch-state dependency."""
 import argparse
 import json
 from pathlib import Path
 import evaluate_v4 as evaluator
 import measurement_identity as identity
-import release_report
 
 RULE = {"normalized_text_mismatches_allowed": 0}
 
@@ -25,15 +27,18 @@ def input_sample_errors(envelope,expected):
 
 
 def validate_run(manifest, run_id):
-    result,output=release_report.evaluate(manifest,run_id)
     run=next(r for r in manifest['runs']+manifest['retry_options'] if r['id']==run_id)
     expected=read(run['expected_manifest'])
+    envelope=read(run['output'])
+    result=evaluator.compare(envelope,envelope,expected,expected)
+    result['check']='single-run evidence and diagnostics; not independent repetition'
+    result['run_id']=run_id
     if run.get('mode') not in ('quality-full','historical-full'):
-        errors=input_sample_errors(read(run['output']),expected)
+        errors=input_sample_errors(envelope,expected)
         if errors:
             result['evidence']='incomplete'
             result['evidence_errors']+=errors
-    return result,output
+    return result,run['validation_output']
 
 
 def resource_metrics(envelope):
@@ -146,15 +151,12 @@ def stage_gate(manifest, stage, replacements=None):
                 rows=rows, comparisons=deltas, acceptance='diagnostic-only', recording_trigger='unchanged; not evaluated')
 
 
-def aggregate(manifest, replacements=None, events=None, now=None, storage_growth=None):
+def aggregate(manifest, replacements=None):
     stages = [stage_gate(manifest, i, replacements) for i in (1, 2, 3)]
     invalid = False
-    outcomes={e['run']:e['outcome'] for e in events or [] if e['action']=='finish'}
     for run in manifest['runs'] + manifest['retry_options']:
-        if outcomes.get(run['id']) in ('transient','timeout'):
-            continue
         if not Path(run['output']).exists():
-            if outcomes.get(run['id'])=='failed' or (run.get('raw_output') and Path(run['raw_output']).exists()):
+            if run.get('raw_output') and Path(run['raw_output']).exists():
                 invalid=True
             continue
         try:
@@ -201,82 +203,33 @@ def aggregate(manifest, replacements=None, events=None, now=None, storage_growth
                 status='completed' if all(s['evidence'] == 'complete' for s in stages) else 'blocked' if invalid else 'partial',
                 stages=stages, decisions=decisions, ranking=manifest['ranking'], recommendation='Review matched deltas and tradeoffs; no meaningful-gain threshold is approved.',
                 acceptance='diagnostic-only', recording_trigger='unchanged; not evaluated')
-    if events is not None:
-        from allocation_execution import work_accounting
-        runs = {r['id']:r for r in manifest['runs']+manifest['retry_options']}
-        if now is None:
-            from datetime import datetime, timezone
-            now=datetime.now(timezone.utc)
-        work, spent = work_accounting(events,now)
-        starts=[e for e in events if e['action']=='start']
-        attempts=[]
-        for e in events:
-            if e['action']!='finish':
-                continue
-            run=runs[e['run']]
-            paths=[run[k] for k in ('output','raw_output','validation_output') if k in run and Path(run[k]).is_file()]
-            attempts.append(dict(run=e['run'],outcome=e['outcome'],at=e['at'],evidence=identity.files(paths),
-                                 quality_resource_evidence='see retained validation' if Path(run['validation_output']).exists() else 'unavailable'))
-        result['accounting']=dict(owner=events[-1]['owner'] if events else None,active_work=work,
-            started_processes={p:sum(runs[e['run']]['platform']==p for e in starts) for p in ('laptop','phone')},
-            active_seconds={f's{s}-{p}':seconds for (s,p),seconds in spent.items()},replacements=replacements or {},attempts=attempts,storage_growth_bytes=storage_growth,
-            restoration=[e['restoration'] for e in events if e['action']=='pause-work' and e.get('restoration')],
-            deviations=[dict(at=e['at'],reason=e['reason']) for e in events if e['action']=='note'],
-            final_state='restoration/work closure pending' if work else 'work closed; see restoration attestations')
     return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('validate', 'compare', 'gate', 'aggregate', 'record'))
+    parser.add_argument('action', choices=('validate', 'compare', 'gate', 'aggregate'))
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--id')
-    parser.add_argument('--source')
-    parser.add_argument('--replacements', help='JSON file from current next-step gate')
-    parser.add_argument('--output', type=Path)
+    parser.add_argument('--replacements', help='historical effective run replacement mapping (JSON)')
+    parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if args.action != 'aggregate' and args.id is None:
+        parser.error('--id is required for validate, compare and gate')
     manifest = read(args.manifest)
-    if args.action == 'record':
-        import record_release_result
-        selected=next(r for r in manifest['runs']+manifest['retry_options'] if r['id']==args.id)
-        # Legacy slots are platform-wide; the new contract allocates them per
-        # stage. Keep all evidence visible for global freshness checks while
-        # exposing only the selected stage's retry slots to that old adapter.
-        adapted={}
-        for key in ('runs','retry_options'):
-            adapted[key]=[]
-            for run in manifest[key]:
-                entry=dict(run)
-                if entry['stage']!=selected['stage']:
-                    entry.pop('retry_slot',None)
-                adapted[key].append(entry)
-        record_release_result.record(dict(manifest,**adapted), args.id, args.source)
-        return
     if args.action == 'validate':
-        result, output = validate_run(manifest, args.id)
+        result, _ = validate_run(manifest, args.id)
     elif args.action == 'compare':
         comparison = next(c for c in manifest['comparisons'] + [c for r in manifest['retry_options'] for c in r['comparisons']]
-                          if c['output'] == str(args.output))
-        result, output = compare(manifest, comparison), args.output
+                          if c['id'] == args.id)
+        result = compare(manifest, comparison)
     else:
         replacements = read(args.replacements) if args.replacements else {}
         if args.action == 'gate':
             result = stage_gate(manifest, int(args.id), replacements)
         else:
-            from allocation_execution import Execution
-            from datetime import datetime, timezone
-            log=args.manifest.parent/'execution-events.jsonl'
-            if log.exists():
-                owner=json.loads(log.read_text().splitlines()[-1])['owner']
-                execution=Execution(args.manifest,owner)
-                with execution.locked() as events:
-                    state=execution.state(events)
-                    baseline=next(e['storage_baseline'] for e in events if e['action']=='acquire')
-                    result=aggregate(manifest,state[4],events,datetime.now(timezone.utc),execution.storage()-baseline)
-            else:
-                result=aggregate(manifest,replacements)
-        output = args.output
-    with Path(output).open('x') as target:
+            result=aggregate(manifest,replacements)
+    with args.output.open('x') as target:
         json.dump(result, target, indent=2)
     raise SystemExit(result.get('evidence', 'complete') != 'complete')
 
