@@ -17,6 +17,7 @@ The completed experiment tested whether allocation changes can make existing qua
 | Design rationale and supersession | [ADRs](docs/decisions.md) |
 | Model/runtime evidence, consulted by question | [Research index](docs/research.md) |
 | Daily use and rollback | [Setup](docs/setup/daily-use.md) |
+| Stage and recover an authorized phone experiment | [Phone lab operations](docs/phone-lab.md) |
 
 ## Completed work — reference only
 

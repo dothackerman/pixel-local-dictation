@@ -6,7 +6,7 @@ For Oriol's Pixel 10 Pro XL on GrapheneOS with FUTO Keyboard (Play Store build 0
 
 | Step | Where | Reverse |
 |---|---|---|
-| 1. Install the app | Initial setup remains manual. For a compatible replacement of an installed build, use [the verified install/recovery workflow](../phone-lab.md). | Verified recovery for compatible replacements; destructive removal still requires reversing step 4 first. |
+| 1. Install the app | Oriol installs the prepared, signed APK. For experiment replacements, use [phone lab operations](../phone-lab.md#compatible-apk-replacement). | Reverse step 4 before removing it. |
 | 2. Enable it as an input method | Settings, System, Keyboard, On-screen keyboard: switch on **Local dictation**. Android warns that a keyboard can read what you type; this applies to every keyboard, FUTO included. | Switch it off in the same list |
 | 3. Grant microphone | The first time the panel opens it asks; choose **While using the app**. If you chose "Don't ask again", grant it under Settings, Apps, Dictation, Permissions. | Revoke in the same place |
 | 4. Point FUTO at it | FUTO Keyboard settings, Voice Input: switch on **Disable built-in voice input** (subtitle "use voice input provided by external app"). | Switch it off. FUTO's own recognizer and the Multilingual-244 model are untouched and come back immediately. |
@@ -20,10 +20,6 @@ Tap FUTO's microphone key. The panel replaces the keyboard and starts recording 
 ## Benchmark mode
 
 Settings, System, Keyboard, On-screen keyboard, **Local dictation** opens the app's settings. **Benchmark mode: save recordings** is off by default. While it is on, the panel shows a red banner and every take ended with Stop is stored on the phone as audio plus a result file; **Delete benchmark data** removes them all. Reverse: switch it off and delete.
-
-## Experiment builds
-
-The benchmark build is debuggable and shares the release signing key, so it updates the release build in place. The [completed allocation archive](../archive/allocation-2026-10-19.md) records the last verified restoration to the original setup baseline. Any future provisioning and restoration belong to a separately authorized work order under [the protocol](../experiments/protocol.md).
 
 ## Development connection — Oriol only
 

@@ -1,70 +1,21 @@
-# Claude and Codex safeguard setup
+# Agent phone safeguards
 
-Both harnesses use the same pre-tool policy in
-[phone_guard.py](../.claude/hooks/phone_guard.py). Codex's hook directory links to
-Claude's; registration and permission configuration remain harness-specific.
-The wrapper owns the app-scoped staging/recovery contract; the existing Git pre-commit check remains unchanged. [AGENTS.md](../AGENTS.md)
-owns the shared phone boundary; this document covers setup and enforcement limits.
+For activating or troubleshooting Claude/Codex access. [AGENTS.md](../AGENTS.md) owns the phone boundary; [phone lab operations](phone-lab.md) owns usage and preservation limits. Permission rules permit tool execution, not experiments: current-task authorization is still required.
 
 ## Activation
 
-Start a fresh session in the repository root. In Codex, use `/hooks` to review
-and trust the new pre-tool hook before any phone work. Project trust does not
-replace hook trust; untrusted hooks are skipped. In Claude, inspect `/hooks` and
-`/sandbox` to confirm the project registration and write restrictions loaded.
-See the official [Codex hooks](https://learn.chatgpt.com/docs/hooks) and
-[Claude sandbox](https://code.claude.com/docs/en/sandboxing) documentation.
+Start a fresh session in the repository root. In Codex, review and trust this repository's pre-tool hook through `/hooks` before phone contact; project trust is separate. In Claude, check `/hooks` and `/sandbox` for the project registration and filesystem restrictions.
 
-Invoke the wrapper with its **exact absolute checkout path**, followed by one
-subcommand. Relative calls are rejected because Codex's execution directory can
-be overridden independently of its session directory. No chaining, redirects,
-substitution, or option-style arguments are accepted. Returning success from
-the guard does not itself grant permission to run the command.
+Both harnesses share [the pre-tool policy](../.claude/hooks/phone_guard.py). Check [Claude settings](../.claude/settings.json), [the Codex profile](../.codex/config.toml) and [Codex rules](../.codex/rules/phone.rules) for protected paths, sandbox exceptions and automatic approvals. Review those exact-checkout paths again for a worktree. `stop-app` remains separately approved.
 
-`stop-app` remains separately approved, accepts no arguments, and is never called implicitly.
+The guard accepts one exact absolute wrapper invocation, without chaining, redirects, substitution or option-style arguments. Claude's wrapper sandbox exemption and Codex's permitted escalations exist because sandbox-local connections cannot reach the host phone service; they retain the same authorization boundary.
 
-The automatic approvals cover `inspect`, `push-variant`, `lab`,
-`pull-results`, and `recover` in both harnesses. Run-bearing commands require
-the same explicit run identity; `lab` also requires the exact locally retained
-APK of the already-installed instrumentation. See [phone operations](phone-lab.md). They do not authorize other phone activity or
-override the experiment brief. Claude exempts only this checkout's absolute
-wrapper command from its sandbox: Linux sandbox localhost cannot reach the host
-service. Codex's corresponding rules permit those five wrapper operations
-outside the sandbox. Other approvals remain subject to each harness's normal
-permission process.
-
-The local Codex user configuration was migrated from `sandbox_mode` and
-`sandbox_workspace_write` to an equivalent workspace permission profile with
-network access retained. This lets the project's `dictation` profile take
-effect. On another installation, remove any loaded legacy sandbox selector
-before using this profile; those selectors override `default_permissions`.
-See [Codex permissions](https://learn.chatgpt.com/docs/permissions).
-
-For another checkout or worktree, review its absolute-path lab approvals and
-Claude wrapper exemption separately. The guard derives its allowed wrapper
-from its own checkout; it will not accept another checkout's wrapper.
+If Codex ignores the project permission profile, check for legacy user-level `sandbox_mode` or `sandbox_workspace_write` selectors overriding it. See [Codex permissions](https://learn.chatgpt.com/docs/permissions), [hooks](https://learn.chatgpt.com/docs/hooks) and [Claude sandboxing](https://code.claude.com/docs/en/sandboxing).
 
 ## Verification and limits
 
-Run `python3 tools/test_agent_guard.py` for synthetic shell, native edit, patch,
-symlink, malformed-input, and launcher-failure checks. These checks never
-execute the wrapper. Filesystem profiles also protect the gate files against
-subprocess writes. The existing instruction symlink is protected by edit rules
-and the shared guard; its target is read-only in both filesystem configurations.
+Run `python3 tools/test_agent_guard.py` for host-only policy checks; these establish neither hook trust nor live filesystem enforcement. Claude's live filesystem enforcement remains unverified in the recorded checks; verify it in the installed harness before unattended phone work.
 
-On 2026-10-14, all tools unit tests passed and the installed Codex sandbox denied
-non-mutating write-open probes on the gate files while allowing a temporary
-ordinary project file. Claude's configuration loaded, but its live filesystem
-probe did not execute under the narrow tool allowlist. The standalone Anthropic
-sandbox runtime 0.0.79 probe failed on this environment's nested-user-namespace
-restriction. Claude's live filesystem enforcement therefore remains unverified;
-confirm it through the installed harness before unattended phone work.
+Hooks cannot inspect arbitrary subprocess behavior or external tool servers, and some tools skip hooks. Input to an existing terminal session is not rechecked by Codex's hook. Filesystem restrictions and command-prefix rules supplement hooks; none provides device isolation.
 
-These are matching project guardrails, not device isolation. Codex does not run
-the pre-tool hook again for input sent to an existing terminal session, and
-some specialized tools skip hooks. The shared guard blocks bare interactive
-interpreters, but cannot inspect arbitrary program behavior or external tool
-servers. Hooks can also be disabled or left untrusted. Escalated commands and
-Claude's wrapper exemption run outside their filesystem sandbox; approvals must
-preserve the same phone boundary. Command-prefix rules supplement the shared
-guard and only govern execution outside Codex's sandbox.
+The wrapper and harness rules are protected from agent edits. There is no scoped maintenance switch in the current guard. Prepare and review changes outside protected paths, have Oriol apply the patch manually, then verify the applied content; do not bypass a rejection through another tool.

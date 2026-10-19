@@ -1,6 +1,6 @@
 # ARCHIVED — Experiment nights 1–3
 
-**Execution: completed October 10–13. Outcome: development findings and resource failures; no deployment winner.** The old commands, windows and ledger-overwrite procedure are retired. The successor is [the allocation experiment](../experiments/current.md); [the shared protocol](../experiments/protocol.md#recording-policy) owns the still-binding recording trigger.
+**Execution: completed October 10–13. Outcome: development findings and resource failures; no deployment winner.** The old commands, windows and ledger-overwrite procedure are retired. The successor was [the allocation experiment](allocation-2026-10-19.md); [the shared protocol](../experiments/protocol.md#recording-policy) owns the still-binding recording trigger.
 
 | Campaign | Question and decision record | Evidence |
 |---|---|---|
