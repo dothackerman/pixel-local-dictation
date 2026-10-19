@@ -8,6 +8,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import allocation_budget_continuation as budget
+import allocation_thermal_continuation as thermal
 import test_allocation
 import test_allocation_phone_continuation as phone_tests
 
@@ -163,6 +164,179 @@ class ApprovalTests(unittest.TestCase):
         path.write_bytes(self.old_plan + b'approved appendix\n')
         self.record.write_text('{}')
         with self.assertRaisesRegex(ValueError, 'predecessor changed'):
+            self.verify()
+
+
+class CompletionTests(unittest.TestCase):
+    fixture = BudgetTests.fixture
+    save = BudgetTests.save
+
+    def setUp(self):
+        BudgetTests.setUp(self)
+        mapping = {'one': budget.COMPLETION_RUNS[0], 'two': budget.COMPLETION_RUNS[1]}
+        for run in self.manifest['runs'] + self.manifest['retry_options']:
+            run['id'] = mapping.get(run['id'], run['id'])
+            if 'retry_of' in run:
+                run['retry_of'] = mapping[run['retry_of']]
+        for step in self.manifest['execution_steps']:
+            if 'run' in step:
+                step['run'] = mapping[step['run']]
+        for comparison in self.manifest['comparisons']:
+            for key in ('candidate', 'control'):
+                comparison[key] = mapping[comparison[key]]
+        self.manifest['stages']['2']['runs'] = list(mapping.values())
+        legacy = self.root / 'legacy.json'
+        self.save(legacy, {'source_files': {}})
+        self.manifest['legacy_manifest'] = {'path': str(legacy)}
+        self.save(self.path, self.manifest)
+        self.completion_record = {'scope': budget.COMPLETION_SCOPE, 'caps': budget.COMPLETION_CAPS}
+        self.save(self.record, self.completion_record)
+        self.pin = budget.identity.sha(self.record)
+        window = json.loads(self.window.read_text())
+        del window['phone_window']
+        window.update(access={'mode': 'until-completion', 'runs': budget.COMPLETION_RUNS},
+                      authorized_stages=[2, 3],
+                      access_started_at=self.now.astimezone(ZoneInfo('Europe/Zurich')).isoformat(),
+                      checked_at=self.now.astimezone(ZoneInfo('Europe/Zurich')).isoformat(),
+                      completion_authorization={'path': str(self.record), 'sha256': self.pin},
+                      thermal_continuation={'path': str(self.record), 'sha256': self.pin})
+        self.save(self.window, window)
+        verified = patch.object(budget.Execution, 'verified', return_value=(self.completion_record, {}))
+        verified.start(); self.addCleanup(verified.stop)
+
+    def executor(self):
+        return budget.Execution(self.path, 'owner', self.record, self.pin, 'phone', lambda: self.now)
+
+    def begin(self):
+        test_allocation.execution.Execution(self.path, 'owner', self.now).transition('acquire')
+        self.executor().transition('begin-work', '2', platform='phone', launch_path=self.window)
+
+    def test_true_until_completion_access_has_no_end_and_retains_stage_reserve(self):
+        self.begin()
+        self.now += timedelta(seconds=16499)
+        self.assertEqual(self.executor().transition('next')['id'], budget.COMPLETION_RUNS[0])
+        self.now += timedelta(seconds=2)
+        self.assertEqual(self.executor().transition('next')['reason'], 'active-work budget cannot fit full timeout')
+        self.assertNotIn('phone_window', json.loads(self.window.read_text()))
+
+    def test_whole_reserve_count_and_storage_limits_still_stop_admission(self):
+        self.begin()
+        executor = self.executor()
+        run = executor.runs[budget.COMPLETION_RUNS[0]]
+        with executor.locked() as events:
+            launch = json.loads(self.window.read_text())
+            with patch.object(budget.Execution, 'work', return_value=(events[-1], {(1, 'phone'): 50000})):
+                with self.assertRaisesRegex(ValueError, 'full timeout'):
+                    executor.budget(run, events, launch)
+            changed = copy.deepcopy(self.manifest)
+            changed['limits']['phone_processes'] = 0
+            executor.manifest = changed
+            with self.assertRaisesRegex(ValueError, 'process count'):
+                executor.budget(run, events, launch)
+            executor.manifest = self.manifest
+            with patch.object(budget.Execution, 'storage', return_value=10**15):
+                with self.assertRaisesRegex(ValueError, 'storage budget'):
+                    executor.budget(run, events, launch)
+
+    def test_missing_check_bad_pin_invented_end_and_stale_check_fail_closed(self):
+        for mutate in (lambda w:w.update(guard_tests_passed=False),
+                       lambda w:w.update(completion_authorization={'path':'other','sha256':'other'}),
+                       lambda w:w.update(phone_window={'end':'2099-01-01'}),
+                       lambda w:w['access'].update(runs=budget.COMPLETION_RUNS + ['extra'])):
+            window = json.loads(self.window.read_text()); mutate(window)
+            self.assertTrue(budget.completion_launch_errors(self.manifest, window, 'owner', self.executor().pin(), self.now))
+        window = json.loads(self.window.read_text())
+        self.assertTrue(budget.completion_launch_errors(self.manifest, window, 'owner', self.executor().pin(), self.now + timedelta(hours=13)))
+
+    def test_no_reuse_after_pause_or_earlier_check_and_no_stage_gate_skip(self):
+        self.begin()
+        self.executor().transition('pause-work', restoration={'completed': True, 'owner':'Oriol','final_state':'synthetic restored'})
+        with self.assertRaisesRegex(ValueError, 'fresh immutable'):
+            self.executor().transition('begin-work', '2', platform='phone', launch_path=self.window)
+        self.now += timedelta(seconds=1)
+        with patch('allocation_report.stage_gate', return_value={'evidence':'incomplete'}):
+            with self.assertRaisesRegex(ValueError, 'previous stage'):
+                self.executor().transition('begin-work', '3', platform='phone', launch_path=self.window)
+
+    def test_finite_set_and_original_start_deadline_are_preserved(self):
+        self.begin()
+        result = self.executor().transition('start', budget.COMPLETION_RUNS[0])
+        self.assertEqual(result['run']['commands'], [['synthetic-stage']])
+        self.now += timedelta(seconds=2401)
+        with self.assertRaisesRegex(ValueError, 'active process'):
+            self.executor().transition('next')
+        self.assertEqual(self.executor().transition('finish', budget.COMPLETION_RUNS[0], 'timeout')['outcome'], 'timeout')
+
+    def test_existing_thermal_methods_enforce_wait_and_fresh_ready(self):
+        self.begin(); self.executor().transition('start', budget.COMPLETION_RUNS[0])
+        with patch.object(budget.Execution, 'release_checkpoint', return_value='synthetic'), \
+             patch.object(thermal.artifacts, 'inventory', return_value={}):
+            self.executor().prepare_probe(budget.COMPLETION_RUNS[0])
+            def sample(status):
+                path = self.root / ('thermal-' + str(status) + '.json')
+                self.save(path, dict(schema='idle-thermal-observation-v1', protocol=thermal.PROTOCOL,
+                    staging_completed_at=self.now.isoformat(), query_started_at=self.now.isoformat(),
+                    query_completed_at=self.now.isoformat(),
+                    probe=dict(schema='idle-thermal-status-v1', source='android-thermalservice', thermalStatus=status)))
+                return path
+            self.assertEqual(self.executor().authorize_inference(budget.COMPLETION_RUNS[0], sample(2))['kind'], 'cooldown')
+            self.now += timedelta(seconds=15)
+            self.assertEqual(self.executor().authorize_inference(budget.COMPLETION_RUNS[0], sample(1))['kind'], 'ready')
+
+
+class CompletionApprovalTests(unittest.TestCase):
+    fixture = ApprovalTests.fixture
+    save = ApprovalTests.save
+
+    def setUp(self):
+        ApprovalTests.setUp(self)
+        self.manifest['stages']['3']['limits']['phone_seconds'] = 14400
+        self.manifest['limits']['phone_seconds'] = 43200
+        self.save(self.path, self.manifest)
+        self.approval['manifest_sha256'] = budget.identity.sha(self.path)
+        self.approval['source_checkpoint'] = 'budget-head'
+        self.budget_plan = (self.root / budget.PLAN).read_bytes()
+        self.historical_sources = {name:(self.root / name).read_bytes() for name in self.approval['administrative_files']}
+        self.prior_budget = self.root / 'prior-budget.json'
+        self.save(self.prior_budget, self.approval)
+        plan = self.root / budget.PLAN
+        plan.write_bytes(self.budget_plan + b'finite completion appendix\n')
+        self.policy = self.root / 'environment-policy.json'
+        self.save(self.policy, {'schema':'allocation-environment-cohorts-v1'})
+        self.completion = dict(copy.deepcopy(self.approval), scope=budget.COMPLETION_SCOPE,
+            caps=copy.deepcopy(budget.COMPLETION_CAPS), access_mode='until-completion',
+            remaining_runs=list(budget.COMPLETION_RUNS), source_checkpoint='new-head',
+            budget_predecessor={'path':str(self.prior_budget),'sha256':budget.identity.sha(self.prior_budget)},
+            environment_policy={'path':str(self.policy),'sha256':budget.identity.sha(self.policy)})
+        self.completion['administrative_files'][budget.PLAN] = budget.identity.sha(plan)
+
+    def verify(self, record=None):
+        def git_show(args, **kwargs):
+            revision, name = args[2].split(':', 1)
+            return self.historical_sources[name] if revision == 'budget-head' else self.old_plan
+        with patch.object(budget.subprocess, 'check_output', side_effect=git_show), \
+             patch.object(budget.thermal, 'verify_record') as chain:
+            result = budget.verify_record(self.path, record or self.completion, 'owner', self.root)
+            chain.assert_called_once()
+            return result
+
+    def test_versioned_completion_preserves_prior_budget_and_source_snapshot(self):
+        before = self.prior_budget.read_bytes()
+        self.verify()
+        self.assertEqual(self.prior_budget.read_bytes(), before)
+        self.historical_sources['tools/allocation_budget_continuation.py'] = b'changed historical source'
+        with self.assertRaisesRegex(ValueError, 'historical budget checkpoint differs'):
+            self.verify()
+
+    def test_completion_scope_caps_policy_and_plan_fail_closed(self):
+        for mutate in (lambda r:r.update(remaining_runs=budget.COMPLETION_RUNS + ['extra']),
+                       lambda r:r['caps']['whole:phone_seconds'].update(approved=52501),
+                       lambda r:r.update(access_mode='forever')):
+            changed = copy.deepcopy(self.completion); mutate(changed)
+            with self.assertRaises(ValueError):
+                self.verify(changed)
+        self.policy.write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'cohort policy changed'):
             self.verify()
 
 
