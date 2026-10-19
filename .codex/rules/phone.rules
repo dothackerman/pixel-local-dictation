@@ -7,3 +7,7 @@ prefix_rule(pattern = ["sudo"], decision = "forbidden", justification = "Use the
 prefix_rule(pattern = ["/home/oriol/Projects/private/pixel-local-dictation/tools/phone", "push-variant"], decision = "allow", justification = "The frozen project wrapper scopes this approved lab operation.")
 prefix_rule(pattern = ["/home/oriol/Projects/private/pixel-local-dictation/tools/phone", "lab"], decision = "allow", justification = "The frozen project wrapper scopes this approved lab operation.")
 prefix_rule(pattern = ["/home/oriol/Projects/private/pixel-local-dictation/tools/phone", "pull-results"], decision = "allow", justification = "The frozen project wrapper scopes this approved lab operation.")
+
+# Read-only identity inspection and run-scoped recovery; task authorization remains required.
+prefix_rule(pattern = ["/home/oriol/Projects/private/pixel-local-dictation/tools/phone", "inspect"], decision = "allow", justification = "Fixed read-only dictation identity inspection.")
+prefix_rule(pattern = ["/home/oriol/Projects/private/pixel-local-dictation/tools/phone", "recover"], decision = "allow", justification = "Restore only a verified app-scoped run retained by the frozen wrapper.")

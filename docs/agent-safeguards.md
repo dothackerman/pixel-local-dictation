@@ -3,7 +3,7 @@
 Both harnesses use the same pre-tool policy in
 [phone_guard.py](../.claude/hooks/phone_guard.py). Codex's hook directory links to
 Claude's; registration and permission configuration remain harness-specific.
-The wrapper and existing Git pre-commit check are unchanged. [AGENTS.md](../AGENTS.md)
+The wrapper owns the app-scoped staging/recovery contract; the existing Git pre-commit check remains unchanged. [AGENTS.md](../AGENTS.md)
 owns the shared phone boundary; this document covers setup and enforcement limits.
 
 ## Activation
@@ -21,11 +21,15 @@ be overridden independently of its session directory. No chaining, redirects,
 substitution, or option-style arguments are accepted. Returning success from
 the guard does not itself grant permission to run the command.
 
-The existing automatic lab approvals cover `push-variant`, `lab`, and
-`pull-results` in both harnesses. They do not authorize other phone activity or
+`stop-app` remains separately approved, accepts no arguments, and is never called implicitly.
+
+The automatic approvals cover `inspect`, `push-variant`, `lab`,
+`pull-results`, and `recover` in both harnesses. Run-bearing commands require
+the same explicit run identity; `lab` also requires the exact locally retained
+APK of the already-installed instrumentation. See [phone operations](phone-lab.md). They do not authorize other phone activity or
 override the experiment brief. Claude exempts only this checkout's absolute
 wrapper command from its sandbox: Linux sandbox localhost cannot reach the host
-service. Codex's corresponding rules permit those three wrapper operations
+service. Codex's corresponding rules permit those five wrapper operations
 outside the sandbox. Other approvals remain subject to each harness's normal
 permission process.
 
