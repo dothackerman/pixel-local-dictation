@@ -60,6 +60,9 @@ android {
     testBuildType = "benchmark"
     // Model files are read through AssetManager and must stay uncompressed in the APK.
     androidResources { noCompress += listOf("onnx", "txt", "tflite") }
+    providers.gradleProperty("encoderProbeDir").orNull?.let {
+        sourceSets.getByName("androidTest").java.srcDir("src/encoderProbe/java")
+    }
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("models/accelerator-access-20261020"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -101,6 +104,9 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    providers.gradleProperty("encoderProbeDir").orNull?.let { probeDir ->
+        androidTestImplementation(files("$probeDir/ort131-java-jni.aar"))
+    }
     // Diagnostic instrumentation only; no accelerator runtime enters the daily app.
     // Standalone inference only: exclude unrelated AiPack/Play/background-service dependencies.
     androidTestImplementation("com.google.ai.edge.litert:litert:2.3.0") { isTransitive = false }

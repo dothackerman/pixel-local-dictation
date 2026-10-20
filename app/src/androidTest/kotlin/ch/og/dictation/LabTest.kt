@@ -39,6 +39,13 @@ class LabTest {
     private val labDir = File(ctx.filesDir, "lab")
 
     @Test fun variantOnSavedTakes() {
+        if (File(labDir, "encoder-probe.json").isFile) {
+            // Class and ORT Java/JNI exist only in the explicitly selected diagnostic build.
+            Class.forName("ch.og.dictation.EncoderProbe")
+                .getConstructor(Context::class.java, File::class.java)
+                .newInstance(ctx, labDir).let { it.javaClass.getMethod("run").invoke(it) }
+            return
+        }
         if (File(labDir, "accelerator-probe.json").isFile) {
             AcceleratorAccessProbe(ctx, labDir).run()
             return
