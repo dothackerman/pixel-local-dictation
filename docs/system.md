@@ -158,8 +158,3 @@ a new bounded plan.
 Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
 source. The file hash identifies the current reference. Historical identities
 and verdicts stay unchanged.
-
-Documentation before compression is at `925ef8c87e054855246a6105a95778c73961ecef`.
-Retired controllers at `d0e984641d9d247bd6dd4f500abfbba1091b7b43` are for offline
-reading only. Git retains source and documentation, not deleted private runs.
-Generated HTML is a review artifact; it is not an authoritative document.
