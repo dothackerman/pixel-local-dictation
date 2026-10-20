@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "parakeet-fp32-gpu",
+  "status": "prepared-not-authorized",
+  "protocol": "dictation-session-replay-v1",
+  "question": "Does an FP32 GPU encoder reduce whole-take Stop wait while preserving the FP32 CPU transcript?",
+  "decision_record": "adrs/018-next-fp32-gpu-experiment.md",
+  "artifacts": {
+    "original_fp32_model": "models/parakeet-v3-fp32",
+    "vad": "models/silero_vad.onnx",
+    "dictionary": "corpus/lab/dictionary.txt",
+    "development_takes": "corpus/takes.json",
+    "development_references": "corpus/scripts",
+    "private_prepared_suite": "corpus/lab/parakeet-fp32-gpu/suite.json",
+    "converted_encoder": "models/parakeet-v3-fp32-litert/encoder.tflite",
+    "conversion_receipt": "models/parakeet-v3-fp32-litert/conversion.json",
+    "encoder_bridge_receipt": "build/fp32-gpu/bridge.json",
+    "benchmark_apk": "build/fp32-gpu/app-benchmark.apk",
+    "test_apk": "build/fp32-gpu/app-benchmark-androidTest.apk"
+  },
+  "setups": {
+    "A": "original ONNX FP32 encoder, CPU",
+    "B": "converted LiteRT FP32 encoder, CPU",
+    "C": "same converted encoder, LiteRT FP32 OpenGL GPU, no fallback"
+  },
+  "fixed": [
+    "decoder and joiner bytes",
+    "feature extraction and actual sequence lengths",
+    "search and dictionary",
+    "VAD and chunking",
+    "automatic language handling and Swiss spelling",
+    "audio, endpoint references, case order, feed cadence and warmup",
+    "device, OS and unprofiled shared-session timing"
+  ],
+  "proposed_policy": {
+    "status": "needs-launch-approval",
+    "relative_stop_gain_each_language": 0.2,
+    "absolute_stop_gain_ms_each_language": 500,
+    "candidate_output": "exact text parity, including punctuation, with matched A",
+    "repeat_check": "each paired language median improves; pooled median gain exceeds repeat median spread",
+    "peak_kb": 3500000,
+    "max_thermal": 0,
+    "encoder_atol": 0.0001,
+    "encoder_rtol": 0.001,
+    "encoder_lengths": "exact",
+    "nonfinite_values": 0
+  },
+  "proposed_bounds": {
+    "conversion_attempts": 1,
+    "diagnosed_conversion_repairs": 1,
+    "active_engineering_hours": 12,
+    "host_smoke_invocations": 12,
+    "host_smoke_total_minutes": 60,
+    "phone_processes_including_smokes": 8,
+    "measurement_order": ["A-parity", "B-parity", "A-gain-1", "C-gain-1", "C-gain-2", "A-gain-2"],
+    "phone_window_hours_including_recovery": 4,
+    "launch_window": null,
+    "timezone": "Europe/Zurich"
+  },
+  "launch_requirements": [
+    "Explicit task authorization, exact time window and approval of proposed decision policy",
+    "Version-pinned conversion recipe and encoder-only bridge; frozen parity checks pass",
+    "Observed backend, precision and GPU-only proof from the executed runtime",
+    "Shared-session live smoke covers Stop, cancellation, input change, insertion and keyboard return",
+    "Protected phone wrapper accepts exact app/test artifacts and has verified recovery copies",
+    "Freeze private plans with exact APK, model, runtime, source, suite, device and evaluator identities",
+    "Reserve each attempt before invoking the protected phone wrapper"
+  ]
+}
