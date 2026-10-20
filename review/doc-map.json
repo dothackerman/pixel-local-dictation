@@ -1,0 +1,496 @@
+{
+  "base": "925ef8c87e054855246a6105a95778c73961ecef",
+  "sources": [
+    {
+      "path": "docs/agent-safeguards.md",
+      "lines": 21,
+      "words": 298,
+      "headings": [
+        "Agent phone safeguards",
+        "Activation",
+        "Verification and limits"
+      ],
+      "targets": [
+        "system.md#privacy-and-operation"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/archive/allocation-2026-10-19.md",
+      "lines": 109,
+      "words": 1918,
+      "headings": [
+        "Allocation and measurement — completed 19 October 2026",
+        "Completed results",
+        "Decision table",
+        "Quality",
+        "Measurement and environment",
+        "Execution, budgets and final device state",
+        "Evidence and next investigation",
+        "Source recovery and offline analysis"
+      ],
+      "targets": [
+        "adrs/012-allocation-outcome.md",
+        "adrs/008-three-stage-loop.md"
+      ],
+      "note": "Decision, decisive numbers and caveats retained. Exact run tables, amendments, budgets and recovery stay in private handback/pinned history."
+    },
+    {
+      "path": "docs/archive/campaigns-2026-10-13.md",
+      "lines": 15,
+      "words": 231,
+      "headings": [
+        "ARCHIVED — Experiment nights 1–3"
+      ],
+      "targets": [
+        "adrs/004-closed-loop.md",
+        "adrs/005-dictionary.md",
+        "adrs/007-fp32-cohere.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/archive/milestones-2026-10-10.md",
+      "lines": 29,
+      "words": 619,
+      "headings": [
+        "ARCHIVED — Milestones 1–2, October 9–10",
+        "Completed checkpoints",
+        "Original spike gate",
+        "Integration rationale still needed by maintainers"
+      ],
+      "targets": [
+        "adrs/010-ime-lifecycle.md",
+        "adrs/003-working-engine.md",
+        "system.md#status-and-acceptance-gaps"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/decisions.md",
+      "lines": 182,
+      "words": 3895,
+      "headings": [
+        "Architecture decision records",
+        "ADR-001 — Manually routed streaming candidates",
+        "ADR-002 — Parakeet-first automatic-language prototype",
+        "ADR-003 — Parakeet v3 via sherpa-onnx with a MatMul-only INT8 encoder",
+        "ADR-004 — Experiment loop with a closed variant schema and the phone as second judge",
+        "ADR-005 — Schema 2: range-finding, a dictionary as mechanism test, and two new model families",
+        "ADR-006 — Validate Qwen input budgets and enforce complete phone evidence",
+        "ADR-007 — Night three: the full-precision dictionary family and single-instance Cohere go to the phone",
+        "ADR-008 — One allocation experiment with three stages",
+        "ADR-009 — Bounded recovery through the protected phone wrapper"
+      ],
+      "targets": [
+        "adrs/001-manual-routing.md",
+        "adrs/002-parakeet-first.md",
+        "adrs/003-working-engine.md",
+        "adrs/004-closed-loop.md",
+        "adrs/005-dictionary.md",
+        "adrs/006-adapter-evaluator.md",
+        "adrs/007-fp32-cohere.md",
+        "adrs/008-three-stage-loop.md",
+        "adrs/009-phone-recovery.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/evaluation/baseline.md",
+      "lines": 41,
+      "words": 712,
+      "headings": [
+        "FUTO baseline (Multilingual-244, as installed)",
+        "Results",
+        "Reading",
+        "Reference sentences",
+        "Raw output as dictated"
+      ],
+      "targets": [
+        "system.md#status-and-acceptance-gaps"
+      ],
+      "note": "Aggregate conclusion retained. Personal references/transcripts omitted; frozen scorer requires historical checkout."
+    },
+    {
+      "path": "docs/evaluation/results.md",
+      "lines": 106,
+      "words": 1441,
+      "headings": [
+        "Measurement results",
+        "Approved measurement protocol",
+        "Run of 2026-10-10",
+        "Laptop setup validation, 2026-10-12"
+      ],
+      "targets": [
+        "system.md#status-and-acceptance-gaps",
+        "adrs/006-adapter-evaluator.md",
+        "adrs/005-dictionary.md"
+      ],
+      "note": "Conclusions and policy conflict retained. Detailed tables stay in history/private evidence; personal examples omitted."
+    },
+    {
+      "path": "docs/experiments/campaign-2026-10-19-tally.tsv",
+      "lines": 29,
+      "words": 536,
+      "headings": [],
+      "targets": [
+        "adrs/014-moonshine-screen.md",
+        "adrs/015-cpu-profiling.md"
+      ],
+      "note": "Exact historical artifact retained unchanged under review/evidence; decision summarized here. No new execution authority."
+    },
+    {
+      "path": "docs/experiments/campaign-2026-10-19.md",
+      "lines": 185,
+      "words": 4411,
+      "headings": [
+        "Bounded improvement campaign — 19 October 2026",
+        "Existing evidence and limitations",
+        "Frozen questions and finite list",
+        "Process/input/time freeze",
+        "Safeguards, ownership, restoration",
+        "Prior accounting and present tally",
+        "Execution record (operator)",
+        "Measurement outcome and handoff",
+        "Closure and retained profiling proposal",
+        "Prospective CPU profiling continuation — 19 October, 19:23 UTC",
+        "CPU profiling continuation — 20 October 2026"
+      ],
+      "targets": [
+        "adrs/014-moonshine-screen.md",
+        "adrs/015-cpu-profiling.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/experiments/current.md",
+      "lines": 13,
+      "words": 262,
+      "headings": [
+        "Experiment status"
+      ],
+      "targets": [
+        "system.md#status-and-acceptance-gaps",
+        "adrs/012-allocation-outcome.md",
+        "adrs/014-moonshine-screen.md",
+        "adrs/015-cpu-profiling.md",
+        "adrs/016-accelerator-access.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/experiments/protocol.md",
+      "lines": 74,
+      "words": 1587,
+      "headings": [
+        "Experiment protocol",
+        "Roles and setup limits",
+        "Comparison contract",
+        "Measurement contract",
+        "Adapter validation",
+        "Executable handoff",
+        "Execution rules",
+        "Handback",
+        "Recording policy"
+      ],
+      "targets": [
+        "system.md#evaluation-architecture",
+        "adrs/011-measurement-contract.md",
+        "adrs/005-dictionary.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/phone-lab.md",
+      "lines": 47,
+      "words": 777,
+      "headings": [
+        "Phone lab operations",
+        "Stage, measure, recover",
+        "Explicit stopping",
+        "Compatible APK replacement",
+        "Diagnostic profiling transaction",
+        "Preservation limits"
+      ],
+      "targets": [
+        "system.md#phone-lab-boundary",
+        "adrs/009-phone-recovery.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/proposals/accelerator-diagnostic-compatibility-2026-10-20.patch",
+      "lines": 55,
+      "words": 308,
+      "headings": [],
+      "targets": [
+        "adrs/009-phone-recovery.md",
+        "adrs/016-accelerator-access.md"
+      ],
+      "note": "Exact historical artifact retained unchanged under review/evidence; decision summarized here. No new execution authority."
+    },
+    {
+      "path": "docs/requirements.md",
+      "lines": 25,
+      "words": 496,
+      "headings": [
+        "Requirements",
+        "Proposed performance targets—not approved numerical commitments"
+      ],
+      "targets": [
+        "system.md#requirements",
+        "system.md#privacy-and-operation"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research.md",
+      "lines": 39,
+      "words": 649,
+      "headings": [
+        "Research index",
+        "Reading the earlier Claude research correctly (2026-10-14)",
+        "Implementation references",
+        "Pixel constraints on research"
+      ],
+      "targets": [
+        "adrs/013-future-investigations.md",
+        "system.md#architecture"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/accelerator-access-device-check-2026-10-20.md",
+      "lines": 72,
+      "words": 1299,
+      "headings": [
+        "Pixel GPU and TPU access — 20 October 2026",
+        "Actual device proof",
+        "Numerical results: access and correctness differ",
+        "Tooling obstacle resolved without OS changes",
+        "Provenance and restoration",
+        "Standards",
+        "Spec",
+        "Save state"
+      ],
+      "targets": [
+        "adrs/016-accelerator-access.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/research/accelerator-routes-after-profiling-2026-10-20.md",
+      "lines": 64,
+      "words": 1390,
+      "headings": [
+        "GPU and Tensor G5 TPU after phone profiling — 20 October 2026",
+        "Completed profiling: useful opportunity, uncertain user benefit",
+        "Available routes and obstacles",
+        "Finite next experiment, proposed only"
+      ],
+      "targets": [
+        "adrs/015-cpu-profiling.md",
+        "adrs/016-accelerator-access.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/research/beam-investigation-2026-10-12.md",
+      "lines": 55,
+      "words": 759,
+      "headings": [
+        "Beam deletion investigation, 2026-10-12",
+        "Discriminating result",
+        "What the source does and does not explain",
+        "Reproduction and remaining hypotheses"
+      ],
+      "targets": [
+        "adrs/007-fp32-cohere.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/evaluation-audit-2026-10-14.md",
+      "lines": 61,
+      "words": 1193,
+      "headings": [
+        "Evaluation audit, 2026-10-14",
+        "Accuracy already improved on the development recordings",
+        "The ten takes contain eight scripts, not ten independent content samples",
+        "The keep thresholds are engineering rules, not uncertainty estimates",
+        "Measurement limitations and subsequent setup",
+        "Follow-up"
+      ],
+      "targets": [
+        "system.md#evaluation-architecture",
+        "adrs/011-measurement-contract.md",
+        "adrs/007-fp32-cohere.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/loop-investigation-2026-10-12.md",
+      "lines": 76,
+      "words": 1255,
+      "headings": [
+        "Adapter and evaluation failure diagnosis, 2026-10-12",
+        "Evidence provenance",
+        "1. Confirmed: Qwen's English catastrophe was context exhaustion",
+        "2. Reproduced: the beam-search German regression is concentrated in one collapse",
+        "3. Cohere has an avoidable allocation and a separate scheduling problem",
+        "Evaluation findings and disposition"
+      ],
+      "targets": [
+        "adrs/006-adapter-evaluator.md",
+        "adrs/007-fp32-cohere.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/model-options-2026-10-14.md",
+      "lines": 69,
+      "words": 1514,
+      "headings": [
+        "Model options after night three",
+        "What the latest evidence changes",
+        "Bounded screening experiments",
+        "1. Moonshine German Small Streaming + English Medium Streaming",
+        "1b. Cactus Whistle",
+        "2. Qwen3-ASR 1.7B, with a reference-to-runtime parity check",
+        "3. Establish the untested accuracy ceiling: Canary 1B v2 and full Whisper large-v3",
+        "Candidates to keep behind those tests",
+        "Interpretation rule"
+      ],
+      "targets": [
+        "adrs/013-future-investigations.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/moonshine-campaign-2026-10-19.md",
+      "lines": 41,
+      "words": 962,
+      "headings": [
+        "Moonshine: bounded native-streaming screen",
+        "Feasibility",
+        "First quality decision",
+        "Automatic routing and app seam, only after quality"
+      ],
+      "targets": [
+        "adrs/014-moonshine-screen.md",
+        "adrs/013-future-investigations.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/research/remaining-improvement-levers-2026-10-19.md",
+      "lines": 36,
+      "words": 962,
+      "headings": [
+        "Where remaining improvement is likely to come from",
+        "What the evidence actually locates",
+        "Ranked levers",
+        "Smallest next decision"
+      ],
+      "targets": [
+        "adrs/013-future-investigations.md",
+        "adrs/015-cpu-profiling.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/research/runtime-options-2026-10-14.md",
+      "lines": 267,
+      "words": 2767,
+      "headings": [
+        "Runtime and deployment options, 2026-10-14",
+        "What is actually missing",
+        "A concrete runtime experiment is already available",
+        "Cohere single-instance evidence, 2026-10-12",
+        "The benchmark's extra memory is not yet explained",
+        "Precision should be searched by sensitivity, not only operator type",
+        "Overlap alone does not make the final decode cheap",
+        "When a different runtime earns work",
+        "Unsloth quantization applicability (2026-10-14)",
+        "Proposed acceleration experiment"
+      ],
+      "targets": [
+        "adrs/013-future-investigations.md",
+        "adrs/007-fp32-cohere.md",
+        "adrs/012-allocation-outcome.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/research/tpu-campaign-2026-10-19.md",
+      "lines": 49,
+      "words": 1209,
+      "headings": [
+        "Tensor G5 TPU feasibility — 19 October 2026",
+        "Official route and concrete access blocker",
+        "Local graph audit; no execution",
+        "Finite proof if access is restored"
+      ],
+      "targets": [
+        "adrs/016-accelerator-access.md"
+      ],
+      "note": "Current result, decision and limitations retained; historical execution detail remains at the pinned source/private evidence."
+    },
+    {
+      "path": "docs/roadmap.md",
+      "lines": 53,
+      "words": 997,
+      "headings": [
+        "Milestones and remaining work",
+        "1–2. Integration and local recognition — completed prototype gates",
+        "3. Personal improvement — open",
+        "4. Alternative recognition paths — pending experiments",
+        "5. Runtime optimization and handoff — pending",
+        "Validation gaps and unscheduled request",
+        "Future experiments"
+      ],
+      "targets": [
+        "system.md#status-and-acceptance-gaps",
+        "adrs/013-future-investigations.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/setup/daily-use.md",
+      "lines": 26,
+      "words": 479,
+      "headings": [
+        "Phone setup and rollback",
+        "Setup (one time)",
+        "Daily use",
+        "Benchmark mode",
+        "Development connection — Oriol only"
+      ],
+      "targets": [
+        "system.md#privacy-and-operation",
+        "system.md#architecture",
+        "adrs/010-ime-lifecycle.md"
+      ],
+      "note": "Current obligations/rationale retained. Chronology, repetition and execution detail retire to pinned Git history."
+    },
+    {
+      "path": "docs/setup/dependencies.txt",
+      "lines": 65,
+      "words": 357,
+      "headings": [
+        "Resolved dependencies, 2026-10-10 (app 0.2.0). Regenerate with:",
+        "./gradlew -q :app:dependencies --configuration <name>",
+        "Direct pins (app/build.gradle.kts): implementation files(libs/sherpa-onnx-1.13.8.aar), a local file",
+        "pinned by checksum in assets.lock (Gradle does not list file dependencies with a version);",
+        "androidTestImplementation androidx.test:runner:1.7.0, androidx.test:rules:1.7.0,",
+        "androidx.test.ext:junit:1.3.0; testImplementation junit:junit:4.13.2 and org.json:json:20240303",
+        "(laptop unit tests only; the JSON library replaces the Android stub for Variant.parse tests).",
+        "The release APK ships only releaseRuntimeClasspath; the androidTest set runs only in the test APK."
+      ],
+      "targets": [
+        "system.md#architecture"
+      ],
+      "note": "Exact historical artifact retained unchanged under review/evidence; decision summarized here. No new execution authority."
+    }
+  ]
+}
