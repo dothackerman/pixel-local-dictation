@@ -1,5 +1,8 @@
 # ADR-019 — Bounded FP32 encoder conversion diagnosis
 
+Subsequent route proposal: [ADR-020](020-onnx-webgpu-investigation.md). The conversion
+outcome and evidence recorded below remain unchanged.
+
 2026-10-20 · Issue #3; synthetic host work only. No phone execution.
 
 Use `tools/encoder_conversion.py` with the exact environment in
