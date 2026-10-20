@@ -60,9 +60,8 @@ manually under [the existing operation rule](../README.md#phone-lab-operations).
 Do not edit the active journal directly, broaden unknown-file tolerance, bypass the
 wrapper, fabricate a role-profile pass, or discard the private evidence.
 
-The independently reviewed [recovery candidate](../tools/proposals/phone-encoder-probe-recovery.py),
-[diff](../tools/proposals/phone-encoder-probe-recovery.diff) and
-[manual instructions](../tools/proposals/README-encoder-probe-recovery.md) are
+The independently reviewed [recovery candidate](../tools/proposals/phone-encoder-probe-recovery.py)
+and [diff](../tools/proposals/phone-encoder-probe-recovery.diff) are
 committed outside the protected path. Candidate SHA256 is
 `0b6bc00d55dbfeda09882fa75cc492acd78310c4652be750572e7c68cfe25cb7`.
 Six fabricated-device tests cover successful preservation/restoration, refused
