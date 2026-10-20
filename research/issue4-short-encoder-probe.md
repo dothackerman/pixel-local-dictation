@@ -2,8 +2,9 @@
 
 **Physical execution blocked:** the current helper violates the protected wrapper's
 generated-file and numeric-profile receipt contract. One CPU test ran; recovery
-is unresolved. Do not start another probe until [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md)
-is resolved and the execution contract is corrected. Commands below describe host preparation.
+was independently verified afterward. Do not start another probe until the execution
+contract is corrected. [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md) records
+the incident. Commands below describe host preparation.
 
 Host preparation only. No physical finding, full-take parity, or #5 eligibility.
 The production runtime default is unchanged. This explicit benchmark build calls

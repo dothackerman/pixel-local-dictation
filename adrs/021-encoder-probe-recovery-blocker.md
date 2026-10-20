@@ -1,6 +1,6 @@
-# ADR-021 — Encoder checkpoint blocked on recovery
+# ADR-021 — Encoder checkpoint recovery incident
 
-2026-10-20 · Implementation partial. No GPU finding or advancement; recovery unresolved.
+2026-10-20 · Recovery independently verified. Implementation partial; no GPU finding or advancement.
 
 ## Observed
 
@@ -32,7 +32,7 @@ Preparation histories remain private under `corpus/lab/issue4-*`:
   Retrieval and recovery refused the generated files as lab inventory drift.
   No inference retry and no GPU invocation followed.
 
-## Limits and recovery
+## Initial recovery blocker
 
 The helper's redundant tensor sidecars, marker and timestamped ORT profile violate
 the wrapper's accepted generated-file contract. The direct helper also does not
@@ -40,22 +40,20 @@ produce the numeric role-profile/timeline binding required by diagnostic `lab`.
 These integration requirements were missed in host review. A successful test
 receipt does not make this an accepted encoder result.
 
-The diagnostic app/test remain installed. The original APK pair and original
-11-file lab inventory remain retained; restoration is **not verified**. The active
-transaction is `issue4-short-cpu-20261020-03`. Preserve its journal.
+At the blocked checkpoint, diagnostic app/test remained installed and restoration
+was unverified. The original APK pair and original 11-file lab inventory remained
+retained. Transaction: `issue4-short-cpu-20261020-03`; its journal is preserved.
 
 The on-device result has SHA256
 `c24b366ec782470d8c7e8ca903acce4eb65530515d571ecc2c4bbfd91317bc5c`;
 the ORT profile has SHA256
 `50582fbf1576b67f54780e2b345b53ffae95c42d3ce7b604f4ed5afbb34bcb70`.
-Neither has been exported through the current wrapper. Tensor accuracy, resources,
-native cold load and encoder timing remain unproven. Instrumentation elapsed time
-is not encoder performance evidence. No full take, Android legacy/new CPU parity,
+These were initially unavailable through the wrapper and are now preserved by the
+reviewed recovery below. Instrumentation elapsed time is not encoder performance evidence. No full take, Android legacy/new CPU parity,
 GPU tensor/placement/precision check, repeated speed series or live validation ran.
 
-Phone work is limited to resolving recovery. Prepare and independently review an
-exact-run, exact-inventory recovery proposal outside the protected wrapper; test
-with fabricated device evidence. The user applies protected-wrapper changes
+Recovery required an independently reviewed exact-run, exact-inventory proposal
+outside the protected wrapper, tested with fabricated device evidence. The user applies protected-wrapper changes
 manually under [the existing operation rule](../README.md#phone-lab-operations).
 Do not edit the active journal directly, broaden unknown-file tolerance, bypass the
 wrapper, fabricate a role-profile pass, or discard the private evidence.
@@ -66,7 +64,28 @@ committed outside the protected path. Candidate SHA256 is
 `0b6bc00d55dbfeda09882fa75cc492acd78310c4652be750572e7c68cfe25cb7`.
 Six fabricated-device tests cover successful preservation/restoration, refused
 drift, interrupted restoration and partial exports. All 179 host tests and Android
-checks passed. These tests do not certify actual recovery or unseen payloads.
+checks passed. These fabricated tests alone did not certify actual recovery or unseen payloads.
+
+## Verified resolution and bounded CPU finding
+
+The user manually applied the exact reviewed candidate. Its Git object matched
+`a5a9bebd190dc039e04a05a320c37006aef40e75`; executable mode was unchanged.
+The protected wrapper then preserved the exact result JSON and original ORT trace
+before restoring the original app/test APKs and lab. A separate inspection matched
+the entire pre-run baseline: both APK identities, all 11 lab hashes, no owner,
+no recovery journal and no staging/disposal paths. Recovery is verified.
+
+The recovered Android ORT1.31 CPU tensors are finite FP32 `[1,1024,3]` plus exact
+INT64 length `[3]`. Against the pre-frozen **supplementary host ORT1.26 CPU**
+reference, the directed tolerance check passed; maximum absolute float error was
+`1.341104507446289e-7`. This is not Android legacy/new runtime parity.
+Maximum sampled process high-water memory was `2,680,528 KB`; all four thermal
+samples were `0`. Cold initialization was `5,541.36 ms` and the profiled diagnostic
+Run/preparation/host-output/persistence boundary was `363.33 ms`. These single
+synthetic diagnostics are not an unprofiled speed comparison or a full-take result.
+Private verification and supplementary comparison remain under
+`corpus/lab/issue4-artifacts-03/`; rescued originals are in the existing
+`corpus/lab/phone-operations/results/` transaction evidence. No GPU run occurred.
 
 ## Decision and next question
 
@@ -75,7 +94,6 @@ checks passed. These tests do not certify actual recovery or unseen payloads.
 No backend compatibility, speed improvement, daily default or FUTO comparison is
 established. No recordings were used or exported by this synthetic checkpoint.
 
-First restore and independently verify both original APKs and all original lab
-hashes. Then decide how the bounded encoder checkpoint can meet the protected
+Recovery is complete. Next decide how the bounded encoder checkpoint can meet the protected
 wrapper's actual receipt and generated-file contract without inventing profiling
 evidence or weakening recovery checks.
