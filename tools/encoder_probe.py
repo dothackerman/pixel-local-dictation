@@ -7,6 +7,8 @@ import os
 import shutil
 import hashlib
 import json
+import re
+import math
 from pathlib import Path
 import struct
 import zipfile
@@ -50,9 +52,9 @@ def freeze(model, out, app_apk, test_apk, provider="cpu"):
             shutil.copy2(source, target)
         if sha(target) != expected:
             raise ValueError('model changed during staging: ' + name)
-    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'tools/proposals/phone-short-encoder-v1.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt', 'app/build.gradle.kts']
-    value = {'schema': 1, 'input_kind': 'synthetic silence; no recordings',
+    value = {'schema': 1, 'protocol': 'short-encoder-v1', 'input_kind': 'synthetic silence; no recordings',
              'shape': [1, 128, 17], 'true_length': 17, 'provider': provider,
              'eligible': False, 'scope': 'short feasibility checkpoint; full take not run',
              'atol': 1e-4, 'rtol': 1e-3, 'model': identities, 'builds': builds,
@@ -98,6 +100,63 @@ def package(ort, sherpa, out):
         'limitation': 'Synthetic direct ORT only. Sherpa JNI compatibility and full-take integration not established.'})
     print(json.dumps({'path': str(out), 'artifacts': artifacts}))
 
+def validate_short_comparison_receipt(run):
+    plan = run['frozen']
+    sources = {'tools/encoder_probe.py','tools/encoder_conversion.py','tools/proposals/phone-short-encoder-v1.py',
+               'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+               'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts'}
+    model = {'encoder.onnx':'2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725',
+             'encoder.weights':'9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36'}
+    inputs = {'audio_signal.f32':'e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb',
+              'length.i64':'35e3a6176b50da27fcb868bf840f0e76290bd9bf55c40545e67bac66353d0674'}
+    runtime = dict(version='1.31.0',official_aar_sha256=ORT_SHA,core_sha256=CORE_SHA,jni_sha256=JNI_SHA,source_commit=SOURCE_COMMIT)
+    fields = {'schema','protocol','input_kind','shape','true_length','provider','eligible','scope',
+              'atol','rtol','model','builds','inputs','staging_envelope','runtime','sources'}
+    if (run.get('protocol') != 'short-encoder-v1' or type(run.get('schema')) is not int or run['schema'] != 1
+            or run.get('eligible') is not False or not re.fullmatch('[0-9a-f]{32}',run.get('attempt_id',''))
+            or not re.fullmatch('[0-9a-f]{64}',run.get('freeze_sha256',''))
+            or plan.get('protocol') != 'short-encoder-v1' or plan.get('schema') != 1
+            or set(plan) != fields or plan.get('eligible') is not False
+            or plan.get('input_kind') != 'synthetic silence; no recordings'
+            or plan.get('scope') != 'short feasibility checkpoint; full take not run'
+            or plan.get('atol') != 1e-4 or plan.get('rtol') != 1e-3
+            or plan.get('staging_envelope') != {'variant.json':sha(ROOT / 'variants/beam4-fp32-gate.json')}
+            or plan.get('shape') != [1,128,17] or plan.get('true_length') != 17
+            or plan.get('model') != model or plan.get('inputs') != inputs or plan.get('runtime') != runtime
+            or set(plan.get('sources',{})) != sources
+            or any(not re.fullmatch('[0-9a-f]{64}',value) for value in plan['sources'].values())
+            or any(type(run.get(k)) is not int or run[k] < (1 if k=='pid' else 0) for k in ('pid','processStartElapsedMs'))
+            or any(run.get(k) != 'unproven' for k in ('adapter_driver_proof','fp32_shader_proof','residual_node_assignment'))
+            or run.get('checkpoint') != 'outputs-materialized' or run.get('initialization_complete') is not True):
+        raise ValueError('unsupported typed short encoder receipt or frozen inputs')
+    if run.get('cpu_fallback_disabled') is not (plan['provider']=='webgpu'):
+        raise ValueError('short encoder fallback policy differs')
+    if plan['provider']=='webgpu' and run.get('provider_options') != dict(enableGraphCapture='0',enableInt64='1',preferredLayout='NCHW',dawnBackendType='Vulkan'):
+        raise ValueError('short encoder WebGPU options differ')
+    phases={'before-load','after-load','after-output','finally'}
+    memory=run.get('memory',[])
+    if (len(memory)!=4 or {row.get('phase') for row in memory}!=phases
+            or any(any(type(row.get(k)) is not int or row[k]<0 for k in ('highWaterKb','pssKb','thermalStatus'))
+                   or row['thermalStatus']>6 for row in memory)):
+        raise ValueError('short encoder resource observations differ')
+    for key in ('cold_load_ms','run_to_host_output_ms','initialization_elapsed_ms'):
+        if type(run.get(key)) not in (int,float) or not math.isfinite(run[key]) or run[key]<0:
+            raise ValueError('short encoder timing missing or invalid')
+    if len(run.get('outputs',[]))!=2:
+        raise ValueError('short encoder outputs missing')
+    for row,(name,dtype,shape,size) in zip(run['outputs'],[
+        ('encoder-probe-output0.f32','FLOAT',[1,1024,3],12288),('encoder-probe-output1.i64','INT64',[1],8)]):
+        if row.get('file')!=name or row.get('dtype')!=dtype or row.get('shape')!=shape:
+            raise ValueError('short encoder fixed tensor type or shape differs')
+        raw=base64.b64decode(row['raw_base64'],validate=True)
+        if len(raw)!=size or hashlib.sha256(raw).hexdigest()!=row['sha256']:
+            raise ValueError('output changed')
+        if dtype=='FLOAT' and not all(math.isfinite(x[0]) for x in struct.iter_unpack('<f',raw)):
+            raise ValueError('nonfinite short output')
+        if dtype=='INT64' and struct.unpack('<q',raw)!=(3,):
+            raise ValueError('short encoded length differs')
+
+
 def compare(reference, candidate):
     import numpy as np
     from encoder_conversion import tensor_verdict
@@ -105,6 +164,8 @@ def compare(reference, candidate):
     hashes = []
     for folder, provider in ((reference, 'cpu'), (candidate, 'webgpu')):
         result = folder / 'result.json'
+        if result.stat().st_size > 1024*1024:
+            raise ValueError('short result exceeds fixed byte bound')
         run = json.loads(result.read_text())
         hashes.append(sha(result))
         if run.get('outcome') != 'complete':
@@ -113,6 +174,7 @@ def compare(reference, candidate):
                               'checkpoint': run.get('checkpoint'), 'receipt_sha256': hashes,
                               'full_take': 'not run'}))
             return
+        validate_short_comparison_receipt(run)
         if run['runtime_version'] != '1.31.0' or run['frozen']['provider'] != provider:
             raise ValueError('requires direct Android 1.31 CPU/WebGPU receipts')
         frozen = run['frozen']
@@ -124,7 +186,7 @@ def compare(reference, candidate):
         if any(run.get(field) != expected for field, expected in bindings.items()):
             raise ValueError('installed build/runtime identity differs from freeze')
         options = {'optimization': 'ALL_OPT', 'execution_mode': 'SEQUENTIAL',
-                   'intra_op_threads': 4, 'inter_op_threads': 1, 'profiling': True}
+                   'intra_op_threads': 4, 'inter_op_threads': 1, 'profiling': False}
         if any(run.get(field) != expected for field, expected in options.items()):
             raise ValueError('incompatible common session options')
         tensors = []
@@ -137,11 +199,17 @@ def compare(reference, candidate):
                 raise ValueError('unexpected output dtype')
             dtype = '<f4' if index == 0 else '<i8'
             file = folder / name
-            raw = file.read_bytes() if file.exists() else base64.b64decode(tensor['raw_base64'], validate=True)
+            raw = base64.b64decode(tensor['raw_base64'], validate=True)
+            if file.exists() and (file.stat().st_size != len(raw) or file.read_bytes() != raw):
+                raise ValueError('output changed')
             if hashlib.sha256(raw).hexdigest() != tensor['sha256']:
                 raise ValueError('output changed')
             tensors.append(np.frombuffer(raw, dtype=dtype).reshape(tensor['shape']))
         runs.append((run, tensors))
+    if (runs[0][0]['attempt_id'] == runs[1][0]['attempt_id'] or
+            (runs[0][0]['pid'],runs[0][0]['processStartElapsedMs']) ==
+            (runs[1][0]['pid'],runs[1][0]['processStartElapsedMs'])):
+        raise ValueError('CPU/GPU require separate attempts and fresh processes')
     # Provider is the sole planned difference. Builds, runtime, source, fixture,
     # tolerances and every other frozen setting must describe the same setup.
     common_frozen = [{key: value for key, value in run['frozen'].items() if key != 'provider'}

@@ -55,6 +55,7 @@ class ProbePreparationTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, result.returncode, result.stderr)
             manifest = json.loads((out / 'encoder-probe.json').read_text())
+            self.assertEqual('short-encoder-v1', manifest['protocol'])
             self.assertEqual([1, 128, 17], manifest['shape'])
             self.assertEqual(17, manifest['true_length'])
             self.assertEqual(bytes(8704), (out / 'audio_signal.f32').read_bytes())
@@ -78,23 +79,45 @@ class ProbePreparationTests(unittest.TestCase):
             for name, value in (("cpu", 1000.0), ("gpu", 1000.5)):
                 run = folder / name
                 run.mkdir()
-                np.array([value], dtype="<f4").tofile(run / "output.f32")
-                np.array([17], dtype="<i8").tofile(run / "length.i64")
-                import hashlib
-                outputs = [{"file": file, "shape": [1], "dtype": dtype,
+                np.full((1,1024,3), value, dtype="<f4").tofile(run / "encoder-probe-output0.f32")
+                np.array([3], dtype="<i8").tofile(run / "encoder-probe-output1.i64")
+                outputs = [{"file": file, "shape": shape, "dtype": dtype,
                             "sha256": hashlib.sha256((run / file).read_bytes()).hexdigest(),
                             "raw_base64": base64.b64encode((run / file).read_bytes()).decode()}
-                           for file, dtype in (("output.f32", "FLOAT"), ("length.i64", "INT64"))]
-                result = {"outcome": "complete", "runtime_version": "1.31.0", "outputs": outputs,
-                          "frozen": {"provider": "cpu" if name == "cpu" else "webgpu",
-                                     "inputs": {"fabricated": "same"}, "model": {"fabricated": "same"},
-                                     "builds": {"app_sha256": "app", "test_sha256": "test"},
-                                     "runtime": {"version": "1.31.0", "core_sha256": "core", "jni_sha256": "jni"},
-                                     "sources": {"harness": "source"}},
-                          "build_sha256": "app", "test_build_sha256": "test",
-                          "runtime_core_sha256": "core", "runtime_jni_sha256": "jni",
-                          "optimization": "ALL_OPT", "execution_mode": "SEQUENTIAL",
-                          "intra_op_threads": 4, "inter_op_threads": 1, "profiling": True}
+                           for file, dtype, shape in (("encoder-probe-output0.f32", "FLOAT", [1,1024,3]),
+                                                      ("encoder-probe-output1.i64", "INT64", [1]))]
+                runtime = dict(version='1.31.0',official_aar_sha256='72683787a80d0608a3121b967d8e1239aef48286826661c953211626690540a7',
+                    core_sha256='8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0',
+                    jni_sha256='5f2f1a99fd9f65fd6271eed825632f4ae5ada95f5cc13d66605888ccb80cdc29',
+                    source_commit='402979ac1bef89dcd55add41eaa7277c407599eb')
+                result = {"schema":1, "protocol":"short-encoder-v1", "attempt_id": ('a' if name=='cpu' else 'b')*32,
+                    "pid": 100 if name=='cpu' else 101, "processStartElapsedMs":1000 if name=='cpu' else 2000,
+                    "freeze_sha256":('a' if name=='cpu' else 'b')*64, "eligible":False,
+                    "outcome": "complete", "runtime_version": "1.31.0", "outputs": outputs,
+                    "frozen": {"protocol":"short-encoder-v1", "schema":1, "shape":[1,128,17],"true_length":17,
+                        "eligible":False,"input_kind":"synthetic silence; no recordings",
+                        "scope":"short feasibility checkpoint; full take not run","atol":1e-4,"rtol":1e-3,
+                        "staging_envelope":{"variant.json":hashlib.sha256((ROOT/'variants/beam4-fp32-gate.json').read_bytes()).hexdigest()},
+                        "provider": "cpu" if name == "cpu" else "webgpu",
+                        "inputs": {"audio_signal.f32":"e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb",
+                                   "length.i64":"35e3a6176b50da27fcb868bf840f0e76290bd9bf55c40545e67bac66353d0674"},
+                        "model": {"encoder.onnx":"2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725",
+                                  "encoder.weights":"9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36"},
+                        "builds": {"app_sha256": "a"*64, "test_sha256": "b"*64},
+                        "runtime": runtime, "sources": {key:"a"*64 for key in ('tools/encoder_probe.py','tools/encoder_conversion.py',
+                            'tools/proposals/phone-short-encoder-v1.py','app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+                            'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts')}},
+                    "build_sha256": "a"*64, "test_build_sha256": "b"*64,
+                    "runtime_core_sha256":runtime['core_sha256'],"runtime_jni_sha256":runtime['jni_sha256'],
+                    "optimization": "ALL_OPT", "execution_mode": "SEQUENTIAL",
+                    "intra_op_threads": 4, "inter_op_threads": 1, "profiling": False,
+                    "cpu_fallback_disabled":name=='gpu', "checkpoint":"outputs-materialized",
+                    "initialization_complete":True,"initialization_elapsed_ms":1.0,"cold_load_ms":1.0,
+                    "run_to_host_output_ms":2.0,"adapter_driver_proof":"unproven",
+                    "fp32_shader_proof":"unproven","residual_node_assignment":"unproven",
+                    "memory":[dict(phase=p,pssKb=100,highWaterKb=200,thermalStatus=0)
+                              for p in ('before-load','after-load','after-output','finally')]}
+                if name=='gpu':result['provider_options']=dict(enableGraphCapture='0',enableInt64='1',preferredLayout='NCHW',dawnBackendType='Vulkan')
                 (run / "result.json").write_text(json.dumps(result))
             command = [sys.executable, str(ROOT / "tools/encoder_probe.py"), "compare",
                        "--reference", str(folder / "cpu"), "--candidate", str(folder / "gpu")]
@@ -105,8 +128,8 @@ class ProbePreparationTests(unittest.TestCase):
             self.assertFalse(verdict["eligible"])
             self.assertEqual("unproven", verdict["physical_fp32_proof"])
             for run in (folder / "cpu", folder / "gpu"):
-                (run / "output.f32").unlink()
-                (run / "length.i64").unlink()
+                (run / "encoder-probe-output0.f32").unlink()
+                (run / "encoder-probe-output1.i64").unlink()
             json_only = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, json_only.returncode, json_only.stderr)
             self.assertTrue(json.loads(json_only.stdout)["tensor_verdict"]["passed"])
@@ -123,6 +146,20 @@ class ProbePreparationTests(unittest.TestCase):
                 lambda r: r.update(runtime_jni_sha256="changed-installed-jni"),
                 lambda r: r.update(intra_op_threads=2),
                 lambda r: r.update(optimization="NO_OPT"),
+                lambda r: r.update(protocol="historical"),
+                lambda r: r.pop("attempt_id"),
+                lambda r: r.update(attempt_id="a"*32),
+                lambda r: r.update(pid=100,processStartElapsedMs=1000),
+                lambda r: r.update(cpu_fallback_disabled=False),
+                lambda r: r["provider_options"].update(enableInt64="0"),
+                lambda r: r["outputs"][0].update(shape=[1,3,1024]),
+                lambda r: r.pop("initialization_elapsed_ms"),
+                lambda r: r['frozen'].update(eligible=True),
+                lambda r: r['frozen'].update(atol=1.0),
+                lambda r: r['frozen'].update(rtol=1.0),
+                lambda r: r['frozen'].update(input_kind='personal'),
+                lambda r: r['frozen'].update(scope='full take'),
+                lambda r: r['frozen'].update(staging_envelope={'variant.json':'0'*64}),
             ]
             for index, mutate in enumerate(mutations):
                 with self.subTest(changed_identity=index):
@@ -132,7 +169,7 @@ class ProbePreparationTests(unittest.TestCase):
                     mismatched = subprocess.run(command, capture_output=True, text=True)
                     self.assertEqual(2, mismatched.returncode, mismatched.stdout)
             candidate_path.write_text(json.dumps(original))
-            (folder / "gpu/output.f32").write_bytes(bytes(4))
+            (folder / "gpu/encoder-probe-output0.f32").write_bytes(bytes(4))
             corrupted = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(0, corrupted.returncode)
             self.assertIn("output changed", corrupted.stderr)
