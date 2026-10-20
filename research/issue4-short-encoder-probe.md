@@ -71,7 +71,10 @@ WebGPU explicitly selects Vulkan, NCHW, Int64 support, graph capture off, and
 providers fail. Residual shape/length/mask assignment to CPU must fail session
 initialization. Provider creation, native loading, session creation and execution
 failures retain their checkpoint/stack and every available resource observation.
-Profiling/logging are diagnostic. Timing includes input reads/preparation/copies,
+Profiling/logging are diagnostic. Cold load measures the complete monotonic interval
+from native initialization through provider/Dawn and session creation. Separate
+native/provider/session times are retained; failed initialization retains elapsed
+time through the failure in the final receipt. Inference timing includes input reads/preparation/copies,
 synchronous Run, host output materialization and diagnostic persistence; it cannot
 enter a practical speed comparison.
 
@@ -86,7 +89,11 @@ python3 tools/encoder_probe.py compare --reference corpus/lab/issue4-short-cpu \
 ```
 
 Directories contain pulled `result.json` receipts. Direct comparison requires
-Android 1.31 CPU/WebGPU labels and identical model/input identities; validates raw
+Android 1.31 CPU/WebGPU labels. Provider is the sole allowed frozen difference:
+model/inputs, builds, runtime, sources and every other frozen setting must match.
+Actual installed app/test/core/JNI identities must match those frozen bindings;
+normal optimization, sequential execution, thread counts and profiling are checked.
+It validates raw
 hashes, FP32/int64, finite values, shapes, exact lengths and reference-scaled
 `atol=1e-4, rtol=1e-3` using the existing tensor seam. Historical host reference
 outputs are supplementary only. A numerical pass alone remains `eligible:false`:
