@@ -21,8 +21,13 @@ process death leaves an unresolved attempt and cannot silently retry.
 
 The fixed `LabTest.variantOnSavedTakes` first checks `lab/encoder-probe.json`.
 It runs neither the saved recordings nor the pipeline in this mode. Stage the
-manifest, its two raw input files, and the unchanged encoder/weights in `lab/model`.
-A `variant.json` is not consumed by this early dispatch. Staging, execution and
+entire prepared directory, including its manifest, two raw input files,
+`variant.json`, and unchanged encoder/weights in `model/`. The protected staging
+command requires the established variant/model envelope before LabTest dispatch.
+Freeze copies existing `variants/beam4-fp32-gate.json` bytes, records its digest
+separately as `staging_envelope`, and creates a real model directory with hardlinked
+files on the same filesystem (copy fallback across filesystems). Tensor input
+identities remain separate. The early helper does not consume `variant.json`. Staging, execution and
 recovery must use the protected checkout wrapper and current-task authorization.
 
 ## Runtime preparation and build

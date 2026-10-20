@@ -2,6 +2,9 @@
 """Prepare a bounded synthetic Android encoder probe. No inference or recordings."""
 import argparse
 import base64
+import errno
+import os
+import shutil
 import hashlib
 import json
 from pathlib import Path
@@ -32,13 +35,29 @@ def freeze(model, out, app_apk, test_apk, provider="cpu"):
     out.mkdir(parents=True, exist_ok=False)
     (out / 'audio_signal.f32').write_bytes(bytes(1 * 128 * 17 * 4))
     (out / 'length.i64').write_bytes(struct.pack('<q', 17))
+    # The protected staging command requires its established variant/model
+    # envelope even though the short tensor helper never consumes the variant.
+    (out / 'variant.json').write_bytes((ROOT / 'variants/beam4-fp32-gate.json').read_bytes())
+    staged_model = out / 'model'
+    staged_model.mkdir()
+    for name, expected in identities.items():
+        source, target = (model / name).resolve(strict=True), staged_model / name
+        try:
+            os.link(source, target)
+        except OSError as error:
+            if error.errno != errno.EXDEV:
+                raise
+            shutil.copy2(source, target)
+        if sha(target) != expected:
+            raise ValueError('model changed during staging: ' + name)
     sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt', 'app/build.gradle.kts']
     value = {'schema': 1, 'input_kind': 'synthetic silence; no recordings',
              'shape': [1, 128, 17], 'true_length': 17, 'provider': provider,
              'eligible': False, 'scope': 'short feasibility checkpoint; full take not run',
              'atol': 1e-4, 'rtol': 1e-3, 'model': identities, 'builds': builds,
-             'inputs': {p.name: sha(p) for p in out.iterdir()},
+             'inputs': {name: sha(out / name) for name in ('audio_signal.f32', 'length.i64')},
+             'staging_envelope': {'variant.json': sha(out / 'variant.json')},
              'runtime': {'version': '1.31.0', 'official_aar_sha256': ORT_SHA, 'core_sha256': CORE_SHA, 'jni_sha256': JNI_SHA, 'source_commit': SOURCE_COMMIT},
              'sources': {name: sha(ROOT / name) for name in sources}}
     write(out / 'encoder-probe.json', value)
