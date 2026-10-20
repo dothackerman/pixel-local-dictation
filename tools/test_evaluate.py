@@ -7,10 +7,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
 
 import evaluate
-import lab
 import variant
 
 
@@ -180,33 +178,6 @@ class ReportAcceptanceTests(unittest.TestCase):
         result["variant"] = variant.validate(laptop["variant"])
         self.assertEqual(evaluate.phone_check(result, laptop, self.base)[0], "fail")
 
-    def test_lab_phone_score_uses_persisted_twin_and_cannot_keep_bad_phone_text(self):
-        root = Path(self.temp.name)
-        labdir = root / "corpus/lab"; runs = labdir / "runs"; runs.mkdir(parents=True)
-        for report, name in ((self.base, "baseline.json"), (self.dictionary, "runs/candidate-test.json"),
-                             (self.twin, "runs/twin-twincommit.json")):
-            (labdir / name).write_text(json.dumps(report))
-        (labdir / "dictionary.txt").write_text(self.hotwords.read_text())
-        variant_path = root / "candidate.json"; variant_path.write_text(json.dumps(self.dictionary["variant"]))
-        result = self.phone(); result["variant"] = self.dictionary["variant"]
-        for take in result["takes"]:
-            take["text"] = "Wrong wrong wrong wrong wrong."
-        result_path = root / "phone.json"; result_path.write_text(json.dumps(result))
-        rows = [{"variant": "twin", "commit": "twincommit", "stage1": "fail", "status": "discard"},
-                {"variant": "candidate", "commit": "test", "stage1": "pass", "status": "pending-phone",
-                 "reference": "twin", "reference_commit": "twincommit"}]
-        for key, value in (("LAB", labdir), ("RUNS", runs), ("LEDGER", labdir / "results.tsv"),
-                           ("BASELINE", labdir / "baseline.json")):
-            patch.object(lab, key, str(value)).start()
-        patch.object(lab, "check").start()  # fixture omits the repository's freeze manifest
-        lab.ledger_write(rows)
-        with redirect_stdout(io.StringIO()):
-            lab.phone_score(SimpleNamespace(variant=str(variant_path), result=str(result_path), reference=None))
-        saved = lab.ledger_rows()
-        self.assertEqual(saved[-1]["status"], "discard")
-        self.assertEqual(saved[-1]["reference_commit"], "twincommit")
-        self.assertEqual(saved[-1]["evaluator_revision"], "3")
-        self.assertEqual(saved[0]["status"], "discard")
 
 
 if __name__ == "__main__":

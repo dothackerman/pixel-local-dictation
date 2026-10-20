@@ -38,7 +38,8 @@ def main():
             print('\n'.join(errors), file=sys.stderr)
             return 1
     for command in ([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
-                    [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'lintBenchmark']):
+                    [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest',
+                     'compileBenchmarkAndroidTestKotlin', 'lintBenchmark']):
         result = subprocess.run(command, cwd=ROOT, env=environment)
         if result.returncode:
             return result.returncode

@@ -13,8 +13,8 @@ Usage:
                                                     applies, judged against REFERENCE (same pipeline, no dictionary)
   tools/evaluate.py phone RESULT.json [LAPTOP_REPORT.json BASELINE.json [HOTWORDS.txt REFERENCE.json]]
                                                     budget diagnostics; with reports, full phone acceptance
-Prints a summary block of "key: value" lines last; tools/lab.py reads it. Do not edit during a
-loop: checksummed by tools/lab.py check. Quirks of the normaliser are logged, not fixed.
+Historical report evaluator. Keep its scoring semantics stable; new session comparisons
+use experiment.py. The retired loop source and its freeze remain in Git.
 """
 import json, math, os, re, statistics, sys
 

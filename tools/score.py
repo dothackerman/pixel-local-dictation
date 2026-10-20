@@ -4,7 +4,7 @@
 Usage: tools/score.py TAKES.json REPORT.json [REPORT.json ...]
        tools/score.py --corpus corpus        (milestone 3: Oriol's scripts, FUTO against the app)
 TAKES.json maps a take's file name to its script id, e.g. {"20261010-080909-723.wav": "D6"}.
-Reports come from tools/replay.py. Prints one row per take and decode path, and FUTO's
+Reads historical replay reports. Prints one row per take and decode path, and FUTO's
 row from the raw output recorded in corpus/references/baseline-v1.json.
 
 Normalisation before counting: lower case, punctuation removed, hyphens become spaces,

@@ -36,22 +36,16 @@ class PipelineTest {
             val b = ByteBuffer.wrap(f.readBytes()).order(ByteOrder.LITTLE_ENDIAN).apply { position(44) }
             val x = FloatArray(b.remaining() / 2) { b.short / 32768f }
             val previews = java.util.Collections.synchronizedList(ArrayList<String>())
-            val segmenter = Engine.segmenter(ctx).also { it.reset() }
-            val take = TakeTranscriber({ Engine.recognizer(ctx) }, segmenter, Engine.decodeQueue, { it.run() }) { previews.add(it) }
-            var i = 0
-            while (i < x.size) { val n = minOf(640, x.size - i); take.feed(x.copyOfRange(i, i + n)); i += n }
-            val stopped = SystemClock.elapsedRealtime()
-            val latch = CountDownLatch(1)
-            var result: Result<String>? = null
-            take.finish { result = it; latch.countDown() }
-            assertTrue("no final text within two minutes", latch.await(2, TimeUnit.MINUTES))
-            val text = result!!.getOrThrow()
+            val result = replaySession(Engine.runtime(ctx), x, paced = false) { previews.add(it) }
+            assertTrue("session failed: ${result.outcome}", result.outcome == TakeOutcome.COMPLETED)
+            val text = requireNotNull(result.text)
             Log.i("ReplayTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters, " +
                 "${text.split(Regex("\\s+")).size} words")
             assertTrue("empty transcript for ${f.name}", text.isNotBlank())
             out.put(JSONObject().put("file", f.name).put("text", text).put("previews", previews.size)
-                .put("finishMs", SystemClock.elapsedRealtime() - stopped))
+                .put("finishMs", (result.eventsNs.getValue("finalReady") - result.eventsNs.getValue("stopRequested")) / 1e6))
         }
-        File(dir, "pipeline.json").writeText(JSONObject().put("takes", out).toString(2))
+        File(dir, "pipeline.json").writeText(JSONObject().put("takes", out)
+            .put("timingProtocol", "dictation-session-replay-v1").put("editor", "simulated").toString(2))
     }
 }

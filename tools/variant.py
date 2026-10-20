@@ -4,7 +4,7 @@
 A variant is a JSON file that fully describes one decode pipeline. The same file is read by the
 laptop runner (tools/pipeline.py) and by the phone (app: Variant.kt), so every key here has a
 Kotlin twin. The loop may change values, never add keys: unknown keys are rejected. Changing
-this file is a setup-session change (it is checksummed by tools/lab.py check).
+this file is a setup-session change; freeze its identity before measurements.
 
 Schema 4 adds independent model/LID CPU arena, memory pattern and profiling controls.
 Schema 3 adds explicit Qwen context/generation budgets and bounded chunks. Schema 1/2 files

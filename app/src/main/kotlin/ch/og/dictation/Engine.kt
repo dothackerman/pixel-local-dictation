@@ -269,6 +269,12 @@ class VadSegmenter(private val v: Variant, private val vadModel: ModelFiles) : S
 
 /** Builds the pipeline a [Variant] describes; shared by the daily app (assets) and LabTest (files). */
 object Pipeline {
+    fun runtime(
+        v: Variant, model: ModelFiles, lid: ModelFiles?, vad: ModelFiles,
+        queue: java.util.concurrent.Executor, hotwordsPath: String = "", timeline: TimelineObserver? = null,
+    ) = DictationRuntime(v, queue, { recognizer(v, model, lid, hotwordsPath, timeline) },
+        { VadSegmenter(v, vad) }, ::release)
+
     fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = "", timeline: TimelineObserver? = null): Recognizer {
         fun buildAsr(build: () -> SherpaRecognizer): SherpaRecognizer {
             timeline?.emit(TimelineEvent("asrLoadStart"))
@@ -304,20 +310,18 @@ object Engine {
     val variant: Variant = Variant.DEFAULT
 
     /** Serial: model load first, then segments in order. */
-    val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
-    private var recognizer: Recognizer? = null   // decode thread only
-    private var segmenter: VadSegmenter? = null
+    private val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
+    private var runtime: DictationRuntime? = null
+
+    @Synchronized fun runtime(context: Context): DictationRuntime =
+        runtime ?: ModelFiles.asset(context.applicationContext, ASSET_MODEL).let { files ->
+            Pipeline.runtime(variant, files, null, files, decodeQueue).also { runtime = it }
+        }
 
     /** Starts loading the model in the background; safe to call repeatedly. */
     fun warmUp(context: Context) {
-        val app = context.applicationContext
-        decodeQueue.execute { runCatching { recognizer(app) }.onFailure { Log.e(TAG, "model load failed", it) } }
+        runtime(context).warmUp().whenComplete { _, failure ->
+            if (failure != null) Log.e(TAG, "model load failed", failure)
+        }
     }
-
-    /** Decode thread only. */
-    fun recognizer(context: Context): Recognizer =
-        recognizer ?: Pipeline.recognizer(variant, ModelFiles.asset(context.applicationContext, ASSET_MODEL), null).also { recognizer = it }
-
-    @Synchronized fun segmenter(context: Context): Segmenter =
-        segmenter ?: VadSegmenter(variant, ModelFiles.asset(context.applicationContext, ASSET_MODEL)).also { segmenter = it }
 }

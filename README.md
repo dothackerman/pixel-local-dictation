@@ -64,7 +64,11 @@ and returns to FUTO.
   [method.xml](app/src/main/res/xml/method.xml) declares a voice subtype without a
   locale and overrides implicit subtype selection. Even an input restart with
   identical attributes discards the take.
-- [TakeTranscriber](app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt) and
+- [DictationSession](app/src/main/kotlin/ch/og/dictation/DictationSession.kt) owns
+  each take, including capture drain, cancellation and editor acceptance.
+  The IME and phone replay construct it through the same runtime factory.
+  [ADR-017](adrs/017-shared-take-experiments.md) defines the seam and timing receipts.
+  Its internal [TakeTranscriber](app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt) and
   [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) decode closed chunks
   while recording continues. Stop queues the remaining audio. Each chunk is decoded
   independently, without encoder state from earlier chunks.
@@ -94,7 +98,7 @@ and returns to FUTO.
 3. Build with `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
 
 `python3 tools/quality.py` runs Python regression tests, Kotlin benchmark unit
-tests and Android lint offline. It runs no device tests.
+tests, instrumentation compilation and Android lint offline. It runs no device tests.
 The local pre-commit gate runs it with `--staged`. Stage tracked edits and new
 source, test and build inputs first so the checkout matches the index.
 The gate rejects index changes during the run.
@@ -137,6 +141,12 @@ Claude’s live filesystem enforcement remains unverified.
 `python3 tools/test_agent_guard.py` runs synthetic guard checks.
 
 ## Evaluation
+
+For new work, use [the shared take and comparison interface](adrs/017-shared-take-experiments.md).
+`python3 tools/lab.py --help` lists preparation, frozen comparisons and private
+evidence commands. The tool never executes experiments. A preparation snapshot
+with present artifacts still needs correctness checks and a separately authorized
+launch. Old lab execution commands are retired.
 
 Prepare a fixed set of variants, freeze laptop controls, then collect matched
 phone measurements. Report quality, resource use and evidence completeness
@@ -197,4 +207,4 @@ and verdicts stay unchanged.
 Completed orchestration and runbooks remain in pinned Git history.
 [ADR-008](adrs/008-three-stage-loop.md) explains source recovery and offline
 analysis. Active tools retain scoring, matched evidence checks, measurement
-adapters and the daily app. No successor runner exists.
+adapters and the daily app. New comparisons use the bounded lab interface above.

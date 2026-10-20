@@ -63,10 +63,16 @@ class Recorder {
 
     /** Stops capture and returns the PCM bytes (16-bit little endian); the internal copy is discarded. */
     fun stop(): ByteArray {
-        val t = thread ?: return ByteArray(0)
         capturing = false
-        t.join(); thread = null
-        record?.run { stop(); release() }; record = null
+        thread?.join()
+        thread = null
+        val rec = record
+        record = null
+        try {
+            if (rec?.recordingState == AudioRecord.RECORDSTATE_RECORDING) rec.stop()
+        } finally {
+            rec?.release()
+        }
         val pcm = synchronized(buffer) { buffer.toByteArray().also { buffer.reset() } }
         return pcm
     }

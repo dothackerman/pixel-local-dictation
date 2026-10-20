@@ -8,7 +8,7 @@ and the chunk texts are joined with one space. Guard clips (short public clips) 
 Usage:
   models/venv/bin/python tools/pipeline.py VARIANT.json OUT.json [--takes corpus/files/benchmark]
                                             [--guard models/guard] [--models models]
-Timings are laptop numbers. Frozen: checksummed by tools/lab.py check.
+Timings are laptop screen numbers. This independent implementation is not app-flow evidence.
 """
 import argparse, glob, json, os, sys, time, wave
 import numpy as np
