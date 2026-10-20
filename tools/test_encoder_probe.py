@@ -2,6 +2,9 @@
 import json
 import base64
 import copy
+import os
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +15,31 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 
 class ProbePreparationTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("ORT131_AAR"), "set ORT131_AAR for official package integration test")
+    def test_published_runtime_package_has_no_network_permissions_or_initializer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            stock = folder / "fabricated-sherpa.aar"
+            with zipfile.ZipFile(stock, "w") as archive:
+                archive.writestr("jni/arm64-v8a/libonnxruntime.so", b"fabricated old core")
+            out = folder / "runtime"
+            completed = subprocess.run([sys.executable, str(ROOT / "tools/encoder_probe.py"), "package",
+                "--ort-aar", os.environ["ORT131_AAR"], "--sherpa-aar", str(stock), "--out", str(out)],
+                capture_output=True, text=True)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            with zipfile.ZipFile(out / "ort131-java-jni.aar") as archive:
+                manifest = ET.fromstring(archive.read("AndroidManifest.xml"))
+                self.assertEqual(["uses-sdk"], [child.tag for child in manifest],
+                    "runtime manifest must declare no permissions or components")
+                self.assertEqual("36", manifest.find("uses-sdk").get("{http://schemas.android.com/apk/res/android}targetSdkVersion"))
+                self.assertNotIn("jni/arm64-v8a/libonnxruntime.so", archive.namelist())
+                import hashlib
+                self.assertEqual("5f2f1a99fd9f65fd6271eed825632f4ae5ada95f5cc13d66605888ccb80cdc29",
+                    hashlib.sha256(archive.read("jni/arm64-v8a/libonnxruntime4j_jni.so")).hexdigest())
+            with zipfile.ZipFile(out / "sherpa-ort131.aar") as archive:
+                self.assertEqual("8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0",
+                    hashlib.sha256(archive.read("jni/arm64-v8a/libonnxruntime.so")).hexdigest())
+
     def test_freezes_short_synthetic_bytes_before_any_execution(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
