@@ -15,7 +15,8 @@ The adjacent `.diff` compares these exact sources.
 1. Review the candidate/diff and fixed incident identities. If the current wrapper
    differs from the original source pin, stop and review the difference.
 2. The user manually replaces the contents of the checkout's protected
-   `tools/phone` with this exact candidate, preserving its executable permission.
+   `tools/phone` with this exact candidate, preserving its ownership, executable
+   permission and existing protections through the established manual process.
    The agent must not apply the replacement or execute the proposal path.
 3. Confirm manual application. Recovery and independent inspection then use only
    the existing wrapper and exact run `issue4-short-cpu-20261020-03`.
