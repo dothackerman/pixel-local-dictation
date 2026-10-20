@@ -2,6 +2,7 @@
 import json
 import base64
 import copy
+import hashlib
 import os
 import zipfile
 import xml.etree.ElementTree as ET
@@ -58,6 +59,14 @@ class ProbePreparationTests(unittest.TestCase):
             self.assertEqual(17, manifest['true_length'])
             self.assertEqual(bytes(8704), (out / 'audio_signal.f32').read_bytes())
             self.assertEqual(b'\x11\0\0\0\0\0\0\0', (out / 'length.i64').read_bytes())
+            self.assertTrue((out / 'model').is_dir())
+            self.assertFalse((out / 'model').is_symlink())
+            self.assertEqual(b'fabricated graph identity', (out / 'model/encoder.onnx').read_bytes())
+            self.assertEqual(b'fabricated weight identity', (out / 'model/encoder.weights').read_bytes())
+            variant = (ROOT / 'variants/beam4-fp32-gate.json').read_bytes()
+            self.assertEqual(variant, (out / 'variant.json').read_bytes())
+            self.assertEqual({'variant.json': hashlib.sha256(variant).hexdigest()}, manifest['staging_envelope'])
+            self.assertEqual({'audio_signal.f32', 'length.i64'}, set(manifest['inputs']))
             self.assertFalse(manifest['eligible'])
             self.assertEqual('synthetic silence; no recordings', manifest['input_kind'])
             repeated = subprocess.run(command, capture_output=True, text=True)
