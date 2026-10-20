@@ -90,6 +90,18 @@ def compare(reference, candidate):
             return
         if run['runtime_version'] != '1.31.0' or run['frozen']['provider'] != provider:
             raise ValueError('requires direct Android 1.31 CPU/WebGPU receipts')
+        frozen = run['frozen']
+        bindings = {'build_sha256': frozen['builds']['app_sha256'],
+                    'test_build_sha256': frozen['builds']['test_sha256'],
+                    'runtime_core_sha256': frozen['runtime']['core_sha256'],
+                    'runtime_jni_sha256': frozen['runtime']['jni_sha256'],
+                    'runtime_version': frozen['runtime']['version']}
+        if any(run.get(field) != expected for field, expected in bindings.items()):
+            raise ValueError('installed build/runtime identity differs from freeze')
+        options = {'optimization': 'ALL_OPT', 'execution_mode': 'SEQUENTIAL',
+                   'intra_op_threads': 4, 'inter_op_threads': 1, 'profiling': True}
+        if any(run.get(field) != expected for field, expected in options.items()):
+            raise ValueError('incompatible common session options')
         tensors = []
         for index, tensor in enumerate(run['outputs']):
             name = tensor['file']
@@ -105,9 +117,15 @@ def compare(reference, candidate):
                 raise ValueError('output changed')
             tensors.append(np.frombuffer(raw, dtype=dtype).reshape(tensor['shape']))
         runs.append((run, tensors))
-    for field in ('inputs', 'model'):
-        if runs[0][0]['frozen'][field] != runs[1][0]['frozen'][field]:
-            raise ValueError('unmatched ' + field)
+    # Provider is the sole planned difference. Builds, runtime, source, fixture,
+    # tolerances and every other frozen setting must describe the same setup.
+    common_frozen = [{key: value for key, value in run['frozen'].items() if key != 'provider'}
+                     for run, _ in runs]
+    if common_frozen[0] != common_frozen[1]:
+        raise ValueError('unmatched frozen builds/runtime/sources or inputs/settings')
+    for field in ('builds', 'runtime', 'sources', 'inputs', 'model'):
+        if not common_frozen[0].get(field):
+            raise ValueError('missing frozen ' + field)
     print(json.dumps({'eligible': False, 'tensor_verdict': tensor_verdict(runs[0][1], runs[1][1]),
                       'reference': 'Android ORT 1.31 CPU', 'candidate': 'Android ORT 1.31 WebGPU',
                       'receipt_sha256': hashes, 'physical_fp32_proof': 'unproven',
@@ -137,7 +155,7 @@ def main():
             compare(args.reference, args.candidate)
         else:
             package(args.ort_aar, args.sherpa_aar, args.out)
-    except (ValueError, OSError, zipfile.BadZipFile) as error:
+    except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile) as error:
         parser.exit(2, str(error) + '\n')
 
 if __name__ == '__main__':

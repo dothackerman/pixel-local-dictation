@@ -33,6 +33,9 @@ public final class EncoderProbe {
             .put("residual_node_assignment", "unproven").put("later_checks", "not run");
         JSONArray memory = new JSONArray();
         out.put("memory", memory);
+        long initializationStartNs = 0;
+        long initializationEndNs = 0;
+        long phaseStartNs = 0;
         try {
             File config = new File(folder, "encoder-probe.json");
             JSONObject plan = new JSONObject(Files.readString(config.toPath()));
@@ -63,11 +66,16 @@ public final class EncoderProbe {
             require(testSha.equals(plan.getJSONObject("builds").getString("test_sha256")), "installed test differs from freeze");
             out.put("test_build_sha256", testSha);
             checkpoint = "native-load";
+            initializationStartNs = SystemClock.elapsedRealtimeNanos();
+            phaseStartNs = initializationStartNs;
             System.loadLibrary("onnxruntime");
             OrtEnvironment env = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE, "encoder-probe");
             require(env.getVersion().equals("1.31.0"), "runtime version mismatch: " + env.getVersion());
             out.put("runtime_version", env.getVersion()).put("available_providers", OrtEnvironment.getAvailableProviders().toString());
+            out.put("native_load_ms", (SystemClock.elapsedRealtimeNanos() - phaseStartNs) / 1e6);
             memory.put(resources("before-load"));
+            checkpoint = "provider-create";
+            phaseStartNs = SystemClock.elapsedRealtimeNanos();
             try (OrtSession.SessionOptions options = new OrtSession.SessionOptions()) {
                 options.setIntraOpNumThreads(4);
                 options.setInterOpNumThreads(1);
@@ -77,8 +85,8 @@ public final class EncoderProbe {
                 options.setSessionLogVerbosityLevel(1);
                 options.enableProfiling(new File(folder, "encoder-probe-profile").getAbsolutePath());
                 out.put("optimization", "ALL_OPT").put("execution_mode", "SEQUENTIAL").put("profiling", true)
+                    .put("intra_op_threads", 4).put("inter_op_threads", 1)
                     .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, and diagnostic persistence; profiled diagnostic only");
-                checkpoint = "provider-create";
                 if (provider.equals("webgpu")) {
                     options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
                     Map<String, String> gpu = new LinkedHashMap<>();
@@ -92,10 +100,14 @@ public final class EncoderProbe {
                     options.addCPU(true);
                     out.put("cpu_fallback_disabled", false);
                 }
+                out.put("provider_create_ms", (SystemClock.elapsedRealtimeNanos() - phaseStartNs) / 1e6);
                 checkpoint = "session-create";
-                long start = SystemClock.elapsedRealtimeNanos();
+                phaseStartNs = SystemClock.elapsedRealtimeNanos();
+                long start = phaseStartNs;
                 try (OrtSession session = env.createSession(new File(folder, "model/encoder.onnx").getAbsolutePath(), options)) {
-                    out.put("cold_load_ms", (SystemClock.elapsedRealtimeNanos() - start) / 1e6);
+                    initializationEndNs = SystemClock.elapsedRealtimeNanos();
+                    out.put("session_create_ms", (initializationEndNs - phaseStartNs) / 1e6);
+                    out.put("cold_load_ms", (initializationEndNs - initializationStartNs) / 1e6);
                     memory.put(resources("after-load"));
                     start = SystemClock.elapsedRealtimeNanos();
                     byte[] input = Files.readAllBytes(new File(folder, "audio_signal.f32").toPath());
@@ -153,6 +165,14 @@ public final class EncoderProbe {
             error.printStackTrace(new PrintWriter(trace));
             out.put("checkpoint", checkpoint).put("failure", trace.toString());
         } finally {
+            long now = SystemClock.elapsedRealtimeNanos();
+            if (initializationStartNs != 0) {
+                long end = initializationEndNs != 0 ? initializationEndNs : now;
+                out.put("initialization_elapsed_ms", (end - initializationStartNs) / 1e6)
+                    .put("initialization_complete", initializationEndNs != 0);
+                if (initializationEndNs == 0 && phaseStartNs != 0)
+                    out.put("failed_initialization_phase_ms", (now - phaseStartNs) / 1e6);
+            }
             memory.put(resources("finally"));
             Files.writeString(result.toPath(), out.toString(2));
         }
