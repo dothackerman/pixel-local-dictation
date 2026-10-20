@@ -1,36 +1,35 @@
 ---
 name: code-review
-description: "Review committed changes against a fixed point, staged changes, or working-tree changes along Standards and Spec axes using parallel sub-agents. Use for branch, PR, staged, or work-in-progress review."
+description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
 ---
 
-Two-axis review of the scope the user supplies:
+Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
+The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
+
 ## Process
 
-### 1. Pin the review scope
+### 1. Pin the fixed point
 
-Select the requested scope and capture its diff command once:
+Whatever the user said is the fixed point (a commit SHA, branch name, tag, `main`, `HEAD~5`, etc.). If they didn't specify one, ask for it.
 
-- Committed branch changes: resolve the supplied commit/branch/tag, then use `git diff <fixed-point>...HEAD` and `git log <fixed-point>..HEAD --oneline`.
-- Staged changes: `git diff --cached`; there is no new commit list.
-- Working-tree changes: `git diff HEAD` includes staged and unstaged tracked edits. Include relevant untracked files from `git ls-files --others --exclude-standard` as separate additions; keep ignored private files outside the review.
-- Changes since a fixed point including work in progress: resolve the merge-base, then `git diff <merge-base>` and include relevant untracked additions.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-If scope is ambiguous, ask which scope to review. Confirm references resolve and the selected diff/additions are non-empty before spawning agents. Pass the same captured commands and additions to both axes; if files change during review, refresh both axes against the new scope.
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside two parallel sub-agents.
 
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
 
-1. A local spec path or explicit requirements supplied by the user.
-2. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.), fetched through an available authorized tracker connector.
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.), fetched via the workflow in the tracker doc.
+2. A path the user passed as an argument.
 3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available". A local spec is sufficient; no tracker setup is required.
+4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources
 
