@@ -1,6 +1,6 @@
 ## Problem Statement
 
-Oriol needs a complete dictation workflow that requires less waiting and fewer corrections than the installed FUTO model, in both German and English. Current evidence does not establish a winning setup.
+Dictation on the Pixel 10 Pro XL needs a complete workflow that requires less waiting and fewer corrections than the installed FUTO model, in both German and English. Current evidence does not establish a winning setup.
 
 FP32 Parakeet with dictionary support improved development-set recognition, but CPU Stop wait remains a concern. Profiling found substantial encoder work without establishing comparable timings. A synthetic image probe demonstrated FP32 GPU access; it did not demonstrate speech conversion, speech correctness or useful app performance.
 
@@ -18,14 +18,14 @@ First verify synthetic CPU tensor correctness, then whole-take A/B conversion pa
 
 The deliverable is a supported advance, rejection or inconclusive decision, with the next question recorded in Git and linked from this issue. An advance qualifies C for later daily-default and FUTO validation; it does not install a new daily winner.
 
-**Publication and the `ready-for-agent` label do not authorize execution.** Oriol will launch work in a new session. Before inference or phone changes, that session must approve the proposed policy, exact allocation and launch window.
+**Publication and the `ready-for-agent` label do not authorize execution.** The user will launch work in a new session. Before inference or phone changes, that session must approve the proposed policy, exact allocation and launch window.
 
 ## User Stories
 
-1. As Oriol, I want the experiment to measure the wait after Stop through the app's take lifecycle, so that a faster encoder translates into a useful workflow.
-2. As Oriol, I want German and English judged separately, so that one language cannot hide a regression in the other.
-3. As Oriol, I want meaning, names, numbers and formatting preserved, so that speed does not create more correction work.
-4. As Oriol, I want the existing microphone handoff and return to FUTO preserved, so that dictation remains part of my normal typing flow.
+1. As a Pixel 10 Pro XL user, I want the experiment to measure the wait after Stop through the app's take lifecycle, so that a faster encoder translates into a useful workflow.
+2. As a Pixel 10 Pro XL user, I want German and English judged separately, so that one language cannot hide a regression in the other.
+3. As a Pixel 10 Pro XL user, I want meaning, names, numbers and formatting preserved, so that speed does not create more correction work.
+4. As a Pixel 10 Pro XL user, I want the existing microphone handoff and return to FUTO preserved, so that dictation remains part of my normal typing flow.
 5. As an experiment operator, I want an original FP32 CPU control, so that I can distinguish conversion defects from acceleration effects.
 6. As an experiment operator, I want the converted model tested on CPU before measured GPU comparison, so that I can isolate conversion correctness.
 7. As an experiment operator, I want proof of the backend and precision actually executed, so that a configuration label cannot masquerade as GPU evidence.
@@ -33,22 +33,22 @@ The deliverable is a supported advance, rejection or inconclusive decision, with
 9. As an experiment operator, I want decoder, search and dictionary fixed, so that the encoder change remains the tested cause.
 10. As an experiment operator, I want the same recordings, exact sample counts, references and case order across setups, so that shortened or reordered inputs cannot manufacture a gain.
 11. As an experiment operator, I want repeated pairs in reversed order, so that process warmth and device drift are visible.
-12. As Oriol, I want cold load and first-preview timing reported alongside Stop wait, so that improvements do not conceal a worse start to dictation.
-13. As Oriol, I want memory and thermal limits checked, so that an impractical setup does not advance.
-14. As Oriol, I want cancellation and input changes to suppress late insertion, so that text cannot reach the wrong field.
-15. As Oriol, I want repeated Stop to insert at most once, so that a slow completion does not duplicate text.
-16. As Oriol, I want the next take to wait for capture drain while cancelled native work finishes safely, so that cancellation does not break recording or release a model still in use.
-17. As Oriol, I want the candidate exercised through the live IME, so that simulated replay receipts cannot stand in for visible text and a usable keyboard.
+12. As a Pixel 10 Pro XL user, I want cold load and first-preview timing reported alongside Stop wait, so that improvements do not conceal a worse start to dictation.
+13. As a Pixel 10 Pro XL user, I want memory and thermal limits checked, so that an impractical setup does not advance.
+14. As a Pixel 10 Pro XL user, I want cancellation and input changes to suppress late insertion, so that text cannot reach the wrong field.
+15. As a Pixel 10 Pro XL user, I want repeated Stop to insert at most once, so that a slow completion does not duplicate text.
+16. As a Pixel 10 Pro XL user, I want the next take to wait for capture drain while cancelled native work finishes safely, so that cancellation does not break recording or release a model still in use.
+17. As a Pixel 10 Pro XL user, I want the candidate exercised through the live IME, so that simulated replay receipts cannot stand in for visible text and a usable keyboard.
 18. As an experiment operator, I want explicit conversion, time and process limits, so that one failed route cannot consume an open-ended session.
 19. As an experiment operator, I want each attempt reserved and its result preserved once, so that failures and missing receipts cannot silently become retries.
 20. As an experiment operator, I want malformed or mismatched evidence classified as inconclusive, so that incomplete results cannot advance a setup.
-21. As Oriol, I want recordings, transcripts and signing material to remain private on this machine, so that publishing the spec does not publish personal evidence.
-22. As Oriol, I want phone operations confined to the protected app-scoped wrapper, so that experimentation cannot change GrapheneOS settings or other apps.
+21. As a Pixel 10 Pro XL user, I want recordings, transcripts and signing material to remain private on this machine, so that publishing the spec does not publish personal evidence.
+22. As a Pixel 10 Pro XL user, I want phone operations confined to the protected app-scoped wrapper, so that experimentation cannot change GrapheneOS settings or other apps.
 23. As a future contributor, I want the hypothesis and decision rules committed before their tests, so that results cannot change the rules after the fact.
 24. As a future contributor, I want failures, aggregate results and evidence identities committed after the attempt, so that I can reconstruct why a route was accepted or rejected.
 25. As a future contributor, I want each outcome to identify the next question, so that the project accumulates learning instead of disconnected benchmark runs.
-26. As Oriol, I want a grounded effort estimate and explicit missing components, so that I can allocate the next session realistically.
-27. As Oriol, I want experiment plans and outcomes kept separate from architecture decisions, so that ADRs retain their purpose.
+26. As a Pixel 10 Pro XL user, I want a grounded effort estimate and explicit missing components, so that I can allocate the next session realistically.
+27. As a Pixel 10 Pro XL user, I want experiment plans and outcomes kept separate from architecture decisions, so that ADRs retain their purpose.
 
 ## Implementation Decisions
 
@@ -69,7 +69,7 @@ The deliverable is a supported advance, rejection or inconclusive decision, with
 - **Proposed resource gate:** peak process high-water memory at or below 3,500,000 KB and sampled thermal status NONE (0). A control A breach makes the comparison inconclusive with a control blocker, regardless of candidate observations; it cannot by itself reject B or C. If every required A control is valid, a candidate-only breach rejects the corresponding B or C setup. Retain all observed breaches. Extend the current comparator to encode this distinction before freezing measurements; its current generic rejection of any resource breach is insufficient. Report all per-case waits, maximum waits, cold load, first preview and resource observations regardless of the primary result. Process memory and sampled thermal state do not establish total GPU memory use or battery cost.
 - **Frozen comparison contract:** retain the current separation between preparation, freezing, reservation, recording and comparison. Freeze evaluator identities as well as evidence identities. Validate ordered cases, exact sample counts, input hashes, paced duration, full coverage, actual backend, fresh process identities and absence of profiling. Missing, failed, duplicate, changed or incompatible evidence cannot advance.
 - **Attempt preservation:** reserve before external execution; preserve successful, failed and partial results without overwriting them. A reservation without a receipt requires reconciliation, not an automatic retry. This is cooperative accounting, not a guarantee of at-most-once physical device execution.
-- **Authorization and recovery:** obtain task-specific launch authorization, approved policy and exact allocation before inference or phone changes, with an applicable dated window in Europe/Zurich. Reach the phone only through `/home/oriol/Projects/private/pixel-local-dictation/tools/phone`, with one subcommand per shell call and writes confined to `ch.og.dictation`. Verify compatible artifacts and recovery copies before changes; restore and independently verify the app after each window or abort. An interruption handoff records consumed allocation, pending reservations, current device/app state and recovery owner/deadline. Unverified recovery blocks further experimentation. Oriol operates FUTO. Agents do not change the wrapper, phone settings or other apps.
+- **Authorization and recovery:** obtain task-specific launch authorization, approved policy and exact allocation before inference or phone changes, with an applicable dated window in Europe/Zurich. Reach the phone only through this checkout's `tools/phone`, resolved to its exact absolute path, with one subcommand per shell call and writes confined to `ch.og.dictation`. Verify compatible artifacts and recovery copies before changes; restore and independently verify the app after each window or abort. An interruption handoff records consumed allocation, pending reservations, current device/app state and recovery owner/deadline. Unverified recovery blocks further experimentation. The user operates FUTO. Agents do not change the wrapper, phone settings or other apps.
 - **Git learning record:** commit the approved engineering allocation before its synthetic inference. Before each window's measured replay, commit its tested implementation and approved measurement protocol and freeze its comparison against the tested evaluator. Record implementation and protocol commit IDs, exact artifact identities, suite/evaluator hashes, decision rules and cumulative allocations. Protocol changes require an explicit amendment commit before new runs.
 - **Outcome record:** each slice preserves its evidence and decision; any terminal failure or exhausted cap immediately produces a reviewed experiment outcome and next question, without waiting for downstream tickets. Commit the numerical decision, A/B decision and final outcome as applicable, with consumed/attempted/completed counts, available aggregate DE/EN errors, timings, resources, gate result and private receipt/report digests. Mark unavailable results and downstream work not attempted; a closed or skipped ticket is not a passing gate. Link result commits from this issue using result comments. Keep raw recordings, transcripts, references, logs and credentials outside Git and GitHub. Preserve private evidence locally; a hash cannot reconstruct a deleted file. Use ADRs only when an outcome produces an architectural decision.
 - **Completion:** this spec is complete when the bounded attempt has a reviewed outcome and next decision recorded in Git and the issue. A supported conversion failure or rejection can complete the experiment. It must not be relabelled as a product success.
@@ -99,7 +99,7 @@ The deliverable is a supported advance, rejection or inconclusive decision, with
 
 ADRs 012, 015 and 016 explain the motivating evidence and its limits. ADR-017 defines the implemented shared-session and comparison boundaries. The former ADR-018 was a plan and is removed; this issue is the experiment spec.
 
-Oriol approved four outcome-based subissues and the two-window amendment after fresh isolated adversarial Astra review: an auditable invalid-control decision; the complete CPU tensor gate; CPU integration through physical whole-take parity and recovery; GPU integration through measured/live acceptance and recovery. Only the latter two require phone access. The numerical gate is the explicit low-level acceptance seam. CPU and GPU tickets own their implementation and physical outcome, rather than deferring execution to a separate campaign ticket. Conversion and GPU work retain feasibility risk; the effort estimate does not establish guaranteed single-context completion.
+The user approved four outcome-based subissues and the two-window amendment after fresh isolated adversarial Astra review: an auditable invalid-control decision; the complete CPU tensor gate; CPU integration through physical whole-take parity and recovery; GPU integration through measured/live acceptance and recovery. Only the latter two require phone access. The numerical gate is the explicit low-level acceptance seam. CPU and GPU tickets own their implementation and physical outcome, rather than deferring execution to a separate campaign ticket. Conversion and GPU work retain feasibility risk; the effort estimate does not establish guaranteed single-context completion.
 
 | Observation | Decision and next question |
 |---|---|
@@ -128,4 +128,4 @@ The following estimate is engineering judgment grounded in the inspected assets,
 
 Allow roughly **1.5–3 working days elapsed**. The host has 16 logical CPUs and about 33 GB RAM, which does not prove conversion will fit or finish quickly. A hard compatibility failure may end the attempt earlier.
 
-The ten takes total 726.12 seconds. Six paced measured runs therefore require **72.61 minutes of audio alone**: approximately 24.20 minutes for A/B and 48.41 minutes for repeated A/C. The existing estimate is **2–4 total hours of phone wall time**. The approved decomposition adds a second staging/restoration sequence within that same four-hour cap; its fit is not yet demonstrated. Budget both sequences, model loading, finalization, smokes, cooling and recovery verification in the exact procedures before launch; request an explicit amendment if they cannot fit. That partly overlaps active effort. Oriol's supervised portion remains approximately **20–40 minutes**, with the phone available for both agreed windows.
+The ten takes total 726.12 seconds. Six paced measured runs therefore require **72.61 minutes of audio alone**: approximately 24.20 minutes for A/B and 48.41 minutes for repeated A/C. The existing estimate is **2–4 total hours of phone wall time**. The approved decomposition adds a second staging/restoration sequence within that same four-hour cap; its fit is not yet demonstrated. Budget both sequences, model loading, finalization, smokes, cooling and recovery verification in the exact procedures before launch; request an explicit amendment if they cannot fit. That partly overlaps active effort. The user's supervised portion remains approximately **20–40 minutes**, with the phone available for both agreed windows.

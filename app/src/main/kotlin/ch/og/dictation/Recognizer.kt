@@ -30,7 +30,7 @@ class FakeRecognizer(private val text: (FloatArray) -> String = { "[%.1f s]".for
     override fun transcribe(samples: FloatArray): String = text(samples)
 }
 
-/** Swiss spelling (R7): the recognizer writes Standard German "ß", Oriol writes "ss". */
+/** Swiss spelling (R7): the recognizer writes Standard German "ß", the app uses "ss". */
 class SwissSpelling(val inner: Recognizer) : Recognizer {
     override fun transcribe(samples: FloatArray): String =
         inner.transcribe(samples).replace("ß", "ss").replace("ẞ", "SS")
@@ -54,7 +54,7 @@ fun joinChunks(texts: List<String>, seamCapitalize: Boolean): String {
 
 /**
  * Cuts a take into contiguous chunks at pauses, so no audio is dropped between chunks.
- * Measured on Oriol's takes of 2026-10-10: decoding only the speech found by the VAD lost
+ * Measured on the benchmark takes of 2026-10-10: decoding only the speech found by the VAD lost
  * words at the start of segments, and chunks of at least 20 s gave fewer errors than
  * shorter ones (docs/archive/milestones-2026-10-10.md). A chunk ends [padSamples] after speech ended, once it is
  * at least [minSamples] long; with [maxSamples] > 0 a chunk is also cut as soon as the

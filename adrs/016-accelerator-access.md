@@ -16,7 +16,7 @@ Proposed gate: ≥20% lower warm Stop wait beyond paired variation, with per-lan
 Unintrusive timings, cold setup, first usable text, memory/thermal and complete-path quality remain required; no daily adoption follows.
 TPU access needs no beta signup. Custom speech compilation still needs compiler acquisition and mismatch diagnosis; earlier public engine URL returned 404.
 One conversion/compile plus one diagnosed repair and six paired processes per proposed route; not a current run allocation.
-Oriol manually applied the constrained diagnostic compatibility patch; no OS settings changed.
+The user manually applied the constrained diagnostic compatibility patch; no OS settings changed.
 Both JUnit runs passed but lab rejected non-ASR completion format; genuine synthetic JSON was pulled before recovery, without fake ASR records.
 Both original APKs/all 11 lab hashes restored and independently verified; no owner/recovery journal remained.
 Two of two separately frozen access slots consumed; no further inference authorized.

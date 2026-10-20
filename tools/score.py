@@ -2,7 +2,7 @@
 """Word error rate of replay reports against the reference scripts in corpus/references/baseline-v1.json.
 
 Usage: tools/score.py TAKES.json REPORT.json [REPORT.json ...]
-       tools/score.py --corpus corpus        (milestone 3: Oriol's scripts, FUTO against the app)
+       tools/score.py --corpus corpus        (milestone 3: benchmark scripts, FUTO against the app)
 TAKES.json maps a take's file name to its script id, e.g. {"20261010-080909-723.wav": "D6"}.
 Reads historical replay reports. Prints one row per take and decode path, and FUTO's
 row from the raw output recorded in corpus/references/baseline-v1.json.
@@ -191,7 +191,7 @@ def row(label, script, refs, hyp):
 
 def corpus(root):
     """Milestone 3 layout, all under the gitignored corpus directory:
-    scripts/<id>.txt    reference text as Oriol wants it written; id starts with de or en
+    scripts/<id>.txt    reference text as required for scoring; id starts with de or en
     scripts/<id>.terms  optional: one name, number or term per line that must come out right
     futo/<id>.txt       FUTO's output for the same script; futo/times.txt: "<id> <seconds>" per line
     takes.json          {"<take>.wav": "<id>"} for files/benchmark/<take>.json written by the app

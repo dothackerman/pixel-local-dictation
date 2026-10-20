@@ -7,8 +7,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 HERE = pathlib.Path(__file__).resolve().parent
 WORK = ROOT/'build/native-role-profiler'
 COMMIT = '11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf'
-NDK = pathlib.Path('/home/oriol/Android/Sdk/ndk/30.0.16248370')
-CMAKE = pathlib.Path('/home/oriol/Android/Sdk/cmake/4.1.2/bin/cmake')
+SDK = pathlib.Path(os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+                   or pathlib.Path.home()/'Android/Sdk')
+NDK = SDK/'ndk/30.0.16248370'
+CMAKE = SDK/'cmake/4.1.2/bin/cmake'
 NINJA = CMAKE.with_name('ninja')
 
 def sha(p): return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()

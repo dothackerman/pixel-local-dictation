@@ -10,7 +10,7 @@ Authorized diagnostic transactions retain both original APP/TEST APKs and lab, w
 Recovery covers lab/supported APK replacements, not preferences, permissions, recordings, caches or benchmark diagnostics.
 Initial provisioning, broader restoration or destructive uninstall needs its own decision; absent guarantees mean not ready.
 October 20 diagnostic compatibility permits four optional driver libraries and instrumentation extractNativeLibs differences; ordinary installation stays strict.
-Oriol applied the reviewed protected-wrapper patch manually; no OS/security changes.
+The user applied the reviewed protected-wrapper patch manually; no OS/security changes.
 Successful later profile/access recoveries matched both original APKs and all 11 lab file hashes.
 Remaining gaps: absent-original recovery, some interruption paths, ordinary compatible rollback and next daily session.
 Release-return promise from ADR-004 remains unresolved against the benchmark baseline retained by allocation; establish final build before launch.

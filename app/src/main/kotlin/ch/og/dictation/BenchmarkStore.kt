@@ -10,7 +10,7 @@ import java.util.Locale
 
 /**
  * Benchmark mode (plan D4): the only code that writes audio to storage. Off by
- * default; when Oriol switches it on, each take is kept as <timestamp>.wav plus
+ * default; when the user switches it on, each take is kept as <timestamp>.wav plus
  * <timestamp>.json under files/benchmark until he deletes it in the settings.
  */
 class BenchmarkStore(private val dir: File) {

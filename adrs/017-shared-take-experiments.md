@@ -1,6 +1,6 @@
 # ADR-017 — Share the take; freeze the comparison
 
-2026-10-20 · Implementation authorized by Oriol. No experiment launch or phone change.
+2026-10-20 · Implementation authorized by the user. No experiment launch or phone change.
 
 ## Decision
 

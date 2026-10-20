@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 
 /**
  * Throwaway spike for ADR-003 (docs/archive/milestones-2026-10-10.md, milestone 2 step 1): replays the takes
- * Oriol saved in benchmark mode through Parakeet v3 INT8 and writes the numbers the
+ * the user saved in benchmark mode through Parakeet v3 INT8 and writes the numbers the
  * gate asks for to files/benchmark/spike-<model>.json and the log. No UI, no microphone.
  */
 @RunWith(AndroidJUnit4::class)

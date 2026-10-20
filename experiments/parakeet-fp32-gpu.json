@@ -107,10 +107,10 @@
     "smoke_accounting": "Reserve and receipt both GPU-window smokes in the explicit operator record, separate from measured comparison-run reservations",
     "terminal_outcome": "Every slice records its decision; a terminal failure or cap records the reviewed experiment outcome and next question without waiting for downstream tickets",
     "subissues": {
-      "invalid-control": "https://github.com/dothackerman/pixel-local-dictation/issues/2",
-      "cpu-tensor-gate": "https://github.com/dothackerman/pixel-local-dictation/issues/3",
-      "cpu-whole-take-parity": "https://github.com/dothackerman/pixel-local-dictation/issues/4",
-      "gpu-whole-workflow": "https://github.com/dothackerman/pixel-local-dictation/issues/5"
+      "invalid-control": "#2",
+      "cpu-tensor-gate": "#3",
+      "cpu-whole-take-parity": "#4",
+      "gpu-whole-workflow": "#5"
     }
   },
   "spec": "specs/parakeet-fp32-gpu.md",
@@ -132,5 +132,5 @@
     "Supervised live C setup check: capture drain, Stop, cancellation, input change, insertion, subsequent take and return to usable FUTO",
     "Verified restoration after each window and complete preserved evidence"
   ],
-  "issue": "https://github.com/dothackerman/pixel-local-dictation/issues/1"
+  "issue": "#1"
 }

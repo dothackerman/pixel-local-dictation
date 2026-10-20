@@ -1,15 +1,15 @@
 # Pixel Local Dictation
 
-Local English and German dictation on Oriol's GrapheneOS Pixel 10 Pro XL.
+Local English and German dictation on the GrapheneOS Pixel 10 Pro XL.
 Open it with FUTO Keyboard's existing microphone key. The goal is less waiting
 and fewer corrections than FUTO's installed Multilingual-244 model, in each
-language. Source and issue tracking use a [private GitHub repository](https://github.com/dothackerman/pixel-local-dictation).
+language. Source and issue tracking use a private GitHub repository.
 
 This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
 rules. The [ADRs](adrs/) record decisions and past experiment conclusions. New experiment
-specifications live in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues),
-with reviewed snapshots in [specs](specs/). The next experiment is [spec #1](https://github.com/dothackerman/pixel-local-dictation/issues/1).
+specifications live in GitHub Issues,
+with reviewed snapshots in [specs](specs/). The next experiment is spec #1.
 The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
 
 ## Current status
@@ -113,7 +113,7 @@ Production audio stays in memory and is then discarded. Benchmark storage is
 opt-in, visibly marked and deletable: [ADR-010](adrs/010-ime-lifecycle.md).
 Models are provisioned locally; downloads are separate from inference.
 
-Oriol enables the IME, grants microphone permission and enables FUTO’s
+The user enables the IME, grants microphone permission and enables FUTO’s
 “Disable built-in voice input” toggle. For rollback, disable that toggle before
 removing the app. The first take loads the model. Retention across a USB-powered
 gap longer than 11 minutes is unverified. Release and benchmark builds share
@@ -121,9 +121,8 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 
 ## Phone lab operations
 
-Use this checkout's protected wrapper at
-`/home/oriol/Projects/private/pixel-local-dictation/tools/phone`, with one
-subcommand per shell call. Its `help` subcommand defines the command grammar.
+Use this checkout's protected `tools/phone` wrapper, resolved to its exact
+absolute path, with one subcommand per shell call. Its `help` subcommand defines the command grammar.
 Read-only inspection is the default. Installation, uninstallation and app-scoped
 lab writes or tests need authorization for the current task. They are restricted
 to `ch.og.dictation`. [AGENTS.md](AGENTS.md) defines the full boundary.
@@ -135,7 +134,7 @@ unresolved commitment to return to a release build.
 If recovery fails or is interrupted, keep its journal. Inspect the state and
 recover before staging again. Keep lab and profile JSON in `corpus/`.
 To change the protected wrapper, prepare a proposal outside its path and have it
-reviewed. Oriol applies the change manually; then verify it.
+reviewed. The user applies the change manually; then verify it.
 
 At the start of a fresh session, verify trusted hooks and filesystem protections.
 Approvals apply to one checkout. Hooks are guardrails, not isolation: terminal
@@ -195,7 +194,7 @@ are authorized.
 Keep dated decisions in ADRs, with approval status, context, decision, evidence,
 limits and a condition for review. Link private evidence instead of copying it.
 Keep personal recordings, transcripts and signing credentials out of Git.
-Recordings stay in gitignored `corpus/`; copying them needs Oriol's agreement.
+Recordings stay in gitignored `corpus/`; copying them needs the user's agreement.
 
 Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
 reports, original identities and pruning limits. Retain evidence that changes a

@@ -11,6 +11,6 @@ Tradeoff: an app restarting input loses the take; avoids committing into the wro
 Cancel/Keyboard/hide/lock discard; denied microphone permission handled.
 Benchmark storage is opt-in, visible and deletable; copying needs per-run agreement.
 Release/benchmark share signing; benchmark is debuggable; rollback retains FUTO’s model.
-Evidence: tags m1/m2, commits 1853670/cd5a9be; Oriol verified airplane-mode operation.
+Evidence: tags m1/m2, commits 1853670/cd5a9be; the user verified airplane-mode operation.
 Answered calls and longer battery-only model survival remain unverified.
 Revisit lifecycle failures while preserving R1/R3/R6.
