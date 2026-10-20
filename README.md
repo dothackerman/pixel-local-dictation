@@ -7,9 +7,9 @@ language. Source and issue tracking use a private GitHub repository.
 
 This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
-rules. The [ADRs](adrs/) record decisions and past experiment conclusions. New experiment
-specifications live in GitHub Issues,
-with reviewed snapshots in [specs](specs/). The next experiment is spec #1.
+rules. The [ADRs](adrs/) record decisions and past experiment conclusions.
+Experiment specifications and tickets live only in GitHub Issues. The next
+experiment is [#1](https://github.com/dothackerman/pixel-local-dictation/issues/1).
 The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
 
 ## Current status
@@ -147,8 +147,8 @@ Claude’s live filesystem enforcement remains unverified.
 For new work, use [the shared take and comparison interface](adrs/017-shared-take-experiments.md).
 `python3 tools/lab.py --help` lists preparation, frozen comparisons and private
 evidence commands. The tool never executes experiments. A preparation snapshot
-with present artifacts still needs correctness checks and a separately authorized
-launch. Old lab execution commands are retired.
+with present artifacts still needs correctness checks. Old lab execution commands
+are retired.
 
 Prepare a fixed set of variants, freeze laptop controls, then collect matched
 phone measurements. Report quality, resource use and evidence completeness
@@ -164,13 +164,12 @@ run without the dictionary. Laptop guard and silence results do not measure
 phone hallucinations. Word error rate (WER) does not replace checks of correction
 effort, meaning or formatting.
 
-Each future experiment needs one private plan and manifest in `corpus/lab/`.
-Record source, runtime, APK, model and input identities; exact commands; controls;
-repeats and endpoints; thresholds and budgets; failure rules; a dated
-Europe/Zurich window; and restoration steps. Freeze these during setup.
-A fresh GPT 6.1 Sol executes only after explicit launch. Continuation preserves
-budgets, evidence and exclusive ownership of the experiment namespace.
-Deployment is a separate decision. No experiment is currently commissioned.
+Private comparison plans and evidence stay in `corpus/lab/`. Record source,
+runtime, APK, model and input identities; exact commands; controls; repeats and
+endpoints; decision thresholds; failure rules; and restoration steps. Freeze the
+comparison before its measured runs. The tracked experiment manifest lists host
+artifacts and links to its GitHub issue; it does not duplicate the specification.
+Deployment is a separate decision.
 
 ## Remaining acceptance gaps and next decisions
 
@@ -199,8 +198,7 @@ Recordings stay in gitignored `corpus/`; copying them needs the user's agreement
 Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
 reports, original identities and pruning limits. Retain evidence that changes a
 decision, calibration/evaluation inputs and recovery state needed for operation.
-Closed campaign directory trees are not documentation. Future work starts with
-a new bounded plan.
+Closed campaign directory trees are not documentation.
 
 Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
 source. The file hash identifies the current reference. Historical identities
@@ -209,4 +207,4 @@ and verdicts stay unchanged.
 Completed orchestration and runbooks remain in pinned Git history.
 [ADR-008](adrs/008-three-stage-loop.md) explains source recovery and offline
 analysis. Active tools retain scoring, matched evidence checks, measurement
-adapters and the daily app. New comparisons use the bounded lab interface above.
+adapters and the daily app. New comparisons use the lab interface above.

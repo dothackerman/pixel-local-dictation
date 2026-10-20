@@ -6,7 +6,7 @@ Test vocabulary through decoder hotwords, not lexical rewriting.
 The 43-name script dictionary tests mechanism, not unseen-name recognition.
 Non-term errors/guards compare with an otherwise identical no-dictionary twin; terms compare with baseline.
 VAD-gate no-speech chunks; gated silence does not establish bare-model safety.
-Qwen/Cohere joined prepared families; current dated windows supersede the old night-only schedule.
+Qwen/Cohere joined prepared families.
 Mechanism evaluator: ≥5 recovered terms; ≤1 guard dictionary insertion.
 Recording trigger: ≥10 recovered terms, zero guard dictionary insertions, guard WER ≤experiment 0 +1 percentage point, historical phone stage-2 acceptance.
 That stage is not allocation stage 2; the complete trigger requires manual checking.

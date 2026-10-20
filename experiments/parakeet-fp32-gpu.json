@@ -1,9 +1,7 @@
 {
   "schema": 1,
   "id": "parakeet-fp32-gpu",
-  "status": "prepared-not-authorized",
-  "protocol": "dictation-session-replay-v1",
-  "question": "Does an FP32 GPU encoder reduce whole-take Stop wait while preserving the FP32 CPU transcript?",
+  "issue": "https://github.com/dothackerman/pixel-local-dictation/issues/1",
   "artifacts": {
     "original_fp32_model": "models/parakeet-v3-fp32",
     "vad": "models/silero_vad.onnx",
@@ -16,121 +14,5 @@
     "encoder_bridge_receipt": "build/fp32-gpu/bridge.json",
     "benchmark_apk": "build/fp32-gpu/app-benchmark.apk",
     "test_apk": "build/fp32-gpu/app-benchmark-androidTest.apk"
-  },
-  "setups": {
-    "A": "original ONNX FP32 encoder, CPU",
-    "B": "converted LiteRT FP32 encoder, CPU",
-    "C": "same converted encoder, LiteRT FP32 OpenGL GPU, no fallback"
-  },
-  "fixed": [
-    "decoder and joiner bytes",
-    "feature extraction and actual sequence lengths",
-    "search and dictionary",
-    "VAD and chunking",
-    "automatic language handling and Swiss spelling",
-    "audio, endpoint references, case order, feed cadence and warmup",
-    "device, OS and unprofiled shared-session timing"
-  ],
-  "proposed_policy": {
-    "status": "needs-launch-approval",
-    "relative_stop_gain_each_language": 0.2,
-    "absolute_stop_gain_ms_each_language": 500,
-    "candidate_output": "exact text parity, including punctuation, with matched A",
-    "repeat_check": "each paired language median improves; pooled median gain exceeds repeat median spread",
-    "peak_kb": 3500000,
-    "max_thermal": 0,
-    "encoder_atol": 0.0001,
-    "encoder_rtol": 0.001,
-    "encoder_lengths": "exact",
-    "nonfinite_values": 0,
-    "resource_classification": "Any required A control breach: inconclusive/control blocker; candidate-only breach with valid A controls: reject that candidate; preserve all breaches."
-  },
-  "proposed_bounds": {
-    "conversion_attempts": 1,
-    "diagnosed_conversion_repairs": 1,
-    "active_engineering_hours": 12,
-    "engineering_scope": "Cumulative readiness for both windows; CPU completion does not reset or retire the cap",
-    "host_smoke_invocations": 12,
-    "host_smoke_total_minutes": 60,
-    "host_invocation_accounting": "Freeze the original/converted evaluation counting unit before inference; failed and partial invocations count",
-    "phone_processes_including_smokes": 8,
-    "measurement_order": [
-      "A-parity",
-      "B-parity",
-      "A-gain-1",
-      "C-gain-1",
-      "C-gain-2",
-      "A-gain-2"
-    ],
-    "phone_total_hours_including_recovery": 4,
-    "launch_windows": [
-      {
-        "stage": "cpu-parity",
-        "window": null,
-        "processes": [
-          "A-parity",
-          "B-parity"
-        ],
-        "exit": "Restore and independently verify the app; record A/B decision and remaining allocation before GPU engineering"
-      },
-      {
-        "stage": "gpu-workflow",
-        "window": null,
-        "processes": [
-          "gpu-tensor-smoke",
-          "A-gain-1",
-          "C-gain-1",
-          "C-gain-2",
-          "A-gain-2",
-          "live-candidate-smoke"
-        ],
-        "entry": "Passing CPU tensor and A/B gates, verified recovery, completed GPU implementation and remaining cumulative allocation",
-        "exit": "Restore and independently verify the app; record reviewed final outcome and next question"
-      }
-    ],
-    "phone_accounting": "Both windows share the four-hour total, including staging and recovery twice. Stop on failed/incomplete execution or a terminal gate; allocated processes are maxima, not quotas. No extra pilots or retries.",
-    "timezone": "Europe/Zurich"
-  },
-  "approved_decomposition": {
-    "status": "approved-for-planning-not-execution",
-    "gate_order": [
-      "host-cpu-tensors",
-      "cpu-parity-window",
-      "verified-recovery",
-      "gpu-engineering",
-      "gpu-tensor-smoke",
-      "gpu-wait-comparison",
-      "live-candidate-smoke",
-      "verified-recovery"
-    ],
-    "build_identity": "Complete, test, commit and freeze each window's implementation/protocol before that window. One unprofiled build within each comparison; separate frozen identities across windows, preserved validated model/CPU semantics, no cross-window timing comparisons.",
-    "smoke_accounting": "Reserve and receipt both GPU-window smokes in the explicit operator record, separate from measured comparison-run reservations",
-    "terminal_outcome": "Every slice records its decision; a terminal failure or cap records the reviewed experiment outcome and next question without waiting for downstream tickets",
-    "subissues": {
-      "invalid-control": "#2",
-      "cpu-tensor-gate": "#3",
-      "cpu-whole-take-parity": "#4",
-      "gpu-whole-workflow": "#5"
-    }
-  },
-  "spec": "specs/parakeet-fp32-gpu.md",
-  "execution_requires": [
-    "Explicit task authorization, applicable dated Europe/Zurich window, approved policy and finite cumulative allocations before inference or phone changes",
-    "Before each phone window: current device state, exact compatible artifacts, executable process accounting and verified recovery copies",
-    "Both windows' staging and recovery must fit the shared allocation; any mismatch requires an explicit amendment before execution"
-  ],
-  "measurement_requires": [
-    "Version-pinned conversion and encoder-only bridge with frozen identities",
-    "Approved CPU tensor parity before measured A/B; passing A/B and restored app before GPU engineering",
-    "Physical GPU tensor parity and actual backend/precision/fallback evidence before measured A/C",
-    "Evaluator distinguishes control resource blockers from candidate resource rejection",
-    "Each window's frozen private comparison plan with exact APK, model, runtime, source, ordered sample-count suite, device and evaluator identities",
-    "Reserve each attempt before invoking the protected wrapper; pass A/B before measured A/C"
-  ],
-  "advance_requires": [
-    "All required A controls valid and both comparison gates passed",
-    "Supervised live C setup check: capture drain, Stop, cancellation, input change, insertion, subsequent take and return to usable FUTO",
-    "Verified restoration after each window and complete preserved evidence"
-  ],
-  "issue": "#1"
+  }
 }

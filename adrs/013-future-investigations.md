@@ -7,7 +7,7 @@ The strongest measured lead is FP32 dictionary decoding’s development quality 
 
 ## Next decisions
 
-1. **Primary track — rescue the measured gain:** Parakeet original ONNX CPU → converted LiteRT CPU → explicit FP32 GPU. First establish encoder numerical and beam/dictionary quality parity; then measure unprofiled, transfer-inclusive full-path costs (ADR-016). A failed conversion gets one diagnosed repair, then stops. Freeze practical warm Stop saving before launch; the proposed 20% remains unapproved.
+1. **Primary track — rescue the measured gain:** Parakeet original ONNX CPU → converted LiteRT CPU → explicit FP32 GPU. First establish encoder numerical and beam/dictionary quality parity; then measure unprofiled, transfer-inclusive full-path costs (ADR-016). The experiment specification and acceptance criteria are in GitHub issue #1.
 2. **Bounded diagnosis:** inspect Cohere’s saved English-prefix failures before further inference. Correct routing did not prevent 90/115 errors in two prefixes. Advance only with a specific, falsifiable cause; acceleration cannot repair a quality failure.
 3. **Product validation:** only a surviving candidate earns frozen automatic-path comparison with FUTO: each language, correction effort/meaning, short and spontaneous speech, ambiguous starts, cold/warm Stop, memory and sustained heat/battery. Existing repeated scripts nominate candidates; they cannot establish R4. Recording-policy authorization remains separate (ADR-005).
 
@@ -27,4 +27,4 @@ Overlap repeats computation: establish queue feasibility and missing/duplicate-t
 Dictionary UI, per-name boosts, phonetic matching and loading/warm-up follow a surviving mechanism.
 
 Evidence/proposal provenance: `925ef8c` research notes; newer measured outcomes in ADR-014–016.
-Recheck upstream and freeze identities, thresholds, budgets and recovery during preparation.
+Recheck upstream and freeze identities, thresholds and recovery inputs during preparation.

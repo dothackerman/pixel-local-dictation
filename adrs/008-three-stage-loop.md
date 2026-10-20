@@ -3,10 +3,10 @@
 2026-10-14 · Organization approved; completed October 19.
 
 Combine measurement characterization, FP32 allocation and Cohere allocation in one bounded loop.
-Preserve stage gates/caps; accumulate budgets across windows rather than resetting allowances.
+The completed campaign retained its stage gates and cumulative attempt counts.
 Freeze transitions/continuation before readiness; ambiguity returns for interpretation.
 The retired `allocation_execution.py` owned append-only reservations/barriers; returns commands without executing them.
-Ownership is cooperative; deadlines do not prove device-process termination.
+Ownership was cooperative; records alone did not prove device-process termination.
 Amendments retain actual consumption/history; no retroactive refreeze.
 All stages completed; ADR-012. No new launch, engine or acceptance approval follows.
 Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.

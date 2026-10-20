@@ -25,9 +25,9 @@ timing meanings remain unchanged. Python decoding remains a laptop screen.
 `python3 tools/lab.py --help` owns command syntax. It never runs inference or
 device commands. The existing protected wrapper retains sole phone authority.
 
-1. `prepare` snapshots a tracked specification's host artifacts and source hashes.
+1. `prepare` snapshots a tracked artifact manifest's host artifacts and source hashes.
    `check` shows missing or changed inputs; it never grants measurement readiness.
-2. After preparation and authorization, `freeze` validates one finite comparison
+2. `freeze` validates one complete comparison
    plan in `corpus/lab/<id>/plan.json`.
 3. `reserve` creates one exclusive attempt record before external execution.
    `record` preserves its result once, including failures.
@@ -72,7 +72,7 @@ evaluator regressions and add tests at the new take/comparison interfaces.
 them. Synthetic tests cover capture drain, cancellation, editor rejection,
 identity drift, incomplete evidence, resource failure and attempt preservation.
 Native output parity, microphone behavior and live FUTO return still require
-separately authorized phone validation.
+phone validation.
 
 Revisit only when a second real protocol requires more orchestration. A general
 campaign controller is not part of this change.
