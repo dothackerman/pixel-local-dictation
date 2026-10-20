@@ -87,7 +87,8 @@ class GuardTests(unittest.TestCase):
             self.assertIn('Edit(/'+path+')', claude['permissions']['deny'])
             self.assertIn('./'+path, claude['sandbox']['filesystem']['denyWrite'])
         self.assertTrue(claude['sandbox']['enabled'])
-        self.assertEqual(claude['sandbox']['excludedCommands'], [WRAPPER+' *'])
+        self.assertEqual(claude['sandbox']['excludedCommands'], [])
+        self.assertEqual(claude['permissions']['allow'], [])
         for settings in [claude, json.loads((ROOT/'.codex/hooks.json').read_text())]:
             registration = settings['hooks']['PreToolUse'][0]
             for tool in ['Bash', 'Edit', 'Write', 'apply_patch']:

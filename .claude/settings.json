@@ -23,11 +23,6 @@
       "Edit(/CLAUDE.md)"
     ],
     "allow": [
-      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone inspect)",
-      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone push-variant *)",
-      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone lab *)",
-      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone pull-results *)",
-      "Bash(/home/oriol/Projects/private/pixel-local-dictation/tools/phone recover *)"
     ]
   },
   "hooks": {
@@ -49,7 +44,6 @@
     "autoAllowBashIfSandboxed": false,
     "allowUnsandboxedCommands": true,
     "excludedCommands": [
-      "/home/oriol/Projects/private/pixel-local-dictation/tools/phone *"
     ],
     "filesystem": {
       "denyWrite": [
