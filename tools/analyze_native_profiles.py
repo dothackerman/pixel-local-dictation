@@ -354,6 +354,46 @@ def config_without_profile(config):
     return value
 
 
+def case_event_scopes(events, count, routing):
+    """Associate shared-recognizer LID events only through observed opening work.
+
+    MeasurementRun's recognizer observer is global; TakeTranscriber's observer
+    carries inputIndex. beginTake emits exactly one LID triplet between the
+    opening gate and that chunk's recognitionStart, inside its worker. Preserve
+    explicit scopes and reject any contradictory or ambiguous temporal match.
+    """
+    phases = ("lidStart", "lidEnd", "lidDecision")
+    scoped = [[e for e in events if e.get("inputIndex") == i] for i in range(count)]
+    lid = [e for e in events if e["phase"] in phases]
+    if not routing:
+        require(not lid, "unexpected-routing-events")
+        return scoped
+    windows = []
+    for rows in scoped:
+        gate = one(rows, "firstClosedChunkGate")
+        chunk = [e for e in rows if e.get("chunkId") == gate.get("chunkId")]
+        start, end = one(chunk, "chunkWorkerStart"), one(chunk, "chunkWorkerEnd")
+        recognition = one(chunk, "recognitionStart")
+        require(integer(gate.get("chunkId"))
+                and start["ns"] <= gate["ns"] <= recognition["ns"] <= end["ns"],
+                "routing-opening-worker")
+        windows.append((gate["ns"], recognition["ns"], gate["chunkId"]))
+    for e in lid:
+        matches = [i for i, (start, end, _) in enumerate(windows) if start <= e["ns"] <= end]
+        require(len(matches) == 1, "routing-event-window")
+        i = matches[0]
+        require(("inputIndex" not in e or e["inputIndex"] == i)
+                and ("chunkId" not in e or e["chunkId"] == windows[i][2]),
+                "routing-event-scope")
+        if "inputIndex" not in e:
+            scoped[i].append(e)
+    for rows in scoped:
+        start, end, decision = (one(rows, phase) for phase in phases)
+        require(start["ns"] <= end["ns"] <= decision["ns"], "routing-event-order")
+        rows.sort(key=lambda e: e["ns"])
+    return scoped
+
+
 def analyze_run(base, spec, cases, encoder_role, required_roles):
     enabled = spec["id"].startswith("P")
     result = pinned(base, spec["result"])
@@ -418,12 +458,13 @@ def analyze_run(base, spec, cases, encoder_role, required_roles):
     require(len(rows) == len(cases) and len({r["id"] for r in rows}) == len(cases), "result-case-coverage")
     rows = {r["id"]: r for r in rows}
     outputs, texts, assigned_all = {}, {}, []
+    case_events = case_event_scopes(events, len(cases), bool(config.get("lid", {}).get("model")))
     for i, case in enumerate(expected):
         row = rows[case["id"]]
         require(row.get("repetition") == 0 and row.get("inputSamples") == case["samples"]
                 and row.get("coverageSamples") == case["samples"] and row.get("missingFinalOutput") is False
                 and isinstance(row.get("text"), str), "sample-output-incomplete")
-        scoped = [e for e in events if e.get("inputIndex") == i]
+        scoped = case_events[i]
         out, assigned = case_analysis(scoped, spans, case, encoder_role, enabled)
         require(abs(out["finalWaitNs"]/1e6-row["stopToFinalMs"]) <= 5, "stop-report-timeline-mismatch")
         out["semanticReceipt"] = semantic_receipt(scoped, row, case, config)
@@ -466,8 +507,12 @@ def analyze_run(base, spec, cases, encoder_role, required_roles):
         "maxThermalStatus": max(m["thermalStatus"] for m in memory),
         "thermalBoundaries": [[m["phase"], m["thermalStatus"]] for m in memory],
         "thermalDrift": monotonic_drift([m["thermalStatus"] for m in memory])}, "valid": True}
+    # The pinned configuration hash and report variant were verified above.
+    # Its profile flag differs by design; compare the remaining config semantics
+    # and retain every other frozen provenance field in the pair identity.
     identity = {"config": config_without_profile(config), "artifacts": artifacts,
-                "provenance": measurement["provenance"]}
+                "provenance": {key: value for key, value in measurement["provenance"].items()
+                               if key != "configuration_sha256"}}
     return result_out, texts, identity, provenance["run_id"], provenance["process_start_id"]
 
 

@@ -59,10 +59,24 @@ android {
     }
     testBuildType = "benchmark"
     // Model files are read through AssetManager and must stay uncompressed in the APK.
-    androidResources { noCompress += listOf("onnx", "txt") }
+    androidResources { noCompress += listOf("onnx", "txt", "tflite") }
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("models/accelerator-access-20261020"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().withBuildType("benchmark")) { variant ->
+    // Keep Tensor dispatch in Android's installed native-code directory.
+    variant.androidTest?.packaging?.jniLibs?.useLegacyPackaging?.set(true)
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name == "compileBenchmarkAndroidTestKotlin") {
+        // LiteRT 2.3.0 carries Kotlin 2.4 metadata. All calls use the Java bridge;
+        // Kotlin only scans its module header on this instrumentation classpath.
+        compilerOptions.freeCompilerArgs.add("-Xskip-metadata-version-check")
     }
 }
 
@@ -87,4 +101,10 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    // Diagnostic instrumentation only; no accelerator runtime enters the daily app.
+    // Standalone inference only: exclude unrelated AiPack/Play/background-service dependencies.
+    androidTestImplementation("com.google.ai.edge.litert:litert:2.3.0") { isTransitive = false }
+    androidTestImplementation("com.google.ai.edge.litert:litert-api:2.3.0") { isTransitive = false }
+    androidTestImplementation("com.google.ai.edge.litert:litert-gpu:2.3.0") { isTransitive = false }
+    androidTestImplementation("com.google.ai.edge.litert:litert-npu-runtime-google-tensor:2.3.0") { isTransitive = false }
 }

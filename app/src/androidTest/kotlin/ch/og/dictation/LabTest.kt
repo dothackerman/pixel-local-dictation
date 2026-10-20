@@ -39,6 +39,10 @@ class LabTest {
     private val labDir = File(ctx.filesDir, "lab")
 
     @Test fun variantOnSavedTakes() {
+        if (File(labDir, "accelerator-probe.json").isFile) {
+            AcceleratorAccessProbe(ctx, labDir).run()
+            return
+        }
         if (File(labDir, "measurement.json").isFile) {
             MeasurementRun(ctx, labDir).run()
             return

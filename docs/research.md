@@ -4,6 +4,8 @@ Research notes are dated evidence and proposed tests, not execution instructions
 
 | Question | Evidence owner |
 |---|---|
+| Can this GrapheneOS Pixel actually execute on the GPU or TPU? | [Device check, October 20](research/accelerator-access-device-check-2026-10-20.md) |
+| What do the completed phone profiles justify for GPU and TPU acceleration? | [Accelerator routes after profiling, October 20](research/accelerator-routes-after-profiling-2026-10-20.md) |
 | What improvement lever remains after the completed allocation loop? | [Remaining levers, October 19](research/remaining-improvement-levers-2026-10-19.md) |
 | What improved on the development set, and what can it establish? | [Evaluation audit, October 14](research/evaluation-audit-2026-10-14.md) |
 | Why did Qwen truncate and beam search delete speech? | [Adapter diagnosis](research/loop-investigation-2026-10-12.md), [precision diagnosis](research/beam-investigation-2026-10-12.md) |

@@ -146,33 +146,54 @@ class AttributionTests(unittest.TestCase):
 
 
 
-def production_fixture(base):
+def production_fixture(base, routing=False):
     """Synthetic files matching MeasurementRun receipt names and path-keyed maps."""
     def write(name, value):
         raw = json.dumps(value).encode()
         (base/name).write_bytes(raw)
         return {"path":name,"bytes":len(raw),"sha256":hashlib.sha256(raw).hexdigest()}
+    family = "cohere" if routing else "parakeet"
     cases = [{"id":str(i),"samples":640,"language":"de" if i<5 else "en",
               "inputSha256":"0"*64,"reference":"synthetic words"} for i in range(10)]
     runs = []
     for name in ("U1","P1","P2","U2"):
         enabled = name.startswith("P")
         p,t,_ = native_fixture(enabled)
+        p["sessions"] = [{"sessionId":1,"role":family+".encoder"}]
+        if routing:
+            p["sessions"] += [{"sessionId":2,"role":"cohere.decoder"},
+                              {"sessionId":3,"role":"lid.encoder"},
+                              {"sessionId":4,"role":"lid.decoder"}]
         events = [event("modelConstructionStart",5),event("modelConstructionEnd",10),
                   event("silenceWarmupStart",11),event("silenceWarmupEnd",15)]
         p["spans"] = []
         ordered = cases if name.endswith("1") else list(reversed(cases))
         for i, _case in enumerate(ordered):
             for row in case_events(i*1000):
+                if routing:
+                    for key in ("ns", "scheduledNs", "latenessNs"):
+                        if key in row: row[key] *= 10
                 row.update(inputIndex=i,repetition=0); events.append(row)
-            if enabled: p["spans"].append({"role":"parakeet.encoder","sessionId":1,
-                "startNs":112+i*1000,"endNs":118+i*1000,"status":0})
+            if routing:
+                # Shared recognizer observer: LID has neither inputIndex nor chunkId.
+                events += [event(phase, n+i*10000, samples=640, **extra) for phase,n,extra in
+                    (("lidStart",1111,{}),("lidEnd",1117,{}),
+                     ("lidDecision",1118,{"language":_case["language"],"fallback":False}))]
+            if enabled:
+                scale = 10 if routing else 1
+                p["spans"].append({"role":family+".encoder","sessionId":1,
+                    "startNs":(112+i*1000)*scale,"endNs":(118+i*1000)*scale,"status":0})
+                if routing:
+                    p["spans"] += [{"role":role,"sessionId":sid,"startNs":start+i*10000,
+                                    "endNs":end+i*10000,"status":0} for role,sid,start,end in
+                        (("lid.encoder",3,1112,1114),("lid.decoder",4,1115,1116),
+                         ("cohere.decoder",2,1181,1190))]
         p["attempted"] = p["retained"] = len(p["spans"])
         for span in p["spans"]:
             for key in ("startNs", "endNs"): span[key] *= 2000000
         profile = write(name+"-profile.json",p)
         t["nativeProfile"].update(bytes=profile["bytes"],sha256=profile["sha256"])
-        for row,n in zip(t["nativeClockSamples"],(1,10000,10010)):
+        for row,n in zip(t["nativeClockSamples"],(1,100000,100010) if routing else (1,10000,10010)):
             row.update(beforeNs=n,nativeNs=n+1,afterNs=n+2)
         for row in events:
             for key in ("ns", "scheduledNs", "latenessNs"):
@@ -180,9 +201,10 @@ def production_fixture(base):
         for row in t["nativeClockSamples"]:
             for key in ("beforeNs", "nativeNs", "afterNs"): row[key] *= 2000000
         t.update(clock="CLOCK_MONOTONIC",valid=True,droppedEvents=0,eventLimit=65536,events=events)
-        config = {"runtime":{"profile":enabled},"lid":{"model":""}}
+        config = {"runtime":{"profile":enabled},"lid":{"model":"whisper" if routing else ""}}
         configuration = write(name+"-config.json",config)
-        provenance = {"build_sha256":"a"*64,"test_build_sha256":"b"*64}
+        provenance = {"build_sha256":"a"*64,"test_build_sha256":"b"*64,
+                      "configuration_sha256":configuration["sha256"]}
         measurement = {"mode":"paced-only","repetitions":1,"provenance":provenance,
             "artifacts":{"variant.json":configuration["sha256"],"model.onnx":"c"*64},
             "inputs":[{"id":c["id"],"path":"../benchmark/"+str(min(int(c["id"]),5))+".wav","sha256":c["inputSha256"]} for c in ordered]}
@@ -198,12 +220,13 @@ def production_fixture(base):
                     [p for _ in cases for p in ("buffer-loaded","after-chunk","buffer-released")] +
                     ["recognizer-released","profile-flushed"])],"endpoints":[],
             "takes":[{"id":c["id"],"repetition":0,"inputSamples":640,"coverageSamples":640,
-                      "missingFinalOutput":False,"text":"Synthetic words","stopToFinalMs":14,
+                      "missingFinalOutput":False,"text":"Synthetic words","stopToFinalMs":140 if routing else 14,
                       "chunks":[{"audioSeconds":.04}],"residualSamples":0}
                      for c in ordered]}}
         runs.append({"id":name,"result":write(name+"-result.json",result),"profile":profile,
             "measurement":write(name+"-measurement.json",measurement),"configuration":configuration})
-    stage = {"id":"A","encoderRole":"parakeet.encoder","requiredRoles":["parakeet.encoder"],
+    stage = {"id":"A","encoderRole":family+".encoder","requiredRoles":
+             [family+".encoder", "cohere.decoder", "lid.encoder", "lid.decoder"] if routing else [family+".encoder"],
              "cases":cases,"runs":runs}
     b = {"id":"B","encoderRole":"cohere.encoder","requiredRoles":["cohere.encoder"],
          "cases":cases,"runs":[{"id":n,"status":"not-executed"} for n in ("U1","P1","P2","U2")]}
@@ -218,6 +241,78 @@ def rewrite_result(base, run, mutate):
     raw = json.dumps(result).encode()
     (base/descriptor["path"]).write_bytes(raw)
     descriptor.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+
+class RoutingScopeTests(unittest.TestCase):
+    def rows(self):
+        rows = case_events()
+        for row in rows:
+            row["ns"] *= 10
+            row["inputIndex"] = 0
+        rows += [event("lidStart",1111,samples=640),event("lidEnd",1117,samples=640),
+                 event("lidDecision",1118,samples=640,language="en",fallback=False)]
+        return rows
+
+    def test_global_and_explicit_routing_scopes_preserve_events(self):
+        for explicit in (False, True):
+            rows = self.rows()
+            if explicit:
+                for row in rows:
+                    if row["phase"].startswith("lid"): row.update(inputIndex=0,chunkId=0)
+            before = copy.deepcopy(rows)
+            scoped = a.case_event_scopes(rows,1,True)
+            self.assertEqual(len(scoped[0]),len(rows))
+            self.assertEqual(rows,before)
+            self.assertEqual([e["phase"] for e in scoped[0] if e["phase"].startswith("lid")],
+                             ["lidStart","lidEnd","lidDecision"])
+
+    def test_missing_duplicate_outside_reversed_and_contradictory_rejected(self):
+        def remove(rows): rows[:] = [e for e in rows if e["phase"] != "lidEnd"]
+        def duplicate(rows): rows.append(copy.deepcopy(next(e for e in rows if e["phase"] == "lidEnd")))
+        def outside(rows): next(e for e in rows if e["phase"] == "lidStart")["ns"] = 1109
+        def after_recognition(rows): next(e for e in rows if e["phase"] == "lidDecision")["ns"] = 1121
+        def reversed_order(rows): next(e for e in rows if e["phase"] == "lidEnd")["ns"] = 1110
+        def wrong_input(rows): next(e for e in rows if e["phase"] == "lidStart")["inputIndex"] = 1
+        def wrong_chunk(rows): next(e for e in rows if e["phase"] == "lidStart")["chunkId"] = 1
+        def worker_bounds(rows): next(e for e in rows if e["phase"] == "chunkWorkerEnd")["ns"] = 1119
+        for mutate in (remove,duplicate,outside,after_recognition,reversed_order,wrong_input,wrong_chunk,worker_bounds):
+            with self.subTest(mutation=mutate.__name__):
+                rows = self.rows(); mutate(rows)
+                with self.assertRaises(a.Invalid): a.case_event_scopes(rows,1,True)
+
+    def test_ambiguous_opening_windows_rejected(self):
+        rows = self.rows()
+        rows += [dict(e,inputIndex=1) for e in rows if "inputIndex" in e]
+        with self.assertRaisesRegex(a.Invalid,"routing-event-window"):
+            a.case_event_scopes(rows,2,True)
+
+    def test_global_lid_without_routing_rejected(self):
+        with self.assertRaisesRegex(a.Invalid,"unexpected-routing-events"):
+            a.case_event_scopes(self.rows(),1,False)
+
+    def test_full_cohere_global_lid_controls_profiles_and_native_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            manifest = production_fixture(base,routing=True)
+            out = a.analyze(manifest,base,"A")
+            self.assertTrue(out["valid"],out)
+            stage = out["stages"][0]
+            self.assertTrue(all(pair["valid"] for pair in stage["pairs"]))
+            for run in stage["runs"].values():
+                self.assertEqual(run["cases"]["0"]["lidComputeNs"],12000000)
+            self.assertEqual(set(stage["runs"]["P1"]["cases"]["0"]["roles"]),
+                             {"cohere.encoder","cohere.decoder","lid.encoder","lid.decoder"})
+            # A valid routing receipt cannot shelter LID native work beyond lidEnd.
+            run = manifest["stages"][0]["runs"][1]
+            descriptor = run["profile"]
+            profile = json.loads((base/descriptor["path"]).read_text())
+            next(s for s in profile["spans"] if s["role"] == "lid.decoder")["endNs"] = 1118*2000000
+            raw = json.dumps(profile).encode(); (base/descriptor["path"]).write_bytes(raw)
+            descriptor.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+            rewrite_result(base,run,lambda report: report["timeline"]["nativeProfile"].update(
+                bytes=descriptor["bytes"],sha256=descriptor["sha256"]))
+            invalid = a.analyze(manifest,base,"A")
+            self.assertEqual(invalid["stages"][0]["missingOrInvalidRuns"]["P1"],"native-jvm-role-overlap")
+
 
 class PartialTests(unittest.TestCase):
     def test_unexecuted_stage_is_explicit_not_invented(self):
@@ -244,6 +339,47 @@ class PartialTests(unittest.TestCase):
             partial = a.analyze(manifest,base)
             self.assertFalse(partial["valid"])
             self.assertEqual(len(partial["stages"][0]["runs"]),4)
+
+    def test_verified_configuration_hashes_differ_but_pair(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); manifest = production_fixture(base)
+            runs = manifest["stages"][0]["runs"]
+            self.assertNotEqual(runs[0]["configuration"]["sha256"], runs[1]["configuration"]["sha256"])
+            out = a.analyze(manifest,base,"A")["stages"][0]
+            self.assertTrue(all(pair["valid"] for pair in out["pairs"]),out)
+            self.assertTrue(out["eligibleForNextStage"],out)
+
+    def test_other_frozen_provenance_still_must_match(self):
+        for key in ("source_sha256", "model_sha256", "input_sha256", "build_sha256"):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory); manifest = production_fixture(base)
+                for run in manifest["stages"][0]["runs"]:
+                    for kind in ("measurement", "result"):
+                        d = run[kind]; value = json.loads((base/d["path"]).read_text())
+                        value["provenance"][key] = ("d" if run["id"] == "P1" else "a")*64
+                        if key == "build_sha256" and kind == "result":
+                            value["report"]["buildSha256"] = value["provenance"][key]
+                        raw = json.dumps(value).encode(); (base/d["path"]).write_bytes(raw)
+                        d.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+                out = a.analyze(manifest,base,"A")["stages"][0]
+                self.assertEqual(len(out["runs"]),4,out)
+                self.assertIn("paired-identity-mismatch",out["errors"])
+                self.assertFalse(out["eligibleForNextStage"])
+                self.assertFalse(out["timingsTransferable"])
+
+    def test_tampered_frozen_configuration_hash_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); manifest = production_fixture(base)
+            run = manifest["stages"][0]["runs"][1]
+            for kind in ("measurement", "result"):
+                d = run[kind]; value = json.loads((base/d["path"]).read_text())
+                value["provenance"]["configuration_sha256"] = "d"*64
+                raw = json.dumps(value).encode(); (base/d["path"]).write_bytes(raw)
+                d.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
+            out = a.analyze(manifest,base,"A")["stages"][0]
+            self.assertEqual(out["missingOrInvalidRuns"]["P1"],"configuration-hash-mismatch")
+            self.assertFalse(out["eligibleForNextStage"])
+            self.assertFalse(out["timingsTransferable"])
 
     def test_observed_receipts_mismatch_and_missing_retain_other_runs(self):
         for field in ("verifiedArtifacts", "verifiedInputs", "buildSha256", "testBuildSha256", "runId", "processStartId"):
@@ -286,6 +422,7 @@ class PartialTests(unittest.TestCase):
                 d.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
                 md = run["measurement"]; measurement = json.loads((base/md["path"]).read_text())
                 measurement["artifacts"]["variant.json"] = d["sha256"]
+                measurement["provenance"]["configuration_sha256"] = d["sha256"]
                 raw = json.dumps(measurement).encode(); (base/md["path"]).write_bytes(raw)
                 md.update(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())
                 def mutate(report):

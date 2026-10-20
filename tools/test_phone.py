@@ -44,6 +44,7 @@ class DirectoryPhone:
         self.disconnect_after_move = None
         self.corrupt_stage = False
         self.disconnect_on_removal = False
+        self.copy_markers = set()
 
     def inventory(self, name):
         path = self.root / name
@@ -68,10 +69,22 @@ class DirectoryPhone:
             raise phone.Refused('different owner')
         self.token = None
 
-    def stage(self, source):
+    def stage(self, source, copy_id):
+        self.copy_markers.add(copy_id)
         shutil.copytree(source, self.root / 'stage')
         if self.corrupt_stage:
             (self.root / 'stage' / 'model' / 'encoder.onnx').write_bytes(b'bad')
+
+    def stage_quiescent(self, copy_id):
+        self.assert_copy_marker(copy_id)
+
+    def cleanup_copy(self, copy_id):
+        self.assert_copy_marker(copy_id)
+        self.copy_markers.discard(copy_id)
+
+    def assert_copy_marker(self, copy_id):
+        if not isinstance(copy_id, str) or len(copy_id) != 32:
+            raise AssertionError('invalid copy marker')
 
     def move(self, source, target):
         (self.root / source).rename(self.root / target)
@@ -136,6 +149,31 @@ class LabTests(unittest.TestCase):
         self.assertNotEqual(self.command('inspect')['lab'], original)
         self.command('recover', 'run-one')
         self.assertEqual(self.command('inspect')['lab'], original)
+        self.assertEqual(self.device.copy_markers, set())
+
+    def test_unfinished_copy_must_be_quiescent_before_recovery_changes_lab(self):
+        class DetachedCopy(DirectoryPhone):
+            copying = True
+            def stage(self, source, copy_id):
+                super().stage(source, copy_id)
+                raise ConnectionError('host disconnected while copy may still run')
+            def stage_quiescent(self, copy_id):
+                super().stage_quiescent(copy_id)
+                if self.copying:
+                    raise phone.Refused('copy may still be running')
+        self.device = DetachedCopy(self.device.root)
+        self.write_variant(self.device.root / 'lab', b'old')
+        original = self.command('inspect')['lab']
+        with self.assertRaises(ConnectionError):
+            self.command('push-variant', str(self.candidate), 'run-one')
+        with self.assertRaises(phone.Refused):
+            self.command('recover', 'run-one')
+        self.assertEqual(self.command('inspect')['lab'], original)
+        self.assertTrue(self.command('inspect')['stage']['exists'])
+        self.device.copying = False
+        self.command('recover', 'run-one')
+        self.assertEqual(self.command('inspect')['lab'], original)
+        self.assertEqual(self.device.copy_markers, set())
 
     def test_multiple_candidates_keep_the_initial_baseline(self):
         self.write_variant(self.device.root / 'lab', b'old')
@@ -377,6 +415,136 @@ class LabTests(unittest.TestCase):
         self.assertEqual(self.command('inspect')['lab'], original)
 
 
+class DiagnosticPhone(DirectoryPhone):
+    """Synthetic app/test packages; all external operations stay in temporary files."""
+    test_apk = None
+    disconnect_after_test_install = False
+
+    def apk_info(self, path):
+        info = super().apk_info(path)
+        is_test = path.read_bytes().startswith(b'test ')
+        info.update(package='ch.og.dictation.test' if is_test else 'ch.og.dictation',
+                    target='ch.og.dictation' if is_test else None,
+                    debuggable=True, diagnostic_manifest='same-allowed-behavior')
+        return info
+
+    def app_identity(self, package='ch.og.dictation'):
+        if package == 'ch.og.dictation.test':
+            return dict(self.test_apk)
+        if package == 'ch.og.dictation':
+            return dict(self.apk)
+        raise AssertionError('unexpected package')
+
+    def install_test(self, path):
+        info = self.apk_info(path)
+        if info['package'] != 'ch.og.dictation.test':
+            raise AssertionError('unexpected test package')
+        self.test_apk = phone.identity(info)
+        if self.disconnect_after_test_install:
+            self.disconnect_after_test_install = False
+            raise ConnectionError('disconnected after test installation completed')
+
+
+class DiagnosticInstallTests(unittest.TestCase):
+    command = LabTests.command
+    write_variant = LabTests.write_variant
+
+    def setUp(self):
+        LabTests.setUp(self)
+        self.device = DiagnosticPhone(self.device.root)
+        self.packages = [self.root / name for name in (
+            'candidate.apk', 'original.apk', 'test-candidate.apk', 'test-original.apk')]
+        for path, payload in zip(self.packages, (b'app candidate', b'app original',
+                                                b'test candidate', b'test original')):
+            path.write_bytes(payload)
+        self.device.install(self.packages[1])
+        self.device.install_test(self.packages[3])
+        self.write_variant(self.device.root / 'lab', b'old')
+        self.original = self.command('inspect')
+
+    def provision(self):
+        return self.command('profile-install', *map(str, self.packages), 'diagnostic-run')
+
+    def assert_restored(self):
+        current = self.command('inspect')
+        for field in ('apk', 'test_apk', 'lab'):
+            self.assertEqual(current[field], self.original[field], field)
+        self.assertIsNone(current['owner'])
+        self.assertIsNone(current['recovery'])
+
+    def test_diagnostic_pair_and_lab_restore_both_exact_original_packages(self):
+        self.assertEqual(self.provision()['outcome'], 'installed-diagnostic-pair')
+        current = self.command('inspect')
+        self.assertNotEqual(current['apk'], self.original['apk'])
+        self.assertNotEqual(current['test_apk'], self.original['test_apk'])
+        self.command('push-variant', str(self.candidate), 'diagnostic-run')
+        self.command('recover', 'diagnostic-run')
+        self.assert_restored()
+        self.assertEqual(self.command('recover', 'diagnostic-run')['outcome'], 'recovered')
+
+    def test_disconnect_after_pair_install_can_restore_originals(self):
+        self.device.disconnect_after_test_install = True
+        with self.assertRaises(ConnectionError):
+            self.provision()
+        self.command('recover', 'diagnostic-run')
+        self.assert_restored()
+
+    def test_instrumentation_drift_blocks_recovery_without_touching_lab(self):
+        self.provision()
+        self.device.test_apk['sha256'] = 'f' * 64
+        original = self.device.inventory('original')
+        self.assertFalse(self.command('inspect')['recoverable'])
+        with self.assertRaises(phone.Refused):
+            self.command('recover', 'diagnostic-run')
+        self.assertEqual(self.device.inventory('original'), original)
+
+    def test_wrong_test_target_is_rejected_before_install_or_lab_snapshot(self):
+        original_info = self.device.apk_info
+        def wrong_target(path):
+            info = original_info(path)
+            if path.read_bytes() == b'test candidate':
+                info['target'] = 'another.app'
+            return info
+        self.device.apk_info = wrong_target
+        with self.assertRaises(phone.Refused):
+            self.provision()
+        self.assert_restored()
+
+
+class DiagnosticManifestTests(unittest.TestCase):
+    base = 'E: manifest\n  E: application\n    A: android:debuggable(0x0101000f)=true'
+
+    def fingerprint(self, extra='', package='ch.og.dictation'):
+        return phone.diagnostic_manifest(self.base + extra, package)
+
+    def driver(self, name, required='false', extra=''):
+        return ('\n    E: uses-native-library\n'
+                '      A: android:name(0x01010003)="' + name + '" (Raw: "' + name + '")\n'
+                '      A: android:required(0x0101028e)=' + required + extra)
+
+    def test_only_four_optional_known_driver_declarations_are_ignored(self):
+        for name in ('libOpenCL.so', 'libOpenCL-pixel.so', 'libedgetpu_litert.so', 'libedgetpu_util.so'):
+            with self.subTest(name=name):
+                self.assertEqual(self.fingerprint(self.driver(name)), self.fingerprint())
+                self.assertEqual(self.fingerprint(self.driver(name).replace(
+                    'android:', 'http://schemas.android.com/apk/res/android:')), self.fingerprint())
+
+    def test_required_unknown_or_extended_driver_declarations_remain_constrained(self):
+        for declaration in (self.driver('libOpenCL.so', 'true'), self.driver('libother.so'),
+                            self.driver('libOpenCL.so', extra='\n      A: android:extra="yes"')):
+            with self.subTest(declaration=declaration):
+                self.assertNotEqual(self.fingerprint(declaration), self.fingerprint())
+
+    def test_native_extraction_difference_is_allowed_only_for_test_application(self):
+        extraction = '\n    A: android:extractNativeLibs(0x010104ea)=true'
+        self.assertEqual(self.fingerprint(extraction, 'ch.og.dictation.test'),
+                         self.fingerprint(package='ch.og.dictation.test'))
+        self.assertNotEqual(self.fingerprint(extraction), self.fingerprint())
+        changed_debug = self.base.replace('debuggable(0x0101000f)=true', 'debuggable(0x0101000f)=false')
+        self.assertNotEqual(phone.diagnostic_manifest(changed_debug, 'ch.og.dictation.test'),
+                            self.fingerprint(package='ch.og.dictation.test'))
+
+
 class StopTransport(phone.AndroidPhone):
     """Only the external Android command transport is replaced."""
     def __init__(self, root):
@@ -402,11 +570,13 @@ class StopTransport(phone.AndroidPhone):
             out = 'List of devices attached\npixel-test\tdevice\n'
         elif args == ('shell', 'getprop ro.product.model'):
             out = 'Pixel 10 Pro XL\n'
-        elif args == ('shell', 'pm path ch.og.dictation'):
+        elif args in (('shell', 'pm path ch.og.dictation'),
+                      ('shell', 'pm path ch.og.dictation.test')):
             out = 'package:/data/app/base.apk\n'
         elif args == ('shell', 'sha256sum -- /data/app/base.apk'):
             out = 'a' * 64 + '  /data/app/base.apk\n'
-        elif args == ('shell', 'dumpsys package ch.og.dictation'):
+        elif args in (('shell', 'dumpsys package ch.og.dictation'),
+                      ('shell', 'dumpsys package ch.og.dictation.test')):
             out = 'versionCode=12\n'
         elif args == ('shell', 'am get-current-user'):
             out = self.current_user + '\n'

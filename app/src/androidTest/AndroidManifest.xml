@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
+  <uses-feature android:name="android.hardware.npu" tools:node="remove" />
+  <application>
+    <uses-native-library tools:node="removeAll" />
+    <uses-native-library android:name="libOpenCL.so" android:required="false" />
+    <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
+    <uses-native-library android:name="libedgetpu_litert.so" android:required="false" />
+    <uses-native-library android:name="libedgetpu_util.so" android:required="false" />
+  </application>
+</manifest>
