@@ -1,9 +1,9 @@
 # Issue #4: short Android encoder checkpoint
 
-**Physical execution blocked:** the current helper violates the protected wrapper's
-generated-file and numeric-profile receipt contract. One CPU test ran; recovery
-was independently verified afterward. Do not start another probe until the execution
-contract is corrected. [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md) records
+**Physical execution awaits reviewed contract application:** the replacement
+`short-encoder-v1` proposal is outside the protected wrapper. One historical CPU
+test ran; recovery was independently verified afterward. Do not start another probe
+until the reviewed proposal is manually applied. [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md) records
 the incident. Commands below describe host preparation.
 
 Host preparation only. No physical finding, full-take parity, or #5 eligibility.
@@ -22,8 +22,8 @@ for CPU and WebGPU. Exact raw SHA256 identities:
 `e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb`;
 `length.i64` (`11 00 00 00 00 00 00 00`)
 `35e3a6176b50da27fcb868bf840f0e76290bd9bf55c40545e67bac66353d0674`.
-The phone creates an exclusive attempt marker before loading;
-process death leaves an unresolved attempt and cannot silently retry.
+The wrapper journals an exclusive attempt UUID before loading. The helper writes
+only bounded `result.json`; process death leaves an unresolved attempt and cannot silently retry.
 
 The fixed `LabTest.variantOnSavedTakes` first checks `lab/encoder-probe.json`.
 It runs neither the saved recordings nor the pipeline in this mode. Stage the
@@ -78,7 +78,7 @@ python3 tools/encoder_probe.py freeze --model models/parakeet-v3-fp32 \
 ```
 
 Repeat freeze with provider `webgpu` and another new private output directory.
-Do not write into or reuse a reserved phone attempt; preserve receipt and marker.
+Do not write into or reuse a reserved phone attempt; preserve its journal and receipt.
 No inference command is included here: root owns wrapper authorization/recovery.
 
 ## Strict provider behavior and receipts
@@ -90,17 +90,21 @@ WebGPU explicitly selects Vulkan, NCHW, Int64 support, graph capture off, and
 providers fail. Residual shape/length/mask assignment to CPU must fail session
 initialization. Provider creation, native loading, session creation and execution
 failures retain their checkpoint/stack and every available resource observation.
-Profiling/logging are diagnostic. Cold load measures the complete monotonic interval
+File profiling is disabled. Cold load measures the complete monotonic interval
 from native initialization through provider/Dawn and session creation. Separate
 native/provider/session times are retained; failed initialization retains elapsed
 time through the failure in the final receipt. Inference timing includes input reads/preparation/copies,
-synchronous Run, host output materialization and diagnostic persistence; it cannot
+synchronous Run and host output materialization. Failed Run/preparation retains
+elapsed time through failure. A single diagnostic invocation cannot
 enter a practical speed comparison.
 
 `result.json` contains output shape/dtype, raw little-endian Base64 and digest so
 the protected JSON-only result pull preserves bounded synthetic tensors. It also
-retains app/test/input/runtime identities, cold load, HWM/PSS/thermal, profile path
-and failures. Raw tensor sidecars are redundant and need not be pulled.
+retains the wrapper-reserved attempt, app/test/input/runtime identities, cold load,
+HWM/PSS/thermal and failures. It creates no tensor sidecars, marker or ORT profile.
+The typed wrapper validates exact staged inputs and output inventory, retains
+partial/missing/malformed results as unresolved evidence, and requires quiescence
+before retrieval or restoration. It never synthesizes a numeric role profile.
 
 ```
 python3 tools/encoder_probe.py compare --reference corpus/lab/issue4-short-cpu \

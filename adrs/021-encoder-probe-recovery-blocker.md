@@ -89,8 +89,9 @@ Private verification and supplementary comparison remain under
 
 ## Decision and next question
 
-#4 stays incomplete; #5 and #8 stay unstarted. Keep
-[PR #9](https://github.com/dothackerman/pixel-local-dictation/pull/9) in draft.
+#4 stays incomplete; #5 and #8 stay unstarted.
+[PR #9](https://github.com/dothackerman/pixel-local-dictation/pull/9) is closed.
+Create one pull request only after the whole specification is complete.
 No backend compatibility, speed improvement, daily default or FUTO comparison is
 established. No recordings were used or exported by this synthetic checkpoint.
 

@@ -8,6 +8,8 @@ import ai.onnxruntime.*;
 import java.io.*;
 import java.nio.*;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.ZipFile;
@@ -22,12 +24,13 @@ public final class EncoderProbe {
 
     public void run() throws Exception {
         File result = new File(folder, "result.json");
-        File reservation = new File(folder, "encoder-probe-started");
-        // A process death remains an unresolved attempt. Operator must preserve/reconcile it.
-        if (!reservation.createNewFile()) throw new IllegalStateException("probe already reserved; reconcile existing attempt");
-        JSONObject out = new JSONObject().put("schema", 1).put("eligible", false)
+        String attempt = androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("shortEncoderAttempt", "");
+        require(attempt.matches("[0-9a-f]{32}"), "wrapper-owned short attempt is required");
+        require(!result.exists(), "short result already exists; no inference retry");
+        JSONObject out = new JSONObject().put("schema", 1).put("protocol", "short-encoder-v1")
+            .put("attempt_id", attempt).put("eligible", false)
             .put("scope", "short synthetic feasibility only; full-take checks not run")
-            .put("outcome", "failed").put("runId", UUID.randomUUID().toString())
+            .put("outcome", "failed")
             .put("pid", android.os.Process.myPid()).put("processStartElapsedMs", android.os.Process.getStartElapsedRealtime())
             .put("adapter_driver_proof", "unproven").put("fp32_shader_proof", "unproven")
             .put("residual_node_assignment", "unproven").put("later_checks", "not run");
@@ -36,13 +39,15 @@ public final class EncoderProbe {
         long initializationStartNs = 0;
         long initializationEndNs = 0;
         long phaseStartNs = 0;
+        long runStartNs = 0;
         try {
             File config = new File(folder, "encoder-probe.json");
             JSONObject plan = new JSONObject(Files.readString(config.toPath()));
             out.put("freeze_sha256", sha(config)).put("frozen", plan);
             String provider = plan.getString("provider");
             require(provider.equals("cpu") || provider.equals("webgpu"), "unknown provider " + provider);
-            require(plan.getInt("schema") == 1 && plan.getInt("true_length") == 17 &&
+            require(plan.getString("protocol").equals("short-encoder-v1") &&
+                plan.getInt("schema") == 1 && plan.getInt("true_length") == 17 &&
                 plan.getJSONArray("shape").toString().equals("[1,128,17]"), "unsupported frozen shape");
             for (String name : new String[]{"encoder.onnx", "encoder.weights"})
                 require(sha(new File(folder, "model/" + name)).equals(plan.getJSONObject("model").getString(name)), "model changed: " + name);
@@ -83,10 +88,10 @@ public final class EncoderProbe {
                 options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
                 options.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE);
                 options.setSessionLogVerbosityLevel(1);
-                options.enableProfiling(new File(folder, "encoder-probe-profile").getAbsolutePath());
-                out.put("optimization", "ALL_OPT").put("execution_mode", "SEQUENTIAL").put("profiling", true)
+                options.disableProfiling();
+                out.put("optimization", "ALL_OPT").put("execution_mode", "SEQUENTIAL").put("profiling", false)
                     .put("intra_op_threads", 4).put("inter_op_threads", 1)
-                    .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, and diagnostic persistence; profiled diagnostic only");
+                    .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, hashes and Base64; diagnostic only");
                 if (provider.equals("webgpu")) {
                     options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
                     Map<String, String> gpu = new LinkedHashMap<>();
@@ -110,6 +115,7 @@ public final class EncoderProbe {
                     out.put("cold_load_ms", (initializationEndNs - initializationStartNs) / 1e6);
                     memory.put(resources("after-load"));
                     start = SystemClock.elapsedRealtimeNanos();
+                    runStartNs = start;
                     byte[] input = Files.readAllBytes(new File(folder, "audio_signal.f32").toPath());
                     byte[] length = Files.readAllBytes(new File(folder, "length.i64").toPath());
                     require(input.length == 8704 && length.length == 8, "input byte length");
@@ -130,6 +136,7 @@ public final class EncoderProbe {
                                 OnnxTensor tensor = (OnnxTensor) outputs.get(index);
                                 TensorInfo info = tensor.getInfo();
                                 require(info.type == (index == 0 ? OnnxJavaType.FLOAT : OnnxJavaType.INT64), "output dtype: " + info.type);
+                                require(Arrays.equals(info.getShape(), index == 0 ? new long[]{1,1024,3} : new long[]{1}), "unexpected short output shape");
                                 ByteBuffer raw;
                                 if (index == 0) {
                                     FloatBuffer values = tensor.getFloatBuffer();
@@ -144,28 +151,33 @@ public final class EncoderProbe {
                                     raw = ByteBuffer.allocate(values.remaining() * 8).order(ByteOrder.LITTLE_ENDIAN);
                                     while (values.hasRemaining()) {
                                         long value = values.get();
+                                        require(value == 3, "unexpected short encoded length");
                                         raw.putLong(value);
                                     }
                                 }
-                                File file = new File(folder, "encoder-probe-output" + index + (index == 0 ? ".f32" : ".i64"));
-                                Files.write(file.toPath(), raw.array());
-                                tensors.put(new JSONObject().put("file", file.getName()).put("dtype", info.type.toString())
-                                    .put("shape", new JSONArray(info.getShape())).put("sha256", sha(file)).put("raw_base64", android.util.Base64.encodeToString(raw.array(), android.util.Base64.NO_WRAP)));
+                                String label = "encoder-probe-output" + index + (index == 0 ? ".f32" : ".i64");
+                                tensors.put(new JSONObject().put("file", label).put("dtype", info.type.toString())
+                                    .put("shape", new JSONArray(info.getShape())).put("sha256", sha(new ByteArrayInputStream(raw.array())))
+                                    .put("raw_base64", android.util.Base64.encodeToString(raw.array(), android.util.Base64.NO_WRAP)));
                             }
                             out.put("run_to_host_output_ms", (SystemClock.elapsedRealtimeNanos() - start) / 1e6).put("outputs", tensors);
                         }
                     }
                     memory.put(resources("after-output"));
-                    out.put("profile", session.endProfiling());
                 }
             }
             out.put("outcome", "complete").put("checkpoint", "outputs-materialized");
         } catch (Exception | LinkageError error) {
             StringWriter trace = new StringWriter();
             error.printStackTrace(new PrintWriter(trace));
-            out.put("checkpoint", checkpoint).put("failure", trace.toString());
+            String message = trace.toString();
+            if (message.length() > 16384) message = message.substring(0, 16384);
+            out.put("checkpoint", checkpoint).put("failure", message);
+            android.util.Log.e("LabTest", "short-encoder-v1 " + checkpoint + ": " + message);
         } finally {
             long now = SystemClock.elapsedRealtimeNanos();
+            if (runStartNs != 0 && !out.has("run_to_host_output_ms"))
+                out.put("run_to_failure_ms", (now - runStartNs) / 1e6);
             if (initializationStartNs != 0) {
                 long end = initializationEndNs != 0 ? initializationEndNs : now;
                 out.put("initialization_elapsed_ms", (end - initializationStartNs) / 1e6)
@@ -174,7 +186,9 @@ public final class EncoderProbe {
                     out.put("failed_initialization_phase_ms", (now - phaseStartNs) / 1e6);
             }
             memory.put(resources("finally"));
-            Files.writeString(result.toPath(), out.toString(2));
+            byte[] payload = out.toString(2).getBytes(StandardCharsets.UTF_8);
+            require(payload.length <= 1024 * 1024, "short receipt exceeds fixed byte bound");
+            Files.write(result.toPath(), payload, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         }
     }
     private JSONObject resources(String phase) throws Exception {
