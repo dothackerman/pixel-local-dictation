@@ -1,10 +1,12 @@
 """Exercise both harness contracts without executing a phone command."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +21,15 @@ def call(tool, args, cwd=ROOT):
 
 
 class GuardTests(unittest.TestCase):
+    def setUp(self):
+        # Registration resolves its repository from each subprocess cwd. Outer
+        # commit-hook Git variables must not override that directory.
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith('GIT_')}
+        isolation = patch.dict(os.environ, environment, clear=True)
+        isolation.start()
+        self.addCleanup(isolation.stop)
+
     def test_single_wrapper_and_normal_build_commands_pass_both_contracts(self):
         for tool, key in [('Bash', 'command'), ('exec_command', 'cmd')]:
             for command in [WRAPPER+' status', WRAPPER+' install build/app.apk',

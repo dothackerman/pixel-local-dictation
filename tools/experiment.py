@@ -165,19 +165,22 @@ def record(path, run, measured, root=ROOT):
 
 def report(path, root=ROOT):
     frozen = _frozen(path, root)
-    reports, hashes, reserved = {}, {}, 0
+    reports, hashes, states, reserved = {}, {}, {}, 0
     for run in frozen["plan"]["runs"]:
         name = run["id"]
-        reserved += (Path(path).parent / "attempts" / (name + ".json")).exists()
+        attempted = (Path(path).parent / "attempts" / (name + ".json")).exists()
+        reserved += attempted
+        states[name] = "unresolved-execution" if attempted else "not-reserved"
         receipt = private_path(Path(path).parent / "receipts" / (name + ".json"), root)
         if receipt.exists():
             value = json.loads(receipt.read_text())
             if value["plan_sha256"] != frozen["sha256"] or identity.digest(value["measurement"]) != value["sha256"]:
                 raise ValueError("receipt changed")
             reports[name], hashes[name] = value["measurement"], identity.sha(receipt)
+            states[name] = "recorded"
     result = compare(frozen["plan"], reports)
     return dict(result, plan_sha256=frozen["sha256"], evaluator=frozen["evaluator"],
-                receipt_sha256=hashes, attempts_reserved=reserved)
+                receipt_sha256=hashes, attempts_reserved=reserved, attempt_states=states)
 
 
 def save_report(path, result, root=ROOT):
@@ -298,6 +301,55 @@ def _session_errors(report, expected):
     return errors
 
 
+def _observations(plan, reports, result):
+    """Retain available observations even when evidence validation prevents a verdict.
+
+    Scores here describe supplied rows only; they cannot establish matched coverage.
+    No transcript is copied into the aggregate report.
+    """
+    result.update(observations={}, observed_language_scores={}, resource_breaches=[], observations_validated=False)
+    limits = plan["thresholds"]
+    for run in plan["runs"]:
+        measured = reports.get(run["id"], {})
+        if not isinstance(measured, dict) or not isinstance(measured.get("report"), dict):
+            continue
+        report = measured["report"]
+        rows = report.get("endpoints", [])
+        memory = report.get("memory", [])
+        observed = {"setup": run["setup"], "cold_load_ms": report.get("coldLoadMs"),
+                    "memory": memory, "cases": []}
+        result["observations"][run["id"]] = observed
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            session = row.get("session", {})
+            events = session.get("eventsNs", {}) if isinstance(session, dict) else {}
+            if not isinstance(events, dict):
+                events = {}
+            preview, start = events.get("previewReady"), events.get("captureStart")
+            observed["cases"].append({"id": row.get("id"), "stop_wait_ms": row.get("stopToFinalMs"),
+                "encoder_ms": row.get("encoderMs"),
+                "first_preview_ms": (preview - start) / 1e6 if type(preview) is int and type(start) is int else None})
+            ref = run["expected"]["endpoint_references"].get(row.get("id"))
+            if ref and isinstance(row.get("text"), str):
+                lang = ref["lang"]
+                totals = result["observed_language_scores"].setdefault(lang, {}).setdefault(
+                    run["setup"], {"errors": 0, "reference_words": 0, "cases": 0})
+                reference = score.normalise(ref["reference"], lang)
+                totals["errors"] += score.errors(reference, score.normalise(row["text"], lang))
+                totals["reference_words"] += len(reference)
+                totals["cases"] += 1
+        for row in memory if isinstance(memory, list) else []:
+            if not isinstance(row, dict):
+                continue
+            exceeded = [key for key, limit in (("highWaterKb", "peak_kb"), ("thermalStatus", "max_thermal"))
+                        if evidence.finite(row.get(key)) and row[key] > limits[limit]]
+            if exceeded:
+                result["resource_breaches"].append({"run": run["id"], "setup": run["setup"],
+                    "observation": row, "exceeded": exceeded,
+                    "limits": {"highWaterKb": limits["peak_kb"], "thermalStatus": limits["max_thermal"]}})
+
+
 def compare(plan, reports):
     """Return an inconclusive result for malformed, mismatched or incomplete evidence."""
     result = {"decision": "inconclusive", "claim": "development-phone-replay",
@@ -306,6 +358,7 @@ def compare(plan, reports):
         result["errors"] = plan_errors(plan)
         if result["errors"]:
             return result
+        _observations(plan, reports, result)
         runs = plan["runs"]
         if set(reports) != {r["id"] for r in runs}:
             result["errors"].append("missing or extra run receipts")
@@ -331,6 +384,7 @@ def compare(plan, reports):
                     result["errors"].append("missing thermal evidence")
         if result["errors"]:
             return result
+        result["observations_validated"] = True
         return _score(plan, reports, result)
     except (KeyError, TypeError, ValueError, AttributeError, OSError, OverflowError) as error:
         result["errors"].append("malformed or unavailable evidence: " + str(error))
@@ -343,15 +397,16 @@ def _score(plan, reports, result):
     for run in plan["runs"]:
         pairs[run["pair"]][run["setup"]] = run
     rejected = []
+    control_blockers = []
     limits = plan["thresholds"]
-    for run in plan["runs"]:
-        for row in reports[run["id"]]["report"]["memory"]:
-            if row["highWaterKb"] > limits["peak_kb"] or row["thermalStatus"] > limits["max_thermal"]:
-                rejected.append("resource limit: " + run["id"])
+    for breach in result["resource_breaches"]:
+        reason = "resource limit: " + breach["run"] + " (" + str(breach["observation"].get("phase")) + ")"
+        (control_blockers if breach["setup"] == control else rejected).append(reason)
     for lang in ("de", "en"):
         waits = {control: [], candidate: []}
         medians = {control: [], candidate: []}
         error_counts = {control: 0, candidate: 0}
+        reference_words = {control: 0, candidate: 0}
         paired_savings = []
         changed_texts = 0
         for pair in pairs.values():
@@ -365,8 +420,9 @@ def _score(plan, reports, result):
                 waits[setup] += these_waits
                 medians[setup].append(statistics.median(these_waits))
                 for key, row in rows.items():
-                    error_counts[setup] += score.errors(score.normalise(refs[key]["reference"], lang),
-                                                        score.normalise(row["text"], lang))
+                    reference = score.normalise(refs[key]["reference"], lang)
+                    reference_words[setup] += len(reference)
+                    error_counts[setup] += score.errors(reference, score.normalise(row["text"], lang))
             paired_savings.append(medians[control][-1] - medians[candidate][-1])
             for key, row in values[control].items():
                 a, b = row["text"], values[candidate][key]["text"]
@@ -378,7 +434,10 @@ def _score(plan, reports, result):
         saving = a - b
         spread = max(max(v) - min(v) for v in medians.values())
         result["languages"][lang] = {
-            "errors": error_counts, "changed_outputs": changed_texts,
+            "errors": error_counts, "reference_words": reference_words,
+            "word_error_rate": {setup: error_counts[setup] / reference_words[setup]
+                                if reference_words[setup] else None for setup in (control, candidate)},
+            "changed_outputs": changed_texts,
             "control_median_ms": a, "candidate_median_ms": b, "saving_ms": saving,
             "relative_gain": saving / a if a else 0, "repeat_spread_ms": spread,
             "paired_savings_ms": paired_savings,
@@ -396,8 +455,10 @@ def _score(plan, reports, result):
                 a <= 0 or saving < limits["absolute_gain_ms"] or saving / a < limits["relative_gain"] or
                 saving <= spread or min(paired_savings) <= 0):
             rejected.append(lang + ": practical repeatable Stop gain not established")
-    result.update(decision="reject" if rejected else "advance", reasons=rejected,
+    result.update(decision="inconclusive" if control_blockers else "reject" if rejected else "advance",
+                  control_blockers=control_blockers, reasons=control_blockers + rejected,
                   cold_load_ms={run["id"]: reports[run["id"]]["report"]["coldLoadMs"] for run in plan["runs"]},
-                  next="diagnose the failed gate" if rejected else
+                  next="diagnose the invalid control; reconcile before a new matched comparison" if control_blockers else
+                  "diagnose the failed gate" if rejected else
                   "GPU wait comparison" if plan["kind"] == "conversion-parity" else "supervised full-flow validation")
     return result
