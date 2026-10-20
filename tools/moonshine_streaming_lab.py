@@ -70,7 +70,7 @@ def prepare(path):
                            samples=len(read_wav(str(wav)))))
     files = {Path(i["path"]) for i in inputs}
     files.update([ROOT / "corpus/takes.json", ROOT / "corpus/lab/dictionary.txt",
-                  guard_refs, ROOT / "docs/evaluation/baseline.md", wheel])
+                  guard_refs, ROOT / evaluate.score.BASELINE_REFERENCE_PATH, wheel])
     files.update((ROOT / "corpus/scripts").glob("*.txt"))
     files.update((ROOT / "corpus/scripts").glob("*.terms"))
     files.update(ROOT / "tools" / f for f in ("moonshine_streaming_lab.py", "pipeline.py", "runtime_config.py", "variant.py", "evaluate.py", "score.py"))

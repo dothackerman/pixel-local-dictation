@@ -14,5 +14,5 @@ Score 1.75 recovered nine terms/zero insertions; 2.0 thirteen/one; 2.25 fourteen
 No result justified relaxing the trigger; allocation cannot reopen it.
 Four reserved scripts stay outside the repo; Oriol records/reviews only after authorized validation.
 Earlier ~two-point sample-expansion agreement remains unreconciled; neither policy authorizes collection now.
-Evidence: `corpus/lab/handback-2026-10-11.md`, `corpus/lab/handback-2026-10-13.md`.
+Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit policy only with explicit approval; measure mechanism before building dictionary UI.

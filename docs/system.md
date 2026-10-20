@@ -57,10 +57,14 @@ Tags `m1`/`m2` prove integration/local recognition. October 10’s six matched-l
 
 R4 requires the complete automatic phone path against installed FUTO, each language separately. Freeze settings/vocabulary before reserved validation; cover short/spontaneous/noisy/ambiguous starts, correction effort, names/numbers/meaning, formatting, wrong language, cold/warm latency, memory and repeated-session heat/battery. Prefer identical audio; disclose different-take comparisons. Answered calls, longer battery-only survival and a clean full FP32 export remain unverified. Dictionary entry/editing UX remains undecided.
 
-Future hypotheses: [ADR-013](adrs/013-future-investigations.md). No new runs or recordings authorized.
+Next decisions: one Parakeet FP32 conversion/GPU optimization track, bounded diagnosis of Cohere’s English-prefix failures, then independent FUTO validation; [ADR-013](adrs/013-future-investigations.md) owns order and stop conditions. Allocation/sweep campaigns are closed. No new runs or recordings authorized.
 
 ## Documentation boundary
 
 This file owns requirements/current architecture; `adrs/` owns dated decisions, including experiment outcomes. Preserve approval status, context, decision, evidence/limits and revisit condition. Link private evidence; do not copy it.
 
-Proposal only: the retained scorer/reference hashing still depends on the retired baseline document. Migrate that fixture in a separate versioned code change before using this branch for scoring; current main at `925ef8c87e054855246a6105a95778c73961ecef` retains it. Historical experiment controllers are already retired on main; recover them only for offline reading at `d0e984641d9d247bd6dd4f500abfbba1091b7b43`, never for new launches. Recover pre-compression docs at the comparison base above. Historical transcripts are not duplicated. HTML is a generated review artifact, not another authority.
+Private evidence lives under `corpus/retained/`; `evidence.json` indexes selected reports, original identities and pruning limits. Retain decision-changing evidence, calibration/evaluation inputs and operational recovery state; closed campaign directory trees are not documentation. Future work creates a fresh bounded plan rather than continuing old ledgers.
+
+Scoring uses private `corpus/references/baseline-v1.json`, with pinned Git-source provenance. Its file hash is the new reference identity; historical identities/verdicts stay unchanged. Personal references/transcripts remain outside Git.
+
+Pre-compression documentation remains at `925ef8c87e054855246a6105a95778c73961ecef`; retired controllers at `d0e984641d9d247bd6dd4f500abfbba1091b7b43` are for offline reading only. Git preserves source/documentation, not deleted private runs. HTML is a generated review artifact, not another authority.

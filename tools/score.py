@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Word error rate of replay reports against the reference scripts in docs/evaluation/baseline.md.
+"""Word error rate of replay reports against the reference scripts in corpus/references/baseline-v1.json.
 
 Usage: tools/score.py TAKES.json REPORT.json [REPORT.json ...]
        tools/score.py --corpus corpus        (milestone 3: Oriol's scripts, FUTO against the app)
 TAKES.json maps a take's file name to its script id, e.g. {"20261010-080909-723.wav": "D6"}.
 Reports come from tools/replay.py. Prints one row per take and decode path, and FUTO's
-row from the raw output recorded in docs/evaluation/baseline.md.
+row from the raw output recorded in corpus/references/baseline-v1.json.
 
 Normalisation before counting: lower case, punctuation removed, hyphens become spaces,
 spoken numbers below 1000 and ordinals up to twelfth become digits, gigabyte(s) becomes gb,
@@ -17,6 +17,7 @@ are also reported on their own, because one wrong name matters more than its wor
 import json, os, re, sys, unicodedata
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASELINE_REFERENCE_PATH = "corpus/references/baseline-v1.json"
 
 NUM = {
     "de": dict(zwei=2, drei=3, vier=4, fünf=5, sechs=6, sieben=7, acht=8, neun=9, zehn=10, elf=11,
@@ -168,18 +169,12 @@ def errors(ref, hyp):
 
 
 def baseline():
-    text = open(os.path.join(ROOT, "docs", "evaluation", "baseline.md"), encoding="utf-8").read()
-    refs, futo = {}, {}
-    for lang, label in (("de", "German"), ("en", "English")):
-        line = re.search(rf"^{label}: (.+)$", text, re.M).group(1)
-        parts = re.split(r"\s*\b([DE]\d) ", line)[1:]
-        sentences = dict(zip(parts[0::2], parts[1::2]))
-        for k, v in sentences.items():
-            refs[k] = (lang, v)
-        refs[sorted(sentences)[0][0] + "6"] = (lang, " ".join(sentences[k] for k in sorted(sentences)))
-    for m in re.finditer(r'^([DE]6): "(.+)"$', text, re.M):
-        futo[m.group(1)] = m.group(2)
-    return refs, futo
+    """Read versioned private references; historical reports keep their original identities."""
+    with open(os.path.join(ROOT, BASELINE_REFERENCE_PATH), encoding="utf-8") as source:
+        fixture = json.load(source)
+    if fixture.get("schema_version") != 1:
+        raise ValueError("unsupported baseline reference schema")
+    return {sid: tuple(value) for sid, value in fixture["references"].items()}, fixture["futo"]
 
 
 def row(label, script, refs, hyp):
@@ -241,7 +236,7 @@ def main():
         lang, e, n = res
         a = totals.setdefault((key, lang), [0, 0]); a[0] += e; a[1] += n
     for script, hyp in sorted(futo.items()):
-        add("FUTO (baseline.md, other take)", row("FUTO (baseline.md, other take)", script, refs, hyp))
+        add("FUTO (baseline-v1, other take)", row("FUTO (baseline-v1, other take)", script, refs, hyp))
     for path in sys.argv[2:]:
         rep = json.load(open(path))
         for t in rep["takes"]:

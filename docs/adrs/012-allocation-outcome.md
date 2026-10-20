@@ -26,6 +26,6 @@ Setup baseline restored 15:57:17 Europe/Zurich; benchmark/test apps retained; ow
 Host hashes/device byte-size inventory verified; independent device content hashes unavailable.
 Investigate session memory, then separately scope same-build FP32 pattern-off confirmation.
 No successor commissioned; recording trigger unchanged.
-Evidence: `corpus/lab/allocation-v1/reports/handback-complete-20261019.json`, `completion-integrity-20261019.json` in the same directory.
+Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Execution source: d59c715c61133c61c86fb26f71b716a954467653; checkpoint: d0e984641d9d247bd6dd4f500abfbba1091b7b43.
-Exact plans/amendments, waits, budgets, recovery and restoration remain in private reports/pinned Git history.
+Selected private evidence remains indexed; historical documentation/source stays in pinned Git history. Pruned run archives are not required for new experiments.

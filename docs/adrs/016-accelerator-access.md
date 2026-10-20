@@ -20,5 +20,5 @@ Oriol manually applied the constrained diagnostic compatibility patch; no OS set
 Both JUnit runs passed but lab rejected non-ASR completion format; genuine synthetic JSON was pulled before recovery, without fake ASR records.
 Both original APKs/all 11 lab hashes restored and independently verified; no owner/recovery journal remained.
 Two of two separately frozen access slots consumed; no further inference authorized.
-Evidence: `corpus/lab/accelerator-access-20261020/`; public sample revision 32a331c33a7115a3b86ef554fb58a9c11d03b123.
+Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit numerical correctness first, then transfer-inclusive encoder/app value; custom GPU/TPU speech remains unimplemented.

@@ -9,5 +9,5 @@ English spike WER 3.2% versus FUTO 1.6%, from different takes; provisional appro
 Later comparisons reached the revisit condition: accuracy superiority remains unproven.
 Greedy parity does not imply beam/dictionary parity; ADR-007.
 Self-built encoder; pinned assets, clean full-export reproducibility still unverified.
-Evidence: `corpus/files/benchmark/spike-*.json`, `corpus/laptop/`, tags m1/m2.
+Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit accuracy, load/memory and alternative runtimes before permanent deployment.

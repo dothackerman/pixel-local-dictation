@@ -37,4 +37,4 @@ Fetch pinned assets with `tools/fetch-assets.sh` (see `assets.lock`). The shippe
 
 `python3 tools/quality.py` runs Python regressions, Kotlin benchmark unit tests and Android lint offline, without device tests. The local pre-commit gate invokes it with `--staged`: stage tracked edits and new source/test/build inputs first so the checkout matches the index. It rejects index changes during the run.
 
-Documentation proposal: requirements/architecture in `docs/system.md`; decisions in `docs/adrs/`. Scoring-fixture migration remains required before execution from this branch; see the documentation boundary.
+Requirements/architecture live in `docs/system.md`; decisions in `docs/adrs/`. Scoring uses the private `corpus/references/baseline-v1.json` fixture with pinned source provenance; see the documentation boundary.

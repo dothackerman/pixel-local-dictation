@@ -4,6 +4,8 @@ import csv
 import json
 from pathlib import Path
 
+from score import BASELINE_REFERENCE_PATH
+
 
 def sha(path):
     digest = hashlib.sha256()
@@ -48,7 +50,7 @@ def evaluator_files(root):
 def reference_files(root):
     root = Path(root)
     return files(list((root / 'corpus/scripts').glob('*.txt')) + list((root / 'corpus/scripts').glob('*.terms')) +
-                 [root / 'corpus/takes.json', root / 'models/guard/refs.tsv', root / 'docs/evaluation/baseline.md'])
+                 [root / 'corpus/takes.json', root / 'models/guard/refs.tsv', root / BASELINE_REFERENCE_PATH])
 
 
 def quality_inputs(root, takes):

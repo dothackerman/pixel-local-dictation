@@ -13,5 +13,5 @@ Initial phone measurements stopped on restoration readiness; later wrapper capab
 Measurement-phase tally: 14/40 charged laptop slots, nine actual processes, two inference; zero phone measurements/mutations/retries.
 Some ancillary processes lacked explicit hard timeouts: retained protocol deviation, not erased by successful completion.
 No unused capacity authorizes more work. Medium/unseen-vocabulary/automatic-routing quality remain unknown.
-Evidence: `corpus/lab/campaign-20261019/measurement-command-freeze.json`; native outputs under `corpus/lab/campaign-2026-10-19/`.
+Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit only with a distinct bounded hypothesis; no repeated Small sweep.
