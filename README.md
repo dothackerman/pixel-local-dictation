@@ -3,11 +3,14 @@
 Local English and German dictation on Oriol's GrapheneOS Pixel 10 Pro XL.
 Open it with FUTO Keyboard's existing microphone key. The goal is less waiting
 and fewer corrections than FUTO's installed Multilingual-244 model, in each
-language. Git stays local-only.
+language. Source and issue tracking use a [private GitHub repository](https://github.com/dothackerman/pixel-local-dictation).
 
 This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
-rules. The [ADRs](adrs/) record dated decisions and experiment results.
+rules. The [ADRs](adrs/) record decisions and past experiment conclusions. New experiment
+specifications live in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues),
+with reviewed snapshots in [specs](specs/). The next experiment is [spec #1](https://github.com/dothackerman/pixel-local-dictation/issues/1).
+The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
 
 ## Current status
 
