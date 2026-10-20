@@ -43,8 +43,16 @@ ANDROID_HOME=/home/oriol/Android/Sdk ./gradlew \
 ```
 
 The packaging command retains matching Java/JNI and every official AAR header with
-individual digests in `runtime.json`; only the app APK owns the ORT core. The test
-APK contains matching 4j JNI, no second core. No `pickFirst` selection. Verify final
+individual digests in `runtime.json`; only the app APK owns the ORT core.
+The Java/JNI AAR receives an SDK36-only library manifest (explicit target prevents legacy
+compatibility permissions): the published telemetry
+initializer and INTERNET/ACCESS_NETWORK_STATE permissions are excluded. Inspect
+the final merged APK manifests against the original offline app/test manifests
+before installation. The public package regression uses the exact official AAR
+when `ORT131_AAR=/path/to/onnxruntime-android-1.31.0.aar` is set. Pinned Java initialization loads the native core/JNI and initializes API31,
+providers and version directly; it does not call or require TelemetryInitializer.
+That Android provider initializes only the optional telemetry HttpClient.
+The test APK contains matching 4j JNI, no second core. No `pickFirst` selection. Verify final
 ZIP entries/digests and AArch64 ELF dependencies before installation. Header API31,
 core export `OrtGetApiBase@@VERS_1.31.0`, JNI reference
 `OrtGetApiBase@VERS_1.31.0` must agree. Published 4j JNI additionally needs only

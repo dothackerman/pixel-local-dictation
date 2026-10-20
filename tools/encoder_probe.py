@@ -59,7 +59,12 @@ def package(ort, sherpa, out):
                 target.writestr(entry, core if entry.filename == CORE else original.read(entry.filename))
         # App owns the sole core; test APK owns matching JNI + Java only.
         with zipfile.ZipFile(out / 'ort131-java-jni.aar', 'w', zipfile.ZIP_DEFLATED) as target:
-            for name in ('AndroidManifest.xml', 'classes.jar', JNI, 'proguard.txt'):
+            # The published library manifest registers telemetry and network
+            # permissions. This isolated offline probe needs Java/JNI only.
+            target.writestr('AndroidManifest.xml',
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ai.onnxruntime">'
+                '<uses-sdk android:minSdkVersion="36" android:targetSdkVersion="36" /></manifest>')
+            for name in ('classes.jar', JNI, 'proguard.txt'):
                 target.writestr(name, runtime.read(name))
         headers = out / 'headers'
         headers.mkdir()
@@ -70,6 +75,7 @@ def package(ort, sherpa, out):
     write(out / 'runtime.json', {'schema': 1, 'version': '1.31.0', 'official_aar_sha256': ORT_SHA,
         'core_sha256': CORE_SHA, 'jni_sha256': JNI_SHA, 'source_commit': SOURCE_COMMIT, 'original_sherpa_sha256': sha(sherpa), 'artifacts': artifacts,
         'headers': {p.name: sha(p) for p in headers.iterdir()},
+        'manifest_policy': 'SDK36 library manifest; no permissions, providers or other components',
         'limitation': 'Synthetic direct ORT only. Sherpa JNI compatibility and full-take integration not established.'})
     print(json.dumps({'path': str(out), 'artifacts': artifacts}))
 
