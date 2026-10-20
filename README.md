@@ -17,7 +17,11 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 The app can record, recognize speech locally and insert text through FUTO's
 microphone workflow. Tags `m1` and `m2` record these prototype gates.
 Improvement over FUTO in both languages remains unproven. The current default
-remains provisional; no experiment is commissioned.
+remains provisional. The October 20 synthetic encoder checkpoint is blocked on
+app-scoped recovery: diagnostic APKs remain installed, with originals retained.
+No GPU run occurred. [ADR-021](adrs/021-encoder-probe-recovery-blocker.md) records
+the incident and reviewed manual recovery handoff. Resolve and verify recovery
+before further phone experiments.
 
 Read the results and their limits before selecting the next question:
 
