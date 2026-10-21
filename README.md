@@ -17,11 +17,12 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 The app can record, recognize speech locally and insert text through FUTO's
 microphone workflow. Tags `m1` and `m2` record these prototype gates.
 Improvement over FUTO in both languages remains unproven. The current default
-remains provisional. The October 20 synthetic CPU encoder checkpoint completed;
-both original APKs and all 11 lab hashes were restored and independently verified.
-No GPU run occurred. The probe/wrapper receipt contract needs correction before
-another experiment. [ADR-021](adrs/021-encoder-probe-recovery-blocker.md) records
-the result and recovery incident.
+remains provisional. On October 21 the short Android ORT1.31 CPU encoder control
+passed; strict WebGPU session creation rejected residual CPU node assignment.
+No GPU tensors, full-take speed result or live pass exist. Both original APKs and
+all 11 lab hashes were restored and independently verified after each attempt.
+[ADR-022](adrs/022-webgpu-encoder-placement-stop.md) records the diagnosed stop.
+The specification remains incomplete; its full-suite and live gates are unstarted.
 
 Read the results and their limits before selecting the next question:
 

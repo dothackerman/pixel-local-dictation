@@ -1,12 +1,12 @@
 # Issue #4: short Android encoder checkpoint
 
-**Physical execution awaits reviewed contract application:** the replacement
-`short-encoder-v1` proposal is outside the protected wrapper. One historical CPU
-test ran; recovery was independently verified afterward. Do not start another probe
-until the reviewed proposal is manually applied. [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md) records
-the incident. Commands below describe host preparation.
+**Physical finding: diagnosed stop.** The user applied the reviewed
+`short-encoder-v1` proposal. Matched CPU/WebGPU attempts ran October 21:
+CPU completed; strict WebGPU session creation rejected residual CPU assignment.
+Both recoveries were independently verified. [ADR-022](../adrs/022-webgpu-encoder-placement-stop.md)
+records identities, resources and limits. No full-take pass or #5 eligibility.
 
-Host preparation only. No physical finding, full-take parity, or #5 eligibility.
+The commands below document preparation and comparison, not permission to retry.
 The production runtime default is unchanged. This explicit benchmark build calls
 ORT directly without loading Sherpa or the speech pipeline. Repacking its core
 is not a claim that the old Sherpa JNI is compatible with ORT 1.31.
