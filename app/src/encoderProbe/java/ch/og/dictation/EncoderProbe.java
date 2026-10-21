@@ -58,12 +58,29 @@ public final class EncoderProbe {
             boolean v2 = plan.getString("protocol").equals(SHORT_V2);
             boolean listed = placement || (v2 && provider.equals("webgpu"));
             if (v2) out.put("protocol", SHORT_V2);
-            require((placement || v2 || plan.getString("protocol").equals("short-encoder-v1")) &&
-                plan.getInt("schema") == 1 && plan.getInt("true_length") == 17 &&
+            // chunk-encoder-v1: Sherpa's encoder session options, N frozen fixtures, one retained session.
+            boolean chunk = plan.getString("protocol").equals(CHUNK_V1);
+            if (chunk) {
+                out.put("protocol", CHUNK_V1).put("scope", "chunk-shape tensor gate only; full-take checks not run");
+                out.remove("adapter_driver_proof");
+                out.remove("residual_node_assignment");
+            }
+            require(chunk || (placement || v2 || plan.getString("protocol").equals("short-encoder-v1")) &&
+                plan.getInt("true_length") == 17 &&
                 plan.getJSONArray("shape").toString().equals("[1,128,17]"), "unsupported frozen shape");
+            require(plan.getInt("schema") == 1, "unsupported schema");
             for (String name : new String[]{"encoder.onnx", "encoder.weights"})
                 require(sha(new File(folder, "model/" + name)).equals(plan.getJSONObject("model").getString(name)), "model changed: " + name);
-            for (String name : new String[]{"audio_signal.f32", "length.i64"})
+            if (chunk) {
+                JSONArray fixtures = plan.getJSONArray("fixtures");
+                for (int i = 0; i < fixtures.length(); i++) {
+                    JSONObject f = fixtures.getJSONObject(i);
+                    String name = f.getString("name");
+                    require(name.matches("[a-z-]+"), "fixture name");
+                    require(sha(new File(folder, "fixtures/" + name + ".f32")).equals(f.getString("features_sha256")), "input changed: " + name);
+                    require(sha(new File(folder, "fixtures/" + name + ".i64")).equals(f.getString("length_sha256")), "input changed: " + name);
+                }
+            } else for (String name : new String[]{"audio_signal.f32", "length.i64"})
                 require(sha(new File(folder, name)).equals(plan.getJSONObject("inputs").getString(name)), "input changed: " + name);
             try (ZipFile apk = new ZipFile(context.getPackageCodePath())) {
                 String actual = sha(apk.getInputStream(apk.getEntry("lib/arm64-v8a/libonnxruntime.so")));
@@ -86,7 +103,9 @@ public final class EncoderProbe {
             initializationStartNs = SystemClock.elapsedRealtimeNanos();
             phaseStartNs = initializationStartNs;
             System.loadLibrary("onnxruntime");
-            OrtEnvironment env = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE, "encoder-probe");
+            // Chunk gate uses Sherpa's Env level (ERROR); placement listings need VERBOSE.
+            OrtEnvironment env = OrtEnvironment.getEnvironment(chunk ? OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR
+                : OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE, "encoder-probe");
             require(env.getVersion().equals("1.31.0"), "runtime version mismatch: " + env.getVersion());
             out.put("runtime_version", env.getVersion()).put("available_providers", OrtEnvironment.getAvailableProviders().toString());
             out.put("native_load_ms", (SystemClock.elapsedRealtimeNanos() - phaseStartNs) / 1e6);
@@ -94,25 +113,36 @@ public final class EncoderProbe {
             checkpoint = "provider-create";
             phaseStartNs = SystemClock.elapsedRealtimeNanos();
             try (OrtSession.SessionOptions options = new OrtSession.SessionOptions()) {
-                options.setIntraOpNumThreads(4);
-                options.setInterOpNumThreads(1);
+                int intra = 4, inter = 1;
+                if (chunk) {
+                    // Sherpa session.cc: intra = inter = num_threads, default (ALL) optimization, sequential, fallback allowed.
+                    JSONObject session = plan.getJSONObject("session_options");
+                    require(session.getString("optimization").equals("ALL_OPT") && session.getString("execution_mode").equals("SEQUENTIAL")
+                        && session.getString("cpu_fallback").equals("allowed"), "unsupported chunk session options");
+                    intra = session.getInt("intra_op_threads");
+                    inter = session.getInt("inter_op_threads");
+                }
+                options.setIntraOpNumThreads(intra);
+                options.setInterOpNumThreads(inter);
                 options.setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL);
                 options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-                options.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE);
-                options.setSessionLogVerbosityLevel(1);
+                if (!chunk) {
+                    options.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE);
+                    options.setSessionLogVerbosityLevel(1);
+                }
                 options.disableProfiling();
                 out.put("optimization", "ALL_OPT").put("execution_mode", "SEQUENTIAL").put("profiling", false)
-                    .put("intra_op_threads", 4).put("inter_op_threads", 1)
+                    .put("intra_op_threads", intra).put("inter_op_threads", inter)
                     .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, hashes and Base64; diagnostic only");
                 if (provider.equals("webgpu")) {
-                    if (!listed) options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
+                    if (!listed && !chunk) options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
                     Map<String, String> gpu = new LinkedHashMap<>();
                     gpu.put("enableGraphCapture", "0");
                     gpu.put("enableInt64", "1");
                     gpu.put("preferredLayout", "NCHW");
                     gpu.put("dawnBackendType", "Vulkan");
                     options.addWebGPU(gpu);
-                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", !listed);
+                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", !listed && !chunk);
                 } else {
                     options.addCPU(true);
                     out.put("cpu_fallback_disabled", false);
@@ -143,6 +173,17 @@ public final class EncoderProbe {
                         }
                         tail.close();  // Stop the log reader so it cannot perturb Run timing.
                         checkpoint = "session-create";
+                    }
+                    if (chunk) {
+                        checkpoint = "gpu-evidence";
+                        out.put("gpu_evidence", GpuEvidence.collect(context).put("ep_devices", epDevices(env)));
+                        checkpoint = "run-and-host-output";
+                        runStartNs = SystemClock.elapsedRealtimeNanos();
+                        out.put("fixtures", runFixtures(env, session, plan.getJSONArray("fixtures")));
+                        out.put("run_to_host_output_ms", (SystemClock.elapsedRealtimeNanos() - runStartNs) / 1e6);
+                        memory.put(resources("after-output"));
+                        out.put("outcome", "complete").put("checkpoint", "outputs-materialized");
+                        return;  // finally writes the receipt
                     }
                     start = SystemClock.elapsedRealtimeNanos();
                     runStartNs = start;
@@ -224,6 +265,77 @@ public final class EncoderProbe {
         }
     }
     static final String PLACEMENT = "encoder-placement-v1";
+    static final String CHUNK_V1 = "chunk-encoder-v1";
+
+    /** Runs every frozen fixture in order through one retained session; raw outputs go to outputs/. */
+    private JSONArray runFixtures(OrtEnvironment env, OrtSession session, JSONArray fixtures) throws Exception {
+        File outputs = new File(folder, "outputs");
+        require(outputs.mkdir(), "outputs already exist; no inference retry");
+        JSONArray rows = new JSONArray();
+        for (int i = 0; i < fixtures.length(); i++) {
+            JSONObject f = fixtures.getJSONObject(i);
+            String name = f.getString("name");
+            int frames = f.getInt("frames");
+            byte[] input = Files.readAllBytes(new File(folder, "fixtures/" + name + ".f32").toPath());
+            byte[] length = Files.readAllBytes(new File(folder, "fixtures/" + name + ".i64").toPath());
+            require(input.length == 128 * frames * 4 && length.length == 8, "fixture byte length: " + name);
+            require(ByteBuffer.wrap(length).order(ByteOrder.LITTLE_ENDIAN).getLong() == f.getLong("true_length"), "true length changed: " + name);
+            long start = SystemClock.elapsedRealtimeNanos();
+            ByteBuffer features = ByteBuffer.allocateDirect(input.length).order(ByteOrder.LITTLE_ENDIAN);
+            features.put(input).flip();
+            ByteBuffer lengths = ByteBuffer.allocateDirect(8).order(ByteOrder.LITTLE_ENDIAN);
+            lengths.put(length).flip();
+            JSONArray tensors = new JSONArray();
+            try (OnnxTensor audio = OnnxTensor.createTensor(env, features.asFloatBuffer(), new long[]{1, 128, frames});
+                 OnnxTensor count = OnnxTensor.createTensor(env, lengths.asLongBuffer(), new long[]{1})) {
+                Map<String, OnnxTensor> inputs = new LinkedHashMap<>();
+                inputs.put("audio_signal", audio); inputs.put("length", count);
+                try (OrtSession.Result result = session.run(inputs)) {
+                    require(result.size() == 2, "expected exactly two outputs");
+                    for (int index = 0; index < 2; index++) {
+                        OnnxTensor tensor = (OnnxTensor) result.get(index);
+                        TensorInfo info = tensor.getInfo();
+                        require(info.type == (index == 0 ? OnnxJavaType.FLOAT : OnnxJavaType.INT64), "output dtype: " + info.type);
+                        ByteBuffer raw;
+                        if (index == 0) {
+                            FloatBuffer values = tensor.getFloatBuffer();
+                            raw = ByteBuffer.allocate(values.remaining() * 4).order(ByteOrder.LITTLE_ENDIAN);
+                            while (values.hasRemaining()) raw.putFloat(values.get());  // Host checks finiteness.
+                        } else {
+                            LongBuffer values = tensor.getLongBuffer();
+                            raw = ByteBuffer.allocate(values.remaining() * 8).order(ByteOrder.LITTLE_ENDIAN);
+                            while (values.hasRemaining()) raw.putLong(values.get());
+                        }
+                        String file = "outputs/" + name + "-" + index + (index == 0 ? ".f32" : ".i64");
+                        Files.write(new File(folder, file).toPath(), raw.array(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+                        tensors.put(new JSONObject().put("file", file).put("dtype", info.type.toString())
+                            .put("shape", new JSONArray(info.getShape())).put("sha256", sha(new ByteArrayInputStream(raw.array()))));
+                    }
+                }
+            }
+            rows.put(new JSONObject().put("name", name).put("outputs", tensors)
+                .put("run_ms", (SystemClock.elapsedRealtimeNanos() - start) / 1e6));
+        }
+        return rows;
+    }
+
+    /** ORT's own device discovery (vendor/device ids, EP metadata); supplementary to GpuEvidence. */
+    private static JSONArray epDevices(OrtEnvironment env) throws JSONException {
+        JSONArray rows = new JSONArray();
+        try {
+            for (OrtEpDevice device : env.getEpDevices()) {
+                OrtHardwareDevice hardware = device.getDevice();
+                rows.put(new JSONObject().put("ep_name", device.getEpName()).put("ep_vendor", device.getEpVendor())
+                    .put("ep_metadata", new JSONObject(device.getEpMetadata()))
+                    .put("type", String.valueOf(hardware.getType())).put("vendor", hardware.getVendor())
+                    .put("vendor_id", hardware.getVendorId()).put("device_id", hardware.getDeviceId())
+                    .put("metadata", new JSONObject(hardware.getMetadata())));
+            }
+        } catch (Exception error) {
+            rows.put(new JSONObject().put("error", String.valueOf(error)));
+        }
+        return rows;
+    }
     static final String SHORT_V2 = "short-encoder-v2";
 
     /**
@@ -293,6 +405,19 @@ public final class EncoderProbe {
             await(end, () -> ended, 20_000);
             return parse();
         }
+
+        /** Kept placement/cause lines, clipped; the host attributes them to sessions. */
+        JSONArray finishLines(int limit) throws Exception {
+            await(end, () -> ended, 20_000);
+            JSONArray lines = new JSONArray();
+            synchronized (kept) {
+                require(kept.size() <= limit, "placement lines exceed fixed bound: " + kept.size());
+                for (String line : kept) lines.put(clip(line));
+            }
+            return lines;
+        }
+
+        int lineCount() { return seen; }
 
         private JSONObject parse() throws Exception {
             java.util.regex.Pattern header = java.util.regex.Pattern.compile(

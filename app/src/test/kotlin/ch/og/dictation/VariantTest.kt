@@ -88,4 +88,21 @@ class VariantTest {
             assertThrows(IllegalArgumentException::class.java) { Variant.parse(bad) }
         }
     }
+    @org.junit.Test fun placementLogIsOffByDefaultAndOnlyForAWebgpuEncoder() {
+        assertEquals(false, Variant.DEFAULT.runtime.placementLog)
+        assertEquals(true, Variant.parse("""{"runtime":{"encoder_provider":"webgpu","placement_log":true}}""").runtime.placementLog)
+        for (bad in listOf("""{"runtime":{"placement_log":true}}""", """{"runtime":{"encoder_provider":"webgpu","placement_log":1}}""")) {
+            assertThrows(IllegalArgumentException::class.java) { Variant.parse(bad) }
+        }
+    }
+    @org.junit.Test fun placementLogAddsSessionVerboseLoggingToTheWebgpuConfig() {
+        val dir = java.nio.file.Files.createTempDirectory("lab").toFile()
+        val model = java.io.File(dir, "model").apply { mkdir() }
+        val webgpu = Variant.parse("""{"runtime":{"encoder_provider":"webgpu"}}""")
+        val logged = Variant.parse("""{"runtime":{"encoder_provider":"webgpu","placement_log":true}}""")
+        fun lines(v: Variant) = java.io.File(RuntimeConfig.provider(v, ModelFiles.dir(model)).removePrefix("cpu:")).readLines()
+        assertEquals(listOf("EnableCpuMemArena=1", "EnableMemPattern=1", "Dictation.EncoderProvider=webgpu"), lines(webgpu))
+        assertEquals(lines(webgpu) + "LogSeverityLevel=0", lines(logged))
+        dir.deleteRecursively()
+    }
 }

@@ -24,10 +24,14 @@ data class Variant(
     val cutting: Cutting = Cutting(),
     val post: Post = Post(),
 ) {
-    /** encoderProvider: "webgpu" puts only the Parakeet encoder on WebGPU (patched ORT 1.31 build). */
+    /**
+     * encoderProvider: "webgpu" puts only the Parakeet encoder on WebGPU (patched ORT 1.31 build).
+     * placementLog: diagnostic only; session-level VERBOSE ORT logging for the ADR-023 placement
+     * listing of that session (pipeline-placement-v1). Refused by timed measurement runs.
+     */
     data class Runtime(val modelArena: Boolean = true, val modelPattern: Boolean = true,
         val lidArena: Boolean = true, val lidPattern: Boolean = true, val profile: Boolean = false,
-        val encoderProvider: String = "cpu")
+        val encoderProvider: String = "cpu", val placementLog: Boolean = false)
     data class Decoding(val method: String = "greedy_search", val maxActivePaths: Int = 4, val blankPenalty: Float = 0f)
     data class Whisper(val language: String = "", val tailPaddings: Int = -1)
     data class Qwen3(val maxTotalLen: Int = 1024, val maxNewTokens: Int = 256) {
@@ -55,7 +59,7 @@ data class Variant(
         val FAMILIES = setOf("parakeet", "whisper", "canary", "qwen3", "cohere")
         private val KEYS = mapOf(
             "" to setOf("schema", "name", "description", "family", "model", "threads", "runtime", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
-            "runtime" to setOf("model_arena", "model_pattern", "lid_arena", "lid_pattern", "profile", "encoder_provider"),
+            "runtime" to setOf("model_arena", "model_pattern", "lid_arena", "lid_pattern", "profile", "encoder_provider", "placement_log"),
             "decoding" to setOf("method", "max_active_paths", "blank_penalty"),
             "whisper" to setOf("language", "tail_paddings"),
             "qwen3" to setOf("max_total_len", "max_new_tokens"),
@@ -78,7 +82,7 @@ data class Variant(
             require(schema in 1..SCHEMA) { "variant schema $schema not supported, this app knows $SCHEMA" }
             val rt = o.optJSONObject("runtime") ?: JSONObject()
             fun runtimeBool(key: String): Boolean {
-                if (!rt.has(key)) return key != "profile"
+                if (!rt.has(key)) return key != "profile" && key != "placement_log"
                 require(rt.get(key) is Boolean) { "runtime.$key must be boolean" }
                 return rt.getBoolean(key)
             }
@@ -111,7 +115,7 @@ data class Variant(
                     if (rt.has("encoder_provider")) {
                         require(rt.get("encoder_provider") is String) { "runtime.encoder_provider must be a string" }
                         rt.getString("encoder_provider")
-                    } else "cpu"),
+                    } else "cpu", runtimeBool("placement_log")),
                 threads = o.optInt("threads", def.threads),
                 decoding = Decoding(d.optString("method", def.decoding.method), d.optInt("max_active_paths", def.decoding.maxActivePaths),
                     d.f("blank_penalty", def.decoding.blankPenalty)),
@@ -142,6 +146,7 @@ data class Variant(
         require(threads in 1..8) { "threads must be 1..8" }
         require(runtime.encoderProvider in setOf("cpu", "webgpu")) { "runtime.encoder_provider must be cpu or webgpu" }
         require(runtime.encoderProvider == "cpu" || family == "parakeet") { "runtime.encoder_provider webgpu is parakeet only" }
+        require(!runtime.placementLog || runtime.encoderProvider == "webgpu") { "runtime.placement_log needs runtime.encoder_provider webgpu" }
         require(decoding.method in setOf("greedy_search", "modified_beam_search")) { "decoding.method" }
         require(decoding.maxActivePaths in 1..32) { "decoding.max_active_paths must be 1..32" }
         with(cutting) {

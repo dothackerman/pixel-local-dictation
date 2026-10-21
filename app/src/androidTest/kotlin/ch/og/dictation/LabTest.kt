@@ -46,6 +46,13 @@ class LabTest {
                 .newInstance(ctx, labDir).let { it.javaClass.getMethod("run").invoke(it) }
             return
         }
+        if (File(labDir, "pipeline-placement.json").isFile) {
+            // Untimed Sherpa session-creation diagnostic; present only in the encoder-probe build.
+            Class.forName("ch.og.dictation.PipelinePlacement")
+                .getConstructor(Context::class.java, File::class.java)
+                .newInstance(ctx, labDir).let { it.javaClass.getMethod("run").invoke(it) }
+            return
+        }
         if (File(labDir, "accelerator-probe.json").isFile) {
             AcceleratorAccessProbe(ctx, labDir).run()
             return

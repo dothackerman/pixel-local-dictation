@@ -95,3 +95,62 @@ Host references are supplementary only. A numerical pass is still
 general force-FP32 switch exists; `enableMatmulFp32Accumulation` applies only to
 MatMulNBits. A diagnosed stop with verified recovery can complete #4 with later
 checks marked not run; it cannot permit #5.
+
+## In-pipeline gates: `chunk-encoder-v1` and `pipeline-placement-v1`
+
+Tooling only; not yet run on the phone. Both need the ort131 build with the probe
+classes: app from `-PnativeRoleProfilerAar=build/ort131-sherpa/sherpa-ort131.aar`
+(patched Sherpa JNI), test APK with `-PencoderProbeDir=<package --out>` (only its
+`ort131-java-jni.aar` is used; its `sherpa-ort131.aar` has the unpatched JNI).
+
+**`chunk-encoder-v1`** (tensor gate). `freeze --protocol chunk-encoder-v1 --provider cpu|webgpu`
+derives five FP32 `[1,128,T]` fixtures from `variants/beam4-fp32-gate.json` cutting
+and Sherpa fbank frames `(samples+80)//160`: `typical` 2040 (min chunk + pad),
+`tiny-tail` 4 (one 640-sample feed), `upper` 4040 (min + VAD max speech + pad, or
+`max_chunk_s`), `silence` 2000 zeros, `masked-padding` 2040 with true length 2000
+(zero padding like Sherpa's `PadSequence`). Noise: SHAKE-256 unit-variance uniform;
+no recordings, no host inference. One retained session runs them in that order
+(changing lengths). Session = Sherpa encoder: intra = inter = `threads` (4),
+`ALL_OPT`, sequential, Env ERROR, CPU fallback allowed; WebGPU options as the
+Sherpa patch. Outputs: `outputs/<name>-{0.f32,1.i64}` (digests in the receipt).
+`compare` checks identities, options, fixture bytes (recomputed), shapes, encoded
+length (3× `(n-1)//2+1` of the true length), then `tensor_verdict` per fixture on
+valid frames (`masked-padding` padded frames need only be finite).
+`gpu_evidence` (both runs): GPU driver libraries mapped in the process (path +
+digest), open GPU device nodes, Android Vulkan features, ORT `getEpDevices()`.
+`adapter_driver.status` = `observed` when the WebGPU run mapped a
+`/vendor/lib64/hw/vulkan.*.so` HAL and holds a GPU device node.
+
+**`pipeline-placement-v1`** (ADR-023 on the Sherpa session; untimed).
+`freeze --protocol pipeline-placement-v1 --provider webgpu` stages the gate variant
+plus `runtime: {encoder_provider: webgpu, placement_log: true}` and the FP32 model
+(encoder, weights, decoder, joiner, tokens). `placement_log` adds
+`LogSeverityLevel=0` to the Sherpa session config (session logger VERBOSE over the
+Env's ERROR); `MeasurementRun` refuses it, so timed runs stay unlogged. The test
+builds the real recognizer via `Pipeline.recognizer`, keeps this process's ORT
+placement/cause lines (`LogTail`), records `gpu_evidence`, releases; no audio, no
+Run. `placement-check` attributes lines to the encoder session (the only WebGPU
+one; CPU-only "All nodes" sessions ignored), then applies `placement_check`.
+Unverified: that ORT routes the cause lines through the session logger and logd
+keeps them at VERBOSE; a count mismatch fails closed. Fallback: Env-level patch in
+`tools/ort131-sherpa/patch-webgpu.py` (AAR rebuild).
+
+Run (`P=.claude/hooks/phone`, alone on its line; fresh 32-hex attempt id per run):
+```
+python3 tools/encoder_probe.py freeze --protocol chunk-encoder-v1 --provider cpu \
+  --model models/parakeet-v3-fp32 --app-apk APP --test-apk TEST --out corpus/lab/issue4-chunk-cpu
+$P push corpus/lab/issue4-chunk-cpu
+$P run ch.og.dictation.LabTest#variantOnSavedTakes shortEncoderAttempt=<id>
+$P pull files/lab/result.json files/lab/outputs --to corpus/lab/issue4-chunk-cpu-pull
+# repeat with --provider webgpu -> issue4-chunk-webgpu(-pull)
+python3 tools/encoder_probe.py compare --reference corpus/lab/issue4-chunk-cpu-pull/files/lab \
+  --candidate corpus/lab/issue4-chunk-webgpu-pull/files/lab
+python3 tools/encoder_probe.py freeze --protocol pipeline-placement-v1 --provider webgpu \
+  --model models/parakeet-v3-fp32 --app-apk APP --test-apk TEST --out corpus/lab/issue4-pipeline-placement
+$P push corpus/lab/issue4-pipeline-placement
+$P run ch.og.dictation.LabTest#variantOnSavedTakes shortEncoderAttempt=<id>
+$P pull files/lab/result.json --to corpus/lab/issue4-pipeline-placement-pull
+models/encoder-conversion-venv/bin/python tools/encoder_probe.py placement-check \
+  --receipt corpus/lab/issue4-pipeline-placement-pull/files/lab/result.json \
+  --model models/parakeet-v3-fp32/encoder.onnx
+```

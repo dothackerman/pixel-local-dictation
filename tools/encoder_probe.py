@@ -11,6 +11,7 @@ import re
 import math
 from pathlib import Path
 import struct
+import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,10 +84,143 @@ def graph_steps(model):
         steps.pop(name, None)  # Ambiguous names cannot identify a CPU step.
     return steps
 
+CHUNK_V1 = 'chunk-encoder-v1'
+PIPELINE = 'pipeline-placement-v1'
+GATE_VARIANT = 'variants/beam4-fp32-gate.json'
+FEED_SAMPLES = 640  # MeasurementRun/LabTest feed size: the smallest possible final chunk
+RATE, SHIFT = 16000, 160  # Sherpa fbank: 10 ms shift, snip_edges=false
+SOURCES = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+           'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt', 'app/build.gradle.kts']
+CHUNK_SOURCES = SOURCES + ['app/src/encoderProbe/java/ch/og/dictation/GpuEvidence.java']
+PIPELINE_SOURCES = CHUNK_SOURCES + ['app/src/encoderProbe/java/ch/og/dictation/PipelinePlacement.java',
+                                    'app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt',
+                                    'app/src/main/kotlin/ch/og/dictation/Variant.kt']
+PIPELINE_MODEL = ('encoder.onnx', 'encoder.weights', 'decoder.onnx', 'joiner.onnx', 'tokens.txt')
+WEBGPU_OPTIONS = dict(enableGraphCapture='0', enableInt64='1', preferredLayout='NCHW', dawnBackendType='Vulkan')
+VULKAN_HAL = re.compile(r'/(vendor|odm|system)/lib64/hw/vulkan\.[A-Za-z0-9_.-]+\.so')
+
+
+def frames(samples):
+    """kaldi-native-fbank frame count for a flushed stream with snip_edges=false."""
+    return (samples + SHIFT // 2) // SHIFT
+
+
+def encoded_length(length):
+    """FastConformer 8x subsampling: three stride-2 convolutions, kernel 3, padding 1."""
+    for _ in range(3):
+        length = (length - 1) // 2 + 1
+    return length
+
+
+def chunk_fixtures(variant):
+    """Encoder inputs spanning the chunk envelope the variant's PauseChunker produces.
+    A chunk is cut pad_s after a pause once >= min_chunk_s; the VAD forces a pause after
+    vad_max_speech_s of speech; max_chunk_s > 0 is a hard cap; the final rest can be one feed."""
+    if str(ROOT / 'tools') not in sys.path:
+        sys.path.insert(0, str(ROOT / 'tools'))
+    import variant as variants
+    cut = dict(variants.DEFAULT['cutting'], **variant.get('cutting', {}))
+    sec = lambda seconds: frames(round(seconds * RATE))
+    minimum, typical = sec(cut['min_chunk_s']), sec(cut['min_chunk_s'] + cut['pad_s'])
+    upper = sec(cut['max_chunk_s']) if cut['max_chunk_s'] > 0 else sec(
+        cut['min_chunk_s'] + cut['vad_max_speech_s'] + cut['pad_s'])
+    tiny = frames(FEED_SAMPLES)
+    rows = [('typical', typical, typical, 'noise', 1), ('tiny-tail', tiny, tiny, 'noise', 2),
+            ('upper', upper, upper, 'noise', 3), ('silence', minimum, minimum, 'zeros', 0),
+            ('masked-padding', typical, minimum, 'noise', 4)]
+    return [{'name': name, 'shape': [1, 128, t], 'frames': t, 'true_length': length,
+             'encoded_length': encoded_length(length), 'content': content, 'seed': seed}
+            for name, t, length, content, seed in rows]
+
+
+def fixture_features(fixture):
+    """Little-endian FP32 [1,128,T]: zeros (normalized silence) or unit-variance uniform
+    noise from SHAKE-256 over the valid frames; padded frames are zero like Sherpa's PadSequence."""
+    import numpy as np
+    t, length = fixture['frames'], fixture['true_length']
+    values = np.zeros((1, 128, t), dtype='<f4')
+    if fixture['content'] == 'noise':
+        raw = hashlib.shake_256(b'%s:%d' % (CHUNK_V1.encode(), fixture['seed'])).digest(4 * 128 * length)
+        unit = np.frombuffer(raw, dtype='<u4').astype(np.float64) / 2.0 ** 32
+        values[0, :, :length] = ((unit * 2 - 1) * math.sqrt(3)).reshape(128, length)
+    elif fixture['content'] != 'zeros':
+        raise ValueError('unknown fixture content')
+    return values.tobytes()
+
+
+def stage_model(model, staged_model, names):
+    identities = {name: sha(model / name) for name in names}
+    staged_model.mkdir()
+    for name, expected in identities.items():
+        source, target = (model / name).resolve(strict=True), staged_model / name
+        try:
+            os.link(source, target)
+        except OSError as error:
+            if error.errno != errno.EXDEV:
+                raise
+            shutil.copy2(source, target)
+        if sha(target) != expected:
+            raise ValueError('model changed during staging: ' + name)
+    return identities
+
+
+def runtime_identity():
+    return {'version': '1.31.0', 'official_aar_sha256': ORT_SHA, 'core_sha256': CORE_SHA, 'jni_sha256': JNI_SHA,
+            'source_commit': SOURCE_COMMIT}
+
+
+def freeze_chunk(model, out, builds, provider):
+    variant = json.loads((ROOT / GATE_VARIANT).read_text())
+    fixtures = chunk_fixtures(variant)
+    out.mkdir(parents=True, exist_ok=False)
+    (out / 'fixtures').mkdir()
+    for fixture in fixtures:
+        (out / 'fixtures' / (fixture['name'] + '.f32')).write_bytes(fixture_features(fixture))
+        (out / 'fixtures' / (fixture['name'] + '.i64')).write_bytes(struct.pack('<q', fixture['true_length']))
+        fixture['features_sha256'] = sha(out / 'fixtures' / (fixture['name'] + '.f32'))
+        fixture['length_sha256'] = sha(out / 'fixtures' / (fixture['name'] + '.i64'))
+    (out / 'variant.json').write_bytes((ROOT / GATE_VARIANT).read_bytes())
+    threads = variant.get('threads', 4)
+    value = {'schema': 1, 'protocol': CHUNK_V1, 'input_kind': 'synthetic features; no recordings',
+             'provider': provider, 'eligible': False, 'scope': 'chunk-shape tensor gate; full take not run',
+             'atol': 1e-4, 'rtol': 1e-3, 'model': stage_model(model, out / 'model', ('encoder.onnx', 'encoder.weights')),
+             'builds': builds, 'fixtures': fixtures,
+             'envelope': {'cutting': variant.get('cutting', 'defaults'), 'feed_samples': FEED_SAMPLES,
+                          'frames': '(samples + 80) // 160', 'encoded': '3x ((n - 1) // 2 + 1)'},
+             # Sherpa session.cc: intra = inter = num_threads, default (ALL) optimization, sequential,
+             # CPU fallback allowed (ADR-023 placement check instead of strict rejection).
+             'session_options': {'intra_op_threads': threads, 'inter_op_threads': threads, 'optimization': 'ALL_OPT',
+                                 'execution_mode': 'SEQUENTIAL', 'cpu_fallback': 'allowed'},
+             'staging_envelope': {'variant.json': sha(out / 'variant.json')},
+             'runtime': runtime_identity(), 'sources': {name: sha(ROOT / name) for name in CHUNK_SOURCES}}
+    write(out / 'encoder-probe.json', value)
+    print(json.dumps({'path': str(out / 'encoder-probe.json'), 'sha256': sha(out / 'encoder-probe.json')}))
+
+
+def freeze_pipeline(model, out, builds):
+    """Untimed Sherpa session-creation diagnostic: the gate variant plus the WebGPU encoder and
+    session-level VERBOSE ORT logging (LogSeverityLevel=0). No audio, no Run."""
+    variant = json.loads((ROOT / GATE_VARIANT).read_text())
+    variant['runtime'] = dict(variant.get('runtime', {}), encoder_provider='webgpu', placement_log=True)
+    out.mkdir(parents=True, exist_ok=False)
+    write(out / 'variant.json', variant)
+    value = {'schema': 1, 'protocol': PIPELINE, 'provider': 'webgpu', 'eligible': False,
+             'scope': 'untimed placement and adapter diagnostic; no audio, no Run',
+             'model': stage_model(model, out / 'model', PIPELINE_MODEL), 'builds': builds,
+             'variant_sha256': sha(out / 'variant.json'), 'session_log_severity': 0,
+             'runtime': runtime_identity(), 'sources': {name: sha(ROOT / name) for name in PIPELINE_SOURCES}}
+    write(out / 'pipeline-placement.json', value)
+    print(json.dumps({'path': str(out / 'pipeline-placement.json'), 'sha256': sha(out / 'pipeline-placement.json')}))
+
+
 def freeze(model, out, app_apk, test_apk, provider="cpu", protocol='short-encoder-v1'):
-    if protocol == PLACEMENT and provider != 'webgpu':
+    if protocol in (PLACEMENT, PIPELINE) and provider != 'webgpu':
         raise ValueError('placement listing requires --provider webgpu')
     builds = {'app_sha256': sha(app_apk), 'test_sha256': sha(test_apk)}
+    if protocol == CHUNK_V1:
+        return freeze_chunk(model, out, builds, provider)
+    if protocol == PIPELINE:
+        return freeze_pipeline(model, out, builds)
     identities = {name: sha(model / name) for name in ('encoder.onnx', 'encoder.weights')}
     out.mkdir(parents=True, exist_ok=False)
     (out / 'audio_signal.f32').write_bytes(bytes(1 * 128 * 17 * 4))
@@ -217,9 +351,170 @@ def validate_short_comparison_receipt(run):
             raise ValueError('short encoded length differs')
 
 
+def _check(valid, reason):
+    if not valid:
+        raise ValueError(reason)
+
+
+def validate_chunk_receipt(run, provider):
+    plan = run['frozen']
+    variant = json.loads((ROOT / GATE_VARIANT).read_text())
+    expected = chunk_fixtures(variant)
+    _check(run.get('protocol') == CHUNK_V1 == plan.get('protocol') and run.get('schema') == 1 == plan.get('schema')
+           and run.get('eligible') is False is plan.get('eligible') and plan.get('provider') == provider
+           and re.fullmatch('[0-9a-f]{32}', run.get('attempt_id', '')) and re.fullmatch('[0-9a-f]{64}', run.get('freeze_sha256', ''))
+           and plan.get('input_kind') == 'synthetic features; no recordings'
+           and plan.get('atol') == 1e-4 and plan.get('rtol') == 1e-3
+           and plan.get('staging_envelope') == {'variant.json': sha(ROOT / GATE_VARIANT)}
+           and plan.get('runtime') == runtime_identity() and set(plan.get('sources', {})) == set(CHUNK_SOURCES)
+           and set(plan.get('model', {})) == {'encoder.onnx', 'encoder.weights'}
+           and all(type(run.get(k)) is int and run[k] >= (1 if k == 'pid' else 0) for k in ('pid', 'processStartElapsedMs'))
+           and run.get('checkpoint') == 'outputs-materialized' and run.get('initialization_complete') is True
+           and run.get('runtime_version') == '1.31.0' and run.get('fp32_shader_proof') == 'unproven',
+           'unsupported chunk encoder receipt or frozen plan')
+    fixtures = plan.get('fixtures', [])
+    _check(len(fixtures) == len(expected) and all(
+        {k: v for k, v in f.items() if not k.endswith('_sha256')} == e
+        and f.get('features_sha256') == hashlib.sha256(fixture_features(e)).hexdigest()
+        and f.get('length_sha256') == hashlib.sha256(struct.pack('<q', e['true_length'])).hexdigest()
+        for f, e in zip(fixtures, expected)), 'frozen fixtures differ from the variant envelope')
+    threads = variant.get('threads', 4)
+    options = {'intra_op_threads': threads, 'inter_op_threads': threads, 'optimization': 'ALL_OPT',
+               'execution_mode': 'SEQUENTIAL'}
+    _check(plan.get('session_options') == dict(options, cpu_fallback='allowed')
+           and all(run.get(k) == v for k, v in options.items()) and run.get('profiling') is False
+           and run.get('cpu_fallback_disabled') is False, 'session options differ from the Sherpa encoder session')
+    _check(provider != 'webgpu' or run.get('provider_options') == WEBGPU_OPTIONS, 'WebGPU options differ from Sherpa patch')
+    bindings = {'build_sha256': plan['builds']['app_sha256'], 'test_build_sha256': plan['builds']['test_sha256'],
+                'runtime_core_sha256': CORE_SHA, 'runtime_jni_sha256': JNI_SHA}
+    _check(all(run.get(k) == v for k, v in bindings.items()), 'installed build/runtime identity differs from freeze')
+    memory = run.get('memory', [])
+    _check(len(memory) == 4 and {row.get('phase') for row in memory} == {'before-load', 'after-load', 'after-output', 'finally'}
+           and all(type(row.get(k)) is int and row[k] >= 0 for row in memory for k in ('highWaterKb', 'pssKb', 'thermalStatus')),
+           'chunk encoder resource observations differ')
+    evidence = run.get('gpu_evidence')
+    _check(isinstance(evidence, dict) and all(isinstance(evidence.get(k), list)
+           for k in ('mapped_gpu_libraries', 'device_nodes', 'ep_devices')), 'GPU evidence missing')
+    _check(len(run.get('fixtures', [])) == len(fixtures), 'fixture outputs missing')
+
+
+def load_chunk_tensors(folder, run):
+    import numpy as np
+    tensors = []
+    for row, fixture in zip(run['fixtures'], run['frozen']['fixtures']):
+        _check(row.get('name') == fixture['name'] and len(row.get('outputs', [])) == 2, 'fixture outputs differ')
+        pair = []
+        for index, (dtype, shape) in enumerate((('FLOAT', [1, 1024, encoded_length(fixture['frames'])]), ('INT64', [1]))):
+            output = row['outputs'][index]
+            name = 'outputs/%s-%d.%s' % (fixture['name'], index, 'f32' if index == 0 else 'i64')
+            _check(output.get('file') == name and output.get('dtype') == dtype and output.get('shape') == shape,
+                   'output name, dtype or shape differs: ' + fixture['name'])
+            raw = (folder / name).read_bytes()
+            _check(hashlib.sha256(raw).hexdigest() == output.get('sha256'), 'output changed: ' + name)
+            pair.append(np.frombuffer(raw, dtype='<f4' if index == 0 else '<i8').reshape(shape))
+        _check(int(pair[1][0]) == fixture['encoded_length'], 'encoded length differs from true length: ' + fixture['name'])
+        tensors.append(pair)
+    return tensors
+
+
+def gpu_summary(reference, candidate):
+    """Physical adapter/driver observation: the WebGPU process mapped a Vulkan HAL and opened a
+    GPU device node; the CPU control shows what the runtime maps without WebGPU."""
+    hal = lambda run: [row for row in run['gpu_evidence']['mapped_gpu_libraries'] if VULKAN_HAL.fullmatch(row.get('path', ''))]
+    evidence = candidate['gpu_evidence']
+    observed = bool(hal(candidate)) and bool(evidence['device_nodes'])
+    return {'status': 'observed' if observed else 'unproven', 'vulkan_hal': hal(candidate),
+            'device_nodes': evidence['device_nodes'], 'ep_devices': evidence['ep_devices'],
+            'cpu_control_vulkan_hal': hal(reference)}
+
+
+def compare_chunk(reference, candidate):
+    import numpy as np
+    from encoder_conversion import tensor_verdict
+    runs, hashes = [], []
+    for folder, provider in ((reference, 'cpu'), (candidate, 'webgpu')):
+        result = folder / 'result.json'
+        _check(result.stat().st_size <= 1024 * 1024, 'chunk result exceeds fixed byte bound')
+        run = json.loads(result.read_text())
+        hashes.append(sha(result))
+        if run.get('outcome') != 'complete':
+            print(json.dumps({'protocol': CHUNK_V1, 'eligible': False, 'tensor_verdict': {'passed': False},
+                              'failure': run.get('failure', 'incomplete run'), 'checkpoint': run.get('checkpoint'),
+                              'receipt_sha256': hashes, 'full_take': 'not run'}))
+            return
+        validate_chunk_receipt(run, provider)
+        runs.append((run, load_chunk_tensors(folder, run)))
+    (cpu, cpu_tensors), (gpu, gpu_tensors) = runs
+    _check(cpu['attempt_id'] != gpu['attempt_id'] and (cpu['pid'], cpu['processStartElapsedMs']) !=
+           (gpu['pid'], gpu['processStartElapsedMs']), 'CPU/GPU require separate attempts and fresh processes')
+    common = [{k: v for k, v in run['frozen'].items() if k != 'provider'} for run in (cpu, gpu)]
+    _check(common[0] == common[1], 'unmatched frozen builds/runtime/sources or fixtures/settings')
+    rows = []
+    for fixture, a, b in zip(cpu['frozen']['fixtures'], cpu_tensors, gpu_tensors):
+        valid = fixture['encoded_length']
+        verdict = tensor_verdict([np.ascontiguousarray(a[0][:, :, :valid]), a[1]],
+                                 [np.ascontiguousarray(b[0][:, :, :valid]), b[1]])
+        padded_finite = bool(np.isfinite(a[0]).all() and np.isfinite(b[0]).all())
+        rows.append({'name': fixture['name'], 'shape': fixture['shape'], 'true_length': fixture['true_length'],
+                     'compared_frames': valid, 'passed': verdict['passed'] and padded_finite,
+                     'padded_frames_finite': padded_finite, 'outputs': verdict['outputs']})
+    print(json.dumps({'protocol': CHUNK_V1, 'eligible': False,
+                      'tensor_verdict': {'passed': all(row['passed'] for row in rows), 'fixtures': rows},
+                      'reference': 'Android ORT 1.31 CPU', 'candidate': 'Android ORT 1.31 WebGPU',
+                      'session': 'one retained session per provider; fixtures in frozen order',
+                      'adapter_driver': gpu_summary(cpu, gpu), 'fp32_shader_proof': 'unproven',
+                      'receipt_sha256': hashes, 'full_take': 'not run'}))
+
+
+PLACED = re.compile(r'(All nodes|Node\(s\)) placed on \[([A-Za-z]+ExecutionProvider)\]\. Number of nodes: (\d+)')
+MISSING = re.compile(r'webgpu kernel not found in registries for Op type: (\S+) node name: (.*?)\s*$')
+PREFERRED = re.compile(r'Force fallback to CPU execution for node: (.*?) because ')
+
+
+def pipeline_listing(lines):
+    """Encoder placement from raw ORT lines of one Sherpa recognizer creation. Only the encoder
+    session has WebGPU; decoder/joiner are CPU-only ("All nodes placed on [CPU…]") and ignored.
+    Cause lines come only from the WebGPU provider, hence only from the encoder session."""
+    providers, missing, preferred, webgpu = {}, [], [], 0
+    for line in lines:
+        if (m := MISSING.search(line)):
+            missing.append([m.group(1), m.group(2)])
+        elif (m := PREFERRED.search(line)):
+            preferred.append(m.group(1))
+        elif (m := PLACED.search(line)):
+            kind, provider, count = m.group(1), m.group(2), int(m.group(3))
+            if provider == 'WebGpuExecutionProvider':
+                webgpu += 1
+            elif kind == 'All nodes':
+                continue  # a CPU-only session (decoder or joiner)
+            _check(provider not in providers, 'repeated partial placement for ' + provider)
+            providers[provider] = {'declared': count, 'all': kind == 'All nodes', 'nodes': []}
+    _check(webgpu == 1, 'expected exactly one WebGPU encoder session listing, found %d' % webgpu)
+    return {'complete': True, 'providers': providers, 'causes': {'kernel_not_found': missing, 'cpu_preferred': preferred}}
+
+
+def pipeline_placement(run, model):
+    plan = run.get('frozen', {})
+    _check(run.get('protocol') == PIPELINE == plan.get('protocol') and run.get('outcome') == 'complete'
+           and run.get('checkpoint') == 'placement-listed' and plan.get('session_log_severity') == 0
+           and isinstance(run.get('placement_lines'), list) and all(isinstance(x, str) for x in run['placement_lines']),
+           'needs a complete pipeline-placement-v1 receipt')
+    _check(sha(model) == plan['model']['encoder.onnx'], 'model differs from the receipt freeze')
+    _check(run.get('build_sha256') == plan['builds']['app_sha256'] and run.get('runtime_core_sha256') == CORE_SHA,
+           'installed build/runtime identity differs from freeze')
+    evidence = run.get('gpu_evidence', {})
+    hal = [row for row in evidence.get('mapped_gpu_libraries', []) if VULKAN_HAL.fullmatch(row.get('path', ''))]
+    return {'protocol': PIPELINE, 'session': 'Sherpa encoder session (in-pipeline options)',
+            'placement_check': placement_check(pipeline_listing(run['placement_lines']), graph_steps(model)),
+            'adapter_driver': {'status': 'observed' if hal and evidence.get('device_nodes') else 'unproven',
+                               'vulkan_hal': hal, 'device_nodes': evidence.get('device_nodes', [])}}
+
+
 def compare(reference, candidate, model=None):
     import numpy as np
     from encoder_conversion import tensor_verdict
+    if json.loads((reference / 'result.json').read_text()).get('protocol') == CHUNK_V1:
+        return compare_chunk(reference, candidate)
     runs = []
     hashes = []
     for folder, provider in ((reference, 'cpu'), (candidate, 'webgpu')):
@@ -297,7 +592,7 @@ def main():
     frozen.add_argument('--app-apk', type=Path, required=True)
     frozen.add_argument('--test-apk', type=Path, required=True)
     frozen.add_argument('--provider', choices=('cpu', 'webgpu'), default='cpu')
-    frozen.add_argument('--protocol', choices=('short-encoder-v1', SHORT_V2, PLACEMENT), default='short-encoder-v1')
+    frozen.add_argument('--protocol', choices=('short-encoder-v1', SHORT_V2, PLACEMENT, CHUNK_V1, PIPELINE), default='short-encoder-v1')
     packaged = commands.add_parser('package')
     packaged.add_argument('--ort-aar', type=Path, required=True)
     packaged.add_argument('--sherpa-aar', type=Path, required=True)
@@ -306,7 +601,7 @@ def main():
     compared.add_argument('--reference', type=Path, required=True)
     compared.add_argument('--candidate', type=Path, required=True)
     compared.add_argument('--model', type=Path, help='frozen encoder.onnx; required for short-encoder-v2')
-    checked = commands.add_parser('placement-check', help='ADR-023 check of one placement or v2 WebGPU receipt')
+    checked = commands.add_parser('placement-check', help='ADR-023 check of one placement, v2 WebGPU or pipeline-placement-v1 receipt')
     checked.add_argument('--receipt', type=Path, required=True)
     checked.add_argument('--model', type=Path, required=True)
     args = parser.parse_args()
@@ -317,6 +612,9 @@ def main():
             compare(args.reference, args.candidate, args.model)
         elif args.command == 'placement-check':
             run = json.loads(args.receipt.read_text())
+            if run.get('protocol') == PIPELINE:
+                print(json.dumps(pipeline_placement(run, args.model)))
+                return
             if (run.get('outcome') != 'complete' or run.get('protocol') not in (PLACEMENT, SHORT_V2)
                     or run.get('residual_node_assignment') not in ('listed', 'incomplete')):
                 raise ValueError('needs a complete placement or short-encoder-v2 WebGPU receipt')

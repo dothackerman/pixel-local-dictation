@@ -121,6 +121,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 digest.digest().joinToString("") { "%02x".format(it) }
             }
         }
+        require(!variant.runtime.placementLog) { "placement_log is diagnostic only; timed runs stay unlogged" }
         require(variant.runtime.encoderProvider != "webgpu" || runtimeCore == ORT131_CORE_SHA256) {
             "WebGPU encoder requires the ORT 1.31 runtime build"
         }

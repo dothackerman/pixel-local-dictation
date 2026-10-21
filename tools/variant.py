@@ -56,6 +56,9 @@ _TYPES = {
     # Optional, never defaulted, so resolved historical variants stay identical. "webgpu" puts only the
     # Parakeet encoder on WebGPU in the patched ORT 1.31 phone build (tools/ort131-sherpa).
     "runtime.encoder_provider": str,
+    # Optional diagnostic only: session-level VERBOSE ORT logging for the ADR-023 placement listing
+    # of the in-pipeline WebGPU encoder session (pipeline-placement-v1). Never in timed runs.
+    "runtime.placement_log": bool,
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
@@ -123,6 +126,8 @@ def validate(v):
         raise VariantError("runtime.encoder_provider must be cpu or webgpu")
     if encoder == "webgpu" and out["family"] != "parakeet":
         raise VariantError("runtime.encoder_provider webgpu is parakeet only")
+    if out["runtime"].get("placement_log") and encoder != "webgpu":
+        raise VariantError("runtime.placement_log needs runtime.encoder_provider webgpu")
     d = out["decoding"]
     if d["method"] not in ("greedy_search", "modified_beam_search"):
         raise VariantError("decoding.method must be greedy_search or modified_beam_search")
