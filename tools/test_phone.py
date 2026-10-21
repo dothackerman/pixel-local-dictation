@@ -294,6 +294,23 @@ class AdapterArgvTests(unittest.TestCase):
         self.assertTrue(all('run-as %s sh -c' % PKG in j for j in joined if 'run-as' in j))
         self.assertFalse(any('logcat' in j and '--uid' not in j and 'crash' not in j for j in joined))
 
+    def test_replace_data_uploads_before_wiping_and_never_streams_stdin(self):
+        device, runner = self.device()
+        device.replace_data(b'archive')
+        joined = [' '.join(a) for a in runner.argv]
+        upload = next(i for i, j in enumerate(joined) if ' push ' in j and '/data/local/tmp/' in j)
+        wipe = next(i for i, j in enumerate(joined) if 'rm -rf -- files shared_prefs databases' in j)
+        self.assertLess(upload, wipe)
+        self.assertIn('tar xf /data/local/tmp/', joined[wipe])
+        self.assertFalse(any('exec-out' in j for j in joined))
+        self.assertTrue(any(j.endswith('rm -f -- ' + joined[upload].split()[-1]) for j in joined[wipe:]))
+
+    def test_failed_upload_leaves_app_data_untouched(self):
+        device, runner = self.device({' push ': (1, '', 'no space left')})
+        with self.assertRaises(phone.Failed):
+            device.replace_data(b'archive')
+        self.assertFalse(any('rm -rf -- files' in ' '.join(a) for a in runner.argv))
+
     def test_missing_package_is_an_answer_not_a_failure(self):
         device, runner = self.device({'pm path': (1, '', '')})
         self.assertEqual(device.package(phone.FUTO[1]), {'installed': False})

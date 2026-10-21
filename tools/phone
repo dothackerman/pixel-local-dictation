@@ -31,7 +31,7 @@ MODEL = 'Pixel 10 Pro XL'
 FUTO = ('org.futo.inputmethod.latin', 'org.futo.inputmethod.latin.playstore',
         'org.futo.voiceinput', 'org.futo.voiceinput.playstore')
 PROPS = ('ro.product.model', 'ro.build.version.release', 'ro.build.version.sdk',
-         'ro.build.version.security_patch', 'ro.build.id', 'ro.soc.manufacturer', 'ro.soc.model',
+         'ro.build.version.security_patch', 'ro.build.id', 'ro.build.fingerprint', 'ro.soc.manufacturer', 'ro.soc.model',
          'ro.hardware', 'ro.hardware.vulkan', 'ro.hardware.egl', 'ro.opengles.version')
 DRIVER_LIBS = re.compile(r'^(libOpenCL.*|libedgetpu.*|vulkan\..*|libGLES.*|libllvm-glnext.*)\.so$')
 PERMISSIONS = {PKG: {'android.permission.RECORD_AUDIO', 'android.permission.WAKE_LOCK'}}
@@ -284,11 +284,24 @@ class Device:
         Path(local).write_bytes(self.run('exec-out', 'cat', remote, timeout=600, binary=True))
 
     def replace_data(self, archive):
-        """Wipe app data dirs and extract a host-validated tar."""
-        self.private('rm -rf -- ' + ' '.join(DATA_DIRS))
-        if archive:
+        """Wipe app data dirs and extract a host-validated tar.
+
+        The archive is uploaded before anything is wiped: exec-out does not pass stdin EOF,
+        so streaming into `tar x` hung after the wipe (2026-10-21)."""
+        if not archive:
+            self.private('rm -rf -- ' + ' '.join(DATA_DIRS))
+            return
+        remote = '/data/local/tmp/dictation-' + uuid.uuid4().hex + '.tar'
+        with tempfile.NamedTemporaryFile(suffix='.tar') as local:
+            local.write(archive)
+            local.flush()
+            os.chmod(local.name, 0o644)  # adb push keeps the mode; run-as must read it
             self.connect()
-            self.run('exec-out', 'run-as', PKG, 'tar', 'x', timeout=900, binary=True, stdin=archive)
+            self.run('push', local.name, remote, timeout=900)
+        try:
+            self.private('rm -rf -- %s && tar xf %s' % (' '.join(DATA_DIRS), remote), timeout=900)
+        finally:
+            self.shell('rm -f -- ' + remote)
 
     def instrument(self, classes, extras, timeout):
         args = ' '.join('-e %s %s' % (shlex.quote(k), shlex.quote(v)) for k, v in extras)
