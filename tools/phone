@@ -5,6 +5,8 @@ Fixed app-scoped operations. No writable local imports.
 """
 import sys
 import base64
+import math
+import struct
 if __name__ == '__main__' and not sys.flags.isolated:
     sys.exit('invoke the executable directly; isolated Python is required')
 
@@ -283,8 +285,10 @@ def recoverable(receipt, observed):
             observed['disposal'], receipt['disposal_expected'], 'disposal' in receipt.get('deleting', []))):
         return False
     baseline = observed['original'] == receipt['original'] or observed['lab'] == receipt['original']
-    allowed_lab = not observed['lab']['exists'] or any(same_lab(observed['lab'], value)
-                   for value in (receipt['original'], receipt['before'], receipt['candidate']))
+    allowed_lab = not observed['lab']['exists'] or (
+        observed['lab'] in (receipt['original'],receipt['before']) or short_inventory(receipt,observed['lab'])
+        if receipt.get('short_encoder') else any(same_lab(observed['lab'], value)
+                   for value in (receipt['original'], receipt['before'], receipt['candidate'])))
     return baseline and allowed_lab
 
 
@@ -518,6 +522,220 @@ def reconcile_encoder_probe_recovery(device, state, receipt, observed):
     return current
 
 
+SHORT_ENCODER = 'short-encoder-v1'
+SHORT_LIMIT = 1024 * 1024
+SHORT_INPUTS = {
+    'audio_signal.f32': 'e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb',
+    'length.i64': '35e3a6176b50da27fcb868bf840f0e76290bd9bf55c40545e67bac66353d0674',
+}
+SHORT_RUNTIME = dict(version='1.31.0',
+    official_aar_sha256='72683787a80d0608a3121b967d8e1239aef48286826661c953211626690540a7',
+    core_sha256='8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0',
+    jni_sha256='5f2f1a99fd9f65fd6271eed825632f4ae5ada95f5cc13d66605888ccb80cdc29',
+    source_commit='402979ac1bef89dcd55add41eaa7277c407599eb')
+SHORT_MODEL = {'encoder.onnx':'2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725',
+               'encoder.weights':'9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36'}
+
+
+def short_declaration(source, staged, receipt, observed):
+    config = source / 'encoder-probe.json'
+    if not config.exists():
+        return None
+    if not receipt or receipt.get('diagnostic') is not True or config.stat().st_size > 65536:
+        raise Refused('short encoder needs a diagnostic APK pair and bounded frozen manifest')
+    value = json.loads(config.read_bytes())
+    fields = {'schema','protocol','input_kind','shape','true_length','provider','eligible','scope',
+              'atol','rtol','model','builds','inputs','staging_envelope','runtime','sources'}
+    source_names = {'tools/encoder_probe.py','tools/encoder_conversion.py','tools/proposals/phone-short-encoder-v1.py',
+        'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+        'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts'}
+    expected_files = {'encoder-probe.json','variant.json',*SHORT_INPUTS,
+                      'model/encoder.onnx','model/encoder.weights'}
+    if (not isinstance(value, dict) or set(value) != fields or value.get('protocol') != SHORT_ENCODER
+            or value.get('schema') != 1 or value.get('input_kind') != 'synthetic silence; no recordings'
+            or value.get('shape') != [1,128,17] or value.get('true_length') != 17
+            or value.get('provider') not in ('cpu','webgpu') or value.get('eligible') is not False
+            or value.get('scope') != 'short feasibility checkpoint; full take not run'
+            or value.get('atol') != 1e-4 or value.get('rtol') != 1e-3
+            or value.get('runtime') != SHORT_RUNTIME or value.get('inputs') != SHORT_INPUTS
+            or value.get('model') != SHORT_MODEL
+            or set(staged['files']) != expected_files or set(value.get('sources', {})) != source_names
+            or any(not re.fullmatch('[0-9a-f]{64}', item) for item in value['sources'].values())
+            or value['sources']['tools/proposals/phone-short-encoder-v1.py'] != digest(Path(__file__))
+            or value.get('builds') != dict(app_sha256=observed['apk']['sha256'],
+                                         test_sha256=observed['test_apk']['sha256'])
+            or value.get('staging_envelope') != {'variant.json': staged['files']['variant.json']}
+            or value.get('model') != {name: staged['files']['model/' + name]
+                                     for name in ('encoder.onnx','encoder.weights')}
+            or any(staged['files'][name] != expected for name, expected in SHORT_INPUTS.items())):
+        raise Refused('unsupported short-encoder-v1 frozen declaration or staged bytes')
+    return dict(protocol=SHORT_ENCODER, manifest=value, manifest_sha256=staged['files']['encoder-probe.json'],
+                output_policy=dict(path='result.json', byte_limit=SHORT_LIMIT), attempt=None)
+
+
+def short_inventory(receipt, current):
+    expected = receipt['candidate']
+    files = dict(current['files'])
+    if receipt['short_encoder'].get('attempt'):
+        files.pop('result.json', None)
+    return dict(current, files=files) == expected
+
+
+def short_result(value, declaration):
+    """Dedicated synthetic receipt; execution completion never implies GPU proof."""
+    attempt = declaration['attempt']
+    plan = declaration['manifest']
+    if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('protocol') != SHORT_ENCODER
+            or value.get('attempt_id') != attempt['id'] or value.get('eligible') is not False
+            or value.get('freeze_sha256') != declaration['manifest_sha256'] or value.get('frozen') != plan
+            or value.get('outcome') not in ('complete','failed')
+            or type(value.get('pid')) is not int or value['pid'] <= 0
+            or type(value.get('processStartElapsedMs')) is not int or value['processStartElapsedMs'] < 0
+            or any(value.get(key) != 'unproven' for key in
+                   ('adapter_driver_proof','fp32_shader_proof','residual_node_assignment'))):
+        raise Refused('unbound or unsupported short encoder receipt')
+    complete = value['outcome'] == 'complete'
+    bindings = dict(build_sha256=plan['builds']['app_sha256'], test_build_sha256=plan['builds']['test_sha256'],
+        runtime_version='1.31.0', runtime_core_sha256=SHORT_RUNTIME['core_sha256'],
+        runtime_jni_sha256=SHORT_RUNTIME['jni_sha256'], optimization='ALL_OPT', execution_mode='SEQUENTIAL',
+        intra_op_threads=4, inter_op_threads=1, profiling=False,
+        cpu_fallback_disabled=plan['provider']=='webgpu')
+    if plan['provider'] == 'webgpu':
+        bindings['provider_options'] = dict(enableGraphCapture='0', enableInt64='1',
+                                          preferredLayout='NCHW', dawnBackendType='Vulkan')
+    for name, expected in bindings.items():
+        if (complete or name in value) and value.get(name) != expected:
+            raise Refused('short encoder installed identity or session options differ')
+    memory = value.get('memory')
+    phases = {'before-load','after-load','after-output','finally'}
+    if (not isinstance(memory,list) or not 1 <= len(memory) <= 4 or any(not isinstance(row,dict) for row in memory)
+            or len({row.get('phase') for row in memory}) != len(memory)
+            or any(row.get('phase') not in phases or any(type(row.get(k)) is not int or row[k] < 0
+                   for k in ('highWaterKb','pssKb','thermalStatus')) or row['thermalStatus'] > 6 for row in memory)
+            or (complete and {row['phase'] for row in memory} != phases)):
+        raise Refused('short encoder resource observations missing or invalid')
+    for key in ('cold_load_ms','run_to_host_output_ms','initialization_elapsed_ms','run_to_failure_ms'):
+        if ((complete and key != 'run_to_failure_ms') or key in value) and (type(value.get(key)) not in (int,float)
+                or not math.isfinite(value[key]) or value[key] < 0):
+            raise Refused('short encoder timing missing or invalid')
+    if complete:
+        if value.get('checkpoint') != 'outputs-materialized' or value.get('initialization_complete') is not True:
+            raise Refused('short encoder output completion missing')
+    elif (value.get('checkpoint') not in ('verify','native-load','provider-create','session-create','run-and-host-output')
+          or not isinstance(value.get('failure'),str) or not 1 <= len(value['failure']) <= 16384):
+        raise Refused('short encoder failed checkpoint missing')
+    if complete or 'outputs' in value:
+        rows = value.get('outputs')
+        expected = [('encoder-probe-output0.f32','FLOAT',[1,1024,3],12288),
+                    ('encoder-probe-output1.i64','INT64',[1],8)]
+        if not isinstance(rows,list) or len(rows) != 2:
+            raise Refused('short encoder tensors missing')
+        for row, (name,dtype,shape,size) in zip(rows,expected):
+            if (not isinstance(row,dict) or set(row) != {'file','dtype','shape','sha256','raw_base64'}
+                    or row['file'] != name or row['dtype'] != dtype or row['shape'] != shape):
+                raise Refused('short encoder tensor type or shape differs')
+            raw = base64.b64decode(row['raw_base64'], validate=True)
+            if len(raw) != size or hashlib.sha256(raw).hexdigest() != row['sha256']:
+                raise Refused('short encoder tensor bytes differ')
+            if dtype == 'FLOAT' and not all(math.isfinite(x[0]) for x in struct.iter_unpack('<f',raw)):
+                raise Refused('short encoder has nonfinite FP32 output')
+            if dtype == 'INT64' and struct.unpack('<q',raw) != (3,):
+                raise Refused('short encoder output length differs')
+    return value['outcome']
+
+
+def short_capture(device, state, receipt, accept=False):
+    declaration = receipt['short_encoder']
+    attempt = declaration['attempt']
+    device.idle()
+    observed = device.inspect()
+    observed['test_apk'] = device.app_identity(PKG + '.test')
+    if (observed['device'] != receipt['device'] or observed['owner'] != receipt['run']
+            or observed['apk'] != receipt['apk'] or observed['test_apk'] != receipt['test_apk']
+            or observed['original'] != receipt['original']
+            or not short_inventory(receipt, observed['lab'])):
+        attempt['state'] = 'unresolved-execution'
+        attempt['reason'] = 'unexpected device, ownership, APK or lab inventory'
+        save(state / 'active.json', receipt)
+        raise Refused('short encoder inventory changed; preserve and inspect before recovery')
+    present = 'result.json' in observed['lab']['files']
+    payload = device.short_encoder_result() if present else b''
+    reason = 'no result from reserved attempt'
+    valid = None
+    truncated = len(payload) > SHORT_LIMIT
+    if present and not truncated:
+        if hashlib.sha256(payload).hexdigest() != observed['lab']['files']['result.json']:
+            raise Refused('short encoder result changed while reading')
+        try:
+            if (attempt.get('accepted_result_sha256') is not None and
+                    attempt['accepted_result_sha256'] != hashlib.sha256(payload).hexdigest()):
+                raise Refused('result changed after its first accepted receipt')
+            value = json.loads(payload)
+            valid = short_result(value, declaration)
+            reason = 'instrumentation completion unavailable'
+        except (Refused,ValueError,TypeError,KeyError) as error:
+            reason = str(error)[:2048]
+    elif truncated:
+        reason = 'result exceeds fixed byte bound; prefix retained'
+    if (accept or attempt.get('accepted_result_sha256') is None) and attempt['instrumentation_success'] and valid:
+        attempt['state'] = valid
+        attempt['accepted_result_sha256'] = hashlib.sha256(payload).hexdigest()
+        receipt['phase'] = 'active'
+    elif not valid or not attempt['instrumentation_success']:
+        attempt['state'] = 'unresolved-execution'
+    attempt['reason'] = None if attempt['state'] in ('complete','failed') else reason
+    device.idle()
+    current = device.inspect()
+    current['test_apk'] = device.app_identity(PKG + '.test')
+    if current != observed:
+        attempt.update(state='unresolved-execution',reason='inventory changed while reading result')
+        save(state / 'active.json',receipt)
+        raise Refused('short encoder inventory changed while reading result')
+    if attempt['state'] in ('complete','failed') and valid == attempt['state']:
+        exported = payload
+    else:
+        exported = json.dumps(dict(protocol=SHORT_ENCODER, outcome='unresolved-execution', eligible=False,
+            attempt_id=attempt['id'], freeze_sha256=declaration['manifest_sha256'], reason=reason,
+            result_present=present, truncated=truncated, payload_base64=base64.b64encode(payload[:SHORT_LIMIT]).decode(),
+            payload_sha256=hashlib.sha256(payload[:SHORT_LIMIT]).hexdigest()),sort_keys=True).encode()
+    folder = state / 'results'
+    ordinary_path(folder)
+    folder.mkdir(mode=0o700, exist_ok=True)
+    identity = hashlib.sha256(exported).hexdigest()
+    target = folder / (receipt['run'] + '-short-' + attempt['id'] + '-' + identity + '.json')
+    exact_recovery_export(target, exported, identity)
+    evidence = dict(path=str(target), sha256=identity, state=attempt['state'], bytes=len(exported))
+    if evidence not in attempt.setdefault('evidence',[]):
+        attempt['evidence'].append(evidence)
+    save(state / 'active.json', receipt)
+    return dict(run=receipt['run'], outcome=attempt['state'], **evidence)
+
+
+def short_lab(device, state, receipt, test_apk):
+    declaration = receipt['short_encoder']
+    if declaration.get('attempt') is not None or receipt['phase'] != 'active':
+        raise Refused('short encoder attempt already reserved; recover, never retry this run')
+    device.idle()
+    declaration['attempt'] = dict(id=uuid.uuid4().hex, state='unresolved-execution', instrumentation_success=False)
+    receipt['phase'] = 'running'
+    receipt['profile_complete'] = False
+    receipt.pop('profile_binding', None)
+    save(state / 'active.json', receipt)  # Immutable attempt reservation precedes launch.
+    try:
+        output = device.instrument(test_apk, native_profile=False, short_encoder_attempt=declaration['attempt']['id'])
+        (state / (receipt['run'] + '-instrumentation.txt')).write_text(output)
+        declaration['attempt']['instrumentation_success'] = bool(re.search(r'OK \([1-9][0-9]* tests?\)',output)
+            and re.search(r'^INSTRUMENTATION_CODE:\s*-1\s*$',output,re.M)
+            and not any(x in output for x in ('FAILURES!!!','INSTRUMENTATION_FAILED','Process crashed'))
+            and not re.search(r'^INSTRUMENTATION_STATUS_CODE:\s*-\d+\s*$',output,re.M))
+        save(state / 'active.json', receipt)
+    except BaseException as error:
+        declaration['attempt']['reason'] = str(error)[:2048]
+        save(state / 'active.json', receipt)
+        raise
+    return short_capture(device,state,receipt,accept=True)
+
+
 def execute(argv, *, device, state):
     state = Path(state)
     journal = state / 'active.json'
@@ -631,8 +849,15 @@ def execute(argv, *, device, state):
     if argv[0] in ('lab', 'test', 'pull-results', 'pull-profile'):
         if not receipt or receipt['run'] != argv[1] or observed['owner'] != receipt['run']:
             raise Refused('no matching active run')
-        if not same_lab(observed['lab'], receipt['candidate']):
+        if not (short_inventory(receipt,observed['lab']) if receipt.get('short_encoder')
+                else same_lab(observed['lab'], receipt['candidate'])):
             raise Refused('lab changed outside the active run')
+        if receipt.get('short_encoder'):
+            if argv[0] == 'lab':
+                return short_lab(device,state,receipt,Path(argv[2]))
+            if argv[0] == 'pull-results' and receipt['short_encoder'].get('attempt'):
+                return short_capture(device,state,receipt)
+            raise Refused('short-encoder-v1 supports only one lab attempt and bounded results, no role profile')
         if argv[0] == 'pull-profile':
             if not receipt.get('diagnostic') or (receipt['phase'] != 'active' or not receipt.get('profile_complete')):
                 raise Refused('profile retrieval requires a completed diagnostic measurement')
@@ -687,6 +912,9 @@ def execute(argv, *, device, state):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
             raise Refused('invalid run identity')
         staged = inventory(source)
+        if receipt and receipt.get('short_encoder',{}).get('attempt') is not None:
+            raise Refused('short encoder attempt already reserved; restaging cannot authorize a retry')
+        short = short_declaration(source,staged,receipt,observed)
         if not (source / 'variant.json').is_file() or not (source / 'model').is_dir():
             raise Refused('need variant.json and model directory')
         if not accessible:
@@ -713,6 +941,10 @@ def execute(argv, *, device, state):
         if first and observed['original']['exists']:
             raise Refused('unowned preserved lab exists')
         receipt.update(before=observed['lab'], candidate=staged, phase='staging', deleting=[], profile_complete=False)
+        if short is not None:
+            receipt['short_encoder'] = short
+        else:
+            receipt.pop('short_encoder',None)
         save(journal, receipt)
         if first:
             device.claim(token)
@@ -758,6 +990,12 @@ def execute(argv, *, device, state):
             receipt['copy_pending'] = False
             save(journal, receipt)
         device.idle()
+        if (receipt.get('short_encoder',{}).get('attempt') is not None
+                and receipt['phase'] in ('running','active')):
+            short_capture(device,state,receipt)
+            observed = device.inspect()
+            observed['test_apk'] = device.app_identity(PKG + '.test')
+            accessible = observed['lab']['accessible']
         if (receipt.get('run') == ENCODER_PROBE_RECOVERY['run'] and receipt.get('phase') == 'running'
                 and not same_lab(observed['lab'], receipt['candidate'])):
             observed = reconcile_encoder_probe_recovery(device, state, receipt, observed)
@@ -771,8 +1009,10 @@ def execute(argv, *, device, state):
                 raise Refused('private lab state is inaccessible without a verified restoration milestone')
             if observed['owner'] not in (receipt['run'], None):
                 raise Refused('different operation owns this lab')
-            if observed['lab']['exists'] and not any(same_lab(observed['lab'], allowed)
-                    for allowed in (receipt['original'], receipt['before'], receipt['candidate'])):
+            if observed['lab']['exists'] and not (
+                    observed['lab'] in (receipt['original'],receipt['before']) or short_inventory(receipt,observed['lab'])
+                    if receipt.get('short_encoder') else any(same_lab(observed['lab'], allowed)
+                    for allowed in (receipt['original'], receipt['before'], receipt['candidate']))):
                 raise Refused('lab changed outside the active run')
             if observed['original']['exists'] and observed['original'] != receipt['original']:
                 raise Refused('preserved original changed')
@@ -1129,7 +1369,7 @@ else printf 'absent\\n'; fi'''
     def uninstall(self):
         self.bridge('uninstall', PKG)
 
-    def instrument(self, test_apk, full=False, native_profile=False):
+    def instrument(self, test_apk, full=False, native_profile=False, short_encoder_attempt=None):
         metadata = self.apk_info(test_apk)
         installed = self.app_identity(self.test_package)
         if metadata['package'] != self.test_package or metadata['sha256'] != installed['sha256']:
@@ -1144,6 +1384,10 @@ else printf 'absent\\n'; fi'''
         if remaining <= 0:
             raise Refused('insufficient measurement budget; recover the journaled run')
         options = ' -e nativeRoleProfiler true' if native_profile else ''
+        if short_encoder_attempt is not None:
+            if native_profile or full or not re.fullmatch('[0-9a-f]{32}',short_encoder_attempt):
+                raise Refused('invalid short encoder attempt binding')
+            options += ' -e shortEncoderAttempt ' + short_encoder_attempt
         try:
             return self.shell('am instrument -w -r -e class ' + classes + options + ' ' + self.runner, timeout=remaining).stdout
         except subprocess.TimeoutExpired:
@@ -1178,6 +1422,10 @@ else printf 'absent\\n'; fi'''
         # One exact known ORT trace, never a pattern or directory export.
         path = 'files/lab/encoder-probe-profile_2026-10-20_20-19-16_968.json'
         code = 'test -f ' + path + ' && test ! -L ' + path + ' && head -c 67108865 ' + path
+        return self.bridge('exec-out', 'run-as ' + PKG + ' sh -c ' + shlex.quote(code), text=False).stdout
+
+    def short_encoder_result(self):
+        code = 'test -f files/lab/result.json && test ! -L files/lab/result.json && head -c 1048577 files/lab/result.json'
         return self.bridge('exec-out', 'run-as ' + PKG + ' sh -c ' + shlex.quote(code), text=False).stdout
 
     def profile_result(self):
