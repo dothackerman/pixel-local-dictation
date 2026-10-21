@@ -70,6 +70,27 @@ def fixture():
     return plan, reports
 
 
+def webgpu_fixture():
+    """One ort131-cpu vs ort131-webgpu pair: same build and model, variant differs only by encoder provider."""
+    plan, reports = fixture()
+    plan.update(kind="webgpu-parity", allowed_differences=["configuration_sha256"])
+    plan["runs"] = plan["runs"][:2]
+    reports = {name: value for name, value in reports.items() if name.endswith("-0")}
+    for run in plan["runs"]:
+        candidate = run["setup"] == plan["candidate"]
+        provenance = run["expected"]["provenance"]
+        provenance.update(build_sha256="a" * 64, model_sha256="a" * 64)
+        reports[run["id"]]["provenance"].update(build_sha256="a" * 64, model_sha256="a" * 64)
+        run["expected"]["execution"] = {"encoder": "onnx-webgpu" if candidate else "onnx-cpu", "fallback": False,
+                                        "runtime_core_sha256": experiment.RUNTIME_CORES[1]}
+        report = reports[run["id"]]["report"]
+        report["execution"] = run["expected"]["execution"]
+        report["variant"] = {"family": "parakeet", "runtime": {"profile": False}}
+        if candidate:
+            report["variant"]["runtime"]["encoder_provider"] = "webgpu"
+    return plan, reports
+
+
 class CommandComparisonTests(unittest.TestCase):
     """Exercise the operator boundary with explicitly fabricated, nonpersonal receipts."""
 
@@ -88,7 +109,7 @@ class CommandComparisonTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix="fabricated-control-", dir=corpus)
         self.addCleanup(temp.cleanup)
         folder = Path(temp.name)
-        plan, reports = fixture()
+        plan, reports = webgpu_fixture() if kind == "webgpu-parity" else fixture()
         plan.update(id=folder.name.replace("_", "-"), kind=kind)
         if kind in ("conversion-parity", "runtime-parity"):
             plan["runs"] = plan["runs"][:2]
@@ -101,7 +122,7 @@ class CommandComparisonTests(unittest.TestCase):
                 elif run["setup"] == "C":
                     run["expected"]["execution"] = {"encoder": "litert-fp32-cpu", "fallback": False}
                 reports[run["id"]]["report"]["execution"] = run["expected"]["execution"]
-        else:
+        elif kind == "gpu-wait":
             plan["runs"] = [plan["runs"][i] for i in (0, 1, 3, 2)]
         for name in breaches:
             reports[name]["report"]["memory"][0].update(highWaterKb=4000000, thermalStatus=1)
@@ -124,7 +145,7 @@ class CommandComparisonTests(unittest.TestCase):
         return frozen
 
     def test_control_breaches_are_inconclusive_and_candidates_require_valid_controls(self):
-        for kind in ("conversion-parity", "gpu-wait", "runtime-parity"):
+        for kind in ("conversion-parity", "gpu-wait", "runtime-parity", "webgpu-parity"):
             for breaches, decision in ((["A-0"], "inconclusive"), (["C-0"], "reject"),
                                        (["A-0", "C-0"], "inconclusive")):
                 with self.subTest(kind=kind, breaches=breaches):
@@ -240,6 +261,68 @@ class ComparisonTests(unittest.TestCase):
         plan, reports = fixture()
         plan["allowed_differences"].append("inputs_sha256")
         self.assertEqual("inconclusive", experiment.compare(plan, reports)["decision"])
+
+
+class WebGpuParityTests(unittest.TestCase):
+    def test_matched_ort131_cpu_and_webgpu_with_identical_text_advances_to_full_flow_diagnosis(self):
+        plan, reports = webgpu_fixture()
+        result = experiment.compare(plan, reports)
+        self.assertEqual("advance", result["decision"], result)
+        self.assertEqual("development-phone-replay", result["claim"])
+        self.assertFalse(result["product_winner"])
+        self.assertIn("diagnostic", result["next"])
+
+    def test_changed_text_rejects(self):
+        plan, reports = webgpu_fixture()
+        reports["C-0"]["report"]["endpoints"][1]["text"] = "Hello world"
+        result = experiment.compare(plan, reports)
+        self.assertEqual("reject", result["decision"], result)
+        self.assertEqual(1, result["languages"]["en"]["changed_outputs"])
+
+    def test_plan_must_be_one_runtime_core_and_differ_only_by_configuration(self):
+        def legacy_control(plan):
+            plan["runs"][0]["expected"]["execution"]["runtime_core_sha256"] = experiment.RUNTIME_CORES[0]
+
+        def cpu_candidate(plan):
+            plan["runs"][1]["expected"]["execution"]["encoder"] = "onnx-cpu"
+
+        def other_build(plan):
+            plan["allowed_differences"].append("build_sha256")
+            plan["runs"][1]["expected"]["provenance"]["build_sha256"] = "c" * 64
+
+        def no_configuration_difference(plan):
+            plan["allowed_differences"] = []
+
+        for mutate in (legacy_control, cpu_candidate, other_build, no_configuration_difference):
+            with self.subTest(mutate=mutate.__name__):
+                plan, _ = webgpu_fixture()
+                mutate(plan)
+                self.assertTrue(experiment.plan_errors(plan))
+
+    def test_variant_may_differ_only_by_encoder_provider(self):
+        mutations = [
+            lambda r: r["C-0"]["report"]["variant"]["runtime"].pop("encoder_provider"),
+            lambda r: r["C-0"]["report"]["variant"].update(beam=8),
+            lambda r: r["A-0"]["report"]["variant"]["runtime"].update(encoder_provider="webgpu"),
+        ]
+        for mutate in mutations:
+            plan, reports = webgpu_fixture()
+            mutate(reports)
+            result = experiment.compare(plan, reports)
+            self.assertEqual("inconclusive", result["decision"], result)
+            self.assertTrue(result["errors"])
+
+    def test_explicit_cpu_provider_on_control_is_accepted(self):
+        plan, reports = webgpu_fixture()
+        reports["A-0"]["report"]["variant"]["runtime"]["encoder_provider"] = "cpu"
+        self.assertEqual("advance", experiment.compare(plan, reports)["decision"])
+
+    def test_single_language_suite_is_still_refused(self):
+        plan, _ = webgpu_fixture()
+        for run in plan["runs"]:
+            run["expected"]["endpoints"] = ["de"]
+            run["expected"]["endpoint_references"].pop("en")
+        self.assertIn("freeze one complete endpoint suite covering both languages", experiment.plan_errors(plan))
 
 
 class EvidenceStoreTests(unittest.TestCase):
