@@ -1,63 +1,20 @@
-# Encoder acceleration research
+# Research notes
 
-2026-10-20. Source and package inspection unless a note explicitly records execution.
-Specifications and implementation tickets live in GitHub Issues, not this directory.
+Source/package inspection unless a note records execution. Decisions live in
+`adrs/`, specs in GitHub issues, terms in [GLOSSARY.md](../GLOSSARY.md).
+Research-only terms: *exported model* (runtime-ready representation),
+*converter* (host tool that creates it), *runtime* (executes it on the phone).
 
-## Current findings
-
-- The official Android package `com.microsoft.onnxruntime:onnxruntime-android:1.31.0`
-  contains native WebGPU support for ARM64. It is a candidate for the unchanged
-  FP32 Parakeet encoder; no Pixel encoder execution or speed result is established.
-- Our Sherpa integration uses a different runtime and cannot select WebGPU today.
-  Runtime integration and separate encoder/decoder runtime session options are required.
-- Current INT8 Parakeet/Cohere exports have integer-operation gaps in the inspected
-  native WebGPU registries. Package availability does not establish model support.
-- The conventional FlatBuffer container has a 2 GiB ceiling. LiteRT supports weights
-  outside that container, including appended data in the same larger model file.
-  Our pinned converter does not use that route successfully. This is separate from
-  phone/GPU memory. [Executed conversion diagnosis](../adrs/019-encoder-conversion.md).
-- A ready FP32 Parakeet v3 LiteRT model exists. Its fixed five-second input and
-  overlapping-window pipeline differ from our dynamic, pause-based pipeline.
-  Sharing a base checkpoint does not establish identical recognition behavior.
-- ORT's strict CPU-fallback flag cannot pass on WebGPU for our dynamic-length
-  encoder: placement always keeps shape work on CPU. Host reproduction found no
-  tensor math on CPU. [Placement research](ort-webgpu-node-placement.md).
-
-The selected next investigation is unchanged ONNX FP32 Parakeet on WebGPU.
-First isolate the CPU runtime upgrade from moving the encoder to GPU. This is a
-published spec decision, not authorization to build or run experiments.
-
-## Evidence and options
-
-| Note | Purpose |
+| Note | Answers |
 |---|---|
-| [ORT WebGPU placement](ort-webgpu-node-placement.md) | Why strict CPU-fallback rejection fails; placement mechanism, kernel gaps, host reproduction |
-| [Android ONNX WebGPU availability](onnx-webgpu-android-availability.md) | Strongest current package/model assessment, actual package hashes, native integration gaps |
-| [GPU preparation best practices](encoder-gpu-best-practices.md) | Correctness gates and reuse-before-custom-conversion advice; later ONNX package finding changes route priority |
-| [Ready-made options](ready-made-encoder-gpu-options.md) | Verified published artifacts, interfaces and pipeline differences |
-| [LiteRT size limits](litert-size-limits.md) | Container limit versus large-weight model representation |
-| [Conversion alternatives](encoder-conversion-options.md) | Conditional writer, split and TensorFlow routes; no accepted conversion |
-| [Android GPU runtime options](pixel-gpu-runtime-options.md) | Earlier runtime survey; package-availability uncertainty superseded by the focused ONNX check |
+| [ONNX WebGPU on Android](onnx-webgpu-android-availability.md) | Which package has WebGPU, how it was verified, why Sherpa cannot select it, which encoder ops lack kernels |
+| [ORT WebGPU placement](ort-webgpu-node-placement.md) | Why strict CPU-fallback rejection always fails; how to obtain a placement list |
+| [Short encoder probe](issue4-short-encoder-probe.md) | How to package, freeze and compare the #4 probe; frozen identities |
+| [LiteRT and other alternatives](litert-alternatives.md) | Surveyed non-ONNX routes, ready-made artifacts, LiteRT >2 GiB mechanism |
 
-Some recommendations reflect the evidence available when written. In particular,
-the first search missed WebGPU inside the standard Android AAR. The focused ONNX
-availability note supersedes that uncertainty. Source support, a downloadable
-binary, successful loading, correct GPU output and measured benefit are distinct
-levels of evidence. Research notes do not establish the later levels by implication.
-
-## Terms
-
-Shared terms (take, runtime session, execution provider, placement, shape work)
-are defined in [GLOSSARY.md](../GLOSSARY.md). Research-only terms:
-
-| Term | Meaning here |
-|---|---|
-| Trained model/checkpoint | Calculations and learned numbers from training |
-| Exported model | Representation prepared for a runtime; may constrain lengths or precision |
-| Converter | Development-computer tool that creates an exported model |
-| Runtime | Software that executes the model on the phone |
-| Recognition pipeline | Sound preparation, chunking, word search and combining text |
-
-Full issue requirements, dependency changes and acceptance remain in
-[spec #1](https://github.com/dothackerman/pixel-local-dictation/issues/1).
-Private measurements, recordings, transcripts and credentials stay out of these notes.
+Evidence levels are distinct: source support, downloadable binary, successful
+load, correct GPU output, measured benefit. A note establishes only the level it names.
+Decision trail: [ADR-019](../adrs/019-encoder-conversion.md) →
+[ADR-020](../adrs/020-onnx-webgpu-investigation.md) →
+[ADR-022](../adrs/022-webgpu-encoder-placement-stop.md) →
+[ADR-023](../adrs/023-encoder-placement-check.md).
