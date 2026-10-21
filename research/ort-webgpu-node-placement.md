@@ -1,7 +1,7 @@
 # ORT WebGPU placement and strict CPU-fallback rejection
 
-2026-10-21. ORT 1.31.0 source (commit `402979ac`) plus one host runtime session
-creation on ORT WebGPU 1.27.0. No phone execution. Decision:
+2026-10-21. ORT 1.31.0 source (commit `402979ac`), one host runtime session
+creation on ORT WebGPU 1.27.0, and one phone placement listing (no Run). Decision:
 [ADR-023](../adrs/023-encoder-placement-check.md); phone stop:
 [ADR-022](../adrs/022-webgpu-encoder-placement-stop.md); beginner page:
 [explainer](../explainers/webgpu-encoder-placement/index.html).
@@ -55,12 +55,38 @@ verbose rerun: 2,273 steps; 1,640 WebGPU; 633 CPU.
 
 About 20 Memcpy steps at boundaries, mostly around the padding mask. Python
 quirk: provider option `enableInt64` alone did not apply; session config
-`ep.webgpuexecutionprovider.enableInt64=1` was also required. 1.31 adds int64
-Gather/Concat/Reshape, so the phone's no-kernel group is likely smaller; the
-CPU-preference group remains. Phone placement list unmeasured.
+`ep.webgpuexecutionprovider.enableInt64=1` was also required.
+
+## Phone placement (Android ORT 1.31.0, Pixel 10 Pro XL)
+
+Run `issue4-placement-webgpu-20261021-01`, protocol `encoder-placement-v1`
+(wrapper `1f91df7`): one non-strict runtime session creation, no Run, synthetic
+input. Receipt SHA256 `fbd8e93e…22d1` (private `corpus/lab/phone-operations/results/`).
+Recovery restored both original APKs and all 11 lab hashes; independent `inspect`
+matched the baseline.
+
+| Cause | Steps | Composition |
+|---|---:|---|
+| No kernel | 54 | Slice 26, Squeeze 24, Shape, ConstantOfShape, Tile, Transpose 1 each |
+| CPU preference | 569 | shape work behind those and behind `Shape` |
+| CPU total (declared) | 623 | = 54 + 569; 623 unique names |
+| WebGPU (declared) | 1,635 | |
+
+All 623 CPU step names exist in the original graph; shape inference finds no
+floating-point input or output on any of them: **zero tensor math on CPU**.
+1.31's extra int64 kernels shrank the no-kernel group (419 → 54), but the
+CPU-preference heuristic absorbed the same shape work (214 → 569).
+
+Limits: logd dropped most verbose per-step rows (323 of 623 CPU, 119 of 1,635
+WebGPU received), so the per-provider listing is incomplete and ADR-023's check
+fails on its letter. The complete CPU set rests on the cause lines matching the
+declared count exactly. Boundary copies were not named. Cold load 6.6 s; HWM
+350 MB; thermal 0.
 
 ## Obtaining a placement list
 
 Do not set `disable_cpu_ep_fallback`. Log severity verbose (0). Read
 `Node(s) placed on [<provider>]` from `VerifyEachNodeIsAssignedToAnEp` plus the
-two INFO causes above. A strict run yields only the error.
+two INFO causes above. A strict run yields only the error. On Android the
+verbose burst overruns logd; the two INFO cause lines survive and, when their
+sum equals the declared CPU count, name every CPU step.
