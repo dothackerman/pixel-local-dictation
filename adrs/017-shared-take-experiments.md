@@ -4,7 +4,7 @@
 
 ## Decision
 
-`DictationSession` owns a take from capture to completion. Production and phone
+`TakeSession` owns a take from capture to completion. Production and phone
 replay construct it through `Pipeline.runtime`. `DictationRuntime` retains the
 recognizer and serial decode queue across takes. A cancelled take cannot commit;
 its native work may still be running. Release follows capture and native drain.

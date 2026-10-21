@@ -17,7 +17,7 @@ class DictationRuntime(
 ) {
     private var recognizer: Recognizer? = null // decode executor only
     @Volatile private var closed = false
-    private val sessions = mutableSetOf<DictationSession>()
+    private val sessions = mutableSetOf<TakeSession>()
 
     private fun recognizer(): Recognizer = recognizer ?: load().also { recognizer = it }
 
@@ -37,11 +37,11 @@ class DictationRuntime(
     fun open(
         capture: TakeCapture, output: TakeOutput, deliver: Executor,
         timeline: TimelineObserver? = null, clock: () -> Long = System::nanoTime,
-    ): DictationSession {
+    ): TakeSession {
         check(!closed) { "runtime closed" }
         val segmenter = segments()
-        lateinit var session: DictationSession
-        session = DictationSession(capture, output, deliver, { delivery, observer, preview ->
+        lateinit var session: TakeSession
+        session = TakeSession(capture, output, deliver, { delivery, observer, preview ->
             check(!closed) { "runtime closed" }
             TakeTranscriber(::recognizer, segmenter, decode, delivery, variant.post, observer, preview)
         }, timeline, clock, {

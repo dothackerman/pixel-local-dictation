@@ -72,7 +72,7 @@ and returns to FUTO.
   [method.xml](app/src/main/res/xml/method.xml) declares a voice subtype without a
   locale and overrides implicit subtype selection. Even an input restart with
   identical attributes discards the take.
-- [DictationSession](app/src/main/kotlin/ch/og/dictation/DictationSession.kt) owns
+- [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt) owns
   each take, including capture drain, cancellation and editor acceptance.
   The IME and phone replay construct it through the same runtime factory.
   [ADR-017](adrs/017-shared-take-experiments.md) defines the seam and timing receipts.
