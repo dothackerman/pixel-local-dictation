@@ -148,6 +148,7 @@ class PhoneTests(unittest.TestCase):
         info = self.call('app')
         self.assertEqual(set(info), {'app', 'test', 'ime', 'futo', 'lab'})
         self.assertNotIn('apk_path', info['app'])
+        self.assertNotIn('apk_path', info['test'])
         self.assertEqual(set(info['futo']), set(phone.FUTO))
         device = self.call('device')
         self.assertEqual(set(device['props']), set(phone.PROPS))
@@ -295,12 +296,32 @@ class AdapterArgvTests(unittest.TestCase):
         self.assertTrue(all('run-as %s sh -c' % PKG in j for j in joined if 'run-as' in j))
         self.assertFalse(any('logcat' in j and '--uid' not in j and 'crash' not in j for j in joined))
 
-    def test_failures_redact_serial_and_adb_path_and_distinguish_from_refusals(self):
+    def test_missing_package_is_an_answer_not_a_failure(self):
+        device, runner = self.device({'pm path': (1, '', '')})
+        self.assertEqual(device.package(phone.FUTO[1]), {'installed': False})
+        self.assertEqual(device.package(TEST), {'installed': False})
+
+    def test_uid_is_parsed_from_grapheneos_dump_or_refused_never_guessed_as_root(self):
+        answers = {'pm path': (0, 'package:/data/app/x/base.apk\n', ''), 'sha256sum': (0, 'c' * 64 + '  x\n', ''),
+                   'pidof': (1, '', '')}
+        for dump, expected in (('  versionCode=12\n    appId=10123\n', 10123), ('  versionCode=12\n    userId=10456\n', 10456)):
+            device, _ = self.device({**answers, 'dumpsys package': (0, dump, '')})
+            self.assertEqual(device.package(PKG)['uid'], expected)
+        device, _ = self.device({**answers, 'dumpsys package': (0, '  versionCode=12\n  versionName=null\n', '')})
+        with self.assertRaises(phone.Failed):
+            device.package(PKG)
+        with self.assertRaises(phone.Refused):
+            device.logcat(0)
+        with self.assertRaises(phone.Refused):
+            device.logcat(None)
+
+    def test_failures_name_the_command_redact_serial_and_adb_path_and_distinguish_from_refusals(self):
         device, runner = self.device({'am force-stop': (1, '', 'error: /sdk/platform-tools/adb SERIAL123 boom')})
         with self.assertRaises(phone.Failed) as caught:
             device.stop()
         self.assertNotIn('SERIAL123', str(caught.exception))
         self.assertNotIn('/sdk/platform-tools', str(caught.exception))
+        self.assertTrue(str(caught.exception).startswith('shell am force-stop'))
         with self.assertRaises(phone.Refused):
             device.package('com.other.app')
 

@@ -35,7 +35,7 @@ PROPS = ('ro.product.model', 'ro.build.version.release', 'ro.build.version.sdk',
          'ro.hardware', 'ro.hardware.vulkan', 'ro.hardware.egl', 'ro.opengles.version')
 DRIVER_LIBS = re.compile(r'^(libOpenCL.*|libedgetpu.*|vulkan\..*|libGLES.*|libllvm-glnext.*)\.so$')
 PERMISSIONS = {PKG: {'android.permission.RECORD_AUDIO', 'android.permission.WAKE_LOCK'}}
-PERMISSIONS[TEST] = PERMISSIONS[PKG]
+PERMISSIONS[TEST] = PERMISSIONS[PKG] | {'android.permission.REORDER_TASKS'}  # androidx test runner
 NETWORK = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
            'android.permission.QUERY_ALL_PACKAGES'}
 DATA_DIRS = ('files', 'shared_prefs', 'databases')
@@ -91,7 +91,8 @@ class Device:
             raise Failed('cannot start adb: ' + error.strerror) from None
         if check and result.returncode:
             err = result.stderr if isinstance(result.stderr, str) else result.stderr.decode(errors='replace')
-            raise Failed(self.redact(err.strip()[-400:] or 'adb exited %d' % result.returncode))
+            what = ' '.join(args[:2]).split('run-as')[0].strip()[:60]
+            raise Failed(self.redact('%s: %s' % (what, err.strip()[-400:] or 'adb exited %d' % result.returncode)))
         return result.stdout
 
     def redact(self, text):
@@ -132,18 +133,23 @@ class Device:
     def package(self, pkg):
         if pkg not in (PKG, TEST) + FUTO:
             raise Refused('package outside scope')
-        paths = [l[8:] for l in self.shell('pm path ' + pkg).splitlines() if l.startswith('package:')]
+        # pm exits 1 for a package that is not installed; that is an answer, not a failure.
+        paths = [l[8:] for l in self.shell('pm path ' + pkg, check=False).splitlines() if l.startswith('package:')]
         if not paths:
             return {'installed': False}
         dump = self.shell('dumpsys package ' + pkg)
+        version_name = (re.search(r'\bversionName=(\S+)', dump) or [0, 'null'])[1]
         info = {'installed': True,
                 'versionCode': int((re.search(r'\bversionCode=(\d+)', dump) or [0, 0])[1]),
-                'versionName': (re.search(r'\bversionName=(\S+)', dump) or [0, None])[1]}
+                'versionName': None if version_name == 'null' else version_name}
         if pkg in FUTO:
             return info
         info['sha256'] = self.shell('sha256sum -- ' + shlex.quote(paths[0])).split()[0]
         info['apk_path'] = paths[0]
-        info['uid'] = int((re.search(r'\buserId=(\d+)', dump) or [0, 0])[1])
+        uid = re.search(r'^\s*(?:userId|appId|uid)=(\d+)\s*$', dump, re.M)
+        if not uid or int(uid.group(1)) < 10000:
+            raise Failed('cannot determine the app uid from the package dump; refusing to guess')
+        info['uid'] = int(uid.group(1))
         info['granted'] = sorted(set(re.findall(r'^\s+(android\.permission\.\S+): granted=true', dump, re.M)))
         pid = self.shell('pidof ' + pkg, check=False).split()
         info['pid'] = int(pid[0]) if pid and pid[0].isdigit() else None
@@ -177,6 +183,8 @@ class Device:
         return files
 
     def logcat(self, uid, since=None, crash=False):
+        if not crash and (type(uid) is not int or uid < 10000):
+            raise Refused('logs need our app uid; system or unknown uids are out of scope')
         args = ['logcat', '-d', '-v', 'time']
         args += ['-b', 'crash'] if crash else ['--uid', str(uid)]
         if since:
@@ -363,7 +371,8 @@ class Phone:
     def app_info(self):
         info = {'app': self.app(), 'test': self.device.package(TEST), 'ime': self.device.ime(),
                 'futo': {p: self.device.package(p) for p in FUTO}}
-        info['app'].pop('apk_path', None)
+        for key in ('app', 'test'):
+            info[key].pop('apk_path', None)
         info['lab'] = self.device.inventory('files/lab') if info['app']['installed'] else None
         return info
 
