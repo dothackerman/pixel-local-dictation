@@ -1,6 +1,6 @@
 # ADR-009 — Bounded phone recovery
 
-2026-10-19 · Approved/implemented in d86f527; diagnostic support extended October 20. Supersedes ADR-004 staging mechanics.
+2026-10-19 · **Superseded by [ADR-024](024-phone-access-rewrite.md) on 2026-10-21.** Approved/implemented in d86f527; diagnostic support extended October 20. Supersedes ADR-004 staging mechanics.
 
 Keep fixed capabilities in the protected main-checkout wrapper; prepare artifacts on host, run verified installed instrumentation.
 One owner/run retains the first lab baseline; inspect unknown storage as unknown, never empty.

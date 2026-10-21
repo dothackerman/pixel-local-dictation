@@ -3,7 +3,7 @@
 Preparation and comparison only; not permission to run. Outcome and receipts:
 [ADR-022](../adrs/022-webgpu-encoder-placement-stop.md); recovery incident:
 [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md). Staging, execution and
-recovery go through the protected wrapper under current-task authorization.
+recovery went through the former protected wrapper (now [ADR-024](../adrs/024-phone-access-rewrite.md)).
 Production runtime default unchanged. The benchmark build calls ORT directly
 without Sherpa or the speech pipeline; repacking its core does not claim the old
 Sherpa JNI is compatible with ORT 1.31.

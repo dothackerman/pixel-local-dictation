@@ -33,7 +33,6 @@ def write(path, value):
 
 PLACEMENT = 'encoder-placement-v1'
 SHORT_V2 = 'short-encoder-v2'
-WRAPPER_SOURCE = 'tools/proposals/phone-short-encoder-v3.py'
 SHAPE_TYPES = {6, 7, 9}  # ONNX INT32, INT64, BOOL
 
 
@@ -107,7 +106,7 @@ def freeze(model, out, app_apk, test_apk, provider="cpu", protocol='short-encode
             shutil.copy2(source, target)
         if sha(target) != expected:
             raise ValueError('model changed during staging: ' + name)
-    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', WRAPPER_SOURCE, 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt', 'app/build.gradle.kts']
     scope = ('placement listing only; Run not executed' if protocol == PLACEMENT
              else 'short feasibility checkpoint; full take not run')
@@ -159,7 +158,7 @@ def package(ort, sherpa, out):
 
 def validate_short_comparison_receipt(run):
     plan = run['frozen']
-    sources = {'tools/encoder_probe.py','tools/encoder_conversion.py',WRAPPER_SOURCE,
+    sources = {'tools/encoder_probe.py','tools/encoder_conversion.py',
                'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts'}
     model = {'encoder.onnx':'2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725',

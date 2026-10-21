@@ -22,8 +22,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Stage 2 of the experiment loop (docs/autoresearch.md): runs the variant that tools/phone
- * push-variant put under files/lab/ through the app's own classes (Pipeline, VadSegmenter,
+ * Stage 2 of the experiment loop: runs the variant that `phone push DIR`
+ * put under files/lab/ through the app's own classes (Pipeline, VadSegmenter,
  * TakeTranscriber) on the takes saved in files/benchmark, and writes files/lab/result.json:
  * chunk texts and decode times for every take (fed unpaced, 640 samples at a time, like the
  * laptop twin), a paced run of the longest and the shortest take for the wait after Stop,
@@ -57,7 +57,7 @@ class LabTest {
         val takes = takesDir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
         val variantFile = File(labDir, "variant.json")
-        assumeTrue("no files/lab/variant.json: run tools/phone push-variant first", variantFile.isFile)
+        assumeTrue("no files/lab/variant.json: run phone push DIR first", variantFile.isFile)
         val v = Variant.parse(variantFile.readText())
         val out = JSONObject().put("variant", JSONObject(variantFile.readText())).put("side", "phone")
         // The new release requires measured content identities before any inference.

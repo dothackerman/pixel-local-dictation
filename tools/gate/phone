@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# The only path that may talk to the phone. Runs the tools/phone committed on
+# GitHub main, never the worktree copy (ADR-024). Merge = authorization to run.
+set -euo pipefail
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+if ! git -C "$root" fetch -q origin main 2>/dev/null; then
+  echo 'failed: cannot reach origin to read main:tools/phone' >&2
+  exit 1
+fi
+cd "$root"
+git show FETCH_HEAD:tools/phone | exec python3 -I - "$@"

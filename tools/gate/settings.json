@@ -1,0 +1,66 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(adb:*)",
+      "Bash(fastboot:*)",
+      "Bash(*platform-tools/adb*)",
+      "Bash(*platform-tools/fastboot*)",
+      "Bash(sudo:*)",
+      "Edit(/.claude/hooks/**)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.codex/**)",
+      "Edit(/.git/**)",
+      "Edit(/tools/git-hooks/**)",
+      "Edit(/AGENTS.md)",
+      "Edit(/CLAUDE.md)"
+    ],
+    "allow": [
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone help)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone status)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone device)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone app)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone crash)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone logs:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone pull:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone push:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone snapshot:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "project_root=$(git rev-parse --show-toplevel) || exit 2; bash \"$project_root/.claude/hooks/phone-guard.sh\" || exit 2",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone *"
+    ],
+    "filesystem": {
+      "denyWrite": [
+        "./.claude",
+        "./.codex",
+        "./.git",
+        "./tools/git-hooks",
+        "./AGENTS.md",
+        "./CLAUDE.md"
+      ],
+      "denyRead": [
+        "~/.android",
+        "~/Android/Sdk/platform-tools"
+      ]
+    }
+  }
+}

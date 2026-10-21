@@ -126,26 +126,24 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 
 ## Phone lab operations
 
-Use this checkout's protected `tools/phone` wrapper, resolved to its exact
-absolute path, with one subcommand per shell call. Its `help` subcommand defines the command grammar.
-Read-only inspection is the default. Installation, uninstallation and app-scoped
-lab writes or tests need authorization for the current task. They are restricted
-to `ch.og.dictation`. [AGENTS.md](AGENTS.md) defines the full boundary.
+Reach the phone only through `.claude/hooks/phone <verb> …` (absolute path in
+[AGENTS.md](AGENTS.md)). The shim runs the `tools/phone` committed on GitHub
+`main`, so a wrapper change becomes active when its pull request is merged.
+`phone help` lists the verbs: read-only `status`, `device`, `app`, `logs`,
+`crash`; app-scoped `install`, `push`, `pull`, `run`, `stop`; `snapshot` and
+`restore` for returning to a baseline; `uninstall` behind a user token.
+Everything is restricted to `ch.og.dictation`; [ADR-024](adrs/024-phone-access-rewrite.md)
+is the contract and lists what `restore` cannot bring back (microphone grant,
+IME enablement, FUTO toggles).
 
-For phone lab preparation, APK compatibility and recovery, read
-[ADR-009](adrs/009-phone-recovery.md). It defines the recovery boundary and the
-unresolved commitment to return to a release build.
+Typical experiment: `snapshot baseline` → `install APP.apk TEST.apk` → `push DIR`
+→ `run ch.og.dictation.LabTest k=v` → `pull files/lab` → `restore baseline`.
+Each mutating verb writes `corpus/lab/runs/<ts>-<verb>/meta.json` with the
+installed APK and lab hashes; experiments bind their receipts to that.
+Pulled files stay in gitignored `corpus/`.
 
-If recovery fails or is interrupted, keep its journal. Inspect the state and
-recover before staging again. Keep lab and profile JSON in `corpus/`.
-To change the protected wrapper, prepare a proposal outside its path and have it
-reviewed. The user applies the change manually; then verify it.
-
-At the start of a fresh session, verify trusted hooks and filesystem protections.
-Approvals apply to one checkout. Hooks are guardrails, not isolation: terminal
-input and specialized tools can bypass them, and escalation bypasses the sandbox.
-Claude’s live filesystem enforcement remains unverified.
-`python3 tools/test_agent_guard.py` runs synthetic guard checks.
+Hooks are fast-fails; the sandbox is the boundary. `python3 tools/test_agent_guard.py`
+and `python3 tools/test_phone.py` run the synthetic checks without a phone.
 
 ## Evaluation
 
