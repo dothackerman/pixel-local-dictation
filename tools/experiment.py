@@ -21,6 +21,12 @@ PROTOCOL = "dictation-session-replay-v1"
 DIFFERENCES = {"build_sha256", "test_build_sha256", "runtime_sha256",
                "model_sha256", "configuration_sha256"}
 IDENTITIES = set(evidence.IDENTITY) | DIFFERENCES | {"dictionary_sha256"}
+# Encoder backend per comparison kind: (control, candidate).
+ENCODERS = {"conversion-parity": ("onnx-cpu", "litert-fp32-cpu"), "gpu-wait": ("onnx-cpu", "litert-fp32-gpu"),
+            "runtime-parity": ("onnx-cpu", "onnx-cpu")}
+# runtime-parity: the APK's ORT core, legacy 1.28.2 (stock Sherpa) vs official 1.31.0 (tools/ort131-sherpa).
+RUNTIME_CORES = ("33847ad43bffe204699fd4a27f7f3603452a8cdaf2f9a44983a0bc31ffcf2da1",
+                 "8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0")
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -190,7 +196,7 @@ def save_report(path, result, root=ROOT):
 
 def plan_errors(plan):
     errors = []
-    if plan.get("schema") != 1 or plan.get("kind") not in ("conversion-parity", "gpu-wait"):
+    if plan.get("schema") != 1 or plan.get("kind") not in ENCODERS:
         errors.append("unsupported comparison plan")
     if plan.get("policy_status") != "approved":
         errors.append("decision thresholds have not been approved")
@@ -230,10 +236,12 @@ def plan_errors(plan):
                 not all(expected.get("device", {}).get(k) for k in ("model", "osBuild"))):
             errors.append("freeze observed device, artifacts and inputs")
         execution = expected.get("execution", {})
-        encoder = ("onnx-cpu" if run["setup"] == control else
-                   "litert-fp32-gpu" if plan["kind"] == "gpu-wait" else "litert-fp32-cpu")
+        side = 0 if run["setup"] == control else 1
+        encoder = ENCODERS.get(plan.get("kind"), ("", ""))[side]
         if execution.get("encoder") != encoder or execution.get("fallback") is not False:
             errors.append("freeze the intended encoder backend with fallback disabled")
+        if plan.get("kind") == "runtime-parity" and execution.get("runtime_core_sha256") != RUNTIME_CORES[side]:
+            errors.append("runtime parity needs the legacy 1.28.2 control and the 1.31.0 candidate core")
         if encoder == "litert-fp32-gpu" and execution.get("gpu_only") is not True:
             errors.append("GPU-only execution proof required")
         refs = expected.get("endpoint_references", {})
@@ -460,5 +468,7 @@ def _score(plan, reports, result):
                   cold_load_ms={run["id"]: reports[run["id"]]["report"]["coldLoadMs"] for run in plan["runs"]},
                   next="diagnose the invalid control; reconcile before a new matched comparison" if control_blockers else
                   "diagnose the failed gate" if rejected else
-                  "GPU wait comparison" if plan["kind"] == "conversion-parity" else "supervised full-flow validation")
+                  "GPU wait comparison" if plan["kind"] == "conversion-parity" else
+                  "in-pipeline ONNX WebGPU tensor and placement gate" if plan["kind"] == "runtime-parity" else
+                  "supervised full-flow validation")
     return result

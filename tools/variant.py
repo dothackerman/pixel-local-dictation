@@ -53,6 +53,9 @@ DEFAULT = {
 
 _TYPES = {
     "runtime.model_arena": bool, "runtime.model_pattern": bool, "runtime.lid_arena": bool, "runtime.lid_pattern": bool, "runtime.profile": bool,
+    # Optional, never defaulted, so resolved historical variants stay identical. "webgpu" puts only the
+    # Parakeet encoder on WebGPU in the patched ORT 1.31 phone build (tools/ort131-sherpa).
+    "runtime.encoder_provider": str,
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
@@ -115,6 +118,11 @@ def validate(v):
         raise VariantError("name must be a single token without spaces or slashes")
     if not 1 <= out["threads"] <= 8:
         raise VariantError("threads must be 1..8")
+    encoder = out["runtime"].get("encoder_provider", "cpu")
+    if encoder not in ("cpu", "webgpu"):
+        raise VariantError("runtime.encoder_provider must be cpu or webgpu")
+    if encoder == "webgpu" and out["family"] != "parakeet":
+        raise VariantError("runtime.encoder_provider webgpu is parakeet only")
     d = out["decoding"]
     if d["method"] not in ("greedy_search", "modified_beam_search"):
         raise VariantError("decoding.method must be greedy_search or modified_beam_search")

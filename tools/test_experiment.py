@@ -90,13 +90,17 @@ class CommandComparisonTests(unittest.TestCase):
         folder = Path(temp.name)
         plan, reports = fixture()
         plan.update(id=folder.name.replace("_", "-"), kind=kind)
-        if kind == "conversion-parity":
+        if kind in ("conversion-parity", "runtime-parity"):
             plan["runs"] = plan["runs"][:2]
             reports = {name: value for name, value in reports.items() if name.endswith("-0")}
             for run in plan["runs"]:
-                if run["setup"] == "C":
+                if kind == "runtime-parity":
+                    side = 0 if run["setup"] == plan["control"] else 1
+                    run["expected"]["execution"] = {"encoder": "onnx-cpu", "fallback": False,
+                                                    "runtime_core_sha256": experiment.RUNTIME_CORES[side]}
+                elif run["setup"] == "C":
                     run["expected"]["execution"] = {"encoder": "litert-fp32-cpu", "fallback": False}
-                    reports[run["id"]]["report"]["execution"] = run["expected"]["execution"]
+                reports[run["id"]]["report"]["execution"] = run["expected"]["execution"]
         else:
             plan["runs"] = [plan["runs"][i] for i in (0, 1, 3, 2)]
         for name in breaches:
@@ -120,7 +124,7 @@ class CommandComparisonTests(unittest.TestCase):
         return frozen
 
     def test_control_breaches_are_inconclusive_and_candidates_require_valid_controls(self):
-        for kind in ("conversion-parity", "gpu-wait"):
+        for kind in ("conversion-parity", "gpu-wait", "runtime-parity"):
             for breaches, decision in ((["A-0"], "inconclusive"), (["C-0"], "reject"),
                                        (["A-0", "C-0"], "inconclusive")):
                 with self.subTest(kind=kind, breaches=breaches):

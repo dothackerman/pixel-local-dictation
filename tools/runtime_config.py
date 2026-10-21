@@ -14,6 +14,8 @@ def set_profile_directory(path):
 def provider(v, role="model", profile_dir=None):
     profile_dir = profile_dir or _profile_dir
     settings = v["runtime"]
+    if settings.get("encoder_provider", "cpu") != "cpu":
+        raise ValueError("a WebGPU encoder runs only in the patched phone build, never on the laptop")
     arena, pattern = settings[role + "_arena"], settings[role + "_pattern"]
     if arena and pattern and not settings["profile"]:
         return "cpu"

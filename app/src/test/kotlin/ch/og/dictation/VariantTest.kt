@@ -80,4 +80,12 @@ class VariantTest {
             Variant.parse("""{"runtime":{"model_arena":"false"}}""")
         }
     }
+    @org.junit.Test fun encoderProviderIsCpuByDefaultAndWebgpuParakeetOnly() {
+        assertEquals("cpu", Variant.DEFAULT.runtime.encoderProvider)
+        assertEquals("webgpu", Variant.parse("""{"runtime":{"encoder_provider":"webgpu"}}""").runtime.encoderProvider)
+        for (bad in listOf("""{"runtime":{"encoder_provider":"gpu"}}""", """{"runtime":{"encoder_provider":true}}""",
+                """{"family":"whisper","cutting":{"max_chunk_s":28},"runtime":{"encoder_provider":"webgpu"}}""")) {
+            assertThrows(IllegalArgumentException::class.java) { Variant.parse(bad) }
+        }
+    }
 }

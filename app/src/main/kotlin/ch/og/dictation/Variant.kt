@@ -24,8 +24,10 @@ data class Variant(
     val cutting: Cutting = Cutting(),
     val post: Post = Post(),
 ) {
+    /** encoderProvider: "webgpu" puts only the Parakeet encoder on WebGPU (patched ORT 1.31 build). */
     data class Runtime(val modelArena: Boolean = true, val modelPattern: Boolean = true,
-        val lidArena: Boolean = true, val lidPattern: Boolean = true, val profile: Boolean = false)
+        val lidArena: Boolean = true, val lidPattern: Boolean = true, val profile: Boolean = false,
+        val encoderProvider: String = "cpu")
     data class Decoding(val method: String = "greedy_search", val maxActivePaths: Int = 4, val blankPenalty: Float = 0f)
     data class Whisper(val language: String = "", val tailPaddings: Int = -1)
     data class Qwen3(val maxTotalLen: Int = 1024, val maxNewTokens: Int = 256) {
@@ -53,7 +55,7 @@ data class Variant(
         val FAMILIES = setOf("parakeet", "whisper", "canary", "qwen3", "cohere")
         private val KEYS = mapOf(
             "" to setOf("schema", "name", "description", "family", "model", "threads", "runtime", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
-            "runtime" to setOf("model_arena", "model_pattern", "lid_arena", "lid_pattern", "profile"),
+            "runtime" to setOf("model_arena", "model_pattern", "lid_arena", "lid_pattern", "profile", "encoder_provider"),
             "decoding" to setOf("method", "max_active_paths", "blank_penalty"),
             "whisper" to setOf("language", "tail_paddings"),
             "qwen3" to setOf("max_total_len", "max_new_tokens"),
@@ -105,7 +107,11 @@ data class Variant(
                 family = family,
                 model = o.optString("model", def.model),
                 runtime = Runtime(runtimeBool("model_arena"), runtimeBool("model_pattern"),
-                    runtimeBool("lid_arena"), runtimeBool("lid_pattern"), runtimeBool("profile")),
+                    runtimeBool("lid_arena"), runtimeBool("lid_pattern"), runtimeBool("profile"),
+                    if (rt.has("encoder_provider")) {
+                        require(rt.get("encoder_provider") is String) { "runtime.encoder_provider must be a string" }
+                        rt.getString("encoder_provider")
+                    } else "cpu"),
                 threads = o.optInt("threads", def.threads),
                 decoding = Decoding(d.optString("method", def.decoding.method), d.optInt("max_active_paths", def.decoding.maxActivePaths),
                     d.f("blank_penalty", def.decoding.blankPenalty)),
@@ -134,6 +140,8 @@ data class Variant(
     private fun validate() {
         require(family in FAMILIES) { "family must be one of $FAMILIES" }
         require(threads in 1..8) { "threads must be 1..8" }
+        require(runtime.encoderProvider in setOf("cpu", "webgpu")) { "runtime.encoder_provider must be cpu or webgpu" }
+        require(runtime.encoderProvider == "cpu" || family == "parakeet") { "runtime.encoder_provider webgpu is parakeet only" }
         require(decoding.method in setOf("greedy_search", "modified_beam_search")) { "decoding.method" }
         require(decoding.maxActivePaths in 1..32) { "decoding.max_active_paths must be 1..32" }
         with(cutting) {

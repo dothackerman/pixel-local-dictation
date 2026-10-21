@@ -18,6 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Official ORT 1.31.0 arm64 core (tools/ort131-sherpa/build.py). */
+private const val ORT131_CORE_SHA256 = "8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0"
+
 /** Separate diagnostic protocol. LabTest's historical full-run procedure remains available. */
 class MeasurementRun(private val context: Context, private val lab: File) {
     /** Preflight only: keep hashing outside the historical load/timing sequence. */
@@ -108,6 +111,19 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         val variant = Variant.parse(rawVariant)
         val expectedProvenance = manifest.getJSONObject("provenance")
         val buildSha = sha(File(context.applicationInfo.sourceDir))
+        // The ORT core the app actually loads; a WebGPU encoder needs the patched 1.31 runtime,
+        // whose JNI rejects unknown providers (the stock 1.28 JNI would silently run CPU).
+        val runtimeCore = java.util.zip.ZipFile(context.applicationInfo.sourceDir).use { apk ->
+            apk.getInputStream(apk.getEntry("lib/arm64-v8a/libonnxruntime.so")).use { stream ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(1 shl 20)
+                while (true) { val n = stream.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        }
+        require(variant.runtime.encoderProvider != "webgpu" || runtimeCore == ORT131_CORE_SHA256) {
+            "WebGPU encoder requires the ORT 1.31 runtime build"
+        }
         val testBuildSha = instrumentationSha()
         require(buildSha == expectedProvenance.getString("build_sha256"))
         require(testBuildSha == expectedProvenance.getString("test_build_sha256"))
@@ -139,7 +155,8 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             .put("buildSha256", buildSha).put("testBuildSha256", testBuildSha)
             .put("runId", runId).put("processStartId", processStart)
             .put("sessionProtocol", "dictation-session-replay-v1")
-            .put("execution", JSONObject().put("encoder", "onnx-cpu").put("fallback", false))
+            .put("execution", JSONObject().put("encoder", "onnx-${variant.runtime.encoderProvider}").put("fallback", false)
+                .put("runtime_core_sha256", runtimeCore))
             .put("device", JSONObject().put("model", android.os.Build.MODEL).put("osBuild", android.os.Build.FINGERPRINT))
         val events = JSONArray()
         var droppedEvents = 0
