@@ -332,6 +332,15 @@ class AdapterArgvTests(unittest.TestCase):
             device.shell('id')
         self.assertEqual(len(runner.argv), 2)
 
+    def test_unauthorized_phone_failure_names_its_state_not_its_serial(self):
+        device, runner = self.device({'devices': (0, 'List of devices attached\nSECRET9\tunauthorized\n', '')})
+        with self.assertRaises(phone.Failed) as caught:
+            device.shell('id')
+        message = str(caught.exception)
+        self.assertIn('unauthorized', message)
+        self.assertIn('USB debugging', message)
+        self.assertNotIn('SECRET9', message)
+
     def test_tar_validation_rejects_traversal_links_and_foreign_dirs(self):
         phone.validate_tar(tar_bytes({'files/lab/a': b'1', 'shared_prefs/x.xml': b'2'}))
         for bad in ({'files/../x': b''}, {'/files/x': b''}, {'cache/x': b''}):

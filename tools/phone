@@ -103,8 +103,12 @@ class Device:
         if self.serial:
             return
         rows = [line.split() for line in self.run('devices').splitlines()[1:] if line.strip()]
-        if len(rows) != 1 or rows[0][1:2] != ['device']:
+        if len(rows) != 1:
             raise Failed('need exactly one authorized phone; found %d' % len(rows))
+        state = (rows[0][1:2] or ['unknown'])[0]
+        if state != 'device':
+            hint = ' (accept the USB debugging prompt on the phone)' if state == 'unauthorized' else ''
+            raise Failed('phone state is %s, not device%s' % (state, hint))
         self.serial = rows[0][0]
         if self.shell('getprop ro.product.model').strip() != MODEL:
             self.serial = None
