@@ -4,4 +4,6 @@ Phone (GrapheneOS Pixel 10 Pro XL): only through `/home/oriol/Projects/private/p
 
 Never call adb or fastboot directly, weaken phone security, or change phone settings, FUTO Keyboard or other apps. The app has no network permission; keep it that way.
 
+Git: run `git …` as the whole command line (no `cd … &&`, no pipe); it then runs outside the sandbox, which otherwise pins `.git` read-only. Plain git only: no `-c`, `-C`, `--git-dir`, `--exec-path` or `GIT_*` variables.
+
 Pulled files and recordings stay in gitignored `corpus/`; copy nothing out of it without the user's agreement. Keep recordings, transcripts and signing credentials out of Git.

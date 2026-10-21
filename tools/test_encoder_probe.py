@@ -431,6 +431,12 @@ class PipelinePlacementTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     probe().pipeline_listing(lines)
 
+    def test_dropped_webgpu_summary_line_is_identified_by_partial_cpu_listing(self):
+        # ADR-023 amendment 2: logd may drop the WebGPU summary; only the encoder session splits.
+        listing = probe().pipeline_listing(self.LINES[:3] + self.LINES[4:])
+        self.assertEqual({'CPUExecutionProvider': 2}, {k: v['declared'] for k, v in listing['providers'].items()})
+        self.assertTrue(probe().placement_check(listing, PlacementCheckTests.STEPS)['passed'])
+
     def test_all_nodes_on_webgpu_means_no_cpu_steps(self):
         listing = probe().pipeline_listing([self.V + 'All nodes placed on [WebGpuExecutionProvider]. Number of nodes: 9'])
         self.assertEqual({'WebGpuExecutionProvider': 9}, {k: v['declared'] for k, v in listing['providers'].items()})

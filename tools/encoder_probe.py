@@ -474,7 +474,9 @@ PREFERRED = re.compile(r'Force fallback to CPU execution for node: (.*?) because
 def pipeline_listing(lines):
     """Encoder placement from raw ORT lines of one Sherpa recognizer creation. Only the encoder
     session has WebGPU; decoder/joiner are CPU-only ("All nodes placed on [CPU…]") and ignored.
-    Cause lines come only from the WebGPU provider, hence only from the encoder session."""
+    Cause lines come only from the WebGPU provider, hence only from the encoder session.
+    logd may drop the WebGPU summary line (ADR-023 amendment 2); a partial CPU listing then
+    still identifies the encoder session, as only it has two providers."""
     providers, missing, preferred, webgpu = {}, [], [], 0
     for line in lines:
         if (m := MISSING.search(line)):
@@ -489,7 +491,8 @@ def pipeline_listing(lines):
                 continue  # a CPU-only session (decoder or joiner)
             _check(provider not in providers, 'repeated partial placement for ' + provider)
             providers[provider] = {'declared': count, 'all': kind == 'All nodes', 'nodes': []}
-    _check(webgpu == 1, 'expected exactly one WebGPU encoder session listing, found %d' % webgpu)
+    _check(webgpu == 1 or (webgpu == 0 and 'CPUExecutionProvider' in providers),
+           'expected exactly one WebGPU encoder session listing, found %d' % webgpu)
     return {'complete': True, 'providers': providers, 'causes': {'kernel_not_found': missing, 'cpu_preferred': preferred}}
 
 
