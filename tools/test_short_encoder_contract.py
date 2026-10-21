@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from test_phone import DiagnosticPhone
 
-SOURCE = Path(__file__).with_name('proposals') / 'phone-short-encoder-v2.py'
+SOURCE = Path(__file__).with_name('proposals') / 'phone-short-encoder-v3.py'
 loader = importlib.machinery.SourceFileLoader('short_encoder_proposal', str(SOURCE))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 phone = importlib.util.module_from_spec(spec)
@@ -61,7 +61,7 @@ class ShortPhone(DiagnosticPhone):
             if self.mode == 'drift':
                 (self.root / 'lab/unexpected.bin').write_bytes(b'unknown generated data')
             return 'INSTRUMENTATION_STATUS_CODE: 0\nOK (1 test)\nINSTRUMENTATION_CODE: -1'
-        result = dict(schema=1, protocol='short-encoder-v1', attempt_id=short_encoder_attempt,
+        result = dict(schema=1, protocol=plan['protocol'], attempt_id=short_encoder_attempt,
             eligible=False, scope='short synthetic feasibility only; full-take checks not run',
             outcome='complete', checkpoint='outputs-materialized', pid=100 + self.calls,
             processStartElapsedMs=1000 + self.calls, freeze_sha256=sha(config.read_bytes()), frozen=plan,
@@ -69,7 +69,8 @@ class ShortPhone(DiagnosticPhone):
             runtime_version='1.31.0', runtime_core_sha256=plan['runtime']['core_sha256'],
             runtime_jni_sha256=plan['runtime']['jni_sha256'], optimization='ALL_OPT',
             execution_mode='SEQUENTIAL', intra_op_threads=4, inter_op_threads=1, profiling=False,
-            cpu_fallback_disabled=plan['provider']=='webgpu', initialization_elapsed_ms=1.0,
+            cpu_fallback_disabled=plan['provider']=='webgpu' and plan['protocol']=='short-encoder-v1',
+            initialization_elapsed_ms=1.0,
             initialization_complete=True, cold_load_ms=1.0, run_to_host_output_ms=2.0,
             adapter_driver_proof='unproven', fp32_shader_proof='unproven', residual_node_assignment='unproven',
             memory=[dict(phase=p, pssKb=100, highWaterKb=200, thermalStatus=0)
@@ -77,6 +78,29 @@ class ShortPhone(DiagnosticPhone):
         if plan['provider'] == 'webgpu':
             result['provider_options'] = dict(enableGraphCapture='0', enableInt64='1',
                                              preferredLayout='NCHW', dawnBackendType='Vulkan')
+        if (plan['protocol'] == 'short-encoder-v2' and plan['provider'] == 'webgpu'
+                and self.mode not in ('v2-unlisted', 'failed', 'artifact-failed')):
+            listing = self.placement(plan, config, short_encoder_attempt)
+            result.update({key: listing[key] for key in ('placement','placement_read_ms','residual_node_assignment')})
+        if self.mode == 'v2-strict':
+            result['cpu_fallback_disabled'] = True
+        if self.mode == 'v2-incomplete':
+            result['placement']['providers']['CPUExecutionProvider']['declared'] = 3
+            result['placement']['complete'] = False
+            result['residual_node_assignment'] = 'incomplete'
+        if self.mode == 'v2-run-failed':
+            result.update(outcome='failed', checkpoint='run-and-host-output', failure='fabricated unsupported kernel',
+                          run_to_failure_ms=2.5)
+            for key in ('outputs','run_to_host_output_ms'):
+                result.pop(key,None)
+        if self.mode == 'v2-claimed':
+            result.pop('placement')
+            result.update(outcome='failed', checkpoint='session-create', failure='fabricated failure',
+                          initialization_complete=False)
+        if self.mode == 'v2-overflow':
+            result['placement_read_ms'] = 10**400
+        if self.mode == 'v2-cpu-listed':
+            result['placement'] = self.placement(plan, config, short_encoder_attempt)['placement']
         result['outputs'] = [dict(file=name, dtype=dtype, shape=shape, sha256=sha(data),
             raw_base64=base64.b64encode(data).decode()) for name,dtype,shape,data in (
             ('encoder-probe-output0.f32','FLOAT',[1,1024,3],bytes(12288)),
@@ -172,8 +196,8 @@ class ShortContractTests(unittest.TestCase):
             sources={name:'a'*64 for name in ('tools/encoder_probe.py','tools/encoder_conversion.py',
                 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                 'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts',
-                'tools/proposals/phone-short-encoder-v2.py')})
-        self.plan['sources']['tools/proposals/phone-short-encoder-v2.py']=sha(SOURCE.read_bytes())
+                'tools/proposals/phone-short-encoder-v3.py')})
+        self.plan['sources']['tools/proposals/phone-short-encoder-v3.py']=sha(SOURCE.read_bytes())
         # Only the fake-device test process translates this fixed public model
         # pin to fabricated bytes. Production has no override or extra model route.
         model_policy=patch.object(phone,'SHORT_MODEL',dict(self.plan['model']))
@@ -196,7 +220,7 @@ class ShortContractTests(unittest.TestCase):
         self.assertEqual(1,self.device.calls)
         exported=self.command('pull-results','short-one')
         value=json.loads(Path(exported['path']).read_text())
-        self.assertEqual('short-encoder-v1',value['protocol'])
+        self.assertEqual(self.plan['protocol'],value['protocol'])
         self.assertEqual('complete',value['outcome'])
         self.assertFalse(value['profiling'])
         self.assertFalse(self.command('inspect')['recovery']['profile_complete'])
@@ -338,6 +362,42 @@ class PlacementContractTests(ShortContractTests):
     test_disconnect_after_recorded_success_can_retrieve_first_valid_receipt = None
     test_native_and_artifact_failures_are_preserved_without_role_profile_or_retry = None
     test_changed_result_after_completion_is_unresolved_and_original_export_survives = None
+
+class ShortV2ContractTests(ShortContractTests):
+    """short-encoder-v2: v1 receipts, but WebGPU runs non-strict with its placement listing."""
+    def use(self, provider):
+        self.plan.update(protocol='short-encoder-v2', provider=provider)
+        (self.source/'encoder-probe.json').write_text(json.dumps(self.plan))
+
+    def setUp(self):
+        super().setUp()
+        self.use('webgpu')
+
+    def test_cpu_and_webgpu_runs_complete_with_outputs_and_recover(self):
+        for provider in ('cpu', 'webgpu'):
+            with self.subTest(provider=provider):
+                self.setUp(); self.use(provider); self.stage()
+                self.assertEqual('complete', self.command('lab','short-one',str(self.packages[2]))['outcome'])
+                value = json.loads(Path(self.command('pull-results','short-one')['path']).read_text())
+                self.assertEqual(('short-encoder-v2', False, 2),
+                                 (value['protocol'], value['cpu_fallback_disabled'], len(value['outputs'])))
+                self.assertEqual(provider == 'webgpu', 'placement' in value)
+                self.command('recover','short-one');self.restored()
+
+    def test_incomplete_listing_and_failure_after_listing_are_accepted(self):
+        for mode, outcome in (('v2-incomplete','complete'), ('v2-run-failed','failed')):
+            with self.subTest(mode=mode):
+                self.setUp(); self.device.mode = mode; self.stage()
+                self.assertEqual(outcome, self.command('lab','short-one',str(self.packages[2]))['outcome'])
+                self.command('recover','short-one');self.restored()
+
+    def test_unlisted_strict_or_cpu_listing_stays_unresolved(self):
+        for provider, mode in (('webgpu','v2-unlisted'), ('webgpu','v2-strict'), ('cpu','v2-cpu-listed'),
+                               ('webgpu','v2-claimed'), ('webgpu','v2-overflow')):
+            with self.subTest(mode=mode):
+                self.setUp(); self.use(provider); self.device.mode = mode; self.stage()
+                self.assertEqual('unresolved-execution', self.command('lab','short-one',str(self.packages[2]))['outcome'])
+                self.command('recover','short-one');self.restored()
 
 def load_tests(loader, tests, pattern):
     # Bind the entire historical fixture to the proposal, including its exception

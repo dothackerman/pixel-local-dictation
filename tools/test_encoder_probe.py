@@ -81,7 +81,7 @@ class ProbePreparationTests(unittest.TestCase):
             manifest = json.loads((folder / 'placement/encoder-probe.json').read_text())
             self.assertEqual(('encoder-placement-v1', 'webgpu', 'placement listing only; Run not executed'),
                              (manifest['protocol'], manifest['provider'], manifest['scope']))
-            self.assertIn('tools/proposals/phone-short-encoder-v2.py', manifest['sources'])
+            self.assertIn('tools/proposals/phone-short-encoder-v3.py', manifest['sources'])
 
     def test_direct_tensor_comparison_keeps_android_reference_scale_and_never_advances(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -115,7 +115,7 @@ class ProbePreparationTests(unittest.TestCase):
                                   "encoder.weights":"9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36"},
                         "builds": {"app_sha256": "a"*64, "test_sha256": "b"*64},
                         "runtime": runtime, "sources": {key:"a"*64 for key in ('tools/encoder_probe.py','tools/encoder_conversion.py',
-                            'tools/proposals/phone-short-encoder-v2.py','app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+                            'tools/proposals/phone-short-encoder-v3.py','app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                             'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts')}},
                     "build_sha256": "a"*64, "test_build_sha256": "b"*64,
                     "runtime_core_sha256":runtime['core_sha256'],"runtime_jni_sha256":runtime['jni_sha256'],
@@ -183,6 +183,32 @@ class ProbePreparationTests(unittest.TestCase):
             corrupted = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(0, corrupted.returncode)
             self.assertIn("output changed", corrupted.stderr)
+
+class PlacementCheckTests(unittest.TestCase):
+    """ADR-023 as amended, on fabricated listings; graph types are given, not parsed."""
+    STEPS = {'/Gather': ('Gather', [7, 7, 7]), '/Unsqueeze': ('Unsqueeze', [7, 7, 7]),
+             '/MatMul': ('MatMul', [1, 1, 1]), '/Where': ('Where', [9, 1, 1, 1])}
+
+    def listing(self, missing, preferred, declared, webgpu=2):
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import encoder_probe
+        return encoder_probe.placement_check(
+            {'providers': {'CPUExecutionProvider': {'declared': declared, 'all': False, 'nodes': []},
+                           'WebGpuExecutionProvider': {'declared': webgpu, 'all': False, 'nodes': []}},
+             'causes': {'kernel_not_found': [['Gather', name] for name in missing], 'cpu_preferred': preferred}},
+            self.STEPS)
+
+    def test_shape_work_named_by_causes_with_matching_count_passes(self):
+        result = self.listing(['/Gather'], ['/Unsqueeze'], 2)
+        self.assertTrue(result['passed'], result['failures'])
+
+    def test_count_mismatch_duplicate_unknown_or_tensor_math_fails(self):
+        for missing, preferred, declared in ((['/Gather'], ['/Unsqueeze'], 3), (['/Gather'], ['/Gather'], 2),
+                                             (['/Gone'], [], 1), ([], ['/MatMul'], 1), ([], ['/Where'], 1),
+                                             ([], [''], 1), (['/MatMul'], [], 1)):
+            with self.subTest(missing=missing, preferred=preferred, declared=declared):
+                self.assertFalse(self.listing(missing, preferred, declared)['passed'])
+        self.assertFalse(self.listing(['/Gather'], ['/Unsqueeze'], 2, webgpu=0)['passed'])
 
 if __name__ == '__main__':
     unittest.main()

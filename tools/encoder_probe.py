@@ -32,7 +32,57 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2) + '\n')
 
 PLACEMENT = 'encoder-placement-v1'
-WRAPPER_SOURCE = 'tools/proposals/phone-short-encoder-v2.py'
+SHORT_V2 = 'short-encoder-v2'
+WRAPPER_SOURCE = 'tools/proposals/phone-short-encoder-v3.py'
+SHAPE_TYPES = {6, 7, 9}  # ONNX INT32, INT64, BOOL
+
+
+def placement_check(listing, steps):
+    """ADR-023 as amended: cause lines name every CPU step (count equals ORT's
+    declared CPU total) and each CPU step touches only integer/bool tensors.
+    `steps` maps original node name -> (op type, [element types of inputs+outputs])."""
+    providers = listing['providers']
+    names = [name for _, name in listing['causes']['kernel_not_found']] + list(listing['causes']['cpu_preferred'])
+    declared = providers.get('CPUExecutionProvider', {}).get('declared', 0)
+    failures = []
+    if set(providers) - {'CPUExecutionProvider', 'WebGpuExecutionProvider'}:
+        failures.append('unexpected provider')
+    if providers.get('WebGpuExecutionProvider', {}).get('declared', 0) <= 0:
+        failures.append('no WebGPU placement declared')
+    if '' in names:
+        failures.append('unnamed CPU step cannot be identified')
+    for op, name in listing['causes']['kernel_not_found']:
+        if name in steps and steps[name][0] != op:
+            failures.append('cause op %s differs from graph op for %s' % (op, name))
+    if len(set(names)) != len(names) or len(names) != declared:
+        failures.append('cause lines name %d steps (%d unique); ORT declared %d' % (len(names), len(set(names)), declared))
+    for name in sorted(set(names)):
+        if name not in steps:
+            failures.append('CPU step not in original graph: ' + name)
+        elif any(kind not in SHAPE_TYPES for kind in steps[name][1]):
+            failures.append('CPU step touches non-shape tensor: %s (%s)' % (name, steps[name][0]))
+    return {'passed': not failures, 'cpu_steps': declared,
+            'kernel_not_found': len(listing['causes']['kernel_not_found']),
+            'cpu_preferred': len(listing['causes']['cpu_preferred']),
+            'webgpu_steps': providers.get('WebGpuExecutionProvider', {}).get('declared', 0),
+            'failures': failures[:20]}
+
+
+def graph_steps(model):
+    """Node name -> (op type, inferred element types); unknown types count as 0 (fail)."""
+    import onnx
+    graph = onnx.shape_inference.infer_shapes(onnx.load(str(model), load_external_data=False)).graph
+    kinds = {value.name: value.type.tensor_type.elem_type
+             for value in list(graph.value_info) + list(graph.input) + list(graph.output)}
+    kinds.update({tensor.name: tensor.data_type for tensor in graph.initializer})
+    steps, duplicates = {}, set()
+    for node in graph.node:
+        if node.name in steps:
+            duplicates.add(node.name)
+        steps[node.name] = (node.op_type, [kinds.get(name, 0) for name in list(node.input) + list(node.output) if name])
+    for name in duplicates | {''}:
+        steps.pop(name, None)  # Ambiguous names cannot identify a CPU step.
+    return steps
 
 def freeze(model, out, app_apk, test_apk, provider="cpu", protocol='short-encoder-v1'):
     if protocol == PLACEMENT and provider != 'webgpu':
@@ -119,10 +169,12 @@ def validate_short_comparison_receipt(run):
     runtime = dict(version='1.31.0',official_aar_sha256=ORT_SHA,core_sha256=CORE_SHA,jni_sha256=JNI_SHA,source_commit=SOURCE_COMMIT)
     fields = {'schema','protocol','input_kind','shape','true_length','provider','eligible','scope',
               'atol','rtol','model','builds','inputs','staging_envelope','runtime','sources'}
-    if (run.get('protocol') != 'short-encoder-v1' or type(run.get('schema')) is not int or run['schema'] != 1
+    listed = run.get('protocol') == SHORT_V2 and plan.get('provider') == 'webgpu'
+    if (run.get('protocol') not in ('short-encoder-v1', SHORT_V2) or run.get('protocol') != plan.get('protocol')
+            or type(run.get('schema')) is not int or run['schema'] != 1
             or run.get('eligible') is not False or not re.fullmatch('[0-9a-f]{32}',run.get('attempt_id',''))
             or not re.fullmatch('[0-9a-f]{64}',run.get('freeze_sha256',''))
-            or plan.get('protocol') != 'short-encoder-v1' or plan.get('schema') != 1
+            or plan.get('schema') != 1
             or set(plan) != fields or plan.get('eligible') is not False
             or plan.get('input_kind') != 'synthetic silence; no recordings'
             or plan.get('scope') != 'short feasibility checkpoint; full take not run'
@@ -133,10 +185,12 @@ def validate_short_comparison_receipt(run):
             or set(plan.get('sources',{})) != sources
             or any(not re.fullmatch('[0-9a-f]{64}',value) for value in plan['sources'].values())
             or any(type(run.get(k)) is not int or run[k] < (1 if k=='pid' else 0) for k in ('pid','processStartElapsedMs'))
-            or any(run.get(k) != 'unproven' for k in ('adapter_driver_proof','fp32_shader_proof','residual_node_assignment'))
+            or any(run.get(k) != 'unproven' for k in ('adapter_driver_proof','fp32_shader_proof'))
+            or run.get('residual_node_assignment') not in (('listed','incomplete') if listed else ('unproven',))
+            or listed != ('placement' in run)
             or run.get('checkpoint') != 'outputs-materialized' or run.get('initialization_complete') is not True):
         raise ValueError('unsupported typed short encoder receipt or frozen inputs')
-    if run.get('cpu_fallback_disabled') is not (plan['provider']=='webgpu'):
+    if run.get('cpu_fallback_disabled') is not (plan['provider']=='webgpu' and plan['protocol']=='short-encoder-v1'):
         raise ValueError('short encoder fallback policy differs')
     if plan['provider']=='webgpu' and run.get('provider_options') != dict(enableGraphCapture='0',enableInt64='1',preferredLayout='NCHW',dawnBackendType='Vulkan'):
         raise ValueError('short encoder WebGPU options differ')
@@ -164,7 +218,7 @@ def validate_short_comparison_receipt(run):
             raise ValueError('short encoded length differs')
 
 
-def compare(reference, candidate):
+def compare(reference, candidate, model=None):
     import numpy as np
     from encoder_conversion import tensor_verdict
     runs = []
@@ -226,10 +280,14 @@ def compare(reference, candidate):
     for field in ('builds', 'runtime', 'sources', 'inputs', 'model'):
         if not common_frozen[0].get(field):
             raise ValueError('missing frozen ' + field)
-    print(json.dumps({'eligible': False, 'tensor_verdict': tensor_verdict(runs[0][1], runs[1][1]),
-                      'reference': 'Android ORT 1.31 CPU', 'candidate': 'Android ORT 1.31 WebGPU',
-                      'receipt_sha256': hashes, 'physical_fp32_proof': 'unproven',
-                      'full_take': 'not run'}))
+    report = {'eligible': False, 'tensor_verdict': tensor_verdict(runs[0][1], runs[1][1]),
+              'reference': 'Android ORT 1.31 CPU', 'candidate': 'Android ORT 1.31 WebGPU',
+              'receipt_sha256': hashes, 'physical_fp32_proof': 'unproven', 'full_take': 'not run'}
+    if runs[1][0]['protocol'] == SHORT_V2:
+        if model is None or sha(model) != runs[1][0]['frozen']['model']['encoder.onnx']:
+            raise ValueError('short-encoder-v2 placement check needs --model with the frozen encoder.onnx')
+        report['placement_check'] = placement_check(runs[1][0]['placement'], graph_steps(model))
+    print(json.dumps(report))
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -240,7 +298,7 @@ def main():
     frozen.add_argument('--app-apk', type=Path, required=True)
     frozen.add_argument('--test-apk', type=Path, required=True)
     frozen.add_argument('--provider', choices=('cpu', 'webgpu'), default='cpu')
-    frozen.add_argument('--protocol', choices=('short-encoder-v1', PLACEMENT), default='short-encoder-v1')
+    frozen.add_argument('--protocol', choices=('short-encoder-v1', SHORT_V2, PLACEMENT), default='short-encoder-v1')
     packaged = commands.add_parser('package')
     packaged.add_argument('--ort-aar', type=Path, required=True)
     packaged.add_argument('--sherpa-aar', type=Path, required=True)
@@ -248,12 +306,24 @@ def main():
     compared = commands.add_parser('compare')
     compared.add_argument('--reference', type=Path, required=True)
     compared.add_argument('--candidate', type=Path, required=True)
+    compared.add_argument('--model', type=Path, help='frozen encoder.onnx; required for short-encoder-v2')
+    checked = commands.add_parser('placement-check', help='ADR-023 check of one placement or v2 WebGPU receipt')
+    checked.add_argument('--receipt', type=Path, required=True)
+    checked.add_argument('--model', type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == 'freeze':
             freeze(args.model, args.out, args.app_apk, args.test_apk, args.provider, args.protocol)
         elif args.command == 'compare':
-            compare(args.reference, args.candidate)
+            compare(args.reference, args.candidate, args.model)
+        elif args.command == 'placement-check':
+            run = json.loads(args.receipt.read_text())
+            if (run.get('outcome') != 'complete' or run.get('protocol') not in (PLACEMENT, SHORT_V2)
+                    or run.get('residual_node_assignment') not in ('listed', 'incomplete')):
+                raise ValueError('needs a complete placement or short-encoder-v2 WebGPU receipt')
+            if sha(args.model) != run['frozen']['model']['encoder.onnx']:
+                raise ValueError('model differs from the receipt freeze')
+            print(json.dumps(placement_check(run['placement'], graph_steps(args.model))))
         else:
             package(args.ort_aar, args.sherpa_aar, args.out)
     except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile) as error:

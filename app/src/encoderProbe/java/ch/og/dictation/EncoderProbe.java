@@ -54,7 +54,11 @@ public final class EncoderProbe {
                 out.put("protocol", PLACEMENT).put("scope", "placement listing only; Run not executed");
                 out.remove("residual_node_assignment");
             }
-            require((placement || plan.getString("protocol").equals("short-encoder-v1")) &&
+            // short-encoder-v2: WebGPU under the ADR-023 placement check, then Run.
+            boolean v2 = plan.getString("protocol").equals(SHORT_V2);
+            boolean listed = placement || (v2 && provider.equals("webgpu"));
+            if (v2) out.put("protocol", SHORT_V2);
+            require((placement || v2 || plan.getString("protocol").equals("short-encoder-v1")) &&
                 plan.getInt("schema") == 1 && plan.getInt("true_length") == 17 &&
                 plan.getJSONArray("shape").toString().equals("[1,128,17]"), "unsupported frozen shape");
             for (String name : new String[]{"encoder.onnx", "encoder.weights"})
@@ -101,14 +105,14 @@ public final class EncoderProbe {
                     .put("intra_op_threads", 4).put("inter_op_threads", 1)
                     .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, hashes and Base64; diagnostic only");
                 if (provider.equals("webgpu")) {
-                    if (!placement) options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
+                    if (!listed) options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
                     Map<String, String> gpu = new LinkedHashMap<>();
                     gpu.put("enableGraphCapture", "0");
                     gpu.put("enableInt64", "1");
                     gpu.put("preferredLayout", "NCHW");
                     gpu.put("dawnBackendType", "Vulkan");
                     options.addWebGPU(gpu);
-                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", !placement);
+                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", !listed);
                 } else {
                     options.addCPU(true);
                     out.put("cpu_fallback_disabled", false);
@@ -116,7 +120,7 @@ public final class EncoderProbe {
                 out.put("provider_create_ms", (SystemClock.elapsedRealtimeNanos() - phaseStartNs) / 1e6);
                 // The log reader must be attached before ORT logs placement.
                 checkpoint = "placement-read";
-                LogTail placementLog = placement ? new LogTail(attempt) : null;
+                LogTail placementLog = listed ? new LogTail(attempt) : null;
                 checkpoint = "session-create";
                 phaseStartNs = SystemClock.elapsedRealtimeNanos();
                 long start = phaseStartNs;
@@ -126,15 +130,19 @@ public final class EncoderProbe {
                     out.put("session_create_ms", (initializationEndNs - phaseStartNs) / 1e6);
                     out.put("cold_load_ms", (initializationEndNs - initializationStartNs) / 1e6);
                     memory.put(resources("after-load"));
-                    if (placement) {
+                    if (listed) {
                         checkpoint = "placement-read";
                         long readStart = SystemClock.elapsedRealtimeNanos();
                         JSONObject listing = tail.finish();
                         out.put("placement_read_ms", (SystemClock.elapsedRealtimeNanos() - readStart) / 1e6)
                             .put("placement", listing)
                             .put("residual_node_assignment", listing.getBoolean("complete") ? "listed" : "incomplete");
-                        placementListed = true;  // Outcome is set only after the runtime session closes.
-                        return;
+                        if (placement) {
+                            placementListed = true;  // Outcome is set only after the runtime session closes.
+                            return;
+                        }
+                        tail.close();  // Stop the log reader so it cannot perturb Run timing.
+                        checkpoint = "session-create";
                     }
                     start = SystemClock.elapsedRealtimeNanos();
                     runStartNs = start;
@@ -216,6 +224,7 @@ public final class EncoderProbe {
         }
     }
     static final String PLACEMENT = "encoder-placement-v1";
+    static final String SHORT_V2 = "short-encoder-v2";
 
     /**
      * Streams this process's own ORT log lines (tag "onnxruntime") while the runtime
