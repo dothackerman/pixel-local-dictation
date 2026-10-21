@@ -523,6 +523,10 @@ def reconcile_encoder_probe_recovery(device, state, receipt, observed):
 
 
 SHORT_ENCODER = 'short-encoder-v1'
+# WebGPU runtime session creation without strict CPU-fallback rejection; never Run.
+PLACEMENT = 'encoder-placement-v1'
+PLACEMENT_SCOPE = 'placement listing only; Run not executed'
+SELF_SOURCE = 'tools/proposals/phone-short-encoder-v2.py'
 SHORT_LIMIT = 1024 * 1024
 SHORT_INPUTS = {
     'audio_signal.f32': 'e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb',
@@ -546,30 +550,32 @@ def short_declaration(source, staged, receipt, observed):
     value = json.loads(config.read_bytes())
     fields = {'schema','protocol','input_kind','shape','true_length','provider','eligible','scope',
               'atol','rtol','model','builds','inputs','staging_envelope','runtime','sources'}
-    source_names = {'tools/encoder_probe.py','tools/encoder_conversion.py','tools/proposals/phone-short-encoder-v1.py',
+    source_names = {'tools/encoder_probe.py','tools/encoder_conversion.py',SELF_SOURCE,
         'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
         'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts'}
     expected_files = {'encoder-probe.json','variant.json',*SHORT_INPUTS,
                       'model/encoder.onnx','model/encoder.weights'}
-    if (not isinstance(value, dict) or set(value) != fields or value.get('protocol') != SHORT_ENCODER
+    placement = isinstance(value, dict) and value.get('protocol') == PLACEMENT
+    if (not isinstance(value, dict) or set(value) != fields or value.get('protocol') not in (SHORT_ENCODER, PLACEMENT)
             or value.get('schema') != 1 or value.get('input_kind') != 'synthetic silence; no recordings'
             or value.get('shape') != [1,128,17] or value.get('true_length') != 17
-            or value.get('provider') not in ('cpu','webgpu') or value.get('eligible') is not False
-            or value.get('scope') != 'short feasibility checkpoint; full take not run'
+            or value.get('provider') not in (('webgpu',) if placement else ('cpu','webgpu'))
+            or value.get('eligible') is not False
+            or value.get('scope') != (PLACEMENT_SCOPE if placement else 'short feasibility checkpoint; full take not run')
             or value.get('atol') != 1e-4 or value.get('rtol') != 1e-3
             or value.get('runtime') != SHORT_RUNTIME or value.get('inputs') != SHORT_INPUTS
             or value.get('model') != SHORT_MODEL
             or set(staged['files']) != expected_files or set(value.get('sources', {})) != source_names
             or any(not re.fullmatch('[0-9a-f]{64}', item) for item in value['sources'].values())
-            or value['sources']['tools/proposals/phone-short-encoder-v1.py'] != digest(Path(__file__))
+            or value['sources'][SELF_SOURCE] != digest(Path(__file__))
             or value.get('builds') != dict(app_sha256=observed['apk']['sha256'],
                                          test_sha256=observed['test_apk']['sha256'])
             or value.get('staging_envelope') != {'variant.json': staged['files']['variant.json']}
             or value.get('model') != {name: staged['files']['model/' + name]
                                      for name in ('encoder.onnx','encoder.weights')}
             or any(staged['files'][name] != expected for name, expected in SHORT_INPUTS.items())):
-        raise Refused('unsupported short-encoder-v1 frozen declaration or staged bytes')
-    return dict(protocol=SHORT_ENCODER, manifest=value, manifest_sha256=staged['files']['encoder-probe.json'],
+        raise Refused('unsupported short encoder frozen declaration or staged bytes')
+    return dict(protocol=value['protocol'], manifest=value, manifest_sha256=staged['files']['encoder-probe.json'],
                 output_policy=dict(path='result.json', byte_limit=SHORT_LIMIT), attempt=None)
 
 
@@ -585,6 +591,8 @@ def short_result(value, declaration):
     """Dedicated synthetic receipt; execution completion never implies GPU proof."""
     attempt = declaration['attempt']
     plan = declaration['manifest']
+    if plan['protocol'] == PLACEMENT:
+        return placement_result(value, declaration)
     if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('protocol') != SHORT_ENCODER
             or value.get('attempt_id') != attempt['id'] or value.get('eligible') is not False
             or value.get('freeze_sha256') != declaration['manifest_sha256'] or value.get('frozen') != plan
@@ -644,6 +652,82 @@ def short_result(value, declaration):
     return value['outcome']
 
 
+def placement_result(value, declaration):
+    """Bounded placement listing. The wrapper checks shape and counts, never ADR-023 acceptance."""
+    attempt = declaration['attempt']
+    plan = declaration['manifest']
+    if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('protocol') != PLACEMENT
+            or value.get('attempt_id') != attempt['id'] or value.get('eligible') is not False
+            or value.get('freeze_sha256') != declaration['manifest_sha256'] or value.get('frozen') != plan
+            or value.get('outcome') not in ('complete','failed')
+            or type(value.get('pid')) is not int or value['pid'] <= 0
+            or type(value.get('processStartElapsedMs')) is not int or value['processStartElapsedMs'] < 0
+            or any(key in value for key in ('outputs','run_to_host_output_ms','run_to_failure_ms'))
+            or any(value.get(key) != 'unproven' for key in ('adapter_driver_proof','fp32_shader_proof'))):
+        raise Refused('unbound or unsupported placement receipt')
+    complete = value['outcome'] == 'complete'
+    bindings = dict(build_sha256=plan['builds']['app_sha256'], test_build_sha256=plan['builds']['test_sha256'],
+        runtime_version='1.31.0', runtime_core_sha256=SHORT_RUNTIME['core_sha256'],
+        runtime_jni_sha256=SHORT_RUNTIME['jni_sha256'], optimization='ALL_OPT', execution_mode='SEQUENTIAL',
+        intra_op_threads=4, inter_op_threads=1, profiling=False, cpu_fallback_disabled=False,
+        provider_options=dict(enableGraphCapture='0', enableInt64='1', preferredLayout='NCHW', dawnBackendType='Vulkan'))
+    for name, expected in bindings.items():
+        if (complete or name in value) and value.get(name) != expected:
+            raise Refused('placement installed identity or session options differ')
+    memory = value.get('memory')
+    phases = {'before-load','after-load','finally'}
+    if (not isinstance(memory,list) or not 1 <= len(memory) <= 3 or any(not isinstance(row,dict) for row in memory)
+            or len({row.get('phase') for row in memory}) != len(memory)
+            or any(row.get('phase') not in phases or any(type(row.get(k)) is not int or row[k] < 0
+                   for k in ('highWaterKb','pssKb','thermalStatus')) or row['thermalStatus'] > 6 for row in memory)
+            or (complete and {row['phase'] for row in memory} != phases)):
+        raise Refused('placement resource observations missing or invalid')
+    for key in ('cold_load_ms','initialization_elapsed_ms','placement_read_ms'):
+        if (complete or key in value) and (type(value.get(key)) not in (int,float)
+                or not math.isfinite(value[key]) or value[key] < 0):
+            raise Refused('placement timing missing or invalid')
+    if complete:
+        if (value.get('checkpoint') != 'placement-listed' or value.get('initialization_complete') is not True
+                or value.get('residual_node_assignment') not in ('listed','incomplete')):
+            raise Refused('placement completion missing')
+        listing = value.get('placement')
+        text = lambda item: isinstance(item,str) and 1 <= len(item) <= 512
+        # ONNX permits unnamed nodes, so only the op type must be nonempty.
+        pair = lambda item: (isinstance(item,list) and len(item) == 2 and text(item[0])
+                             and isinstance(item[1],str) and len(item[1]) <= 512)
+        if (not isinstance(listing,dict) or set(listing) != {'complete','providers','causes','log_lines'}
+                or type(listing['complete']) is not bool or type(listing['log_lines']) is not int
+                or listing['log_lines'] < 0 or not isinstance(listing['providers'],dict)
+                or len(listing['providers']) > 4 or not isinstance(listing['causes'],dict)
+                or set(listing['causes']) != {'kernel_not_found','cpu_preferred'}):
+            raise Refused('placement listing malformed')
+        nodes = 0
+        for provider, row in listing['providers'].items():
+            if (not re.fullmatch(r'[A-Za-z]+ExecutionProvider', provider) or not isinstance(row,dict)
+                    or set(row) != {'declared','all','nodes'} or type(row['declared']) is not int
+                    or not 0 <= row['declared'] <= 20000 or type(row['all']) is not bool
+                    or not isinstance(row['nodes'],list) or not all(map(pair,row['nodes']))
+                    or (row['all'] and row['nodes'])):
+                raise Refused('placement provider row malformed')
+            nodes += len(row['nodes'])
+        causes = listing['causes']
+        if (nodes > 20000 or not isinstance(causes['kernel_not_found'],list)
+                or not all(map(pair,causes['kernel_not_found'])) or len(causes['kernel_not_found']) > 20000
+                or not isinstance(causes['cpu_preferred'],list)
+                or not all(isinstance(item,str) and len(item) <= 512 for item in causes['cpu_preferred'])
+                or len(causes['cpu_preferred']) > 20000):
+            raise Refused('placement causes malformed')
+        counted = bool(listing['providers']) and all(
+            row['all'] or len(row['nodes']) == row['declared'] for row in listing['providers'].values())
+        if listing['complete'] is not counted or value['residual_node_assignment'] != ('listed' if counted else 'incomplete'):
+            raise Refused('placement completeness differs from declared counts')
+    elif (value.get('checkpoint') not in ('verify','native-load','provider-create','session-create','placement-read')
+          or not isinstance(value.get('failure'),str) or not 1 <= len(value['failure']) <= 16384
+          or 'placement' in value):
+        raise Refused('placement failed checkpoint missing')
+    return value['outcome']
+
+
 def short_capture(device, state, receipt, accept=False):
     declaration = receipt['short_encoder']
     attempt = declaration['attempt']
@@ -694,7 +778,7 @@ def short_capture(device, state, receipt, accept=False):
     if attempt['state'] in ('complete','failed') and valid == attempt['state']:
         exported = payload
     else:
-        exported = json.dumps(dict(protocol=SHORT_ENCODER, outcome='unresolved-execution', eligible=False,
+        exported = json.dumps(dict(protocol=declaration['protocol'], outcome='unresolved-execution', eligible=False,
             attempt_id=attempt['id'], freeze_sha256=declaration['manifest_sha256'], reason=reason,
             result_present=present, truncated=truncated, payload_base64=base64.b64encode(payload[:SHORT_LIMIT]).decode(),
             payload_sha256=hashlib.sha256(payload[:SHORT_LIMIT]).hexdigest()),sort_keys=True).encode()
@@ -857,7 +941,7 @@ def execute(argv, *, device, state):
                 return short_lab(device,state,receipt,Path(argv[2]))
             if argv[0] == 'pull-results' and receipt['short_encoder'].get('attempt'):
                 return short_capture(device,state,receipt)
-            raise Refused('short-encoder-v1 supports only one lab attempt and bounded results, no role profile')
+            raise Refused('short encoder probes support only one lab attempt and bounded results, no role profile')
         if argv[0] == 'pull-profile':
             if not receipt.get('diagnostic') or (receipt['phase'] != 'active' or not receipt.get('profile_complete')):
                 raise Refused('profile retrieval requires a completed diagnostic measurement')
