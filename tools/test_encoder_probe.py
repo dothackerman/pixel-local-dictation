@@ -208,7 +208,8 @@ class PlacementCheckTests(unittest.TestCase):
                                              ([], [''], 1), (['/MatMul'], [], 1)):
             with self.subTest(missing=missing, preferred=preferred, declared=declared):
                 self.assertFalse(self.listing(missing, preferred, declared)['passed'])
-        self.assertFalse(self.listing(['/Gather'], ['/Unsqueeze'], 2, webgpu=0)['passed'])
+        # ADR-023 amendment 2: a dropped WebGPU summary line does not fail the check.
+        self.assertTrue(self.listing(['/Gather'], ['/Unsqueeze'], 2, webgpu=0)['passed'])
 
 if __name__ == '__main__':
     unittest.main()

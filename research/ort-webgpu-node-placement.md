@@ -84,6 +84,25 @@ declared count exactly; the ADR-023 amendment accepts that as complete, so the
 check passes. Boundary copies were not named. Cold load 6.6 s; HWM
 350 MB; thermal 0.
 
+## First WebGPU Run (protocol `short-encoder-v2`, wrapper `8b5c3d4`)
+
+Matched runs on one build, synthetic 17-frame input, only provider differs:
+`issue4-v2-cpu-20261021-01` then `issue4-v2-webgpu-20261021-01`; receipts
+`f6e20419…88be`, `4e9434c7…7f6b`. Both recovered; `inspect` matched baseline.
+
+| | CPU | WebGPU (non-strict) |
+|---|---:|---:|
+| Tensor vs CPU (atol 1e-4, rtol 1e-3) | reference | pass, max abs 1.1e-7; length exact |
+| ADR-023 placement check | n/a | pass: 623 CPU steps (54 + 569), all shape work |
+| Runtime session creation | 4.8 s | 4.5 s |
+| First Run, cold | 289 ms | 6,761 ms |
+| Process HWM | 2.68 GB | 0.35 GB |
+
+The cold first WebGPU Run likely includes shader/pipeline compilation; one tiny
+run is not a speed measurement. Adapter/driver and FP32 shader proof remain
+unproven; the 1e-7 agreement is consistent with FP32 arithmetic. logd dropped
+the WebGPU summary line, so per-step rows are unreliable (ADR-023 amendment 2).
+
 ## Obtaining a placement list
 
 Do not set `disable_cpu_ep_fallback`. Log severity verbose (0). Read

@@ -40,6 +40,15 @@ First phone listing (ORT 1.31, run `issue4-placement-webgpu-20261021-01`):
 623 CPU steps, all shape work, zero tensor math →
 [placement research](../research/ort-webgpu-node-placement.md). Passes this check.
 
+## Amendment 2 2026-10-21: no WebGPU-count condition
+
+Accepted by the user. The check does not require ORT's WebGPU summary line.
+Reason: only CPU and WebGPU are registered and ORT assigns every step to one of
+them, so a matched, fully named CPU cause set already implies all other steps
+are on WebGPU; a failed WebGPU registration would produce no "webgpu kernel not
+found" lines and no match. logd dropped that summary line in the first
+WebGPU Run (`issue4-v2-webgpu-20261021-01`).
+
 ## Rejected
 
 - Graph change to remove shape work: alters the length contract ADR-020 preserves.

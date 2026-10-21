@@ -47,8 +47,8 @@ def placement_check(listing, steps):
     failures = []
     if set(providers) - {'CPUExecutionProvider', 'WebGpuExecutionProvider'}:
         failures.append('unexpected provider')
-    if providers.get('WebGpuExecutionProvider', {}).get('declared', 0) <= 0:
-        failures.append('no WebGPU placement declared')
+    # No WebGPU-count condition (ADR-023 amendment 2): logd may drop that summary
+    # line, and with two providers the matched CPU cause count already implies it.
     if '' in names:
         failures.append('unnamed CPU step cannot be identified')
     for op, name in listing['causes']['kernel_not_found']:
