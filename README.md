@@ -127,7 +127,8 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 ## Phone lab operations
 
 Reach the phone only through `.claude/hooks/phone <verb> …` (absolute path in
-[AGENTS.md](AGENTS.md)). The shim runs the copy of `tools/phone` that the user
+[AGENTS.md](AGENTS.md)), called alone on its command line; the sandbox excludes
+only that exact form, and the result is also saved to `corpus/lab/last.json`. The shim runs the copy of `tools/phone` that the user
 installed with `bash tools/gate/apply.sh`; rerun that after a wrapper change.
 `phone help` lists the verbs: read-only `status`, `device`, `app`, `logs`,
 `crash`; app-scoped `install`, `push`, `pull`, `run`, `stop`; `snapshot` and

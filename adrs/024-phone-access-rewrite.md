@@ -108,7 +108,7 @@ Hook `phone-guard.py`, ~60 lines, fast-fail only:
 1. Bash: split into simple commands (shlex on `;`, `&&`, `||`, `|`); deny if any argv element's basename is `adb`/`fastboot`, or a `gradlew` task matches `install|connected|uninstall|device`. Mentions in strings, greps, heredocs and docs pass.
 2. Edit/Write/apply_patch: deny paths under `.claude/hooks`, `.codex`, `tools/git-hooks`, `.git`, and `AGENTS.md`. The wrapper source is **not** protected.
 
-The real boundary is the sandbox: `allowUnsandboxedCommands: false`; `denyRead` on `~/.android/adbkey*` and `~/Android/Sdk/platform-tools`; `excludedCommands` = the shim only. Gradle's `connected*`/`install*` tasks then fail inside the sandbox even if a hook misses them.
+The real boundary is the sandbox: `allowUnsandboxedCommands: false`; `denyRead` on `~/.android` and `~/Android/Sdk/platform-tools`; `excludedCommands` = the shim only, which matches the exact command line, so the shim must be called alone (no pipe, no redirect; the result is also written to `corpus/lab/last.json`). Gradle's `connected*`/`install*` tasks then fail inside the sandbox even if a hook misses them. `denyWrite` covers `.git/config` and `.git/hooks`, not `.git` itself, so agents can still commit.
 
 Claude `settings.json`: keep `deny` for adb/fastboot/sudo; `allow` the shim for the no-prompt verbs; drop the Edit-deny on `tools/phone`. Codex `config.toml`: same read-only set; delete `phone.rules` (duplicate of the hook); verify once that Codex runs the shared script. `CLAUDE.md` becomes a symlink to `AGENTS.md` and both are listed in `denyWrite`. `AGENTS.md` shrinks to: shim path, "app-scoped only", "recordings stay in corpus/", "the user installs wrapper changes with apply.sh".
 
