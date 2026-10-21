@@ -122,9 +122,9 @@ Claude `settings.json`: keep `deny` for adb/fastboot/sudo; `allow` the shim for 
 
 **Claude Code.** TUXEDO OS 24.04 ships Ubuntu's `kernel.apparmor_restrict_unprivileged_userns = 1`. Bubblewrap creates the outer user namespace under profile `bwrap`, but its children transition to `unpriv_bwrap` (`allow px /** -> bwrap//&unpriv_bwrap`), which has `audit deny capability`. Claude's seccomp step creates a nested namespace, needs `CAP_SYS_ADMIN` inside it, and fails: `apply-seccomp: write /proc/self/setgroups … nested userns is capability-restricted`. Kernel audit at this session's timestamps: `apparmor="DENIED" operation="capable" profile="unpriv_bwrap" capname="sys_admin"`. `bwrap … -- unshare -U` reproduces it. Consequence: every sandboxed command fails, every command then needs `dangerouslyDisableSandbox`, and in auto mode that is a classifier round per command.
 
-Fix options, user-run, in order of preference:
-1. Scoped: `/etc/apparmor.d/local/unpriv_bwrap` containing `allow capability sys_admin,` then `sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict`. Affects only bubblewrap children. (A profile on the Claude binary does not help; the denial is inside `unpriv_bwrap`.)
-2. Global: `kernel.apparmor_restrict_unprivileged_userns=0` in `/etc/sysctl.d/`. Simpler; weakens machine-wide userns hardening.
+The blocking rule is `audit deny capability,` inside `unpriv_bwrap`. An AppArmor `deny` beats any `allow`, so a `local/` include cannot lift it, and a profile on the Claude binary does not help because the denial happens in bwrap's child profile. Fix options, user-run:
+1. Preferred: set `kernel.apparmor_restrict_unprivileged_userns=0` (sysctl.d) and disable the `bwrap-userns-restrict` profile (`ln -s … /etc/apparmor.d/disable/`, `apparmor_parser -R`). This is the pre-24.04 Ubuntu default and the default on Debian, Fedora and Arch.
+2. Narrower: in the shipped profile, replace `audit deny capability,` under `unpriv_bwrap` with `allow capability sys_admin setuid setgid,` and reload. Edits a package conffile; the capability set is untested.
 
 Verify with a sandboxed `true` from Claude Code and `journalctl -k | grep unpriv_bwrap` staying quiet.
 
