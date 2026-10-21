@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Shared Claude/Codex PreToolUse fast-fail (ADR-024). The sandbox is the boundary.
 
-Two rules only:
+Three rules only:
 1. Shell: deny a command that *invokes* adb or fastboot (directly, via sh -c,
    $(...), backticks, xargs, env/timeout/nice, or a Gradle device task).
    The command is tokenized like a shell, so the words inside quotes, greps,
    docs and heredoc bodies never count.
-2. Edits: deny writes to the hook and harness configuration and AGENTS/CLAUDE.md.
+2. Shell: `git` runs outside the sandbox (excludedCommands; the sandbox pins
+   .git read-only), so deny git invocations that could carry a program along:
+   `-c`/`--config-env`/`--exec-path`/`--git-dir`/`--work-tree` options and
+   `GIT_*` environment assignments in front of git.
+3. Edits: deny writes to the hook and harness configuration and AGENTS/CLAUDE.md.
 """
 import json
 import re
@@ -23,6 +27,7 @@ SKIP = {'env', 'command', 'exec', 'nohup', 'time', 'builtin', 'sudo', 'doas'}
 SKIP_ONE = {'timeout', 'stdbuf', 'nice', 'ionice', 'chrt'}  # wrapper plus one argument (or -flag value)
 SEPARATORS = {';', '&&', '||', '|', '|&', '&', '(', ')', ';;', '\n'}
 GRADLE_TASK = re.compile(r'(?i)(install|connected|uninstall|device)')
+GIT_SMUGGLE = re.compile(r'^(?:-c|-C|--config-env(?:=.*)?|--exec-path(?:=.*)?|--git-dir(?:=.*)?|--work-tree(?:=.*)?|--namespace(?:=.*)?)$')
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?\n)?\2[ \t]*(?=\n|$)", re.S)
 
 
@@ -85,11 +90,15 @@ def head(words):
 
 
 def invokes_tool(command):
-    for words in simple_commands(command):
-        words = head(words)
+    for raw in simple_commands(command):
+        words = head(raw)
         if not words:
             continue
         base = words[0].rsplit('/', 1)[-1]
+        if base == 'git':
+            env = [w for w in raw[:len(raw) - len(words)] if re.match(r'GIT_\w*=', w)]
+            if env or any(GIT_SMUGGLE.match(w) for w in words[1:]):
+                return 'git with -c/-C/--exec-path/--git-dir or GIT_* environment is not allowed; plain git only'
         if base in TOOLS:
             return 'direct adb/fastboot is not allowed; use .claude/hooks/phone'
         if base in SHELLS and '-c' in words:

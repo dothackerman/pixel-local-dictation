@@ -47,7 +47,8 @@
     "autoAllowBashIfSandboxed": true,
     "allowUnsandboxedCommands": false,
     "excludedCommands": [
-      "/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone *"
+      "/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone *",
+      "git *"
     ],
     "filesystem": {
       "allowWrite": [

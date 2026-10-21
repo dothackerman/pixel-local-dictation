@@ -59,6 +59,18 @@ class ShellRuleTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(bash(command), 2)
 
+    def test_git_runs_plain_but_cannot_smuggle_programs_out_of_the_sandbox(self):
+        for command in ['git commit -q -m "x"', 'git add -A && git commit -m x', 'git log --oneline -5',
+                        'git commit --no-verify -m wip', 'git -P status', 'git status --short | head']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 0)
+        for command in ['git -c core.hooksPath=/tmp/h commit -m x', "git -c alias.x='!adb devices' x",
+                        'GIT_SSH_COMMAND="adb devices" git commit -m x', 'git --exec-path=/tmp/x commit -m x',
+                        'git -C /other commit -m x', 'git --git-dir=/tmp/g commit -m x',
+                        'GIT_DIR=/tmp/g git commit -m x', 'ls; git -c x.y=z commit']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 2)
+
     def test_gradle_device_tasks_are_denied(self):
         for command in ['./gradlew installBenchmark', './gradlew :app:connectedBenchmarkAndroidTest',
                         './gradlew uninstallAll', 'gradle :app:installDebug', './gradlew assemble connectedCheck']:
