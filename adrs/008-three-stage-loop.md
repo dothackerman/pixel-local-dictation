@@ -9,7 +9,6 @@ The retired `allocation_execution.py` owned append-only reservations/barriers; r
 Ownership was cooperative; records alone did not prove device-process termination.
 Amendments retain actual consumption/history; no retroactive refreeze.
 All stages completed; ADR-012. No new launch, engine or acceptance approval follows.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit for a separately commissioned experiment.
 
 October 19 retirement: setup/execution/continuation controllers removed. Retained `allocation_report.py` supports offline scientific validation; recover old source at d0e984641d9d247bd6dd4f500abfbba1091b7b43 without running historical launch/device commands.

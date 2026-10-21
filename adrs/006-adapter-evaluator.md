@@ -11,5 +11,4 @@ Exact historical resource gates: 3,500,000 kB peak, Stop 2 s, chunk RTF 0.3; 2 G
 Apply accuracy rules to actual phone text; require complete matching laptop/twin/guard evidence.
 No normalization, quality threshold or recording-policy relaxation.
 Evaluator 4 later adds matched-platform provenance; ADR-011.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit on changed export contracts, truncation or platform mismatch.

@@ -1,6 +1,9 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from variant import VariantError, validate
+from variant import VariantError, normalize, validate
 
 
 class VariantTest(unittest.TestCase):
@@ -26,6 +29,15 @@ class VariantTest(unittest.TestCase):
         self.assertEqual(512, v["qwen3"]["max_new_tokens"])
         for schema in (1, 2, 3):
             self.assertEqual(0, validate({"schema": schema})["cutting"]["max_chunk_s"])
+
+    def test_normalize_writes_every_default_explicitly_for_staging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source, target = Path(temp) / "in.json", Path(temp) / "out.json"
+            source.write_text(json.dumps({"schema": 3, "name": "gate", "model": "parakeet-v3-fp32"}))
+            normalize(source, target)
+            staged = json.loads(target.read_text())
+            self.assertIs(False, staged["runtime"]["profile"])
+            self.assertEqual("parakeet-v3-fp32", staged["model"])
 
 
 if __name__ == "__main__":

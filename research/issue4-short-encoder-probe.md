@@ -57,8 +57,9 @@ source, APK and runtime identities, copies `variants/beam4-fp32-gate.json` (dige
 as `staging_envelope`; the helper does not consume it) and hardlinks the model
 directory. Stage the whole directory (manifest, two raw inputs, `variant.json`,
 `model/`). `LabTest.variantOnSavedTakes` dispatches on `lab/encoder-probe.json`
-and runs no recordings or pipeline. The wrapper journals an exclusive attempt
-UUID before loading; process death leaves an unresolved attempt, never a retry.
+and runs no recordings or pipeline. Historical: the former wrapper journalled an
+exclusive attempt UUID; since ADR-024 the attempt id is a `run` argument and
+process death leaves an unresolved attempt, never a retry.
 
 ## Runtime session options (both providers)
 
@@ -75,9 +76,8 @@ stack and resource observations.
 
 `result.json`: output shape/dtype, raw little-endian Base64 + digest, attempt id,
 app/test/input/runtime identities, cold load, HWM/PSS/thermal, failures. No tensor
-sidecars, marker or ORT profile. The typed wrapper validates staged inputs and
-output inventory, keeps partial/malformed results as unresolved evidence,
-requires quiescence before retrieval and never synthesizes a role profile.
+sidecars, marker or ORT profile. Validation of staged inputs and results is in
+`tools/encoder_probe.py`, not the phone wrapper (ADR-024).
 
 ## Compare
 
@@ -98,7 +98,9 @@ checks marked not run; it cannot permit #5.
 
 ## In-pipeline gates: `chunk-encoder-v1` and `pipeline-placement-v1`
 
-Tooling only; not yet run on the phone. Both need the ort131 build with the probe
+`chunk-encoder-v1` ran once per provider on 2026-10-21 (WebGPU outputs not yet
+pulled); `pipeline-placement-v1` has not run: [ADR-025](../adrs/025-issue4-one-case-finding.md).
+Both need the ort131 build with the probe
 classes: app from `-PnativeRoleProfilerAar=build/ort131-sherpa/sherpa-ort131.aar`
 (patched Sherpa JNI), test APK with `-PencoderProbeDir=<package --out>` (only its
 `ort131-java-jni.aar` is used; its `sherpa-ort131.aar` has the unpatched JNI).

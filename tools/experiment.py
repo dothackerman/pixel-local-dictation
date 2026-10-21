@@ -285,7 +285,9 @@ def plan_errors(plan):
 
 def _session_errors(report, expected):
     errors = []
-    if report.get("sessionProtocol") != PROTOCOL or report.get("variant", {}).get("runtime", {}).get("profile") is not False:
+    # A missing runtime.profile is the schema default (False), on the host (variant.DEFAULT) and in the
+    # app (Variant.kt); only an explicit True is profiled evidence. 2026-10-21 parity-01 was lost to this.
+    if report.get("sessionProtocol") != PROTOCOL or report.get("variant", {}).get("runtime", {}).get("profile", False) is not False:
         errors.append("need unprofiled shared-session evidence")
     if [row.get("id") for row in report.get("endpoints", [])] != expected["endpoints"]:
         errors.append("case order differs from freeze")

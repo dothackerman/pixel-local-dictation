@@ -3,8 +3,23 @@
 2026-10-21. Sources: Anthropic docs + `sandbox-runtime` source, OpenAI Codex docs + `codex-rs/linux-sandbox`
 source, Ubuntu/Canonical/AppArmor upstream, GitHub issues. Host facts read directly:
 `/proc/sys/kernel/apparmor_restrict_unprivileged_userns`=1, `…_unconfined`=0; `/etc/apparmor.d/bwrap-userns-restrict`
-present and enforced, header comment "Local experiment" (stock noble ships it disabled, §3). Every sandboxed Bash
-call in this session failed with the §1 string. Decision context: [ADR-024](../adrs/024-phone-access-rewrite.md).
+present and enforced, header comment "Local experiment" (stock noble ships it disabled, §3). Decision context:
+[ADR-024](../adrs/024-phone-access-rewrite.md); this note owns the root-cause and fix material.
+
+## 0. Host verification (2026-10-21)
+
+Claude Code: every sandboxed command failed with `apply-seccomp: write /proc/self/setgroups … nested userns is
+capability-restricted`; kernel audit at the same timestamps: `apparmor="DENIED" operation="capable"
+profile="unpriv_bwrap" capname="sys_admin"`. `bwrap … -- unshare -U` reproduces it. Bubblewrap's outer namespace runs
+under profile `bwrap`; its children transition to `unpriv_bwrap` (`allow px /** -> bwrap//&unpriv_bwrap`), whose
+`audit deny capability,` blocks the nested namespace Claude's seccomp step needs (§2–3). Consequence: every command needs
+`dangerouslyDisableSandbox`, and in auto mode that is a classifier round per command. Verify a fix with a sandboxed
+`true` and a quiet `journalctl -k | grep unpriv_bwrap`.
+
+Codex: 376 bubblewrap failures on 19–20 Oct, all `Can't bind mount … ~/.codex/visualizations/<session>/tools: No such
+file or directory`: the bundled `visualize` plugin asked the sandbox to bind a directory that did not exist yet. Each
+became `require_escalated` (7,694 on the 19th, 11,838 on the 20th), auto-approved. Fixed by `enabled = false` for that
+plugin in the user's Codex config; 21 Oct shows 0 bwrap errors. Keep it disabled.
 
 ## 1. Common and documented? Yes, for both vendors
 
@@ -91,7 +106,7 @@ A profile on the *claude* binary does not help. `unconfined` mode "allows a task
 though it is unconfined" ([apparmor.d(5) 4.0](https://gitlab.com/apparmor/apparmor/-/raw/apparmor-4.0/parser/apparmor.d.pod));
 unconfined tasks exec with implicit attachment ("The exec attachment conditional will also be used by tasks that are
 unconfined as they use a pix transition rule"), so exec of `/usr/bin/bwrap` still attaches `bwrap`, children still land
-in `bwrap//&unpriv_bwrap`. ADR-024 reached the same conclusion. Anthropic's unconfined bwrap profile works only because
+in `bwrap//&unpriv_bwrap`. Anthropic's unconfined bwrap profile works only because
 bwrap's children have no matching attachment and inherit the unconfined-with-userns label.
 
 Editing `unpriv_bwrap`: "Within a given priority level deny rules have priority over all other rule modes"

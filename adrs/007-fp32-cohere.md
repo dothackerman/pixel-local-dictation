@@ -15,7 +15,6 @@ Matched laptop primary-feed DE/EN errors: FP32 greedy 45/24, beam8 without dicti
 The demonstrated gain is supplied-vocabulary biasing; precision/search alone did not improve English.
 All 43 dictionary entries occur in the scripts: this establishes mechanism, not unfamiliar-name recognition.
 One instance does not halve total memory or inference latency.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit precision/runtime cost; generic fallback or search patches remain unvalidated.
 
 Ablation provenance: `925ef8c:docs/research/remaining-improvement-levers-2026-10-19.md`; original run identities `fp32-fec1163`, `beam8-fp32-gate-2d11d13`, `dict-beam8-fp32-s20-2d11d13`.

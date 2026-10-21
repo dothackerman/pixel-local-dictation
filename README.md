@@ -17,11 +17,10 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 The app can record, recognize speech locally and insert text through FUTO's
 microphone workflow. Tags `m1` and `m2` record these prototype gates.
 Improvement over FUTO in both languages remains unproven. The current default
-remains provisional. On October 21 the short Android ORT1.31 CPU encoder control
-passed; strict WebGPU session creation rejected residual CPU node assignment.
-No GPU tensors, full-take speed result or live pass exist. Both original APKs and
-all 11 lab hashes were restored and independently verified after each attempt.
-[ADR-022](adrs/022-webgpu-encoder-placement-stop.md) records the diagnosed stop.
+remains provisional. On October 21 the ORT 1.28→1.31 CPU runtime-upgrade parity
+passed on two takes; the WebGPU tensor, placement and speed gates of #4 were
+interrupted and the phone was left off baseline ([ADR-025](adrs/025-issue4-one-case-finding.md)).
+No GPU verdict, full-take speed result or live pass exists.
 The specification remains incomplete; its full-suite and live gates are unstarted.
 
 Read the results and their limits before selecting the next question:
@@ -34,6 +33,7 @@ Read the results and their limits before selecting the next question:
 | [Moonshine Small](adrs/014-moonshine-screen.md) | Did not advance. |
 | [CPU profiling](adrs/015-cpu-profiling.md) | Eight phone runs on October 20 found substantial encoder work, but failed timing comparability checks. |
 | [GPU/TPU access](adrs/016-accelerator-access.md) | Physical access proven. GPU FP32 passed the numerical smoke checks; TPU failed one check. Speech acceleration remains unimplemented. |
+| [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU gates open. |
 
 Campaigns are closed. The [next decisions](#remaining-acceptance-gaps-and-next-decisions)
 are proposals. They authorize no new runs or recordings.
@@ -126,25 +126,22 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 
 ## Phone lab operations
 
-Reach the phone only through `.claude/hooks/phone <verb> …` (absolute path in
-[AGENTS.md](AGENTS.md)), called alone on its command line; the sandbox excludes
-only that exact form, and the result is also saved to `corpus/lab/last.json`. The shim runs the copy of `tools/phone` that the user
-installed with `bash tools/gate/apply.sh`; rerun that after a wrapper change.
-`phone help` lists the verbs: read-only `status`, `device`, `app`, `logs`,
-`crash`; app-scoped `install`, `push`, `pull`, `run`, `stop`; `snapshot` and
-`restore` for returning to a baseline; `uninstall` behind a user token.
-Everything is restricted to `ch.og.dictation`; [ADR-024](adrs/024-phone-access-rewrite.md)
-is the contract and lists what `restore` cannot bring back (microphone grant,
-IME enablement, FUTO toggles).
+Reach the phone only through the shim `.claude/hooks/phone <verb> …` (absolute
+path in [AGENTS.md](AGENTS.md)), called alone on its command line; the result is
+also in `corpus/lab/last.json`. `phone help` lists the verbs and exit codes;
+[ADR-024](adrs/024-phone-access-rewrite.md) is the contract (scope, gating, what
+`restore` cannot bring back).
 
-Typical experiment: `snapshot baseline` → `install APP.apk TEST.apk` → `push DIR`
-→ `run ch.og.dictation.LabTest k=v` → `pull files/lab` → `restore baseline`.
-Each mutating verb and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the
-installed APK and lab hashes; experiments bind their receipts to that.
-Pulled files stay in gitignored `corpus/`.
+Typical run: `snapshot NAME` → `check APP.apk TEST.apk` right after building →
+`install` → `push DIR` → `run CLASS k=v` → `pull files/lab/result.json …` (single
+files; `files/lab` holds the 2.4 GB model) → `restore NAME`. Each mutating verb
+and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the installed
+APK and lab hashes; experiments bind receipts to that. Pulled files stay in
+gitignored `corpus/`.
 
-Hooks are fast-fails; the sandbox is the boundary. `python3 tools/test_agent_guard.py`
-and `python3 tools/test_phone.py` run the synthetic checks without a phone.
+To change the wrapper, edit `tools/phone` and `tools/test_phone.py` on the branch;
+the user installs it with `bash tools/gate/apply.sh`. `python3 tools/test_phone.py`
+and `python3 tools/test_agent_guard.py` run without a phone.
 
 ## Evaluation
 
@@ -200,7 +197,7 @@ Keep personal recordings, transcripts and signing credentials out of Git.
 Recordings stay in gitignored `corpus/`; copying them needs the user's agreement.
 
 Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
-reports, original identities and pruning limits. Retain evidence that changes a
+reports, original identities and pruning limits for ADR-003 to ADR-016. Retain evidence that changes a
 decision, calibration/evaluation inputs and recovery state needed for operation.
 Closed campaign directory trees are not documentation.
 

@@ -246,6 +246,12 @@ class ComparisonTests(unittest.TestCase):
             mutate(reports)
             self.assertEqual("inconclusive", experiment.compare(plan, reports)["decision"])
 
+    def test_variant_without_explicit_profile_key_is_the_unprofiled_default(self):
+        plan, reports = fixture()
+        for run in reports.values():
+            run["report"]["variant"]["runtime"].pop("profile")
+        self.assertNotEqual("inconclusive", experiment.compare(plan, reports)["decision"])
+
     def test_quality_change_or_resource_failure_rejects_without_hiding_scores(self):
         for field in ("quality", "memory", "thermal"):
             plan, reports = fixture()

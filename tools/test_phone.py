@@ -99,11 +99,12 @@ class FakeDevice:
     def stop(self):
         self.calls.append(('stop',))
 
-    def push(self, directory, rel):
-        self.data = {k: v for k, v in self.data.items() if not k.startswith(rel + '/')}
-        for p in Path(directory).rglob('*'):
-            if p.is_file():
-                self.data[rel + '/' + p.relative_to(directory).as_posix()] = p.read_bytes()
+    def push(self, directory, rel, changed, removed):
+        self.calls.append(('push', tuple(sorted(changed)), tuple(sorted(removed))))
+        for item in removed:
+            self.data.pop(rel + '/' + item, None)
+        for item in changed:
+            self.data[rel + '/' + item] = (Path(directory) / item).read_bytes()
 
     def tar(self, *rels):
         files = {k: v for k, v in self.data.items() if any(k.startswith(r + '/') for r in rels)}
@@ -165,8 +166,14 @@ class PhoneTests(unittest.TestCase):
         (source / 'model/encoder.onnx').write_bytes(b'onnx')
         (source / 'encoder-probe.json').write_text('{}')
         result = self.call('push', str(source))
-        self.assertEqual(result['files'], 2)
+        self.assertEqual((result['outcome'], result['files'], result['sent'], result['removed']), ('pushed', 2, 2, 1))
         self.assertEqual(set(self.device.inventory('files/lab')), {'model/encoder.onnx', 'encoder-probe.json'})
+        # Unchanged directory: nothing is sent. One edited file: only that file travels.
+        self.assertEqual(self.call('push', str(source))['outcome'], 'unchanged')
+        (source / 'encoder-probe.json').write_text('{"v":2}')
+        again = self.call('push', str(source))
+        self.assertEqual((again['outcome'], again['sent'], again['removed']), ('pushed', 1, 0))
+        self.assertEqual(self.device.calls[-1], ('push', ('encoder-probe.json',), ()))
         (source / 'leak').symlink_to('/etc/hostname')
         with self.assertRaises(phone.Refused):
             self.call('push', str(source))
@@ -186,6 +193,19 @@ class PhoneTests(unittest.TestCase):
         for bad in (['run', 'Foo;rm'], ['run', PKG + '.LabTest', 'noequals'], ['run', PKG + '.LabTest', '1bad=x']):
             with self.assertRaises(phone.Refused):
                 self.call(*bad)
+
+    def test_check_accepts_or_refuses_apks_without_touching_the_phone(self):
+        app, test = self.root / 'app.apk', self.root / 'test.apk'
+        app.write_bytes(b'app')
+        test.write_bytes(b'test')
+        self.device.apks = {str(app): {'package': PKG, 'sha256': sha(b'app'), 'signer': 's', 'versionCode': 12, 'permissions': []},
+                            str(test): {'package': TEST, 'sha256': sha(b'test'), 'signer': 'other', 'versionCode': 0, 'permissions': []}}
+        with self.assertRaises(phone.Refused):
+            self.call('check', str(app), str(test))
+        self.device.apks[str(test)]['signer'] = 's'
+        result = self.call('check', str(app), str(test))
+        self.assertEqual([r['package'] for r in result], [PKG, TEST])
+        self.assertEqual(self.device.calls, [])
 
     def test_install_refuses_network_permissions_foreign_packages_and_live_keyboard(self):
         app, test = self.root / 'app.apk', self.root / 'test.apk'

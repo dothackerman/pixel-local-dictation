@@ -16,6 +16,7 @@
     ],
     "allow": [
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone help)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone check:*)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone status)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone device)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone app)",
@@ -49,11 +50,12 @@
       "/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone *"
     ],
     "filesystem": {
+      "allowWrite": [
+        "~/.gradle"
+      ],
       "denyWrite": [
         "./.claude",
         "./.codex",
-        "./.git/config",
-        "./.git/hooks",
         "./tools/git-hooks",
         "./AGENTS.md",
         "./CLAUDE.md"

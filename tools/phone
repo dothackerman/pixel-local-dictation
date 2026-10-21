@@ -258,15 +258,28 @@ class Device:
     def stop(self):
         self.shell('am force-stop ' + PKG)
 
-    def push(self, directory, rel):
-        """Replace files/<rel> with the regular files of a host directory."""
+    def push(self, directory, rel, changed, removed):
+        """Make files/<rel> equal to the host directory: send only `changed` files, delete `removed`."""
         directory = validate_directory(directory)
+        quoted_rel = shlex.quote(rel)
+        if removed:
+            self.private('cd %s && rm -f -- %s' % (quoted_rel, ' '.join(shlex.quote(name(r)) for r in sorted(removed))),
+                         timeout=120)
+        if not changed:
+            return
         tmp = '/data/local/tmp/dictation-' + uuid.uuid4().hex
         self.shell('mkdir ' + tmp)
         try:
-            self.run('push', str(directory) + '/.', tmp, timeout=900)
-            self.private('rm -rf -- %s && mkdir -p %s && cp -r %s/. %s/' % ((shlex.quote(rel),) * 2 + (tmp, shlex.quote(rel))),
-                         timeout=600)
+            with tempfile.TemporaryDirectory() as staging:
+                for item in sorted(changed):  # same layout, only the files that differ
+                    target = Path(staging) / item
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        os.link(directory / item, target)
+                    except OSError:
+                        shutil.copyfile(directory / item, target)
+                self.run('push', staging + '/.', tmp, timeout=900)
+            self.private('mkdir -p %s && cp -r %s/. %s/' % (quoted_rel, tmp, quoted_rel), timeout=600)
         finally:
             self.shell('rm -rf -- ' + tmp)
 
@@ -393,12 +406,17 @@ class Phone:
         info['lab'] = self.device.inventory('files/lab') if info['app']['installed'] else None
         return info
 
-    def install(self, app_apk, test_apk=None):
+    def check(self, app_apk, test_apk=None):
+        """Host-only APK acceptance check; run it in the build step, before the phone stage."""
         infos = [self.device.apk_info(app_apk)] + ([self.device.apk_info(test_apk)] if test_apk else [])
         if infos[0]['package'] != PKG or (test_apk and infos[1]['package'] != TEST):
             raise Refused('arguments are APP.apk then TEST.apk')
         if len({i['signer'] for i in infos}) != 1:
             raise Refused('app and test APK must share one signer')
+        return infos
+
+    def install(self, app_apk, test_apk=None):
+        infos = self.check(app_apk, test_apk)
         # Signer continuity against the installed app is enforced by Android itself.
         self.not_live('install')
         folder = self.meta('install', apks=[i['sha256'] for i in infos])
@@ -413,13 +431,18 @@ class Phone:
     def push(self, directory, rel='lab'):
         rel = name(rel)
         directory = validate_directory(directory)
-        self.device.push(directory, 'files/' + rel)
-        expected = {p.relative_to(directory).as_posix(): sha_file(p) for p in Path(directory).rglob('*') if p.is_file()}
-        actual = self.device.inventory('files/' + rel)
+        expected = {p.relative_to(directory).as_posix(): sha_file(p) for p in directory.rglob('*') if p.is_file()}
+        before = self.device.inventory('files/' + rel) or {}
+        changed = {item for item, digest in expected.items() if before.get(item) != digest}
+        removed = set(before) - set(expected)
+        if changed or removed:
+            self.device.push(directory, 'files/' + rel, changed, removed)
+        actual = self.device.inventory('files/' + rel) or {}
         if actual != expected:
             raise Failed('pushed inventory differs from the host directory')
-        folder = self.meta('push', target='files/' + rel, files=len(expected))
-        return {'outcome': 'pushed', 'target': 'files/' + rel, 'files': len(expected), 'meta': str(folder / 'meta.json')}
+        folder = self.meta('push', target='files/' + rel, files=len(expected), sent=len(changed), removed=len(removed))
+        return {'outcome': 'pushed' if changed or removed else 'unchanged', 'target': 'files/' + rel,
+                'files': len(expected), 'sent': len(changed), 'removed': len(removed), 'meta': str(folder / 'meta.json')}
 
     def pull(self, paths, to=None):
         rels = [name(p, PULL_ROOTS) for p in paths]
@@ -544,8 +567,9 @@ USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON objec
   status                          phone connected and permitted
   device                          allowlisted hardware/OS props, thermal status, GPU/TPU driver libs
   app                             our app, test package, our IME state, FUTO versions, files/lab inventory
+  check APP.apk [TEST.apk]        host-only: would install accept these APKs? (no phone needed)
   install APP.apk [TEST.apk]      only our packages; permission allowlist; no network permissions
-  push DIR [NAME]                 replace files/NAME (default lab) with DIR's regular files
+  push DIR [NAME]                 make files/NAME (default lab) equal DIR; sends only changed files
   pull PATH... [--to DIR]         from files/lab or files/benchmark into corpus/lab/pull/<ts>/
   run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat
   logs [--since 'MM-DD HH:MM:SS.mmm'] | crash
@@ -566,6 +590,8 @@ def dispatch(argv, phone):
         if args:
             raise Refused(verb + ' takes no arguments')
         return simple[verb]()
+    if verb == 'check' and 1 <= len(args) <= 2:
+        return phone.check(*args)
     if verb == 'install' and 1 <= len(args) <= 2:
         return phone.install(*args)
     if verb == 'push' and 1 <= len(args) <= 2:

@@ -203,8 +203,21 @@ def is_dictionary(v):
     return bool(v["hotwords"]["file"])
 
 
+def normalize(source, target):
+    """Write the defaults-filled variant, so the phone echoes every setting explicitly."""
+    value = load(source)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(value, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return value
+
+
 if __name__ == "__main__":
     import sys
+    if len(sys.argv) == 4 and sys.argv[1] == "normalize":
+        normalize(sys.argv[2], sys.argv[3]); print("normalized", sys.argv[3]); sys.exit(0)
+    if len(sys.argv) < 2:
+        print("usage: variant.py FILE...  |  variant.py normalize IN.json OUT.json"); sys.exit(2)
     for p in sys.argv[1:]:
         try:
             load(p); print("ok", p)

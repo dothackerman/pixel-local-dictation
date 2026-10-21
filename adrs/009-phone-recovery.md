@@ -14,5 +14,4 @@ The user applied the reviewed protected-wrapper patch manually; no OS/security c
 Successful later profile/access recoveries matched both original APKs and all 11 lab file hashes.
 Remaining gaps: absent-original recovery, some interruption paths, ordinary compatible rollback and next daily session.
 Release-return promise from ADR-004 remains unresolved against the benchmark baseline retained by allocation; establish final build before launch.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit when required preservation exceeds the wrapper contract; never weaken R6 to fit it.
