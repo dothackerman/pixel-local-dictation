@@ -72,6 +72,16 @@ class ProbePreparationTests(unittest.TestCase):
             self.assertEqual('synthetic silence; no recordings', manifest['input_kind'])
             repeated = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(0, repeated.returncode)
+            placement = command[:-2] + ['--test-apk', str(model / 'encoder.weights'), '--protocol', 'encoder-placement-v1']
+            placement[placement.index(str(out))] = str(folder / 'placement-cpu')
+            self.assertNotEqual(0, subprocess.run(placement, capture_output=True, text=True).returncode)
+            placement[placement.index(str(folder / 'placement-cpu'))] = str(folder / 'placement')
+            result = subprocess.run(placement + ['--provider', 'webgpu'], capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            manifest = json.loads((folder / 'placement/encoder-probe.json').read_text())
+            self.assertEqual(('encoder-placement-v1', 'webgpu', 'placement listing only; Run not executed'),
+                             (manifest['protocol'], manifest['provider'], manifest['scope']))
+            self.assertIn('tools/proposals/phone-short-encoder-v2.py', manifest['sources'])
 
     def test_direct_tensor_comparison_keeps_android_reference_scale_and_never_advances(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -105,7 +115,7 @@ class ProbePreparationTests(unittest.TestCase):
                                   "encoder.weights":"9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36"},
                         "builds": {"app_sha256": "a"*64, "test_sha256": "b"*64},
                         "runtime": runtime, "sources": {key:"a"*64 for key in ('tools/encoder_probe.py','tools/encoder_conversion.py',
-                            'tools/proposals/phone-short-encoder-v1.py','app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+                            'tools/proposals/phone-short-encoder-v2.py','app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                             'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts')}},
                     "build_sha256": "a"*64, "test_build_sha256": "b"*64,
                     "runtime_core_sha256":runtime['core_sha256'],"runtime_jni_sha256":runtime['jni_sha256'],

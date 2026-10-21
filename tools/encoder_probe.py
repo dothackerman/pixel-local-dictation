@@ -31,7 +31,12 @@ def sha(path):
 def write(path, value):
     path.write_text(json.dumps(value, indent=2) + '\n')
 
-def freeze(model, out, app_apk, test_apk, provider="cpu"):
+PLACEMENT = 'encoder-placement-v1'
+WRAPPER_SOURCE = 'tools/proposals/phone-short-encoder-v2.py'
+
+def freeze(model, out, app_apk, test_apk, provider="cpu", protocol='short-encoder-v1'):
+    if protocol == PLACEMENT and provider != 'webgpu':
+        raise ValueError('placement listing requires --provider webgpu')
     builds = {'app_sha256': sha(app_apk), 'test_sha256': sha(test_apk)}
     identities = {name: sha(model / name) for name in ('encoder.onnx', 'encoder.weights')}
     out.mkdir(parents=True, exist_ok=False)
@@ -52,11 +57,13 @@ def freeze(model, out, app_apk, test_apk, provider="cpu"):
             shutil.copy2(source, target)
         if sha(target) != expected:
             raise ValueError('model changed during staging: ' + name)
-    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', 'tools/proposals/phone-short-encoder-v1.py', 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
+    sources = ['tools/encoder_probe.py', 'tools/encoder_conversion.py', WRAPPER_SOURCE, 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt', 'app/build.gradle.kts']
-    value = {'schema': 1, 'protocol': 'short-encoder-v1', 'input_kind': 'synthetic silence; no recordings',
+    scope = ('placement listing only; Run not executed' if protocol == PLACEMENT
+             else 'short feasibility checkpoint; full take not run')
+    value = {'schema': 1, 'protocol': protocol, 'input_kind': 'synthetic silence; no recordings',
              'shape': [1, 128, 17], 'true_length': 17, 'provider': provider,
-             'eligible': False, 'scope': 'short feasibility checkpoint; full take not run',
+             'eligible': False, 'scope': scope,
              'atol': 1e-4, 'rtol': 1e-3, 'model': identities, 'builds': builds,
              'inputs': {name: sha(out / name) for name in ('audio_signal.f32', 'length.i64')},
              'staging_envelope': {'variant.json': sha(out / 'variant.json')},
@@ -102,7 +109,7 @@ def package(ort, sherpa, out):
 
 def validate_short_comparison_receipt(run):
     plan = run['frozen']
-    sources = {'tools/encoder_probe.py','tools/encoder_conversion.py','tools/proposals/phone-short-encoder-v1.py',
+    sources = {'tools/encoder_probe.py','tools/encoder_conversion.py',WRAPPER_SOURCE,
                'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts'}
     model = {'encoder.onnx':'2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725',
@@ -233,6 +240,7 @@ def main():
     frozen.add_argument('--app-apk', type=Path, required=True)
     frozen.add_argument('--test-apk', type=Path, required=True)
     frozen.add_argument('--provider', choices=('cpu', 'webgpu'), default='cpu')
+    frozen.add_argument('--protocol', choices=('short-encoder-v1', PLACEMENT), default='short-encoder-v1')
     packaged = commands.add_parser('package')
     packaged.add_argument('--ort-aar', type=Path, required=True)
     packaged.add_argument('--sherpa-aar', type=Path, required=True)
@@ -243,7 +251,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'freeze':
-            freeze(args.model, args.out, args.app_apk, args.test_apk, args.provider)
+            freeze(args.model, args.out, args.app_apk, args.test_apk, args.provider, args.protocol)
         elif args.command == 'compare':
             compare(args.reference, args.candidate)
         else:

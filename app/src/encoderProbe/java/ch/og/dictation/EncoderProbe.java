@@ -20,6 +20,7 @@ public final class EncoderProbe {
     private final Context context;
     private final File folder;
     private String checkpoint = "verify";
+    private boolean placementListed;
     public EncoderProbe(Context context, File folder) { this.context = context; this.folder = folder; }
 
     public void run() throws Exception {
@@ -46,7 +47,14 @@ public final class EncoderProbe {
             out.put("freeze_sha256", sha(config)).put("frozen", plan);
             String provider = plan.getString("provider");
             require(provider.equals("cpu") || provider.equals("webgpu"), "unknown provider " + provider);
-            require(plan.getString("protocol").equals("short-encoder-v1") &&
+            // Placement mode: WebGPU runtime session creation without strict rejection; never Run.
+            boolean placement = plan.getString("protocol").equals(PLACEMENT);
+            require(!placement || provider.equals("webgpu"), "placement listing requires webgpu");
+            if (placement) {
+                out.put("protocol", PLACEMENT).put("scope", "placement listing only; Run not executed");
+                out.remove("residual_node_assignment");
+            }
+            require((placement || plan.getString("protocol").equals("short-encoder-v1")) &&
                 plan.getInt("schema") == 1 && plan.getInt("true_length") == 17 &&
                 plan.getJSONArray("shape").toString().equals("[1,128,17]"), "unsupported frozen shape");
             for (String name : new String[]{"encoder.onnx", "encoder.weights"})
@@ -93,27 +101,41 @@ public final class EncoderProbe {
                     .put("intra_op_threads", 4).put("inter_op_threads", 1)
                     .put("timing_scope", "input preparation, copies, synchronous Run, host outputs, hashes and Base64; diagnostic only");
                 if (provider.equals("webgpu")) {
-                    options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
+                    if (!placement) options.addConfigEntry("session.disable_cpu_ep_fallback", "1");
                     Map<String, String> gpu = new LinkedHashMap<>();
                     gpu.put("enableGraphCapture", "0");
                     gpu.put("enableInt64", "1");
                     gpu.put("preferredLayout", "NCHW");
                     gpu.put("dawnBackendType", "Vulkan");
                     options.addWebGPU(gpu);
-                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", true);
+                    out.put("provider_options", new JSONObject(gpu)).put("cpu_fallback_disabled", !placement);
                 } else {
                     options.addCPU(true);
                     out.put("cpu_fallback_disabled", false);
                 }
                 out.put("provider_create_ms", (SystemClock.elapsedRealtimeNanos() - phaseStartNs) / 1e6);
+                // The log reader must be attached before ORT logs placement.
+                checkpoint = "placement-read";
+                LogTail placementLog = placement ? new LogTail(attempt) : null;
                 checkpoint = "session-create";
                 phaseStartNs = SystemClock.elapsedRealtimeNanos();
                 long start = phaseStartNs;
-                try (OrtSession session = env.createSession(new File(folder, "model/encoder.onnx").getAbsolutePath(), options)) {
+                try (LogTail tail = placementLog;
+                     OrtSession session = env.createSession(new File(folder, "model/encoder.onnx").getAbsolutePath(), options)) {
                     initializationEndNs = SystemClock.elapsedRealtimeNanos();
                     out.put("session_create_ms", (initializationEndNs - phaseStartNs) / 1e6);
                     out.put("cold_load_ms", (initializationEndNs - initializationStartNs) / 1e6);
                     memory.put(resources("after-load"));
+                    if (placement) {
+                        checkpoint = "placement-read";
+                        long readStart = SystemClock.elapsedRealtimeNanos();
+                        JSONObject listing = tail.finish();
+                        out.put("placement_read_ms", (SystemClock.elapsedRealtimeNanos() - readStart) / 1e6)
+                            .put("placement", listing)
+                            .put("residual_node_assignment", listing.getBoolean("complete") ? "listed" : "incomplete");
+                        placementListed = true;  // Outcome is set only after the runtime session closes.
+                        return;
+                    }
                     start = SystemClock.elapsedRealtimeNanos();
                     runStartNs = start;
                     byte[] input = Files.readAllBytes(new File(folder, "audio_signal.f32").toPath());
@@ -175,6 +197,8 @@ public final class EncoderProbe {
             out.put("checkpoint", checkpoint).put("failure", message);
             android.util.Log.e("LabTest", "short-encoder-v1 " + checkpoint + ": " + message);
         } finally {
+            if (placementListed && !out.has("failure"))
+                out.put("outcome", "complete").put("checkpoint", "placement-listed");
             long now = SystemClock.elapsedRealtimeNanos();
             if (runStartNs != 0 && !out.has("run_to_host_output_ms"))
                 out.put("run_to_failure_ms", (now - runStartNs) / 1e6);
@@ -191,6 +215,123 @@ public final class EncoderProbe {
             Files.write(result.toPath(), payload, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         }
     }
+    static final String PLACEMENT = "encoder-placement-v1";
+
+    /**
+     * Streams this process's own ORT log lines (tag "onnxruntime") while the runtime
+     * session is created, keeping only placement and placement-cause lines in memory.
+     */
+    static final class LogTail implements AutoCloseable {
+        private static final String VERIFY = "VerifyEachNodeIsAssignedToAnEp] ";
+        private final Process process;
+        private final Thread reader;
+        private final List<String> kept = Collections.synchronizedList(new ArrayList<>());
+        private final List<String> other = Collections.synchronizedList(new ArrayList<>());
+        private final String begin;
+        private final String end;
+        private volatile int seen;
+        private volatile boolean begun;
+        private volatile boolean ended;
+
+        /**
+         * Sentinels written under ORT's tag bracket the runtime session creation, so
+         * the listing is parsed only after every line logged in between was delivered.
+         */
+        LogTail(String attempt) throws Exception {
+            begin = "placement-begin " + attempt;
+            end = "placement-end " + attempt;
+            process = new ProcessBuilder("logcat", "-v", "raw", "--pid=" + android.os.Process.myPid(),
+                "-T", "1", "onnxruntime:V", "*:S").redirectErrorStream(true).start();
+            reader = new Thread(() -> {
+                try (BufferedReader lines = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    for (String line; (line = lines.readLine()) != null; ) {
+                        if (line.trim().equals(begin)) { begun = true; continue; }
+                        if (line.trim().equals(end)) { ended = true; continue; }
+                        if (!begun || ended) continue;
+                        seen++;
+                        if (line.contains(VERIFY) || line.contains("webgpu kernel not found in registries")
+                                || line.contains("Force fallback to CPU execution for node: "))
+                            kept.add(line);
+                        else if (!line.contains("[") && !line.isBlank() && other.size() < 3)
+                            other.add(clip(line));  // logcat/logd errors arrive without ORT's prefix.
+                    }
+                } catch (IOException ignored) {
+                    // Process destroyed; missing sentinels fail the listing.
+                }
+            }, "encoder-placement-log");
+            reader.start();
+            try {
+                await(begin, () -> begun, 10_000);
+            } catch (Exception error) {
+                close();
+                throw error;
+            }
+        }
+
+        private void await(String sentinel, java.util.function.BooleanSupplier delivered, long timeoutMs) throws Exception {
+            android.util.Log.i("onnxruntime", sentinel);
+            long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+            while (!delivered.getAsBoolean()) {
+                if (SystemClock.elapsedRealtime() > deadline || !process.isAlive() && !delivered.getAsBoolean())
+                    throw new IllegalStateException("own ORT log not delivered (" + sentinel.split(" ")[0]
+                        + "); logcat alive=" + process.isAlive() + " lines=" + seen + " other=" + other);
+                SystemClock.sleep(100);
+            }
+        }
+
+        /** Parses once, after the end sentinel proves earlier lines were delivered. */
+        JSONObject finish() throws Exception {
+            await(end, () -> ended, 20_000);
+            return parse();
+        }
+
+        private JSONObject parse() throws Exception {
+            java.util.regex.Pattern header = java.util.regex.Pattern.compile(
+                "(All nodes|Node\\(s\\)) placed on \\[([A-Za-z]+ExecutionProvider)\\]\\. Number of nodes: (\\d+)");
+            java.util.regex.Pattern node = java.util.regex.Pattern.compile("^\\s+(\\S+) \\((.*)\\)\\s*$");
+            java.util.regex.Pattern missing = java.util.regex.Pattern.compile(
+                "webgpu kernel not found in registries for Op type: (\\S+) node name: (.*?)\\s*$");
+            java.util.regex.Pattern preferred = java.util.regex.Pattern.compile(
+                "Force fallback to CPU execution for node: (.*?) because ");
+            JSONObject providers = new JSONObject();
+            JSONArray kernelNotFound = new JSONArray(), cpuPreferred = new JSONArray();
+            JSONArray current = null;
+            List<String> snapshot;
+            synchronized (kept) { snapshot = new ArrayList<>(kept); }
+            for (String line : snapshot) {
+                java.util.regex.Matcher m;
+                if ((m = missing.matcher(line)).find()) {
+                    kernelNotFound.put(new JSONArray().put(clip(m.group(1))).put(clip(m.group(2))));
+                } else if ((m = preferred.matcher(line)).find()) {
+                    cpuPreferred.put(clip(m.group(1)));
+                } else if ((m = header.matcher(line)).find()) {
+                    current = new JSONArray();
+                    providers.put(m.group(2), new JSONObject().put("declared", Integer.parseInt(m.group(3)))
+                        .put("all", m.group(1).equals("All nodes")).put("nodes", current));
+                    if (m.group(1).equals("All nodes")) current = null;
+                } else if (current != null) {
+                    String body = line.substring(line.indexOf(VERIFY) + VERIFY.length());
+                    if ((m = node.matcher(body)).find()) current.put(new JSONArray().put(clip(m.group(1))).put(clip(m.group(2))));
+                }
+            }
+            boolean complete = providers.length() > 0;
+            for (Iterator<String> it = providers.keys(); it.hasNext(); ) {
+                JSONObject row = providers.getJSONObject(it.next());
+                complete &= row.getBoolean("all") || row.getJSONArray("nodes").length() == row.getInt("declared");
+            }
+            return new JSONObject().put("complete", complete).put("providers", providers)
+                .put("causes", new JSONObject().put("kernel_not_found", kernelNotFound).put("cpu_preferred", cpuPreferred))
+                .put("log_lines", seen);
+        }
+
+        private static String clip(String value) { return value.length() <= 512 ? value : value.substring(0, 512); }
+
+        @Override public void close() throws Exception {
+            process.destroy();
+            reader.join(2_000);
+        }
+    }
+
     private JSONObject resources(String phase) throws Exception {
         Debug.MemoryInfo info = new Debug.MemoryInfo(); Debug.getMemoryInfo(info);
         long hwm = 0;

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from test_phone import DiagnosticPhone
 
-SOURCE = Path(__file__).with_name('proposals') / 'phone-short-encoder-v1.py'
+SOURCE = Path(__file__).with_name('proposals') / 'phone-short-encoder-v2.py'
 loader = importlib.machinery.SourceFileLoader('short_encoder_proposal', str(SOURCE))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 phone = importlib.util.module_from_spec(spec)
@@ -56,6 +56,11 @@ class ShortPhone(DiagnosticPhone):
         if self.mode == 'partial':
             (self.root / 'lab/result.json').write_bytes(b'{"protocol":"short-encoder-v1",')
             raise ConnectionError('fabricated process death during result write')
+        if plan['protocol'] == 'encoder-placement-v1':
+            (self.root / 'lab/result.json').write_text(json.dumps(self.placement(plan, config, short_encoder_attempt)))
+            if self.mode == 'drift':
+                (self.root / 'lab/unexpected.bin').write_bytes(b'unknown generated data')
+            return 'INSTRUMENTATION_STATUS_CODE: 0\nOK (1 test)\nINSTRUMENTATION_CODE: -1'
         result = dict(schema=1, protocol='short-encoder-v1', attempt_id=short_encoder_attempt,
             eligible=False, scope='short synthetic feasibility only; full-take checks not run',
             outcome='complete', checkpoint='outputs-materialized', pid=100 + self.calls,
@@ -87,6 +92,50 @@ class ShortPhone(DiagnosticPhone):
         if self.mode == 'drift':
             (self.root / 'lab/unexpected.bin').write_bytes(b'unknown generated data')
         return 'INSTRUMENTATION_STATUS_CODE: 0\nOK (1 test)\nINSTRUMENTATION_CODE: -1'
+
+    def placement(self, plan, config, attempt):
+        cpu = [['Gather','/pre_encode/Gather'],['Unsqueeze','']]
+        gpu = [['MatMul','/layers.0/MatMul']]
+        result = dict(schema=1, protocol='encoder-placement-v1', attempt_id=attempt, eligible=False,
+            scope='placement listing only; Run not executed', outcome='complete', checkpoint='placement-listed',
+            pid=100 + self.calls, processStartElapsedMs=1000 + self.calls, freeze_sha256=sha(config.read_bytes()),
+            frozen=plan, build_sha256=plan['builds']['app_sha256'], test_build_sha256=plan['builds']['test_sha256'],
+            runtime_version='1.31.0', runtime_core_sha256=plan['runtime']['core_sha256'],
+            runtime_jni_sha256=plan['runtime']['jni_sha256'], optimization='ALL_OPT', execution_mode='SEQUENTIAL',
+            intra_op_threads=4, inter_op_threads=1, profiling=False, cpu_fallback_disabled=False,
+            provider_options=dict(enableGraphCapture='0', enableInt64='1', preferredLayout='NCHW', dawnBackendType='Vulkan'),
+            initialization_elapsed_ms=1.0, initialization_complete=True, cold_load_ms=1.0, placement_read_ms=0.5,
+            adapter_driver_proof='unproven', fp32_shader_proof='unproven', residual_node_assignment='listed',
+            memory=[dict(phase=p, pssKb=100, highWaterKb=200, thermalStatus=0) for p in ('before-load','after-load','finally')],
+            placement=dict(complete=True, log_lines=9,
+                providers=dict(CPUExecutionProvider=dict(declared=2, all=False, nodes=cpu),
+                               WebGpuExecutionProvider=dict(declared=1, all=False, nodes=gpu)),
+                causes=dict(kernel_not_found=[['Gather','/pre_encode/Gather']], cpu_preferred=[''])))
+        if self.mode == 'incomplete':
+            result['placement']['providers']['CPUExecutionProvider']['declared'] = 3
+            result['placement']['complete'] = False
+            result['residual_node_assignment'] = 'incomplete'
+        elif self.mode == 'lying-complete':
+            result['placement']['providers']['CPUExecutionProvider']['declared'] = 3
+        elif self.mode == 'strict':
+            result['cpu_fallback_disabled'] = True
+        elif self.mode == 'ran':
+            result['outputs'] = []
+        elif self.mode == 'extra-key':
+            result['placement']['sentinels'] = True
+        elif self.mode == 'all-with-nodes':
+            result['placement']['providers']['WebGpuExecutionProvider']['all'] = True
+        elif self.mode == 'empty-op':
+            result['placement']['providers']['WebGpuExecutionProvider']['nodes'][0][0] = ''
+        elif self.mode == 'after-output':
+            result['memory'][1]['phase'] = 'after-output'
+        elif self.mode == 'failed-with-placement':
+            result.update(outcome='failed', checkpoint='placement-read', failure='fabricated close failure')
+        elif self.mode == 'read-failed':
+            for key in ('placement','placement_read_ms','residual_node_assignment'):
+                result.pop(key)
+            result.update(outcome='failed', checkpoint='placement-read', failure='fabricated logcat refused')
+        return result
 
 class ShortContractTests(unittest.TestCase):
     def setUp(self):
@@ -123,8 +172,8 @@ class ShortContractTests(unittest.TestCase):
             sources={name:'a'*64 for name in ('tools/encoder_probe.py','tools/encoder_conversion.py',
                 'app/src/encoderProbe/java/ch/og/dictation/EncoderProbe.java',
                 'app/src/androidTest/kotlin/ch/og/dictation/LabTest.kt','app/build.gradle.kts',
-                'tools/proposals/phone-short-encoder-v1.py')})
-        self.plan['sources']['tools/proposals/phone-short-encoder-v1.py']=sha(SOURCE.read_bytes())
+                'tools/proposals/phone-short-encoder-v2.py')})
+        self.plan['sources']['tools/proposals/phone-short-encoder-v2.py']=sha(SOURCE.read_bytes())
         # Only the fake-device test process translates this fixed public model
         # pin to fabricated bytes. Production has no override or extra model route.
         model_policy=patch.object(phone,'SHORT_MODEL',dict(self.plan['model']))
@@ -238,6 +287,57 @@ class ShortContractTests(unittest.TestCase):
         self.assertEqual('unresolved-execution',second['outcome'])
         self.assertEqual(original,Path(first['path']).read_bytes())
         self.command('recover','short-one');self.restored()
+
+class PlacementContractTests(ShortContractTests):
+    """encoder-placement-v1: WebGPU runtime session creation listing; never Run or outputs."""
+    def setUp(self):
+        super().setUp()
+        self.plan.update(protocol='encoder-placement-v1', provider='webgpu',
+                         scope='placement listing only; Run not executed')
+        (self.source/'encoder-probe.json').write_text(json.dumps(self.plan))
+
+    def lab(self, mode):
+        self.device.mode = mode; self.stage()
+        return self.command('lab','short-one',str(self.packages[2]))
+
+    def test_complete_and_incomplete_listings_are_accepted_once_and_recover(self):
+        for mode, listed in (('complete', 'listed'), ('incomplete', 'incomplete')):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.assertEqual('complete', self.lab(mode)['outcome'])
+                value = json.loads(Path(self.command('pull-results','short-one')['path']).read_text())
+                self.assertEqual('encoder-placement-v1', value['protocol'])
+                self.assertEqual(listed, value['residual_node_assignment'])
+                self.assertFalse(value['cpu_fallback_disabled'])
+                self.assertNotIn('outputs', value)
+                with self.assertRaises(phone.Refused):self.command('lab','short-one',str(self.packages[2]))
+                self.assertEqual(1, self.device.calls)
+                self.command('recover','short-one');self.restored()
+
+    def test_failed_placement_read_is_preserved(self):
+        self.assertEqual('failed', self.lab('read-failed')['outcome'])
+        self.command('recover','short-one');self.restored()
+
+    def test_inconsistent_strict_or_run_receipts_stay_unresolved(self):
+        for mode in ('lying-complete','strict','ran','extra-key','all-with-nodes','empty-op',
+                     'after-output','failed-with-placement'):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.assertEqual('unresolved-execution', self.lab(mode)['outcome'])
+                self.command('recover','short-one');self.restored()
+
+    def test_placement_declaration_requires_webgpu(self):
+        self.plan['provider'] = 'cpu'
+        (self.source/'encoder-probe.json').write_text(json.dumps(self.plan))
+        self.command('profile-install',*map(str,self.packages),'short-one')
+        with self.assertRaises(phone.Refused):self.command('push-variant',str(self.source),'short-one')
+        self.command('recover','short-one');self.restored()
+
+    # Inherited short-encoder-v1 receipt tests do not apply to this protocol.
+    test_short_success_has_reserved_attempt_retrieval_and_exact_recovery = None
+    test_disconnect_after_recorded_success_can_retrieve_first_valid_receipt = None
+    test_native_and_artifact_failures_are_preserved_without_role_profile_or_retry = None
+    test_changed_result_after_completion_is_unresolved_and_original_export_survives = None
 
 def load_tests(loader, tests, pattern):
     # Bind the entire historical fixture to the proposal, including its exception
