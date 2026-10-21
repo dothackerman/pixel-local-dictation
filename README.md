@@ -139,7 +139,7 @@ IME enablement, FUTO toggles).
 
 Typical experiment: `snapshot baseline` → `install APP.apk TEST.apk` → `push DIR`
 → `run ch.og.dictation.LabTest k=v` → `pull files/lab` → `restore baseline`.
-Each mutating verb writes `corpus/lab/runs/<ts>-<verb>/meta.json` with the
+Each mutating verb and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the
 installed APK and lab hashes; experiments bind their receipts to that.
 Pulled files stay in gitignored `corpus/`.
 

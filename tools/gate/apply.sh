@@ -19,12 +19,12 @@ install -m 0755 "$gate/phone-guard.sh"  .claude/hooks/phone-guard.sh
 install -m 0755 "$gate/phone"           .claude/hooks/phone
 install -m 0755 "$gate/phone_guard.py"  .codex/hooks/phone_guard.py
 install -m 0755 "$gate/phone-guard.sh"  .codex/hooks/phone-guard.sh
+install -m 0644 "$gate/hooks.json"      .codex/hooks.json
 install -m 0644 "$gate/settings.json"   .claude/settings.json
 install -m 0644 "$gate/config.toml"     .codex/config.toml
 install -m 0644 "$gate/AGENTS.md"       AGENTS.md
 rm -f .codex/rules/phone.rules
 rmdir .codex/rules 2>/dev/null || true
-if [ -e tools/phone.new ]; then git mv -f tools/phone.new tools/phone; fi
 chmod 0755 tools/phone
 [ -L CLAUDE.md ] || { rm -f CLAUDE.md && ln -s AGENTS.md CLAUDE.md; }
 git add -A .claude/hooks .claude/settings.json .codex AGENTS.md CLAUDE.md tools/phone

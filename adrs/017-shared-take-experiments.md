@@ -23,7 +23,7 @@ timing meanings remain unchanged. Python decoding remains a laptop screen.
 ## Experiment interface
 
 `python3 tools/lab.py --help` owns command syntax. It never runs inference or
-device commands. The existing protected wrapper retains sole phone authority.
+device commands. The phone wrapper retains sole phone authority (since 2026-10-21: [ADR-024](024-phone-access-rewrite.md)).
 
 1. `prepare` snapshots a tracked artifact manifest's host artifacts and source hashes.
    `check` shows missing or changed inputs; it never grants measurement readiness.
@@ -36,7 +36,7 @@ device commands. The existing protected wrapper retains sole phone authority.
 
 A missing receipt means reconcile the actual state. It never means retry.
 Reservation is cooperative accounting, not an at-most-once device guarantee.
-Interrupted or failed phone operations still use the wrapper's recovery journal.
+Interrupted or failed phone operations are recovered with the wrapper's `snapshot`/`restore` (ADR-024; the recovery journal is gone).
 Do not reset attempts by copying a plan to another identity.
 
 The comparison plan contains `schema: 1`, `id`, `kind` (`conversion-parity` or

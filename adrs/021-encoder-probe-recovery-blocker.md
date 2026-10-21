@@ -53,14 +53,13 @@ reviewed recovery below. Instrumentation elapsed time is not encoder performance
 GPU tensor/placement/precision check, repeated speed series or live validation ran.
 
 Recovery required an independently reviewed exact-run, exact-inventory proposal
-outside the protected wrapper, tested with fabricated device evidence. The user applies protected-wrapper changes
-manually under [the existing operation rule](../README.md#phone-lab-operations).
+outside the protected wrapper, tested with fabricated device evidence. The user applied protected-wrapper changes
+manually under the operation rule of the time (superseded by [ADR-024](024-phone-access-rewrite.md): `snapshot`/`restore`, no journal, no proposal flow).
 Do not edit the active journal directly, broaden unknown-file tolerance, bypass the
 wrapper, fabricate a role-profile pass, or discard the private evidence.
 
-The independently reviewed [recovery candidate](../tools/proposals/phone-encoder-probe-recovery.py)
-and [diff](../tools/proposals/phone-encoder-probe-recovery.diff) are
-committed outside the protected path. Candidate SHA256 is
+The independently reviewed recovery candidate `tools/proposals/phone-encoder-probe-recovery.py`
+and its `.diff` were committed outside the protected path (deleted in `74519c3`, ADR-024; readable at `74519c3^`). Candidate SHA256 is
 `0b6bc00d55dbfeda09882fa75cc492acd78310c4652be750572e7c68cfe25cb7`.
 Six fabricated-device tests cover successful preservation/restoration, refused
 drift, interrupted restoration and partial exports. All 179 host tests and Android

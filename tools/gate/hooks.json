@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|exec_command|Edit|Write|MultiEdit|NotebookEdit|apply_patch)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "project_root=$(git rev-parse --show-toplevel) || exit 2; bash \"$project_root/.codex/hooks/phone-guard.sh\" || exit 2",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

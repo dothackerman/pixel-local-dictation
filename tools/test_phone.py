@@ -14,9 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SOURCE = Path(__file__).with_name('phone.new')
-if not SOURCE.exists():
-    SOURCE = Path(__file__).with_name('phone')
+SOURCE = Path(__file__).with_name('phone')
 loader = importlib.machinery.SourceFileLoader('phone_module', str(SOURCE))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 phone = importlib.util.module_from_spec(spec)

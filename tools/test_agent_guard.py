@@ -37,7 +37,12 @@ class ShellRuleTests(unittest.TestCase):
                         'sed -n 1,40p .claude/settings.json', 'git show HEAD:tools/phone | head',
                         "python3 - <<'PY'\nprint('adb')\nPY", 'cat > docs.md <<EOF\nuse adb never\nEOF',
                         'rg fastboot tools', 'wc -l tools/phone; ls .codex', 'echo "the adb word"',
-                        './gradlew :app:assembleBenchmark :app:lintBenchmark', 'python3 tools/test_agent_guard.py']:
+                        './gradlew :app:assembleBenchmark :app:lintBenchmark', 'python3 tools/test_agent_guard.py',
+                        "rg -n 'pull-results|adb |profile-install' tools -g '!.gradle'",
+                        "python3 - <<'PY'\nimport subprocess\nprint(len('adb'))\nPY",
+                        "cat <<EOF > notes.md\nrun: adb devices (never do this)\nEOF\necho done",
+                        'git log --grep="adb devices" --oneline', 'ls | grep adb', 'echo $(ls) | grep fastboot',
+                        'python3 -c "import re; re.compile(\'adb\')"', 'gradle --version', './gradlew tasks --all']:
             for tool in ('Bash', 'exec_command'):
                 with self.subTest(command=command, tool=tool):
                     self.assertEqual(bash(command, tool), 0)
@@ -47,7 +52,10 @@ class ShellRuleTests(unittest.TestCase):
                         'echo x | adb shell cat', '$(adb shell pidof x)', '`adb devices`', 'sh -c "adb devices"',
                         "bash -c 'adb shell'", 'env ANDROID_SERIAL=x adb shell', 'timeout 30 adb logcat',
                         '/home/oriol/Android/Sdk/platform-tools/adb devices', '~/Android/Sdk/platform-tools/fastboot devices',
-                        'echo serial | xargs adb -s', '(adb devices)', 'nice -n 5 adb shell']:
+                        'echo serial | xargs adb -s', '(adb devices)', 'nice -n 5 adb shell',
+                        'ls\nadb devices', 'FOO=1 BAR=2 adb shell id', 'exec adb shell', 'command adb devices',
+                        'sh -c "ls; adb shell id"', 'bash -c \'echo x && adb devices\'',
+                        'xargs -0 -n1 adb install < list']:
             with self.subTest(command=command):
                 self.assertEqual(bash(command), 2)
 

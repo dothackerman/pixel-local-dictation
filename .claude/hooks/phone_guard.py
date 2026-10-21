@@ -3,27 +3,102 @@
 
 Two rules only:
 1. Shell: deny a command that *invokes* adb or fastboot (directly, via sh -c,
-   $(...), xargs, env/timeout, or a Gradle device task). Mentioning the words
-   in greps, docs or heredocs is fine.
+   $(...), backticks, xargs, env/timeout/nice, or a Gradle device task).
+   The command is tokenized like a shell, so the words inside quotes, greps,
+   docs and heredoc bodies never count.
 2. Edits: deny writes to the hook and harness configuration and AGENTS/CLAUDE.md.
 """
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTECTED = ('.claude/hooks', '.claude/settings.json', '.codex', '.git', 'tools/git-hooks',
              'AGENTS.md', 'CLAUDE.md')
-TOOL = r'(?:\S*/)?(?:adb|fastboot)(?=\s|$)'
-PREFIX = r'(?:env\s+(?:\w+=\S*\s+)*|timeout\s+\S+\s+|nice\s+(?:-n\s*\d+\s+)?|xargs\s+(?:-\S+\s+)*)?'
-INVOKES = re.compile(r'(?:^|[;&|(\n]|\$\(|`|-c\s+["\']?)\s*' + PREFIX + TOOL)
-GRADLE_DEVICE_TASK = re.compile(r'gradlew?\b[^\n;&|]*\b\w*(?:[Ii]nstall|[Cc]onnected|[Uu]ninstall|[Dd]evice)\w*')
+TOOLS = {'adb', 'fastboot'}
+SHELLS = {'sh', 'bash', 'zsh', 'dash', 'ksh'}
+SKIP = {'env', 'command', 'exec', 'nohup', 'time', 'builtin', 'sudo', 'doas'}
+SKIP_ONE = {'timeout', 'stdbuf', 'nice', 'ionice', 'chrt'}  # wrapper plus one argument (or -flag value)
+SEPARATORS = {';', '&&', '||', '|', '|&', '&', '(', ')', ';;', '\n'}
+GRADLE_TASK = re.compile(r'(?i)(install|connected|uninstall|device)')
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?\n)?\2[ \t]*(?=\n|$)", re.S)
 
 
 def deny(reason):
     print('phone-guard: ' + reason, file=sys.stderr)
     return 2
+
+
+def simple_commands(command):
+    """Split a shell command line into its simple commands (lists of words)."""
+    command = HEREDOC.sub('', command)
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=';&|()')
+    lexer.whitespace = ' \t\r'
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        # Unbalanced quoting: fall back to whitespace words so a stray adb still shows.
+        tokens = re.split(r'[\s;&|()]+', command)
+    current = []
+    for token in tokens:
+        if token in SEPARATORS:
+            if current:
+                yield current
+            current = []
+            continue
+        for index, part in enumerate(token.split('\n')):  # a newline inside a token ends the command
+            if index and current:
+                yield current
+                current = []
+            if part:
+                current.append(part)
+    if current:
+        yield current
+
+
+def head(words):
+    """Strip env assignments and transparent wrappers; return the command word and its arguments."""
+    words = list(words)
+    while words:
+        first = words[0].lstrip('`$').strip()
+        base = first.rsplit('/', 1)[-1]
+        if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', first) or base in SKIP:
+            words.pop(0)
+        elif base in SKIP_ONE:
+            words.pop(0)
+            if words and words[0].startswith('-') and len(words) > 1:
+                words.pop(0)
+            if words:
+                words.pop(0)
+        elif base == 'xargs':
+            words.pop(0)
+            while words and words[0].startswith('-'):
+                words.pop(0)
+        else:
+            words[0] = first
+            return words
+    return words
+
+
+def invokes_tool(command):
+    for words in simple_commands(command):
+        words = head(words)
+        if not words:
+            continue
+        base = words[0].rsplit('/', 1)[-1]
+        if base in TOOLS:
+            return 'direct adb/fastboot is not allowed; use .claude/hooks/phone'
+        if base in SHELLS and '-c' in words:
+            inner = words[words.index('-c') + 1:]
+            if inner and (reason := invokes_tool(inner[0])):
+                return reason
+        if base in ('gradlew', 'gradle') and any(GRADLE_TASK.search(w) for w in words[1:] if not w.startswith('-')):
+            return 'Gradle device tasks talk to adb; build on the host, then .claude/hooks/phone install'
+    return None
 
 
 def protected(path, cwd):
@@ -47,14 +122,11 @@ def check(event):
     if tool in ('Bash', 'exec_command'):
         command = args.get('command', args.get('cmd'))
         if isinstance(command, list):
-            command = ' '.join(command)
+            command = ' '.join(shlex.quote(str(c)) for c in command)
         if not isinstance(command, str) or not command.strip():
             return deny('missing shell command')
-        if INVOKES.search(command):
-            return deny('direct adb/fastboot is not allowed; use .claude/hooks/phone')
-        if GRADLE_DEVICE_TASK.search(command):
-            return deny('Gradle device tasks talk to adb; build on the host, then .claude/hooks/phone install')
-        return 0
+        reason = invokes_tool(command)
+        return deny(reason) if reason else 0
     if tool in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit'):
         path = args.get('file_path', args.get('notebook_path'))
         if not isinstance(path, str) or not path:

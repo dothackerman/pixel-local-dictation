@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
  * chunk texts and decode times for every take (fed unpaced, 640 samples at a time, like the
  * laptop twin), a paced run of the longest and the shortest take for the wait after Stop,
  * peak memory, thermal status. No UI, no microphone, nothing leaves the phone.
- * Run with: tools/phone lab
+ * Run with: .claude/hooks/phone run ch.og.dictation.LabTest [k=v] (ADR-024)
  */
 @RunWith(AndroidJUnit4::class)
 class LabTest {

@@ -6,7 +6,7 @@ Revision 2 after an isolated adversarial review (Fable); its findings are folded
 
 ## Implementation state (2026-10-21)
 
-Done on the branch: `tools/phone.new` (new wrapper, 13 fake-device tests in `tools/test_phone.py`),
+Done on the branch: `tools/phone` (new wrapper, 15 fake-device tests in `tools/test_phone.py`),
 `tools/gate/` (shim, shared guard, Claude/Codex settings, AGENTS.md, `apply.sh`), guard tests,
 `encoder_probe.py` no longer pins a wrapper file, proposals and their tests deleted, docs updated.
 Agents cannot write the harness paths, so the user runs `bash tools/gate/apply.sh`
@@ -59,7 +59,7 @@ phone app                         our app + test package: installed, version, sh
 phone install APP.apk [TEST.apk]  package ∈ {ch.og.dictation, .test}; same signer; permission allowlist
 phone push DIR [NAME]             → files/lab/NAME (default lab); regular files only, replaces
 phone pull PATH... [--to DIR]     from files/lab or files/benchmark → corpus/lab/pull/<ts>/
-phone run CLASS[#method] [-e k=v] am instrument on the test package; app logcat saved beside results
+phone run CLASS[#method][,...] [k=v] am instrument on the test package; app logcat saved beside results
 phone logs [--since] | crash      logcat by our app's uid (survives crashes) | crash buffer, our package
 phone stop                        force-stop our app only
 phone snapshot NAME               retained APK pair + files/ + shared_prefs/ + databases/ + grants + IME state
@@ -79,7 +79,7 @@ Output: one JSON object on stdout. Exit 0 success; `refused: <reason>` exit 3 (p
 - `logs` uses `--uid <app uid>`, not `--pid`; `crash` filters the crash buffer by package.
 - Live dictation is protected: `install`, `restore`, `stop`, `uninstall` refuse while `dumpsys input_method` shows our IME bound or input shown. Nothing else stops the app.
 - Serial, user ids and absolute SDK paths never appear in output.
-- One `flock` per invocation. Every mutating verb and `run` write `{verb, ts, app_sha256, test_sha256, lab_inventory_sha256}` to `corpus/lab/runs/<ts>/meta.json`: this is where evidence binding lives now, as data beside results, not as refusals.
+- One `flock` per invocation. Every mutating verb and `run` write `{verb, ts, app_sha256, test_sha256, lab_inventory_sha256}` to `corpus/lab/runs/<ts>-<verb>-<id>/meta.json`: this is where evidence binding lives now, as data beside results, not as refusals.
 
 ### Gating (what still asks)
 
@@ -104,8 +104,8 @@ Revision 2 had anchored on `main:tools/phone` fetched from GitHub. Dropped (revi
 
 ### Harness (Claude and Codex, one shared script)
 
-Hook `phone-guard.py`, ~60 lines, fast-fail only:
-1. Bash: split into simple commands (shlex on `;`, `&&`, `||`, `|`); deny if any argv element's basename is `adb`/`fastboot`, or a `gradlew` task matches `install|connected|uninstall|device`. Mentions in strings, greps, heredocs and docs pass.
+Hook `phone_guard.py` (entered through `phone-guard.sh`, installed from `tools/gate/`), ~60 lines, fast-fail only:
+1. Bash: tokenize like a shell (`shlex`, heredoc bodies removed, split on `;` `&&` `||` `|` `&` `(` `)` and newlines, transparent wrappers such as `env`, `timeout`, `nice`, `xargs` skipped, `sh -c "…"` recursed); deny when a command word is `adb`/`fastboot`, or `gradlew`/`gradle` is given a task matching `install|connected|uninstall|device`. Words inside quotes, grep patterns, heredocs and docs never count.
 2. Edit/Write/apply_patch: deny paths under `.claude/hooks`, `.codex`, `tools/git-hooks`, `.git`, and `AGENTS.md`. The wrapper source is **not** protected.
 
 The real boundary is the sandbox: `allowUnsandboxedCommands: false`; `denyRead` on `~/.android` and `~/Android/Sdk/platform-tools`; `excludedCommands` = the shim only, which matches the exact command line, so the shim must be called alone (no pipe, no redirect; the result is also written to `corpus/lab/last.json`). Gradle's `connected*`/`install*` tasks then fail inside the sandbox even if a hook misses them. `denyWrite` covers `.git/config` and `.git/hooks`, not `.git` itself, so agents can still commit.
@@ -132,7 +132,7 @@ The adapter seam already exists (`test_phone.py` fakes the device). Keep it; the
 ## Rejected
 
 - Keep the wrapper read-only and formalize the proposal flow: the flow is the problem; nine applies, 7–9 h idle waits, review without the real file.
-- Compare the worktree wrapper's bytes with `main` before running (revision 1): local `main` is agent-writable, `python3 tools/phone` has another argv[0], copies pass the wrapper's own path check. Replaced by executing the remote anchor.
+- Compare the worktree wrapper's bytes with `main` before running (revision 1): local `main` is agent-writable, `python3 tools/phone` has another argv[0], copies pass the wrapper's own path check. Replaced by executing the user-installed copy (revision 3; revision 2's remote anchor was dropped, see above).
 - Hash-pin everything harder: pins protect evidence integrity, which now lives in `meta.json` beside results.
 - Approval prompts per phone command: 3,375 verdicts, 100 % allow on phone work, no information.
 - Give agents raw adb: the scope guarantee (only `ch.og.dictation`) is exactly what the wrapper is for.
@@ -141,7 +141,7 @@ The adapter seam already exists (`test_phone.py` fakes the device). Keep it; the
 
 0. **Blocking**: user applies the AppArmor fix; a sandboxed `true` succeeds. Without it the treadmill only moves (and with `allowUnsandboxedCommands: false` no shell command runs at all).
 1. New `tools/phone` + fake tests on the branch (the old wrapper remains in Git history at `74519c3^`).
-2. Shim + shared `phone-guard.py`; update `settings.json`, `config.toml`; delete `phone.rules`, `tools/proposals/phone-*.py`, the `.diff`. User runs `bash tools/gate/apply.sh`.
+2. Shim + shared `phone_guard.py`; update `settings.json`, `config.toml`; delete `phone.rules`, `tools/proposals/phone-*.py`, the `.diff`. User runs `bash tools/gate/apply.sh`.
 3. Move receipt validation from the old wrapper into `tools/encoder_probe.py`.
 4. Shrink `AGENTS.md`; symlink `CLAUDE.md`; mark ADR-009 superseded.
 5. First real use: `snapshot baseline` → `install` diagnostic pair → `push` → `run` → `pull` → `restore baseline` → `app` shows original hashes and IME state. One PR.
