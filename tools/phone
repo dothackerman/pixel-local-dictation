@@ -526,7 +526,10 @@ SHORT_ENCODER = 'short-encoder-v1'
 # WebGPU runtime session creation without strict CPU-fallback rejection; never Run.
 PLACEMENT = 'encoder-placement-v1'
 PLACEMENT_SCOPE = 'placement listing only; Run not executed'
-SELF_SOURCE = 'tools/proposals/phone-short-encoder-v2.py'
+# short-encoder-v1 with WebGPU under the ADR-023 placement check instead of strict
+# CPU-fallback rejection: non-strict WebGPU Run plus its placement listing.
+SHORT_V2 = 'short-encoder-v2'
+SELF_SOURCE = 'tools/proposals/phone-short-encoder-v3.py'
 SHORT_LIMIT = 1024 * 1024
 SHORT_INPUTS = {
     'audio_signal.f32': 'e8b31e302d11fbf7da124b537ba2d44f88e165da03c6557e2b0f6dc486e025bb',
@@ -556,7 +559,7 @@ def short_declaration(source, staged, receipt, observed):
     expected_files = {'encoder-probe.json','variant.json',*SHORT_INPUTS,
                       'model/encoder.onnx','model/encoder.weights'}
     placement = isinstance(value, dict) and value.get('protocol') == PLACEMENT
-    if (not isinstance(value, dict) or set(value) != fields or value.get('protocol') not in (SHORT_ENCODER, PLACEMENT)
+    if (not isinstance(value, dict) or set(value) != fields or value.get('protocol') not in (SHORT_ENCODER, SHORT_V2, PLACEMENT)
             or value.get('schema') != 1 or value.get('input_kind') != 'synthetic silence; no recordings'
             or value.get('shape') != [1,128,17] or value.get('true_length') != 17
             or value.get('provider') not in (('webgpu',) if placement else ('cpu','webgpu'))
@@ -593,21 +596,22 @@ def short_result(value, declaration):
     plan = declaration['manifest']
     if plan['protocol'] == PLACEMENT:
         return placement_result(value, declaration)
-    if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('protocol') != SHORT_ENCODER
+    listed = plan['protocol'] == SHORT_V2 and plan['provider'] == 'webgpu'
+    if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('protocol') != plan['protocol']
             or value.get('attempt_id') != attempt['id'] or value.get('eligible') is not False
             or value.get('freeze_sha256') != declaration['manifest_sha256'] or value.get('frozen') != plan
             or value.get('outcome') not in ('complete','failed')
             or type(value.get('pid')) is not int or value['pid'] <= 0
             or type(value.get('processStartElapsedMs')) is not int or value['processStartElapsedMs'] < 0
-            or any(value.get(key) != 'unproven' for key in
-                   ('adapter_driver_proof','fp32_shader_proof','residual_node_assignment'))):
+            or any(value.get(key) != 'unproven' for key in ('adapter_driver_proof','fp32_shader_proof'))
+            or (not listed and (value.get('residual_node_assignment') != 'unproven' or 'placement' in value))):
         raise Refused('unbound or unsupported short encoder receipt')
     complete = value['outcome'] == 'complete'
     bindings = dict(build_sha256=plan['builds']['app_sha256'], test_build_sha256=plan['builds']['test_sha256'],
         runtime_version='1.31.0', runtime_core_sha256=SHORT_RUNTIME['core_sha256'],
         runtime_jni_sha256=SHORT_RUNTIME['jni_sha256'], optimization='ALL_OPT', execution_mode='SEQUENTIAL',
         intra_op_threads=4, inter_op_threads=1, profiling=False,
-        cpu_fallback_disabled=plan['provider']=='webgpu')
+        cpu_fallback_disabled=plan['provider']=='webgpu' and plan['protocol'] == SHORT_ENCODER)
     if plan['provider'] == 'webgpu':
         bindings['provider_options'] = dict(enableGraphCapture='0', enableInt64='1',
                                           preferredLayout='NCHW', dawnBackendType='Vulkan')
@@ -622,14 +626,23 @@ def short_result(value, declaration):
                    for k in ('highWaterKb','pssKb','thermalStatus')) or row['thermalStatus'] > 6 for row in memory)
             or (complete and {row['phase'] for row in memory} != phases)):
         raise Refused('short encoder resource observations missing or invalid')
-    for key in ('cold_load_ms','run_to_host_output_ms','initialization_elapsed_ms','run_to_failure_ms'):
-        if ((complete and key != 'run_to_failure_ms') or key in value) and (type(value.get(key)) not in (int,float)
+    for key in ('cold_load_ms','run_to_host_output_ms','initialization_elapsed_ms','run_to_failure_ms',
+                'placement_read_ms'):
+        required = complete and key != 'run_to_failure_ms' and (listed or key != 'placement_read_ms')
+        if (required or key in value) and (type(value.get(key)) not in (int,float)
                 or not math.isfinite(value[key]) or value[key] < 0):
             raise Refused('short encoder timing missing or invalid')
+    if listed and (complete or 'placement' in value):
+        placement_listing(value)
+        if not complete and value.get('checkpoint') not in ('placement-read','session-create','run-and-host-output'):
+            raise Refused('placement listed before its checkpoint')
+    elif listed and value.get('residual_node_assignment') != 'unproven':
+        raise Refused('unlisted failure claims a placement')
     if complete:
         if value.get('checkpoint') != 'outputs-materialized' or value.get('initialization_complete') is not True:
             raise Refused('short encoder output completion missing')
-    elif (value.get('checkpoint') not in ('verify','native-load','provider-create','session-create','run-and-host-output')
+    elif (value.get('checkpoint') not in ('verify','native-load','provider-create','session-create',
+                                          'run-and-host-output') + (('placement-read',) if listed else ())
           or not isinstance(value.get('failure'),str) or not 1 <= len(value['failure']) <= 16384):
         raise Refused('short encoder failed checkpoint missing')
     if complete or 'outputs' in value:
@@ -687,45 +700,51 @@ def placement_result(value, declaration):
                 or not math.isfinite(value[key]) or value[key] < 0):
             raise Refused('placement timing missing or invalid')
     if complete:
-        if (value.get('checkpoint') != 'placement-listed' or value.get('initialization_complete') is not True
-                or value.get('residual_node_assignment') not in ('listed','incomplete')):
+        if value.get('checkpoint') != 'placement-listed' or value.get('initialization_complete') is not True:
             raise Refused('placement completion missing')
-        listing = value.get('placement')
-        text = lambda item: isinstance(item,str) and 1 <= len(item) <= 512
-        # ONNX permits unnamed nodes, so only the op type must be nonempty.
-        pair = lambda item: (isinstance(item,list) and len(item) == 2 and text(item[0])
-                             and isinstance(item[1],str) and len(item[1]) <= 512)
-        if (not isinstance(listing,dict) or set(listing) != {'complete','providers','causes','log_lines'}
-                or type(listing['complete']) is not bool or type(listing['log_lines']) is not int
-                or listing['log_lines'] < 0 or not isinstance(listing['providers'],dict)
-                or len(listing['providers']) > 4 or not isinstance(listing['causes'],dict)
-                or set(listing['causes']) != {'kernel_not_found','cpu_preferred'}):
-            raise Refused('placement listing malformed')
-        nodes = 0
-        for provider, row in listing['providers'].items():
-            if (not re.fullmatch(r'[A-Za-z]+ExecutionProvider', provider) or not isinstance(row,dict)
-                    or set(row) != {'declared','all','nodes'} or type(row['declared']) is not int
-                    or not 0 <= row['declared'] <= 20000 or type(row['all']) is not bool
-                    or not isinstance(row['nodes'],list) or not all(map(pair,row['nodes']))
-                    or (row['all'] and row['nodes'])):
-                raise Refused('placement provider row malformed')
-            nodes += len(row['nodes'])
-        causes = listing['causes']
-        if (nodes > 20000 or not isinstance(causes['kernel_not_found'],list)
-                or not all(map(pair,causes['kernel_not_found'])) or len(causes['kernel_not_found']) > 20000
-                or not isinstance(causes['cpu_preferred'],list)
-                or not all(isinstance(item,str) and len(item) <= 512 for item in causes['cpu_preferred'])
-                or len(causes['cpu_preferred']) > 20000):
-            raise Refused('placement causes malformed')
-        counted = bool(listing['providers']) and all(
-            row['all'] or len(row['nodes']) == row['declared'] for row in listing['providers'].values())
-        if listing['complete'] is not counted or value['residual_node_assignment'] != ('listed' if counted else 'incomplete'):
-            raise Refused('placement completeness differs from declared counts')
+        placement_listing(value)
     elif (value.get('checkpoint') not in ('verify','native-load','provider-create','session-create','placement-read')
           or not isinstance(value.get('failure'),str) or not 1 <= len(value['failure']) <= 16384
           or 'placement' in value):
         raise Refused('placement failed checkpoint missing')
     return value['outcome']
+
+
+def placement_listing(value):
+    """Bounded, count-consistent ORT placement listing; ADR-023 acceptance is host-side."""
+    if value.get('residual_node_assignment') not in ('listed','incomplete'):
+        raise Refused('placement completion missing')
+    listing = value.get('placement')
+    text = lambda item: isinstance(item,str) and 1 <= len(item) <= 512
+    # ONNX permits unnamed nodes, so only the op type must be nonempty.
+    pair = lambda item: (isinstance(item,list) and len(item) == 2 and text(item[0])
+                         and isinstance(item[1],str) and len(item[1]) <= 512)
+    if (not isinstance(listing,dict) or set(listing) != {'complete','providers','causes','log_lines'}
+            or type(listing['complete']) is not bool or type(listing['log_lines']) is not int
+            or listing['log_lines'] < 0 or not isinstance(listing['providers'],dict)
+            or len(listing['providers']) > 4 or not isinstance(listing['causes'],dict)
+            or set(listing['causes']) != {'kernel_not_found','cpu_preferred'}):
+        raise Refused('placement listing malformed')
+    nodes = 0
+    for provider, row in listing['providers'].items():
+        if (not re.fullmatch(r'[A-Za-z]+ExecutionProvider', provider) or not isinstance(row,dict)
+                or set(row) != {'declared','all','nodes'} or type(row['declared']) is not int
+                or not 0 <= row['declared'] <= 20000 or type(row['all']) is not bool
+                or not isinstance(row['nodes'],list) or not all(map(pair,row['nodes']))
+                or (row['all'] and row['nodes'])):
+            raise Refused('placement provider row malformed')
+        nodes += len(row['nodes'])
+    causes = listing['causes']
+    if (nodes > 20000 or not isinstance(causes['kernel_not_found'],list)
+            or not all(map(pair,causes['kernel_not_found'])) or len(causes['kernel_not_found']) > 20000
+            or not isinstance(causes['cpu_preferred'],list)
+            or not all(isinstance(item,str) and len(item) <= 512 for item in causes['cpu_preferred'])
+            or len(causes['cpu_preferred']) > 20000):
+        raise Refused('placement causes malformed')
+    counted = bool(listing['providers']) and all(
+        row['all'] or len(row['nodes']) == row['declared'] for row in listing['providers'].values())
+    if listing['complete'] is not counted or value['residual_node_assignment'] != ('listed' if counted else 'incomplete'):
+        raise Refused('placement completeness differs from declared counts')
 
 
 def short_capture(device, state, receipt, accept=False):
@@ -757,7 +776,7 @@ def short_capture(device, state, receipt, accept=False):
             value = json.loads(payload)
             valid = short_result(value, declaration)
             reason = 'instrumentation completion unavailable'
-        except (Refused,ValueError,TypeError,KeyError) as error:
+        except (Refused,ValueError,TypeError,KeyError,OverflowError) as error:
             reason = str(error)[:2048]
     elif truncated:
         reason = 'result exceeds fixed byte bound; prefix retained'
@@ -1639,6 +1658,6 @@ def main():
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (Refused, OSError, ValueError, KeyError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
+    except (Refused, OSError, ValueError, KeyError, OverflowError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
         sys.exit('phone: ' + str(error))
 
