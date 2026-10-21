@@ -1,6 +1,7 @@
 # ADR-020 — ONNX-first GPU investigation
 
 2026-10-20 · Revised spec and ticket mapping accepted by the user and published. No runtime implementation or phone run authorized by this ADR.
+Strict-fallback clause revised by [ADR-023](023-encoder-placement-check.md).
 
 ## Context
 

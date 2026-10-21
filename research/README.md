@@ -9,7 +9,7 @@ Specifications and implementation tickets live in GitHub Issues, not this direct
   contains native WebGPU support for ARM64. It is a candidate for the unchanged
   FP32 Parakeet encoder; no Pixel encoder execution or speed result is established.
 - Our Sherpa integration uses a different runtime and cannot select WebGPU today.
-  Runtime integration and separate encoder/decoder session options are required.
+  Runtime integration and separate encoder/decoder runtime session options are required.
 - Current INT8 Parakeet/Cohere exports have integer-operation gaps in the inspected
   native WebGPU registries. Package availability does not establish model support.
 - The conventional FlatBuffer container has a 2 GiB ceiling. LiteRT supports weights
@@ -19,6 +19,9 @@ Specifications and implementation tickets live in GitHub Issues, not this direct
 - A ready FP32 Parakeet v3 LiteRT model exists. Its fixed five-second input and
   overlapping-window pipeline differ from our dynamic, pause-based pipeline.
   Sharing a base checkpoint does not establish identical recognition behavior.
+- ORT's strict CPU-fallback flag cannot pass on WebGPU for our dynamic-length
+  encoder: placement always keeps shape work on CPU. Host reproduction found no
+  tensor math on CPU. [Placement research](ort-webgpu-node-placement.md).
 
 The selected next investigation is unchanged ONNX FP32 Parakeet on WebGPU.
 First isolate the CPU runtime upgrade from moving the encoder to GPU. This is a
@@ -28,6 +31,7 @@ published spec decision, not authorization to build or run experiments.
 
 | Note | Purpose |
 |---|---|
+| [ORT WebGPU placement](ort-webgpu-node-placement.md) | Why strict CPU-fallback rejection fails; placement mechanism, kernel gaps, host reproduction |
 | [Android ONNX WebGPU availability](onnx-webgpu-android-availability.md) | Strongest current package/model assessment, actual package hashes, native integration gaps |
 | [GPU preparation best practices](encoder-gpu-best-practices.md) | Correctness gates and reuse-before-custom-conversion advice; later ONNX package finding changes route priority |
 | [Ready-made options](ready-made-encoder-gpu-options.md) | Verified published artifacts, interfaces and pipeline differences |
@@ -43,15 +47,16 @@ levels of evidence. Research notes do not establish the later levels by implicat
 
 ## Terms
 
+Shared terms (take, runtime session, execution provider, placement, shape work)
+are defined in [GLOSSARY.md](../GLOSSARY.md). Research-only terms:
+
 | Term | Meaning here |
 |---|---|
 | Trained model/checkpoint | Calculations and learned numbers from training |
 | Exported model | Representation prepared for a runtime; may constrain lengths or precision |
 | Converter | Development-computer tool that creates an exported model |
 | Runtime | Software that executes the model on the phone |
-| Execution provider | Runtime component that assigns calculations to CPU or GPU |
 | Recognition pipeline | Sound preparation, chunking, word search and combining text |
-| Take/session | One dictation recording through Stop or cancellation |
 
 Full issue requirements, dependency changes and acceptance remain in
 [spec #1](https://github.com/dothackerman/pixel-local-dictation/issues/1).

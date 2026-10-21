@@ -92,3 +92,7 @@ supported CPU-preference override was found in the pinned
 observation does not establish why these particular nodes were assigned CPU.
 A custom runtime build, graph rewrite or relaxed acceptance needs explicit
 replanning; none was attempted. The current route cannot advance past this gate.
+
+Follow-up: [placement research](../research/ort-webgpu-node-placement.md)
+identifies the residual assignment as shape work kept on CPU by design;
+[ADR-023](023-encoder-placement-check.md) replaces the strict flag with a placement check.

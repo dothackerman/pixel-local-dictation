@@ -1,0 +1,422 @@
+<title>Why WebGPU Refused the Encoder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column climbing seven levels; wide figures scroll on phones. GPU = teal, CPU = amber, heuristic = violet, failure = red */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --fg:#1b2130; --muted:#5b6477; --line:#d8dce5; --code-bg:#eef1f6;
+  --gpu:#0f8b8d; --gpu-soft:#d7f0f0; --cpu:#b86e0c; --cpu-soft:#fbead2;
+  --heur:#8a4cc4; --heur-soft:#eee2f8; --bad:#c23a3a; --bad-soft:#f8dede; --on-fill:#ffffff;
+  --display:"Schibsted Grotesk", system-ui, sans-serif;
+  --body:"Schibsted Grotesk", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12151c; --surface:#1a1f29; --fg:#e6e9f0; --muted:#9aa3b5; --line:#2e3542; --code-bg:#151a23;
+  --gpu:#3cc2c4; --gpu-soft:#16393b; --cpu:#f0a440; --cpu-soft:#3d2c12;
+  --heur:#c393ef; --heur-soft:#33264a; --bad:#ff7a7a; --bad-soft:#4a2020; --on-fill:#10131a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151c; --surface:#1a1f29; --fg:#e6e9f0; --muted:#9aa3b5; --line:#2e3542; --code-bg:#151a23;
+  --gpu:#3cc2c4; --gpu-soft:#16393b; --cpu:#f0a440; --cpu-soft:#3d2c12;
+  --heur:#c393ef; --heur-soft:#33264a; --bad:#ff7a7a; --bad-soft:#4a2020; --on-fill:#10131a; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:52px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:2.3rem;font-weight:800;letter-spacing:-.02em}
+h2{font-size:1.5rem;font-weight:700}
+h3{font-size:1.05rem;font-weight:700}
+p{margin:0;max-width:66ch}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:1.15rem}
+code,.mono{font-family:var(--mono);font-size:.86em}
+.muted{color:var(--muted)}
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;overflow-x:auto}
+.fig svg{display:block;min-width:640px;width:100%;height:auto}
+.fig .cap{font-size:.86rem;color:var(--muted);margin-top:10px}
+svg text{font-family:var(--body);fill:var(--fg)}
+svg .sm{font-size:12px;fill:var(--muted)}
+svg .mn{font-family:var(--mono);font-size:12px}
+svg .b{font-weight:700}
+svg .onfill{fill:var(--on-fill)}
+pre.code{margin:0;background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.84rem;line-height:1.55}
+pre.code .c{color:var(--muted)} pre.code .k{color:var(--heur);font-weight:600} pre.code .g{color:var(--gpu);font-weight:600} pre.code .u{color:var(--cpu);font-weight:600} pre.code .r{color:var(--bad);font-weight:600}
+.codehead{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin-bottom:-8px}
+.ladder{display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:0;list-style:none}
+.ladder a{display:block;font-family:var(--mono);font-size:.78rem;padding:5px 10px;border:1px solid var(--line);border-radius:99px;color:var(--fg);text-decoration:none;background:var(--surface)}
+.ladder a:hover,.ladder a:focus-visible{border-color:var(--gpu);outline:none}
+.lvl{display:flex;align-items:center;gap:10px}
+.lvl .n{font-family:var(--mono);font-weight:600;font-size:.8rem;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--fg);color:var(--bg);flex:none}
+.takeaway{border-left:4px solid var(--gpu);background:var(--gpu-soft);padding:12px 16px;border-radius:0 8px 8px 0}
+.takeaway b{color:var(--gpu)}
+.answer{border-left:4px solid var(--bad);background:var(--bad-soft);padding:16px 18px;border-radius:0 8px 8px 0;display:flex;flex-direction:column;gap:10px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.pill{display:inline-block;align-self:flex-start;font-family:var(--mono);font-size:.72rem;padding:2px 8px;border-radius:99px;font-weight:600}
+.p-gpu{background:var(--gpu-soft);color:var(--gpu)} .p-cpu{background:var(--cpu-soft);color:var(--cpu)}
+.p-heur{background:var(--heur-soft);color:var(--heur)} .p-bad{background:var(--bad-soft);color:var(--bad)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+ul,ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px;max-width:66ch}
+.opt{border-top:3px solid var(--line)} .opt.rec{border-top-color:var(--gpu)}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+@media (max-width:480px){h1{font-size:1.8rem}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<main>
+<header style="display:flex;flex-direction:column;gap:14px">
+  <span class="eyebrow">Issue #4 · ADR-022 · Pixel 10 Pro XL</span>
+  <h1>Why WebGPU refused the encoder</h1>
+  <p class="lede">On 21 October we tried to run the speech encoder on the phone's GPU. The test stopped before the first calculation. This page explains why, starting from zero. Each level uses only words from the levels before it.</p>
+  <ol class="ladder" aria-label="Levels">
+    <li><a href="#l1">1 · Dictation</a></li>
+    <li><a href="#l2">2 · Model file</a></li>
+    <li><a href="#l3">3 · Workers</a></li>
+    <li><a href="#l4">4 · Three kinds of values</a></li>
+    <li><a href="#l5">5 · Job assignment</a></li>
+    <li><a href="#l6">6 · Our strict rule</a></li>
+    <li><a href="#l7">7 · The collision</a></li>
+    <li><a href="#next">Next steps</a></li>
+    <li><a href="#words">Word list</a></li>
+  </ol>
+</header>
+
+<!-- LEVEL 1 -->
+<section id="l1">
+  <div class="lvl"><span class="n">1</span><span class="eyebrow">Level 1 · Start here</span></div>
+  <h2>What happens when you dictate</h2>
+  <p>You press the microphone key in FUTO and speak. One recording, from panel open to Stop, is a <b>take</b>. The app turns the take into text in four stages:</p>
+  <div class="fig">
+    <svg viewBox="0 0 820 170" role="img" aria-label="Dictation pipeline: audio, features, encoder, decoder, text">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+      <rect x="10" y="30" width="130" height="60" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="75" y="56" text-anchor="middle" class="b">Audio</text><text x="75" y="76" text-anchor="middle" class="sm">your voice</text>
+      <line x1="140" y1="60" x2="180" y2="60" stroke="var(--muted)" marker-end="url(#a1)"/>
+      <rect x="182" y="30" width="140" height="60" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="252" y="56" text-anchor="middle" class="b">Features</text><text x="252" y="76" text-anchor="middle" class="sm">128 numbers / 10 ms</text>
+      <line x1="322" y1="60" x2="362" y2="60" stroke="var(--muted)" marker-end="url(#a1)"/>
+      <rect x="364" y="22" width="190" height="76" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)" stroke-width="2"/>
+      <text x="459" y="50" text-anchor="middle" class="b" style="fill:var(--gpu)">Encoder</text><text x="459" y="70" text-anchor="middle" class="sm">understands the sounds</text><text x="459" y="86" text-anchor="middle" class="sm">biggest, slowest stage</text>
+      <line x1="554" y1="60" x2="594" y2="60" stroke="var(--muted)" marker-end="url(#a1)"/>
+      <rect x="596" y="30" width="110" height="60" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="651" y="56" text-anchor="middle" class="b">Decoder</text><text x="651" y="76" text-anchor="middle" class="sm">picks words</text>
+      <line x1="706" y1="60" x2="742" y2="60" stroke="var(--muted)" marker-end="url(#a1)"/>
+      <rect x="744" y="30" width="66" height="60" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="777" y="65" text-anchor="middle" class="b">Text</text>
+      <text x="459" y="130" text-anchor="middle" class="sm">Parakeet v3 encoder · 2.4 GB of weights · today it runs on the phone's CPU</text>
+      <text x="459" y="150" text-anchor="middle" class="sm" style="fill:var(--gpu)">Goal of issue #1: run it on the GPU so the wait after you press Stop gets shorter</text>
+    </svg>
+  </div>
+  <p>Earlier measurements (ADR-015) showed that the encoder does most of the work. The phone has two chips that can do this work:</p>
+  <div class="grid2">
+    <div class="card"><span class="pill p-cpu">CPU</span><h3>The main processor</h3><p class="muted">A few very fast, flexible calculators. They work one after another. Good at small jobs where each answer depends on the one before.</p></div>
+    <div class="card"><span class="pill p-gpu">GPU</span><h3>The graphics chip</h3><p class="muted">Thousands of small calculators. They all do the same simple sum at the same time. Great for millions of identical multiplications. Bad at three numbers that depend on each other.</p></div>
+  </div>
+  <p>The encoder is mostly millions of identical multiplications. So the plan was: keep everything else the same, and move only the encoder to the GPU.</p>
+  <div class="takeaway"><b>Takeaway:</b> we tried to move one stage, the encoder, from the CPU to the GPU.</div>
+</section>
+
+<!-- LEVEL 2 -->
+<section id="l2">
+  <div class="lvl"><span class="n">2</span><span class="eyebrow">Level 2</span></div>
+  <h2>A model file is a recipe of small steps</h2>
+  <p>The encoder is stored as an <b>ONNX</b> file (<code>encoder.onnx</code>). ONNX is a common file format for AI models. Think of it as a recipe:</p>
+  <div class="grid2">
+    <div class="card"><h3>Steps (nodes)</h3><p class="muted">Each step is one simple operation: add, multiply, reshape, compare. Steps connect in a network called a <b>graph</b>. Our encoder graph has 4,955 steps. ORT cleans it up before running (merges and removes some steps). On the PC, about 2,273 steps remained.</p></div>
+    <div class="card"><h3>Ingredients (weights)</h3><p class="muted">The learned numbers that make the model "know" speech: 2.4 GB in <code>encoder.weights</code>. These never change.</p></div>
+    <div class="card"><h3>Op type</h3><p class="muted">The kind of step, e.g. <code>MatMul</code> (big multiplication), <code>Conv</code>, <code>Gather</code> (pick one item from a list), <code>Shape</code> (ask "how big is this?").</p></div>
+  </div>
+  <p>Written as simple pseudo code, the whole encoder recipe looks like this:</p>
+  <div class="codehead">pseudo code · what the encoder graph computes</div>
+<pre class="code"><span class="k">def</span> encoder(audio_features, length):
+    <span class="c"># frame: 10 ms of audio, described by 128 numbers</span>
+    <span class="c"># audio_features: float numbers, shape [1, 128, frames]</span>
+    <span class="c"># length:         one whole number = how many frames are real</span>
+
+    x          = <span class="g">subsample</span>(audio_features)       <span class="c"># keep 1 frame of 8 (rounded up)</span>
+    new_length = <span class="u">shrink_length</span>(length)          <span class="c"># 17 -&gt; 3 in our test</span>
+    mask       = <span class="u">make_padding_mask</span>(new_length, x) <span class="c"># which frames are real?</span>
+
+    <span class="k">for</span> layer <span class="k">in</span> range(24):
+        x = <span class="g">conformer_layer</span>(x, mask)           <span class="c"># the heavy sound math</span>
+
+    <span class="k">return</span> x, new_length                      <span class="c"># shape [1, 1024, 3] and the number 3</span></pre>
+  <p class="muted">Teal lines are the tensor math. Amber lines are small shape work. Keep these two colors in mind: they are the whole story.</p>
+  <div class="takeaway"><b>Takeaway:</b> the encoder is thousands of small steps. Most do tensor math. Some only count and measure.</div>
+</section>
+
+<!-- LEVEL 3 -->
+<section id="l3">
+  <div class="lvl"><span class="n">3</span><span class="eyebrow">Level 3</span></div>
+  <h2>Who executes the recipe: ONNX Runtime and its workers</h2>
+  <p><b>ONNX Runtime (ORT)</b> is the program that reads the recipe and runs it. ORT does not do the math itself. It hands each step to a <b>worker</b>. ORT calls a worker an <b>execution provider (EP)</b>. Each worker owns one kind of chip.</p>
+  <div class="fig">
+    <svg viewBox="0 0 820 300" role="img" aria-label="Stack from app through ORT to CPU and GPU workers">
+      <rect x="10" y="10" width="800" height="44" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="26" y="38" class="b">Our test app</text><text x="230" y="38" class="sm">loads encoder.onnx + weights, gives ORT the input</text>
+      <rect x="10" y="66" width="800" height="44" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <defs><marker id="a0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+      <line x1="206" y1="110" x2="206" y2="121" stroke="var(--muted)" marker-end="url(#a0)"/>
+      <line x1="614" y1="110" x2="614" y2="121" stroke="var(--muted)" marker-end="url(#a0)"/>
+      <text x="26" y="94" class="b">ONNX Runtime 1.31</text><text x="230" y="94" class="sm">the manager: cleans up the recipe, assigns steps to workers, runs them</text>
+      <rect x="10" y="122" width="392" height="62" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="26" y="148" class="b" style="fill:var(--cpu)">CPU worker (CPU EP)</text><text x="26" y="170" class="sm">always present · takes every step nobody else takes</text>
+      <rect x="418" y="122" width="392" height="62" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
+      <text x="434" y="148" class="b" style="fill:var(--gpu)">GPU worker (WebGPU EP)</text><text x="434" y="170" class="sm">new in the package we found (Android ORT 1.31)</text>
+      <rect x="418" y="196" width="392" height="40" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="434" y="221" class="b">Dawn</text><text x="490" y="221" class="sm">Google's WebGPU library · translates to Vulkan</text>
+      <rect x="418" y="248" width="392" height="40" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="434" y="273" class="b">Vulkan driver → phone GPU</text>
+      <rect x="10" y="196" width="392" height="92" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="26" y="222" class="b">Phone CPU cores</text><text x="26" y="244" class="sm">what dictation uses today</text>
+      <text x="26" y="266" class="sm">CPU test on 21 Oct: passed, correct output</text>
+    </svg>
+    <p class="cap">"WebGPU" is a standard way to talk to GPUs, first made for web browsers. ORT uses it because it works on many GPUs, including the one in the Pixel. Vulkan is the phone's own low-level GPU language. The driver is the software that speaks Vulkan to the chip. Dawn translates WebGPU into Vulkan.</p>
+  </div>
+  <p>A worker can only do a step if it has a <b>kernel</b> for it. A kernel is a ready-made program for one op type and one number type, for example "MatMul with float numbers on the GPU". No kernel means the worker cannot do that step.</p>
+  <div class="takeaway"><b>Takeaway:</b> ORT is the manager. The CPU and the GPU are two workers. A worker needs a kernel (a skill) for each step.</div>
+</section>
+
+<!-- LEVEL 4 -->
+<section id="l4">
+  <div class="lvl"><span class="n">4</span><span class="eyebrow">Level 4</span></div>
+  <h2>Three kinds of values in the recipe</h2>
+  <div class="grid2">
+    <div class="card"><span class="pill p-gpu">float32</span><h3>Measurement numbers</h3><p class="muted">Numbers with decimals, like <code>0.0371</code>. All sound features, weights and intermediate results. Millions per take. GPUs are built for these.</p></div>
+    <div class="card"><span class="pill p-cpu">int64</span><h3>Counting numbers</h3><p class="muted">Whole numbers, like <code>17</code> or <code>3</code>. Lengths, sizes, positions. Only a handful per step. The GPU worker can do only some of these steps.</p></div>
+    <div class="card"><span class="pill p-cpu">bool</span><h3>Yes/no values</h3><p class="muted"><code>True</code>/<code>False</code>. Used for <b>masks</b>: lists that say which frames are real speech and which are padding.</p></div>
+  </div>
+  <p class="muted">The 32 and 64 are the number of bits (memory cells) used to store one value.</p>
+  <h3>Why does a speech model need counting at all?</h3>
+  <p>The encoder accepts audio of any length. So it must measure every size while it runs. It was also built to process several recordings at once, side by side. A short recording is then filled up with empty frames: <b>padding</b>. The model must know which frames are real, or the padding pollutes the result. Our app sends one take at a time, so the mask is usually all "yes". But the recipe still contains every counting step:</p>
+  <div class="codehead">pseudo code · the shape work (amber)</div>
+<pre class="code"><span class="c"># example with 5 frames, 3 of them real</span>
+<span class="k">def</span> make_padding_mask(real_length, x):
+    total   = <span class="u">shape</span>(x)[2]              <span class="c"># "how many frames is x?"   -&gt; 5</span>
+    pos     = <span class="u">range</span>(total)             <span class="c"># [0, 1, 2, 3, 4]           int64</span>
+    <span class="k">return</span> pos &lt; real_length            <span class="c"># [T, T, T, F, F]           bool</span>
+
+<span class="c"># later, inside each of the 24 layers (tensor math, teal):</span>
+scores = <span class="g">where</span>(mask, scores, -infinity)    <span class="c"># ignore the padding frames</span></pre>
+  <p>Shape-work steps like these repeat in all 24 layers, mostly to measure sizes before the data is reshaped. Together they become hundreds of tiny steps: <code>Shape</code>, <code>Gather</code>, <code>Unsqueeze</code>, <code>Concat</code>, <code>Reshape</code>, <code>Less</code>, <code>Not</code>…</p>
+  <div class="fig">
+    <svg viewBox="0 0 820 250" role="img" aria-label="Counting path builds a mask that steers the heavy float path">
+      <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+      <rect x="10" y="20" width="150" height="48" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="85" y="42" text-anchor="middle" class="b">length</text><text x="85" y="59" text-anchor="middle" class="mn">int64: 17</text>
+      <rect x="10" y="150" width="150" height="48" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
+      <text x="85" y="172" text-anchor="middle" class="b">audio features</text><text x="85" y="189" text-anchor="middle" class="mn">float [1,128,17]</text>
+      <line x1="160" y1="44" x2="215" y2="44" stroke="var(--muted)" marker-end="url(#a2)"/>
+      <rect x="217" y="20" width="160" height="48" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="297" y="42" text-anchor="middle" class="b">shrink length</text><text x="297" y="59" text-anchor="middle" class="sm">17 → 3</text>
+      <line x1="85" y1="150" x2="85" y2="110" stroke="var(--muted)"/><line x1="85" y1="110" x2="215" y2="110" stroke="var(--muted)" marker-end="url(#a2)"/>
+      <rect x="217" y="86" width="160" height="48" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="297" y="108" text-anchor="middle" class="b">Shape → Gather</text><text x="297" y="125" text-anchor="middle" class="sm">"how many frames?"</text>
+      <line x1="377" y1="44" x2="432" y2="70" stroke="var(--muted)" marker-end="url(#a2)"/>
+      <line x1="377" y1="110" x2="432" y2="84" stroke="var(--muted)" marker-end="url(#a2)"/>
+      <rect x="434" y="52" width="170" height="48" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="519" y="74" text-anchor="middle" class="b">Range, Less, Not</text><text x="519" y="91" text-anchor="middle" class="sm">mask [T, T, T]</text>
+      <line x1="604" y1="76" x2="650" y2="76" stroke="var(--muted)"/><line x1="650" y1="76" x2="650" y2="146" stroke="var(--muted)" marker-end="url(#a2)"/>
+      <line x1="160" y1="174" x2="590" y2="174" stroke="var(--gpu)" stroke-width="2" marker-end="url(#a2)"/>
+      <rect x="592" y="148" width="218" height="52" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
+      <text x="701" y="170" text-anchor="middle" class="b">24 layers of tensor math</text><text x="701" y="188" text-anchor="middle" class="sm">mask applied to float data</text>
+      <text x="380" y="166" text-anchor="middle" class="sm">millions of float numbers</text>
+      <rect x="10" y="222" width="12" height="12" fill="var(--cpu-soft)" stroke="var(--cpu)"/><text x="30" y="233" class="sm">shape work (int64 / bool)</text>
+      <rect x="220" y="222" width="12" height="12" fill="var(--gpu-soft)" stroke="var(--gpu)"/><text x="240" y="233" class="sm">tensor math (float32)</text>
+    </svg>
+    <p class="cap">Our test input: 17 feature frames (0.17 s of silence) became 3 encoder frames. That matches the CPU output shape <code>[1, 1024, 3]</code>.</p>
+  </div>
+  <div class="takeaway"><b>Takeaway:</b> besides the tensor math, the encoder contains hundreds of tiny shape-work steps on whole numbers and yes/no values.</div>
+</section>
+
+<!-- LEVEL 5 -->
+<section id="l5">
+  <div class="lvl"><span class="n">5</span><span class="eyebrow">Level 5</span></div>
+  <h2>Before running, ORT assigns every step to a worker</h2>
+  <p>When the app creates a <b>runtime session</b> (loads the model and prepares it), ORT goes through all steps and decides which worker does each one. No audio is processed yet. The runtime session is created once, and every later take reuses it. So a failure here means no take can ever run.</p>
+  <p>One more fact first. The CPU and the GPU have separate memory. Every hand-over copies data from one memory to the other and waits for the other chip. One hand-over costs more time than adding three numbers. A hand-over there and back is a <b>round trip</b>.</p>
+  <p>ORT asks two questions for each step:</p>
+  <div class="codehead">pseudo code · simplified from ORT 1.31 source</div>
+<pre class="code"><span class="k">def</span> assign_workers(graph):
+    <span class="k">for</span> step <span class="k">in</span> graph.steps:
+        <span class="k">if not</span> gpu.has_kernel(step.op_type, step.number_type):
+            step.worker = <span class="u">CPU</span>      <span class="c"># Question 1: can the GPU do it at all?</span>
+        <span class="k">else</span>:
+            step.worker = <span class="g">GPU</span>
+
+    <span class="c"># Question 2: is the CPU simply faster for this step?</span>
+    <span class="c"># This check ALWAYS runs. There is no setting to switch it off.</span>
+    <span class="k">for</span> step <span class="k">in</span> cpu_is_faster(graph):
+        step.worker = <span class="u">CPU</span>
+
+<span class="k">def</span> cpu_is_faster(graph):
+    <span class="c"># start at every step whose answer lives in CPU memory:</span>
+    <span class="c">#   "Shape" steps, and steps the GPU can't do (Question 1)</span>
+    <span class="c"># follow the chain: a step whose inputs are ALL such tiny CPU values</span>
+    <span class="c"># (or model inputs, or constants with &lt;= 100 values) stays on CPU,</span>
+    <span class="c"># because a round trip for 3 numbers costs more than the math itself.</span>
+    ...</pre>
+  <div class="fig">
+    <svg viewBox="0 0 820 230" role="img" aria-label="Two questions route each step to CPU or GPU">
+      <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+      <rect x="10" y="90" width="120" height="54" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+      <text x="70" y="113" text-anchor="middle" class="b">each step</text><text x="70" y="132" text-anchor="middle" class="sm">~2,273 (PC)</text>
+      <line x1="130" y1="117" x2="178" y2="117" stroke="var(--muted)" marker-end="url(#a3)"/>
+      <rect x="180" y="82" width="200" height="70" rx="8" fill="var(--surface)" stroke="var(--fg)"/>
+      <text x="280" y="108" text-anchor="middle" class="b">Q1 · GPU has a kernel?</text><text x="280" y="130" text-anchor="middle" class="sm">for this op + number type</text>
+      <line x1="280" y1="82" x2="280" y2="52" stroke="var(--muted)" marker-end="url(#a3)"/><text x="290" y="72" class="sm">no</text>
+      <rect x="180" y="6" width="200" height="44" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="280" y="33" text-anchor="middle" class="b" style="fill:var(--cpu)">CPU · "GPU can't"</text>
+      <line x1="380" y1="117" x2="428" y2="117" stroke="var(--muted)" marker-end="url(#a3)"/><text x="390" y="109" class="sm">yes</text>
+      <rect x="430" y="82" width="200" height="70" rx="8" fill="var(--surface)" stroke="var(--fg)"/>
+      <text x="530" y="108" text-anchor="middle" class="b">Q2 · CPU faster?</text><text x="530" y="130" text-anchor="middle" class="sm">tiny counting chain</text>
+      <line x1="530" y1="82" x2="530" y2="52" stroke="var(--muted)" marker-end="url(#a3)"/><text x="540" y="72" class="sm">yes</text>
+      <rect x="430" y="6" width="200" height="44" rx="8" fill="var(--heur-soft)" stroke="var(--heur)"/>
+      <text x="530" y="33" text-anchor="middle" class="b" style="fill:var(--heur)">CPU · "faster there"</text>
+      <line x1="630" y1="117" x2="678" y2="117" stroke="var(--muted)" marker-end="url(#a3)"/><text x="640" y="109" class="sm">no</text>
+      <rect x="680" y="90" width="130" height="54" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
+      <text x="745" y="122" text-anchor="middle" class="b" style="fill:var(--gpu)">GPU</text>
+      <text x="410" y="200" text-anchor="middle" class="sm">Normally, a mix is fine: ORT inserts small copy steps where the two workers hand data over.</text>
+    </svg>
+  </div>
+  <div class="takeaway"><b>Takeaway:</b> ORT always sends some shape-work steps to the CPU, for two reasons: the GPU can't do them, or the CPU is faster for them. This is normal and on purpose.</div>
+</section>
+
+<!-- LEVEL 6 -->
+<section id="l6">
+  <div class="lvl"><span class="n">6</span><span class="eyebrow">Level 6</span></div>
+  <h2>Our strict rule: "zero steps on the CPU, or stop"</h2>
+  <p>In ADR-020 we decided the GPU test must be honest. If ORT secretly ran part of the encoder on the CPU, a GPU speed result could be misleading. So we switched on one ORT setting:</p>
+  <div class="codehead">pseudo code · what the setting does</div>
+<pre class="code">session_options[<span class="u">"session.disable_cpu_ep_fallback"</span>] = <span class="u">"1"</span>
+gpu_options[<span class="g">"enableInt64"</span>] = <span class="g">"1"</span>   <span class="c"># also on: adds SOME int64 GPU kernels, not all</span>
+
+<span class="c"># ... ORT runs assign_workers(graph) from Level 5, then:</span>
+
+<span class="k">if</span> any(step.worker == CPU <span class="k">for</span> step <span class="k">in</span> graph.steps):
+    <span class="r">raise</span> Fail(<span class="r">"graph nodes ... assigned to the default CPU EP,</span>
+<span class="r">               but fallback to CPU EP has been explicitly disabled"</span>)
+
+run(graph)   <span class="c"># never reached in our test</span></pre>
+  <p>We had the int64 switch on. It shrinks the Question 1 group, but it does not touch Question 2. The rule has no exceptions and no list of allowed steps. One CPU step is enough to stop. The real ORT code is in <code>inference_session.cc:3177-3182</code>.</p>
+  <div class="takeaway"><b>Takeaway:</b> we told ORT to stop if even one step lands on the CPU.</div>
+</section>
+
+<!-- LEVEL 7 -->
+<section id="l7">
+  <div class="lvl"><span class="n">7</span><span class="eyebrow">Level 7 · The answer</span></div>
+  <h2>The collision: Level 5 meets Level 6</h2>
+  <p>Put the two levels together. ORT always sends some shape-work steps to the CPU (Level 5). Our rule stops at the first CPU step (Level 6). So the runtime session stopped during preparation, before any calculation. The GPU never received a single number.</p>
+  <p>To see exactly which steps went to the CPU, we repeated the test on the PC with the official ORT WebGPU package and the same settings. The PC showed the same error. Then we ran it once without the strict rule and asked ORT to list where every step went:</p>
+  <div class="fig">
+    <svg viewBox="0 0 820 150" role="img" aria-label="Proportional bar, PC ORT 1.27: 1640 GPU, 419 CPU no kernel, 214 CPU faster">
+      <!-- scale: 2273 steps = 800 px -->
+      <rect x="10" y="20" width="577" height="44" fill="var(--gpu)"/>
+      <rect x="587" y="20" width="147" height="44" fill="var(--cpu)"/>
+      <rect x="734" y="20" width="76" height="44" fill="var(--heur)"/>
+      <text x="22" y="48" class="b onfill">GPU · 1,640 steps · 72%</text>
+      <text x="597" y="48" class="b onfill">419</text>
+      <text x="742" y="48" class="b onfill">214</text>
+      <text x="10" y="90" class="sm">The tensor math: all 24 layers</text>
+      <text x="587" y="90" class="sm" style="fill:var(--cpu)">Q1: GPU can't (int64/bool)</text>
+      <text x="810" y="108" text-anchor="end" class="sm" style="fill:var(--heur)">Q2: CPU faster</text>
+      <text x="10" y="138" class="sm">633 CPU steps in total. Every one is shape work. Zero tensor-math steps on the CPU. (Measured on PC, ORT 1.27.)</text>
+    </svg>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Reason</th><th>Step type (number type)</th><th>Count</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-cpu">GPU can't</span></td><td><code>Gather</code> (int64) · pick a size from a list</td><td>185</td></tr>
+        <tr><td><span class="pill p-cpu">GPU can't</span></td><td><code>Concat</code> (int64) · join sizes into a new shape</td><td>118</td></tr>
+        <tr><td><span class="pill p-cpu">GPU can't</span></td><td><code>Slice</code>, <code>Squeeze</code> (int64)</td><td>24 + 24</td></tr>
+        <tr><td><span class="pill p-cpu">GPU can't</span></td><td><code>Reshape</code>, <code>Equal</code>, <code>Where</code> (int64)</td><td>18 each</td></tr>
+        <tr><td><span class="pill p-cpu">GPU can't</span></td><td><code>Less</code>, <code>Sub</code>, <code>Add</code>, <code>Shape</code>, yes/no <code>Slice/Tile/Transpose/ConstantOfShape</code></td><td>14</td></tr>
+        <tr><td><span class="pill p-heur">CPU faster</span></td><td><code>Unsqueeze</code> (int64) · add a dimension to a size</td><td>210</td></tr>
+        <tr><td><span class="pill p-heur">CPU faster</span></td><td><code>And</code>, <code>Not</code>, yes/no <code>Unsqueeze</code> · mask logic</td><td>4</td></tr>
+        <tr><td><span class="pill p-gpu">tensor math</span></td><td>Any float32 step on the CPU</td><td><b>0</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="answer">
+    <span class="eyebrow" style="color:var(--bad)">Root cause</span>
+    <p>The GPU did not fail. Our strict rule and ORT's normal behavior do not fit together.</p>
+    <p>ORT always keeps some shape-work steps on the CPU. Some have no GPU kernel. ORT moves the others on purpose, because the CPU is faster for them. Our rule allows zero CPU steps. With the unchanged encoder and the standard ORT, the two can never agree. So the session stops every time.</p>
+  </div>
+  <div class="grid2">
+    <div class="card"><span class="pill p-heur">on purpose</span><p class="muted">ORT's own log text says it "explicitly assigns shape related ops to CPU to improve perf".</p></div>
+    <div class="card"><span class="pill p-cpu">cheap</span><p class="muted">Each counting step touches only a few numbers. Moving them to the GPU would add slow round trips.</p></div>
+    <div class="card"><span class="pill p-bad">no switch</span><p class="muted">ORT 1.31 has no option to turn off Question 2 and no allow-list for the strict rule.</p></div>
+  </div>
+</section>
+
+<!-- CONFIDENCE -->
+<section>
+  <span class="eyebrow">How sure are we</span>
+  <h2>What is proven and what is not</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Status</th><th>Statement</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-gpu">proven · phone</span></td><td>Strict GPU runtime session creation fails with this exact message. The CPU test passes and the output is correct (ADR-022).</td></tr>
+        <tr><td><span class="pill p-gpu">proven · PC</span></td><td>Same model and settings give the same error. 633 CPU steps, all shape work, 0 tensor math. This ran on PC ORT WebGPU <b>1.27</b>, not the phone's 1.31.</td></tr>
+        <tr><td><span class="pill p-gpu">proven · source</span></td><td>In ORT 1.31 the "CPU faster" check always runs (<code>webgpu_execution_provider.cc:749</code>), and the strict rule has no exceptions.</td></tr>
+        <tr><td><span class="pill p-cpu">likely · phone</span></td><td>ORT 1.31 has more int64 GPU kernels (<code>Gather</code>, <code>Concat</code>, <code>Reshape</code>), so the "GPU can't" group is probably smaller on the phone. The "CPU faster" group still exists, so the stop still happens. The exact phone list needs one non-strict run with detailed logs on the phone. That needs your authorization.</td></tr>
+        <tr><td><span class="pill p-bad">unknown</span></td><td>Is the GPU faster? Does GPU output match CPU output? Which GPU driver did Dawn use? No calculation ran, so we don't know yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- NEXT -->
+<section id="next">
+  <span class="eyebrow">Next steps · your decision</span>
+  <h2>Three ways forward</h2>
+  <p>To continue, one of three things must change: the rule, the model, or the runtime.</p>
+  <div class="grid2">
+    <div class="card opt rec"><span class="pill p-gpu">recommended</span><h3>A · Change the rule</h3><p class="muted">Allow shape-work steps on the CPU and check the placement ourselves. Read ORT's list of which worker got each step. Pass only if every CPU step is int64/yes-no shape work and every tensor-math step is on the GPU. This keeps the honest-test intent with the unchanged model and standard ORT. It needs you to update ADR-020.</p></div>
+    <div class="card opt"><span class="pill p-cpu">change the model</span><h3>B · Remove the counting</h3><p class="muted">Create a new encoder file for one fixed audio length, so all sizes become constants and the shape-work steps disappear. Or compute the mask in the app and give it to the model. This could reach zero CPU steps, but it changes the length handling that ADR-020 wanted to keep.</p></div>
+    <div class="card opt"><span class="pill p-bad">change the runtime</span><h3>C · Build our own ORT</h3><p class="muted">Remove the "CPU faster" check and write the missing GPU kernels. We would have to maintain our own copy of ORT. The result is probably slower, because it forces the round trips ORT avoids on purpose.</p></div>
+  </div>
+</section>
+
+<!-- WORDS -->
+<section id="words">
+  <span class="eyebrow">Reference</span>
+  <h2>Word list</h2>
+  <div class="tbl">
+    <table>
+      <tbody>
+        <tr><td><b>Take</b></td><td>One recording, from panel open to Stop.</td></tr>
+        <tr><td><b>CPU · GPU</b></td><td>Main processor (few fast flexible calculators) · graphics chip (thousands of simple calculators in parallel).</td></tr>
+        <tr><td><b>Frame · subsample</b></td><td>10 ms of audio as 128 numbers · keep 1 frame of 8, so 17 frames become 3.</td></tr>
+        <tr><td><b>Graph</b></td><td>The network of connected steps inside a model file.</td></tr>
+        <tr><td><b>Round trip</b></td><td>Copying data from CPU memory to GPU memory and back. Slow compared to tiny math.</td></tr>
+        <tr><td><b>ADR</b></td><td>Architecture Decision Record: our numbered decision notes in <code>adrs/</code>.</td></tr>
+        <tr><td><b>Encoder</b></td><td>The model stage that turns sound features into a description of the speech. The biggest, slowest stage.</td></tr>
+        <tr><td><b>ONNX</b></td><td>A common file format for AI models: a graph of steps plus weights.</td></tr>
+        <tr><td><b>Step / node</b></td><td>One simple operation in the graph.</td></tr>
+        <tr><td><b>Op type</b></td><td>The kind of step: <code>MatMul</code>, <code>Gather</code>, <code>Shape</code>…</td></tr>
+        <tr><td><b>ORT</b></td><td>ONNX Runtime: the program that runs ONNX models.</td></tr>
+        <tr><td><b>Execution provider (EP)</b></td><td>A worker inside ORT that owns one chip: CPU EP, WebGPU EP.</td></tr>
+        <tr><td><b>Kernel</b></td><td>A ready-made program in a worker for one op type and one number type.</td></tr>
+        <tr><td><b>WebGPU · Dawn · Vulkan</b></td><td>The chain ORT uses to reach the phone's GPU.</td></tr>
+        <tr><td><b>float32 / int64 / bool</b></td><td>Decimal numbers / whole numbers / yes-no values.</td></tr>
+        <tr><td><b>Padding · mask</b></td><td>Empty filler frames · the yes/no list that marks real frames.</td></tr>
+        <tr><td><b>Runtime session</b></td><td>A loaded and prepared model, ready to run. Created once, before the first calculation, and reused by many takes. Not the same as a take.</td></tr>
+        <tr><td><b>Placement</b></td><td>Which worker (execution provider) got each step. Fixed when the runtime session is created.</td></tr>
+        <tr><td><b>Shape work · tensor math</b></td><td>Small steps on whole numbers and yes/no values (amber) · decimal-number steps that do the real encoder work (teal).</td></tr>
+        <tr><td><b>Placement check</b></td><td>Our new acceptance test (ADR-023): all tensor math on the GPU, only shape work on the CPU.</td></tr>
+        <tr><td><b>CPU fallback</b></td><td>ORT giving a step to the CPU worker. <code>disable_cpu_ep_fallback=1</code> forbids it.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>Sources: ADR-015, ADR-020, ADR-022; ONNX Runtime commit 402979ac (1.31.0): <code>webgpu_execution_provider.cc</code>, <code>fallback_cpu_capability.cc</code>, <code>inference_session.cc</code>, <code>session_state.cc:1598</code>. PC reproduction: onnxruntime-webgpu 1.27.0 over Vulkan, session creation only, silent zero input, no recordings. The phone was not used for this analysis.</footer>
+</main>
