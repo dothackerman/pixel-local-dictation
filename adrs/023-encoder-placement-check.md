@@ -26,6 +26,20 @@ session only after a placement check from a verbose placement list:
 The intent of ADR-020 stays: no hidden encoder tensor math on CPU. Timing
 includes shape work and boundary copies; they are not subtracted.
 
+## Amendment 2026-10-21: completeness from cause lines
+
+Accepted by the user. A CPU placement is complete when ORT's INFO cause lines
+("webgpu kernel not found", "Force fallback to CPU") name unique steps whose
+count equals ORT's declared CPU count. Verbose per-step rows are optional.
+Reason: the phone's logd drops verbose rows, but the cause lines named all 623
+CPU steps and matched the declared total, so a repeat run would only reconfirm
+a known fact while the speed question remains unanswered. Boundary copies stay
+unnamed until a later run needs them.
+
+First phone listing (ORT 1.31, run `issue4-placement-webgpu-20261021-01`):
+623 CPU steps, all shape work, zero tensor math →
+[placement research](../research/ort-webgpu-node-placement.md). Passes this check.
+
 ## Rejected
 
 - Graph change to remove shape work: alters the length contract ADR-020 preserves.
@@ -34,5 +48,5 @@ includes shape work and boundary copies; they are not subtracted.
 
 ## Consequence
 
-Next phone step: one non-strict, verbose-logged runtime session creation to
-obtain the 1.31 placement list. It needs separate current-task authorization.
+Done: see amendment. Next: a short non-strict WebGPU Run compared directly with
+Android 1.31 CPU on the same build (#4 tensor gate).

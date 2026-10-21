@@ -78,9 +78,10 @@ floating-point input or output on any of them: **zero tensor math on CPU**.
 CPU-preference heuristic absorbed the same shape work (214 → 569).
 
 Limits: logd dropped most verbose per-step rows (323 of 623 CPU, 119 of 1,635
-WebGPU received), so the per-provider listing is incomplete and ADR-023's check
-fails on its letter. The complete CPU set rests on the cause lines matching the
-declared count exactly. Boundary copies were not named. Cold load 6.6 s; HWM
+WebGPU received), so the per-provider listing is incomplete. The complete CPU set
+rests on the cause lines matching the
+declared count exactly; the ADR-023 amendment accepts that as complete, so the
+check passes. Boundary copies were not named. Cold load 6.6 s; HWM
 350 MB; thermal 0.
 
 ## Obtaining a placement list
