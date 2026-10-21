@@ -284,7 +284,7 @@ class Device:
             self.shell('rm -rf -- ' + tmp)
 
     def tar(self, *rels):
-        existing = [r for r in rels if self.private('[ -d %s ] && echo y' % shlex.quote(r), check=False).strip() == 'y']
+        existing = [r for r in rels if self.private('[ -e %s ] && echo y' % shlex.quote(r), check=False).strip() == 'y']
         if not existing:
             return b''
         self.connect()

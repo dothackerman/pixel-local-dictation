@@ -107,7 +107,7 @@ class FakeDevice:
             self.data[rel + '/' + item] = (Path(directory) / item).read_bytes()
 
     def tar(self, *rels):
-        files = {k: v for k, v in self.data.items() if any(k.startswith(r + '/') for r in rels)}
+        files = {k: v for k, v in self.data.items() if any(k == r or k.startswith(r + '/') for r in rels)}
         return tar_bytes(files) if files else b''
 
     def pull_apk(self, remote, local):
@@ -156,6 +156,8 @@ class PhoneTests(unittest.TestCase):
         result = self.call('pull', 'files/lab', 'files/benchmark')
         self.assertEqual(result['files'], 2)
         self.assertTrue((Path(result['path']) / 'files/benchmark/take1.wav').exists())
+        single = self.call('pull', 'files/benchmark/take1.wav', '--to', str(self.root / 'one'))
+        self.assertEqual(single['files'], 1)
         for bad in ('shared_prefs', 'files/lab/../../shared_prefs', 'files/../shared_prefs/p.xml', '/files/lab'):
             with self.assertRaises(phone.Refused):
                 self.call('pull', bad)
