@@ -9,11 +9,9 @@ Revision 2 after an isolated adversarial review (Fable); its findings are folded
 Done on the branch: `tools/phone.new` (new wrapper, 13 fake-device tests in `tools/test_phone.py`),
 `tools/gate/` (shim, shared guard, Claude/Codex settings, AGENTS.md, `apply.sh`), guard tests,
 `encoder_probe.py` no longer pins a wrapper file, proposals and their tests deleted, docs updated.
-Agents cannot write the harness paths, so the user runs once: `bash tools/gate/apply.sh`
-(copies the gate into place, `git mv tools/phone.new tools/phone`, symlinks CLAUDE.md), then
-protects `main` on GitHub (command printed by the script), commits and merges.
-Not yet done: the first live round-trip (migration step 5) and porting `logs`/`crash`
-users in `tools/lab.py` if any depend on the old `pull-results` output names.
+Agents cannot write the harness paths, so the user runs `bash tools/gate/apply.sh`
+(installs the wrapper copy, copies the gate into place, symlinks CLAUDE.md) and commits.
+Not yet done: the first live round-trip (migration step 5).
 
 ## What the transcripts show
 
@@ -98,15 +96,11 @@ Output: one JSON object on stdout. Exit 0 success; `refused: <reason>` exit 3 (p
 - Receipt schemas, frozen manifests, hash freezes, protocol names, tolerance checks → host tools (`tools/encoder_probe.py` etc.), editable and tested without approval. The wrapper returns bytes plus `meta.json`; experiments judge them.
 - Run identities, owner symlinks, phases, closed inventories, per-incident policies → gone. `snapshot`/`restore` is the recovery story for app data and APKs. **Not** restorable from a snapshot and said so in `restore` output: microphone grant, IME enablement/selection, FUTO's "disable built-in voice input" toggle. After `uninstall` the user re-enables the keyboard by hand; `uninstall` refuses while the IME is enabled.
 
-### Trust boundary: execute the anchor, do not compare bytes
+### Trust boundary: execute the installed copy, never the worktree file
 
-Agents edit `tools/phone` and its tests freely on branches. What runs against the phone is never the worktree file. A 10-line shim in the hook-protected directory, `.claude/hooks/phone`, does:
+Agents edit `tools/phone` and its tests freely on the branch. What runs against the phone is a copy at `~/.local/share/pixel-phone/phone`, a path agents cannot write (outside the sandbox write allowlist). The shim `.claude/hooks/phone` (hook-protected directory) runs that copy with `python3 -I`. The user installs a new copy by running `bash tools/gate/apply.sh`, which first compiles the wrapper and runs its tests. Only the shim is in the `allow` rules and the sandbox `excludedCommands`. Local branches, worktrees, `python3 tools/phone` and stray copies are irrelevant because the shim never reads the checkout. No GitHub step, no merge, no network for the phone path.
 
-```
-git fetch -q origin main && git show FETCH_HEAD:tools/phone | python3 -I - "$@"
-```
-
-Only that shim is in the `allow` rules and the sandbox `excludedCommands`. GitHub branch protection on `main` (PR required, no direct push) makes "merge = authorization" literal; today `main` is unprotected and must be protected first. A CI check refuses a PR that touches `tools/phone` together with anything else, so the user reviews the wrapper diff alone. Local `main`, worktrees, `update-ref`, `python3 tools/phone` and copies are irrelevant because the shim reads the remote ref. Offline: the shim refuses with `failed: cannot reach origin`.
+Revision 2 had anchored on `main:tools/phone` fetched from GitHub. Dropped (revision 3, user decision 2026-10-21): it forced a merge for every wrapper change while the spec branch is long-lived, and in a solo repository branch protection adds a GitHub detour without a second reviewer.
 
 ### Harness (Claude and Codex, one shared script)
 
@@ -116,7 +110,7 @@ Hook `phone-guard.py`, ~60 lines, fast-fail only:
 
 The real boundary is the sandbox: `allowUnsandboxedCommands: false`; `denyRead` on `~/.android/adbkey*` and `~/Android/Sdk/platform-tools`; `excludedCommands` = the shim only. Gradle's `connected*`/`install*` tasks then fail inside the sandbox even if a hook misses them.
 
-Claude `settings.json`: keep `deny` for adb/fastboot/sudo; `allow` the shim for the no-prompt verbs; drop the Edit-deny on `tools/phone`. Codex `config.toml`: same read-only set; delete `phone.rules` (duplicate of the hook); verify once that Codex runs the shared script. `CLAUDE.md` becomes a symlink to `AGENTS.md` and both are listed in `denyWrite`. `AGENTS.md` shrinks to: shim path, "app-scoped only", "recordings stay in corpus/", "merge to main = authorization to run".
+Claude `settings.json`: keep `deny` for adb/fastboot/sudo; `allow` the shim for the no-prompt verbs; drop the Edit-deny on `tools/phone`. Codex `config.toml`: same read-only set; delete `phone.rules` (duplicate of the hook); verify once that Codex runs the shared script. `CLAUDE.md` becomes a symlink to `AGENTS.md` and both are listed in `denyWrite`. `AGENTS.md` shrinks to: shim path, "app-scoped only", "recordings stay in corpus/", "the user installs wrapper changes with apply.sh".
 
 ### Host sandbox root causes (verified 2026-10-21)
 
@@ -144,9 +138,9 @@ The adapter seam already exists (`test_phone.py` fakes the device). Keep it; the
 
 ## Migration
 
-0. **Blocking**: user applies the AppArmor fix; a sandboxed `true` succeeds. Protect `main` on GitHub (PR required). Without these the treadmill only moves.
-1. New `tools/phone` + fake tests on a branch; keep the old file as `tools/phone.old` until step 5 passes.
-2. Shim + shared `phone-guard.py`; update `settings.json`, `config.toml`; delete `phone.rules`, `tools/proposals/phone-*.py`, the `.diff`. CI check: wrapper-only PRs.
+0. **Blocking**: user applies the AppArmor fix; a sandboxed `true` succeeds. Without it the treadmill only moves (and with `allowUnsandboxedCommands: false` no shell command runs at all).
+1. New `tools/phone` + fake tests on the branch (the old wrapper remains in Git history at `74519c3^`).
+2. Shim + shared `phone-guard.py`; update `settings.json`, `config.toml`; delete `phone.rules`, `tools/proposals/phone-*.py`, the `.diff`. User runs `bash tools/gate/apply.sh`.
 3. Move receipt validation from the old wrapper into `tools/encoder_probe.py`.
 4. Shrink `AGENTS.md`; symlink `CLAUDE.md`; mark ADR-009 superseded.
 5. First real use: `snapshot baseline` → `install` diagnostic pair → `push` → `run` → `pull` → `restore baseline` → `app` shows original hashes and IME state. One PR.

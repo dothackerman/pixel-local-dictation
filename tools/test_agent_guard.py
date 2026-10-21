@@ -2,8 +2,10 @@
 
 Imports the live hook copy when applied, else the staged copy in tools/gate.
 """
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 from pathlib import Path
 import unittest
 
@@ -19,9 +21,14 @@ loader.exec_module(guard)
 SHIM = str(ROOT / '.claude/hooks/phone')
 
 
+def quiet(event):
+    with contextlib.redirect_stderr(io.StringIO()):
+        return guard.check(event)
+
+
 def bash(command, tool='Bash'):
     key = 'cmd' if tool == 'exec_command' else 'command'
-    return guard.check({'tool_name': tool, 'tool_input': {key: command}, 'cwd': str(ROOT)})
+    return quiet({'tool_name': tool, 'tool_input': {key: command}, 'cwd': str(ROOT)})
 
 
 class ShellRuleTests(unittest.TestCase):
@@ -59,7 +66,7 @@ class ShellRuleTests(unittest.TestCase):
 
 class EditRuleTests(unittest.TestCase):
     def edit(self, path, tool='Edit'):
-        return guard.check({'tool_name': tool, 'tool_input': {'file_path': path}, 'cwd': str(ROOT)})
+        return quiet({'tool_name': tool, 'tool_input': {'file_path': path}, 'cwd': str(ROOT)})
 
     def test_harness_files_are_read_only_and_the_wrapper_is_not(self):
         for path in ['.claude/hooks/phone', '.claude/hooks/phone_guard.py', '.claude/settings.json', '.codex/config.toml',
@@ -74,14 +81,14 @@ class EditRuleTests(unittest.TestCase):
 
     def test_apply_patch_follows_the_same_paths(self):
         patch = '*** Begin Patch\n*** Update File: AGENTS.md\n@@\n-x\n+y\n*** End Patch'
-        self.assertEqual(guard.check({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 2)
+        self.assertEqual(quiet({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 2)
         patch = patch.replace('AGENTS.md', 'tools/phone')
-        self.assertEqual(guard.check({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 0)
+        self.assertEqual(quiet({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 0)
 
     def test_malformed_input_is_denied(self):
-        self.assertEqual(guard.check({'tool_name': 'Bash', 'tool_input': 'nope'}), 2)
-        self.assertEqual(guard.check({'tool_name': 'Bash', 'tool_input': {}}), 2)
-        self.assertEqual(guard.check({'tool_name': 'Read', 'tool_input': {'file_path': '.claude/hooks/phone'}}), 0)
+        self.assertEqual(quiet({'tool_name': 'Bash', 'tool_input': 'nope'}), 2)
+        self.assertEqual(quiet({'tool_name': 'Bash', 'tool_input': {}}), 2)
+        self.assertEqual(quiet({'tool_name': 'Read', 'tool_input': {'file_path': '.claude/hooks/phone'}}), 0)
 
 
 if __name__ == '__main__':

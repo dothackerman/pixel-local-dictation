@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# The only path that may talk to the phone. Runs the tools/phone committed on
-# GitHub main, never the worktree copy (ADR-024). Merge = authorization to run.
+# The only path that may talk to the phone. Runs the installed copy of the
+# wrapper, never the worktree file (ADR-024). The user installs a new copy with
+# `bash tools/gate/apply.sh` after reviewing a wrapper change.
 set -euo pipefail
-root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
-if ! git -C "$root" fetch -q origin main 2>/dev/null; then
-  echo 'failed: cannot reach origin to read main:tools/phone' >&2
+installed="${XDG_DATA_HOME:-$HOME/.local/share}/pixel-phone/phone"
+if [ ! -f "$installed" ]; then
+  echo "failed: no installed wrapper at $installed; the user runs bash tools/gate/apply.sh" >&2
   exit 1
 fi
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 cd "$root"
-git show FETCH_HEAD:tools/phone | exec python3 -I - "$@"
+exec python3 -I "$installed" "$@"
