@@ -76,3 +76,11 @@ phone validation.
 
 Revisit only when a second real protocol requires more orchestration. A general
 campaign controller is not part of this change.
+
+## Amendment 2026-10-22: re-freeze before any reservation
+
+Accepted by the user. When the evaluator changed after a freeze and no attempt of that plan
+was reserved, the unchanged plan may be frozen again under a new id against the current
+evaluator. Nothing is reset, since nothing was charged. Once any attempt is reserved, the
+rule above (original Git revision or explicit new protocol) applies unchanged.
+Precedent: `issue4-webgpu-parity-02` → `-03` after `f97a287` ([ADR-025](025-issue4-one-case-finding.md)).

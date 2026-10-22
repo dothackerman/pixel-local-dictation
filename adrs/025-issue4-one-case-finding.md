@@ -61,7 +61,7 @@ After the phone disconnect the lab still matched attempt `ba74114a…`; its WebG
 pulled (retrieval, not a rerun).
 
 WebGPU parity (plan `issue4-webgpu-parity-03`: parity-02 re-frozen unchanged except id, because
-`experiment.py` changed in `f97a287` after its freeze; no parity-02 attempt was reserved).
+`experiment.py` changed in `f97a287` after its freeze; no parity-02 attempt was reserved; ADR-017 amendment).
 Same ort131 pair, variant differs only by `encoder_provider` (`2e4266d1…f9e9`).
 
 | | ort131-cpu | ort131-webgpu |
