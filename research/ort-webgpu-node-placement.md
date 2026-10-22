@@ -108,5 +108,6 @@ the WebGPU summary line, so per-step rows are unreliable (ADR-023 amendment 2).
 Do not set `disable_cpu_ep_fallback`. Log severity verbose (0). Read
 `Node(s) placed on [<provider>]` from `VerifyEachNodeIsAssignedToAnEp` plus the
 two INFO causes above. A strict run yields only the error. On Android the
-verbose burst overruns logd; the two INFO cause lines survive and, when their
-sum equals the declared CPU count, name every CPU step.
+verbose burst overruns logd. In the standalone probe the two INFO cause lines
+survived and, summing to the declared CPU count, named every CPU step; inside the
+Sherpa pipeline logd dropped some of them too (ADR-023 amendment 3).

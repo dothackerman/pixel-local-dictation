@@ -86,5 +86,5 @@ route does not help: drops happen at write time (438, then 466 of 623 named).
 
 ## Consequence
 
-Done: see amendment. Next: a short non-strict WebGPU Run compared directly with
-Android 1.31 CPU on the same build (#4 tensor gate).
+Applied in #4: short WebGPU Run (amendment 2) and in-pipeline session (amendment 3);
+outcome in [ADR-025](025-issue4-one-case-finding.md).

@@ -30,7 +30,7 @@ phone work (171 Python tests, Kotlin unit tests, androidTest compile, lint).
 | chunk-encoder-v1 tensor gate | **pass**: WebGPU vs CPU max abs 7.4e-6, all 5 fixtures (atol 1e-4 / rtol 1e-3) |
 | pipeline-placement-v1 / ADR-023 | 623 CPU steps declared; listing incomplete (logd drops); **accepted by consistency**, ADR-023 amendment 3 |
 | adapter/driver evidence | observed: `vulkan.powervr.so` (`7a00aa08…59c0`) mapped, `/dev/dri/renderD128` held |
-| webgpu-parity timed replay | **advance** (exact text, no breach); **WebGPU 5.3× / 3.3× slower Stop wait** |
+| webgpu-parity timed replay | **advance** (exact text, no breach); **WebGPU Stop wait 6.3× / 4.3× CPU's** |
 
 Runtime parity (plan `issue4-parity-02`), exact final text on both cases, no resource breaches:
 
@@ -57,8 +57,8 @@ Private digests: parity-02 report `666914df…2004`, plan `05c72dd2…3e1f`, rec
 
 ## WebGPU continuation (evening)
 
-Lab matched the handoff inventory; WebGPU chunk outputs pulled from attempt `ba74114a…` (retrieval,
-not a rerun). `phone pull` silently skipped single files; fixed in `e176bec`.
+After the phone disconnect the lab still matched attempt `ba74114a…`; its WebGPU chunk outputs were
+pulled (retrieval, not a rerun).
 
 WebGPU parity (plan `issue4-webgpu-parity-03`: parity-02 re-frozen unchanged except id, because
 `experiment.py` changed in `f97a287` after its freeze; no parity-02 attempt was reserved).

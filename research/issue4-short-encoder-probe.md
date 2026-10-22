@@ -98,8 +98,7 @@ checks marked not run; it cannot permit #5.
 
 ## In-pipeline gates: `chunk-encoder-v1` and `pipeline-placement-v1`
 
-`chunk-encoder-v1` ran once per provider on 2026-10-21 (WebGPU outputs not yet
-pulled); `pipeline-placement-v1` has not run: [ADR-025](../adrs/025-issue4-one-case-finding.md).
+Both ran on 2026-10-21; results: [ADR-025](../adrs/025-issue4-one-case-finding.md).
 Both need the ort131 build with the probe
 classes: app from `-PnativeRoleProfilerAar=build/ort131-sherpa/sherpa-ort131.aar`
 (patched Sherpa JNI), test APK with `-PencoderProbeDir=<package --out>` (only its
@@ -133,11 +132,12 @@ builds the real recognizer via `Pipeline.recognizer`, keeps this process's ORT
 placement/cause lines (`LogTail`), records `gpu_evidence`, releases; no audio, no
 Run. `placement-check` attributes lines to the encoder session (the only WebGPU
 one; CPU-only "All nodes" sessions ignored), then applies `placement_check`.
-Unverified: that ORT routes the cause lines through the session logger and logd
-keeps them at VERBOSE; a count mismatch fails closed. Fallback: Env-level patch in
-`tools/ort131-sherpa/patch-webgpu.py` (AAR rebuild).
+Observed: logd drops cause lines here too (438 and 466 of 623 named), so the check
+fails closed on the count; [ADR-023](../adrs/023-encoder-placement-check.md) amendment 3
+accepts by consistency and records the file-logger alternative.
 
-Run (`P=.claude/hooks/phone`, alone on its line; fresh 32-hex attempt id per run):
+Run (`P=.claude/hooks/phone`, alone on its line; fresh 32-hex attempt id per run;
+a lab already holding `result.json` refuses the run, so push the lab again first):
 ```
 python3 tools/encoder_probe.py freeze --protocol chunk-encoder-v1 --provider cpu \
   --model models/parakeet-v3-fp32 --app-apk APP --test-apk TEST --out corpus/lab/issue4-chunk-cpu

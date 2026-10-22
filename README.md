@@ -17,11 +17,10 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 The app can record, recognize speech locally and insert text through FUTO's
 microphone workflow. Tags `m1` and `m2` record these prototype gates.
 Improvement over FUTO in both languages remains unproven. The current default
-remains provisional. On October 21 the ORT 1.28→1.31 CPU runtime-upgrade parity
-passed on two takes; the WebGPU tensor, placement and speed gates of #4 were
-interrupted and the phone was left off baseline ([ADR-025](adrs/025-issue4-one-case-finding.md)).
-No GPU verdict, full-take speed result or live pass exists.
-The specification remains incomplete; its full-suite and live gates are unstarted.
+remains provisional. #4 closed October 21 on one take per language
+([ADR-025](adrs/025-issue4-one-case-finding.md)): the WebGPU encoder keeps exact
+text but every chunk decodes ~3.5× slower than CPU, so Stop wait grows ~5×.
+#5 needs a re-plan; its full-suite and #8's live gates are unstarted.
 
 Read the results and their limits before selecting the next question:
 
@@ -33,7 +32,7 @@ Read the results and their limits before selecting the next question:
 | [Moonshine Small](adrs/014-moonshine-screen.md) | Did not advance. |
 | [CPU profiling](adrs/015-cpu-profiling.md) | Eight phone runs on October 20 found substantial encoder work, but failed timing comparability checks. |
 | [GPU/TPU access](adrs/016-accelerator-access.md) | Physical access proven. GPU FP32 passed the numerical smoke checks; TPU failed one check. Speech acceleration remains unimplemented. |
-| [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU gates open. |
+| [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU accurate but slower (one case). |
 
 Campaigns are closed. The [next decisions](#remaining-acceptance-gaps-and-next-decisions)
 are proposals. They authorize no new runs or recordings.
@@ -108,7 +107,8 @@ and returns to FUTO.
 `python3 tools/quality.py` runs Python regression tests, Kotlin benchmark unit
 tests, instrumentation compilation and Android lint offline. It runs no device tests.
 The local pre-commit gate runs it with `--staged`. Stage tracked edits and new
-source, test and build inputs first so the checkout matches the index.
+source, test and build inputs first so the checkout matches the index; a path-limited
+`git commit PATH` with other changes pending therefore fails.
 The gate rejects index changes during the run.
 
 ## Daily use and rollback
@@ -128,7 +128,8 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 
 Reach the phone only through the shim `.claude/hooks/phone <verb> …` (absolute
 path in [AGENTS.md](AGENTS.md)), called alone on its command line; the result is
-also in `corpus/lab/last.json`. `phone help` lists the verbs and exit codes;
+also in `corpus/lab/last.json`, which every call (even `status`) overwrites: save
+it first when later work depends on it. `phone help` lists the verbs and exit codes;
 [ADR-024](adrs/024-phone-access-rewrite.md) is the contract (scope, gating, what
 `restore` cannot bring back).
 
