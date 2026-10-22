@@ -76,9 +76,18 @@ Same ort131 pair, variant differs only by `encoder_provider` (`2e4266d1…f9e9`)
 | thermal | 0 | 0 |
 
 One run per setup, but the gap (+8.5 to +10.9 s at Stop) is far beyond run-to-run spread seen so
-far (≤ 330 ms). Peak RSS drops because encoder weights leave the CPU heap. Hypothesis, untested:
-each chunk has a new input length, so WebGPU compiles shaders per shape (the cold first Run in the
-short probe took 6.8 s vs 0.29 s CPU).
+far (≤ 330 ms). Peak RSS drops because encoder weights leave the CPU heap.
+
+Explanation from per-chunk receipts (5 chunks per take, decoded during replay, serialized):
+- Every chunk is slower, in proportion to its audio: real-time factor 0.62–0.72 on WebGPU vs
+  0.16–0.22 on CPU (~3.5×). Decoder/joiner stay on CPU and unchanged, so the gain is lost in the
+  encoder (encoder time is not separated in these receipts).
+- Stop wait compounds it: chunk 4 (take-05: 24.5 s audio, 16.2 s decode) is still decoding at
+  Stop, so the final chunk (10.1 s audio, 6.3 s decode) queues behind it, ≈13 s. On CPU chunk 4
+  finishes ~5 s after its audio, long before Stop; only the last chunk remains (1.9 s).
+- Per-shape shader compilation would add a near-constant cost per chunk; time scaling with chunk
+  length argues against it as the main cause. Candidates, untested: slow FP32 kernels on the
+  PowerVR GPU via Dawn/Vulkan; CPU↔GPU synchronisation around the 623 CPU shape steps.
 
 Placement attempts `75ec3aac…` (receipt `1f1d6482…318b`) and `6e1f0b2c…` (`77d40447…e5f4`);
 `bd878c14…` refused before work (result already present). Private digests: parity-03 report
@@ -93,4 +102,5 @@ file (35/35 data files, both APKs; data `c8304efc…`).
 
 One take per language, one run per setup; diagnostic only, not complete-suite coverage. Encoder-only
 time is not separated from whole-take Stop wait. WebGPU in its current form gives no Stop-wait gain;
-#5's question needs a re-plan (e.g. shape-stable chunks or warmed shader cache) before running.
+#5's question needs a re-plan first: measure encoder-only time per chunk on WebGPU vs CPU and
+locate the cost (kernels vs CPU↔GPU syncs) before any full-suite run.
