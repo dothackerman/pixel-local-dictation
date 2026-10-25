@@ -1,6 +1,7 @@
 # ADR-013 — Converge on affordable vocabulary gains
 
 2026-10-20 · Prioritized proposals; no inference or deployment authorized.
+2026-10-25 · "Next decisions" 1–3 superseded by [ADR-026](026-dictionary-first.md). Body unchanged.
 
 Keep the working engine until a complete automatic phone path wins both languages against FUTO.
 The strongest measured lead is FP32 dictionary decoding’s development quality gain (ADR-007), at excessive cost.

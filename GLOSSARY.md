@@ -12,6 +12,18 @@ _Avoid_: session, dictation session, recording session
 The time from pressing Stop until the text is inserted.
 _Avoid_: latency, finalization time
 
+**Chunk**:
+A part of a take, cut at a pause, decoded alone while recording continues.
+_Avoid_: segment, window
+
+**Feed size**:
+How many audio samples the laptop replay hands to the chunker at once; three sizes give the noise floor.
+
+**Visit**:
+One connected phone lab period with a snapshot before any change and a restore after.
+_Avoid_: phone session, lab session
+
+
 ## Recognition models
 
 **Encoder**:
@@ -40,3 +52,15 @@ _Avoid_: heavy math, compute nodes
 **Placement check**:
 Our own acceptance test of a placement: tensor math only on the intended provider; anything elsewhere is shape work.
 _Avoid_: strict mode, CPU fallback check
+## Dictionary
+
+**Dictionary**:
+The user's list of names and terms that biases decoding toward them.
+_Avoid_: word list, lexicon, hotwords (the sherpa-onnx option name, in code only)
+
+**Listed term**:
+A word that belongs to a dictionary entry.
+
+**Boost**:
+The score bonus a token gets while it continues a dictionary entry.
+_Avoid_: bias score, hotword score

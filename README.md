@@ -1,26 +1,26 @@
 # Pixel Local Dictation
 
 Local English and German dictation on the GrapheneOS Pixel 10 Pro XL.
-Open it with FUTO Keyboard's existing microphone key. The goal is less waiting
-and fewer corrections than FUTO's installed Multilingual-244 model, in each
-language. Source and issue tracking use a private GitHub repository.
+Open it with FUTO Keyboard's existing microphone key. The goal is fewer wrong
+words than the shipped default, at a Stop wait the user accepts; speed against
+FUTO was won on 2026-10-10 ([ADR-026](adrs/026-dictionary-first.md)). Source and issue tracking use a private GitHub repository.
 
 This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
 rules. The [ADRs](adrs/) record decisions and past experiment conclusions.
-Experiment specifications and tickets live only in GitHub Issues. The next
-experiment is [#1](https://github.com/dothackerman/pixel-local-dictation/issues/1).
+Planned work lives only in GitHub Issues, as specs and tickets; a plan, gate,
+schedule or checklist in a tracked file is a defect. The open spec is
+[#11](https://github.com/dothackerman/pixel-local-dictation/issues/11).
 The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
 
 ## Current status
 
-The app can record, recognize speech locally and insert text through FUTO's
-microphone workflow. Tags `m1` and `m2` record these prototype gates.
-Improvement over FUTO in both languages remains unproven. The current default
-remains provisional. #4 closed October 21 on one take per language
-([ADR-025](adrs/025-issue4-one-case-finding.md)): the WebGPU encoder keeps exact
-text but every chunk decodes ~3.5× slower than CPU, so Stop wait grows ~5×.
-#5 needs a re-plan; its full-suite and #8's live gates are unstarted.
+The app records, recognizes speech locally and inserts text through FUTO's
+microphone workflow. Tags `m1` and `m2` record the prototype gates. The default
+engine is Parakeet v3 with a selective INT8 encoder on the CPU
+([ADR-003](adrs/003-working-engine.md)), provisional. The WebGPU track stopped at
+one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
+2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
 
 Read the results and their limits before selecting the next question:
 
@@ -34,29 +34,30 @@ Read the results and their limits before selecting the next question:
 | [GPU/TPU access](adrs/016-accelerator-access.md) | Physical access proven. GPU FP32 passed the numerical smoke checks; TPU failed one check. Speech acceleration remains unimplemented. |
 | [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU accurate but slower (one case). |
 
-Campaigns are closed. The [next decisions](#remaining-acceptance-gaps-and-next-decisions)
-are proposals. They authorize no new runs or recordings.
+Campaigns are closed ([ADR-013](adrs/013-future-investigations.md)); the
+current decision is [ADR-026](adrs/026-dictionary-first.md).
 
 ## Requirements
 
-Confirmed October 9, 2026; R7 added October 10. These requirements apply to every engine.
+Confirmed October 9, 2026; R7 added October 10; R4 revised and R8 added
+October 25 ([ADR-026](adrs/026-dictionary-first.md)). These requirements apply to every engine.
 
 | ID | Requirement |
 |---|---|
 | R1 | Keep FUTO’s microphone workflow. Do not add a picker or confirmation for each take. |
 | R2 | Select English or German automatically, with one language per take. Allow ordinary names and loanwords. |
 | R3 | Process speech only on the phone. No cloud fallback, Internet permission or telemetry. |
-| R4 | Be faster and more accurate than the installed FUTO Multilingual-244 model, in each language. |
+| R4 | Fewer wrong words than the shipped default, in each language, at a Stop wait the user accepts. |
 | R5 | Preserve meaning. Transcribe without translation or rewriting. Check names, numbers, omissions, invented text and formatting. |
 | R6 | Follow the security rules in [AGENTS.md](AGENTS.md). Support return to FUTO and retain its baseline model. |
 | R7 | Use Swiss spelling: replace ß with ss. The scorer treats both forms equally. |
+| R8 | The panel and recording start at once; model loading never delays them. |
 
 A take is one recording session, from panel open to Stop or cancellation.
 An engine that supports only one language is acceptable if routing is automatic.
 Mixed-language conversation and diarization are outside scope.
 Dialect support, Stop behavior preferences and battery/heat limits remain undecided.
-About 3× less waiting, warm finalization below one second and 10–20% fewer corrections
-are goals. They are not approved acceptance thresholds.
+Stop-wait and accuracy targets: [ADR-026](adrs/026-dictionary-first.md).
 
 ## Current design
 
@@ -169,26 +170,15 @@ effort, meaning or formatting.
 Private comparison plans and evidence stay in `corpus/lab/`. Record source,
 runtime, APK, model and input identities; exact commands; controls; repeats and
 endpoints; decision thresholds; failure rules; and restoration steps. Freeze the
-comparison before its measured runs. The tracked experiment manifest lists host
-artifacts and links to its GitHub issue; it does not duplicate the specification.
-Deployment is a separate decision.
+comparison before an adoption-deciding phone run ([ADR-017](adrs/017-shared-take-experiments.md)
+amendment); laptop screening needs no freeze. Deployment is a separate decision.
 
-## Remaining acceptance gaps and next decisions
+## Known gaps
 
-R4 requires comparison of the complete automatic phone path with installed FUTO,
-for each language separately. Freeze settings and vocabulary before reserved
-validation. Cover short, spontaneous and noisy speech; ambiguous starts;
-correction effort; names, numbers, meaning and formatting; wrong-language output;
-cold/warm latency; memory; and heat/battery use across repeated sessions.
-Use identical audio where possible. Disclose comparisons that use different takes.
 Answered calls, longer battery-only model survival and a clean full FP32 export
-remain unverified. Dictionary entry and editing remain undecided.
-
-[ADR-013](adrs/013-future-investigations.md) defines the next decisions and stop
-conditions: one Parakeet FP32 conversion/GPU optimization track, bounded diagnosis
-of Cohere’s English-prefix failures, then independent FUTO validation.
-Allocation and parameter-sweep campaigns are closed. No new runs or recordings
-are authorized.
+remain unverified. Dictionary entry and editing ship only with an adopt verdict
+([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
+work: spec #11 and its tickets.
 
 ## Evidence and history
 
