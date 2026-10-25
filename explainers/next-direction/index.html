@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Teach the Engine Your Words</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,17 +54,21 @@ pre.code .c{color:var(--muted)} pre.code .k{color:var(--heur);font-weight:600} p
 .takeaway b{color:var(--gpu)}
 .warn{border-left:4px solid var(--bad);background:var(--bad-soft);padding:12px 16px;border-radius:0 8px 8px 0}
 .warn b{color:var(--bad)}
+.q{border-left:4px solid var(--heur);background:var(--heur-soft);padding:12px 16px;border-radius:0 8px 8px 0}
+.q b{color:var(--heur)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .pill{display:inline-block;align-self:flex-start;font-family:var(--mono);font-size:.72rem;padding:2px 8px;border-radius:99px;font-weight:600}
 .p-gpu{background:var(--gpu-soft);color:var(--gpu)} .p-cpu{background:var(--cpu-soft);color:var(--cpu)}
 .p-heur{background:var(--heur-soft);color:var(--heur)} .p-bad{background:var(--bad-soft);color:var(--bad)}
-table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+td.num{font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
 td.num{text-align:right}
 .tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
 ul,ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px;max-width:66ch}
+ol.ladder{flex-direction:row;flex-wrap:wrap;padding:0;max-width:none}
 footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
 @media (max-width:480px){h1{font-size:1.8rem}}
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
@@ -71,21 +76,22 @@ footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padd
 
 <main>
 <header style="display:flex;flex-direction:column;gap:14px">
-  <span class="eyebrow">Research note 2026-10-22 rev 3 · Pixel 10 Pro XL</span>
+  <span class="eyebrow">Research note 2026-10-22 rev 4 · Pixel 10 Pro XL</span>
   <h1>Teach the engine your words</h1>
-  <p class="lede">The app already writes your dictation faster than FUTO. It still makes more mistakes on names. This page explains, from zero, what the app does, where the mistakes come from, and the plan to fix them without losing speed. Each level uses only words from the levels before it.</p>
+  <p class="lede">The app already writes your dictation much faster than FUTO. The open goal is accuracy: fewer wrong words than the version you use today, at a speed you accept. This page explains, from zero, how the app works, where the wrong words come from, and the plan to fix them. Each level uses only words from the levels before it. Violet boxes answer your questions from 25 October.</p>
   <ol class="ladder" aria-label="Levels">
     <li><a href="#l1">1 · One take</a></li>
     <li><a href="#l2">2 · Inside the model</a></li>
-    <li><a href="#l3">3 · Chunks and Stop wait</a></li>
+    <li><a href="#l3">3 · Chunks, memory, Stop wait</a></li>
     <li><a href="#l4">4 · Files, runtime, chips</a></li>
-    <li><a href="#l5">5 · Greedy and beam</a></li>
+    <li><a href="#l5">5 · Search</a></li>
     <li><a href="#l6">6 · The key measurement</a></li>
-    <li><a href="#l7">7 · FUTO's mistakes and ours</a></li>
-    <li><a href="#l8">8 · The bet</a></li>
+    <li><a href="#l7">7 · Our own mistakes</a></li>
+    <li><a href="#l8">8 · Two candidates</a></li>
     <li><a href="#l9">9 · A faster test loop</a></li>
-    <li><a href="#l10">10 · Limits and your decisions</a></li>
-    <li><a href="#l11">11 · Two weeks of history</a></li>
+    <li><a href="#l10">10 · The instant panel</a></li>
+    <li><a href="#l11">11 · Limits and your decisions</a></li>
+    <li><a href="#l12">12 · Two weeks of history</a></li>
     <li><a href="#words">Word list</a></li>
   </ol>
 </header>
@@ -106,40 +112,37 @@ footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padd
       <text x="502" y="32" text-anchor="middle" class="onfill b">works after Stop · Stop wait 80–100 s</text>
       <line x1="281" y1="6" x2="281" y2="52" stroke="var(--bad)" stroke-width="2"/>
       <text x="281" y="66" text-anchor="middle" class="sm">Stop</text>
-
       <text x="10" y="120" class="b">Our app</text>
       <rect x="80" y="104" width="200" height="26" rx="4" fill="var(--line)"/>
       <text x="180" y="122" text-anchor="middle" class="sm">you speak (40 s)</text>
       <rect x="80" y="134" width="196" height="12" rx="3" fill="var(--gpu)"/>
-      <text x="178" y="161" text-anchor="middle" class="sm">works during recording</text>
+      <text x="80" y="161" class="sm">works during recording</text>
       <rect x="282" y="104" width="10" height="26" rx="2" fill="var(--gpu)"/>
       <text x="300" y="122" class="b" fill="var(--gpu)">Stop wait ≈ 1 s</text>
       <line x1="281" y1="96" x2="281" y2="150" stroke="var(--bad)" stroke-width="2"/>
       <text x="281" y="180" text-anchor="middle" class="sm">Stop</text>
     </svg>
-    <div class="cap">Measured on 10 October on six scripts, with different recordings for each app. Speed is won. Accuracy is the open question.</div>
+    <div class="cap">Measured on 10 October on six scripts. Speed against FUTO is won. From 25 October we no longer compare with FUTO: the version you use today is the baseline.</div>
   </div>
-  <div class="takeaway"><b>Goal R4:</b> be faster <em>and</em> more accurate than FUTO, in English and in German. Speed is done. This page is about accuracy, with no loss of speed.</div>
+  <div class="takeaway"><b>Goal:</b> fewer wrong words than today's app, in English and in German, at a speed you accept. The panel must appear at once (Level 10).</div>
 </section>
 
 <!-- LEVEL 2 -->
 <section id="l2">
   <div class="lvl"><span class="n">2</span><span class="eyebrow">Level 2 · Inside the model</span></div>
   <h2>How a speech model turns sound into words</h2>
-  <p>A speech model is three parts that run one after another. The sound is first cut into <b>frames</b>: 10 milliseconds of audio becomes a list of 128 numbers. The <b>encoder</b> reads all frames of a chunk and writes a description of the speech, one line per 80 milliseconds. This is the big, slow part. The <b>decoder</b> remembers the last tokens it wrote. The <b>joiner</b> looks at one encoder line and the decoder memory, and gives a score for every possible next token.</p>
+  <p>A speech model is three parts that run one after another. The sound is first cut into <b>frames</b>: 10 milliseconds of audio becomes a list of 128 numbers. The <b>encoder</b> reads all frames of a chunk and writes a description of the speech, one line per 80 milliseconds. This is the big, slow part. The <b>decoder</b> remembers the tokens it wrote so far. The <b>joiner</b> looks at one encoder line and the decoder memory, and gives a score to every possible next token.</p>
   <p>A <b>token</b> is a piece of a word. The model knows 8,192 pieces, such as <code>▁Zür</code>, <code>ich</code>, <code>▁the</code>. Long or rare words are several pieces. One extra token is <b>blank</b>: "nothing new on this line, move on".</p>
   <div class="fig">
     <svg viewBox="0 0 760 230" role="img" aria-label="Sound becomes frames, the encoder writes one description line per 80 milliseconds, the decoder and joiner read one line and emit a token or blank.">
       <text x="10" y="24" class="b">Sound</text>
       <polyline points="10,60 20,40 30,70 40,45 50,66 60,50 70,72 80,38 90,64 100,52 110,68 120,44 130,60" fill="none" stroke="currentColor" stroke-width="2"/>
-      <text x="70" y="96" text-anchor="middle" class="sm">frames · 128 numbers / 10 ms</text>
+      <text x="10" y="96" class="sm">frames · 128 numbers / 10 ms</text>
       <line x1="140" y1="56" x2="180" y2="56" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
-
-      <rect x="186" y="20" width="170" height="72" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <rect x="180" y="20" width="182" height="72" rx="8" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
       <text x="271" y="50" text-anchor="middle" class="b">Encoder</text>
-      <text x="271" y="70" text-anchor="middle" class="sm">big and slow · ~45% of the work</text>
+      <text x="271" y="70" text-anchor="middle" class="sm">big and slow · ~45% of work</text>
       <line x1="356" y1="56" x2="396" y2="56" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
-
       <g>
         <rect x="402" y="26" width="120" height="12" rx="2" fill="var(--gpu)"/>
         <rect x="402" y="44" width="120" height="12" rx="2" fill="var(--gpu)"/>
@@ -148,13 +151,11 @@ footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padd
         <text x="462" y="110" text-anchor="middle" class="sm">one line per 80 ms</text>
       </g>
       <line x1="522" y1="50" x2="562" y2="50" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
-
       <rect x="568" y="14" width="180" height="40" rx="8" fill="var(--surface)" stroke="currentColor"/>
       <text x="658" y="40" text-anchor="middle" class="b">Joiner</text>
       <rect x="568" y="66" width="180" height="40" rx="8" fill="var(--surface)" stroke="currentColor"/>
       <text x="658" y="92" text-anchor="middle" class="b">Decoder (memory)</text>
       <line x1="658" y1="66" x2="658" y2="54" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
-
       <text x="568" y="140" class="sm">scores for 8,193 tokens:</text>
       <rect x="568" y="150" width="30" height="40" fill="var(--line)"/>
       <rect x="602" y="166" width="30" height="24" fill="var(--line)"/>
@@ -164,7 +165,7 @@ footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padd
       <text x="583" y="206" text-anchor="middle" class="mn">blank</text>
       <text x="651" y="206" text-anchor="middle" class="mn" fill="var(--heur)">▁Zür</text>
       <text x="719" y="206" text-anchor="middle" class="mn">…</text>
-      <text x="568" y="226" class="sm">the best score wins: here ▁Zür is emitted</text>
+      <text x="568" y="226" class="sm">best score wins: ▁Zür</text>
     </svg>
     <div class="cap">Our model is Parakeet TDT 0.6B v3. "0.6B" means 600 million learned numbers, called weights. Most of them are in the encoder.</div>
   </div>
@@ -187,8 +188,8 @@ text = join_pieces(tokens)</pre>
 <!-- LEVEL 3 -->
 <section id="l3">
   <div class="lvl"><span class="n">3</span><span class="eyebrow">Level 3 · Chunks</span></div>
-  <h2>Why the Stop wait is short: chunks</h2>
-  <p>The app does not wait for the whole take. When you pause, it closes a <b>chunk</b> and sends it to the model while you keep speaking. Each chunk is decoded alone; the model does not carry memory from one chunk to the next. At Stop, only the last open chunk is still waiting. The Stop wait is the time to decode that last chunk, plus any backlog.</p>
+  <h2>Chunks, memory between chunks, and the Stop wait</h2>
+  <p>The app does not wait for the whole take. When you pause, it closes a <b>chunk</b> and sends it to the model while you keep speaking. At Stop, only the last open chunk is still waiting. The Stop wait is the time to decode that last chunk, plus any backlog.</p>
   <div class="fig">
     <svg viewBox="0 0 760 170" role="img" aria-label="A take cut into five chunks at pauses. Chunks one to four are decoded during recording. At Stop only chunk five remains, and its decode time is the Stop wait.">
       <text x="10" y="24" class="b">Recording</text>
@@ -205,14 +206,17 @@ text = join_pieces(tokens)</pre>
       <rect x="412" y="88" width="30" height="18" rx="3" fill="var(--gpu)"/>
       <rect x="588" y="88" width="34" height="18" rx="3" fill="var(--gpu)"/>
       <rect x="686" y="88" width="18" height="18" rx="3" fill="var(--heur)"/>
-      <text x="166" y="126" text-anchor="middle" class="sm">decoded while you speak · about 0.2 s per second of audio on the CPU</text>
+      <text x="10" y="126" class="sm">decoded while you speak · about 0.2 s per second of audio on the CPU</text>
       <line x1="685" y1="30" x2="685" y2="112" stroke="var(--bad)" stroke-width="2"/>
       <text x="685" y="140" text-anchor="middle" class="sm">Stop</text>
-      <text x="695" y="160" text-anchor="middle" class="b" fill="var(--heur)">Stop wait</text>
+      <text x="640" y="160" class="b" fill="var(--heur)">Stop wait</text>
     </svg>
-    <div class="cap">On the CPU, decoding takes about 0.2 seconds per second of audio, so chunks 1 to 4 are done long before Stop. Any change that makes decoding slower per second makes chunk 5 slower and can create a backlog.</div>
+    <div class="cap">On the CPU, decoding takes about 0.2 seconds per second of audio, so chunks 1 to 4 are done long before Stop.</div>
   </div>
-  <div class="takeaway"><b>Rule for every idea on this page:</b> the Stop wait must not grow. A change that makes each chunk slower is a change we cannot ship, however accurate.</div>
+  <div class="q"><b>Your question: is the model kept warm between chunks, and could it carry memory from one chunk to the next?</b><br>
+  Yes, it stays warm. The model files are loaded once into a <b>runtime session</b>, when the app starts, and every chunk and every take reuses it. What restarts at each chunk is the decoder memory. That memory is a small state (a two-layer LSTM, 640 numbers per layer) that holds the last few tokens, so the model knows that "ich" follows "▁Zür". It is not a memory of words it has heard. Carrying it across a chunk cut would help one case: a word that a pause cuts in half. It would not help a name that comes back two sentences later. For that, the right tool is a word list that grows from your corrections (Level 8). The encoder has no memory to carry: it looks at one chunk and nothing else. Carrying the decoder state is one line in the laptop test tool, so we will measure it as one row and keep it only if it helps.</div>
+  <div class="q"><b>Your rule from 25 October: the Stop wait may grow.</b><br>
+  Until now every idea had to keep the Stop wait at about one second. You decided that a Stop wait of 2 to 3 seconds is acceptable if accuracy clearly improves, because the waiting can be made pleasant on screen. That reopens the most accurate variant we have ever measured as a product candidate (Level 8, candidate A).</div>
 </section>
 
 <!-- LEVEL 4 -->
@@ -220,11 +224,11 @@ text = join_pieces(tokens)</pre>
   <div class="lvl"><span class="n">4</span><span class="eyebrow">Level 4 · Files, runtime, chips</span></div>
   <h2>Model files, the runtime, and which chip does the work</h2>
   <p>The model is three files in the ONNX format: encoder, decoder, joiner. A program called <b>ONNX Runtime</b> (ORT) executes them. We do not call ORT directly. We use <b>sherpa-onnx</b>, a library that wraps ORT, cuts audio into frames, runs the search loop and gives us text. When the app loads the three files once, with fixed options, that is a <b>runtime session</b>. Many takes reuse it.</p>
-  <p>Inside ORT, an <b>execution provider</b> owns one kind of chip. The CPU provider is the default. The WebGPU provider reaches the phone's graphics chip. Our phone also has a TPU, a chip for AI math. On 21 October we tried the encoder on the GPU. The text was exactly the same, but each chunk took 3.5 times longer, and the Stop wait grew 4 to 6 times. The LiteRT route to the TPU failed on a 2 GiB file limit. Both are closed for now.</p>
+  <p>Inside ORT, an <b>execution provider</b> owns one kind of chip. The CPU provider is the default. The WebGPU provider reaches the phone's graphics chip. On 21 October we tried the encoder on the GPU. The text was exactly the same, but each chunk took 3.5 times longer. The route to the phone's AI chip (TPU) failed on a 2 GiB file limit. Both are closed.</p>
   <div class="grid2">
-    <div class="card"><span class="pill p-gpu">numbers</span><h3>FP32</h3><p>Each weight is a 32-bit decimal. Exact, but 4 bytes per weight: the encoder alone is about 2.4 GB in memory and slow.</p></div>
+    <div class="card"><span class="pill p-gpu">numbers</span><h3>FP32</h3><p>Each weight is a 32-bit decimal. Exact, but 4 bytes per weight: the encoder alone needs about 2.4 GB in memory, and it is slower.</p></div>
     <div class="card"><span class="pill p-cpu">numbers</span><h3>INT8</h3><p>Each weight is an 8-bit whole number, scaled. 4 times smaller and faster. A little precision is lost. Our shipped encoder is INT8; the decoder and joiner stay FP32.</p></div>
-    <div class="card"><span class="pill p-bad">tried</span><h3>GPU / TPU</h3><p>Measured: WebGPU encoder gave the same text and a 5× longer Stop wait (ADR-025). TPU numbers failed a check. Not a way forward in this window.</p></div>
+    <div class="card"><span class="pill p-bad">tried</span><h3>GPU / TPU</h3><p>Measured: the WebGPU encoder gave the same text and a 5× longer Stop wait (ADR-025). TPU numbers failed a check. Not a way forward.</p></div>
   </div>
   <div class="fig">
     <svg viewBox="0 0 760 150" role="img" aria-label="App calls sherpa-onnx, which calls ONNX Runtime, which runs the three model files on an execution provider: CPU in production, WebGPU tried and slower.">
@@ -243,16 +247,17 @@ text = join_pieces(tokens)</pre>
       <rect x="520" y="86" width="220" height="44" rx="8" fill="var(--bad-soft)" stroke="var(--bad)"/>
       <text x="630" y="106" text-anchor="middle" class="b">WebGPU provider · tried</text><text x="630" y="122" text-anchor="middle" class="sm">0.65 s per second of audio</text>
     </svg>
-    <div class="cap">Everything on this page keeps the shipped top row. The plan touches only the search loop inside sherpa-onnx.</div>
+    <div class="cap">Everything on this page keeps the shipped top row. The plan touches the search loop inside sherpa-onnx and the word list.</div>
   </div>
 </section>
 
 <!-- LEVEL 5 -->
 <section id="l5">
   <div class="lvl"><span class="n">5</span><span class="eyebrow">Level 5 · Search</span></div>
-  <h2>Greedy search, beam search, and where a word list can plug in</h2>
-  <p><b>Greedy search</b> is the loop in Level 2: take the best token at every step, never look back. <b>Beam search</b> keeps several candidate sentences at the same time, for example 4 or 8, and picks the best whole sentence at the end. Beam search is more accurate in theory, but it runs the decoder and joiner many more times per chunk.</p>
-  <p>sherpa-onnx has a feature called <b>hotwords</b>: a list of phrases that get a bonus score while decoding. Today sherpa-onnx applies hotwords only inside beam search. That is the whole reason the project went down the beam-search road.</p>
+  <h2>Greedy search, beam search, and where a word list plugs in</h2>
+  <div class="q"><b>Your question: why is it called search, and are greedy and beam two strategies for the same thing?</b><br>
+  Yes. At each step the joiner gives 8,193 scores, and nothing tells us the right answer. Finding the best <em>sequence</em> of tokens is a search through a tree of choices: every token you pick opens 8,193 new choices for the next step. <b>Greedy search</b> picks the best token at every step and never looks back, as in the Level 2 pseudocode. <b>Beam search</b> keeps several partial sentences alive at the same time, for example 4 or 8. At every step it extends each one by its best few tokens, scores all of them as whole sequences, and keeps only the best 4 or 8. At the end of the chunk it returns the best whole sequence. So it does not pick per token; it picks per sentence, with the per-token scores added up. It is more accurate when the right word starts with a token that looked slightly worse at first. The price is that the decoder and joiner run for every kept path, so 4 to 8 times more often.</div>
+  <p>sherpa-onnx has a feature called <b>hotwords</b>: a list of phrases that get a bonus while decoding. Today sherpa-onnx applies hotwords only inside beam search. That is the whole reason the project went down the beam-search road.</p>
   <div class="fig">
     <svg viewBox="0 0 760 210" role="img" aria-label="Greedy search follows one path through the token choices. Beam search follows four paths and ranks them at the end. Hotwords today only attach to beam search.">
       <text x="10" y="24" class="b">Greedy · one path</text>
@@ -261,8 +266,8 @@ text = join_pieces(tokens)</pre>
       </g>
       <g><circle cx="20" cy="60" r="7" fill="var(--gpu)"/><circle cx="90" cy="60" r="7" fill="var(--gpu)"/><circle cx="160" cy="60" r="7" fill="var(--gpu)"/><circle cx="230" cy="60" r="7" fill="var(--gpu)"/></g>
       <text x="20" y="90" class="mn">▁Zür</text><text x="90" y="90" class="mn">ich</text><text x="160" y="90" class="mn">▁See</text><text x="230" y="90" class="mn">.</text>
-      <text x="20" y="120" class="sm">1 decoder call per emitted token · Stop wait ≈ 0.65 s</text>
-
+      <text x="20" y="120" class="sm">1 decoder call per emitted token</text>
+      <text x="20" y="138" class="sm">Stop wait ≈ 1 s</text>
       <text x="400" y="24" class="b">Beam · four paths</text>
       <g stroke="currentColor" stroke-width="1.5" fill="none" opacity=".55">
         <polyline points="410,50 480,44 550,40 620,44"/>
@@ -275,14 +280,16 @@ text = join_pieces(tokens)</pre>
       <circle cx="620" cy="44" r="5"/><circle cx="620" cy="60" r="5"/><circle cx="620" cy="74" r="5"/><circle cx="620" cy="96" r="5"/></g>
       <circle cx="410" cy="50" r="7" fill="var(--cpu)"/>
       <text x="636" y="48" class="sm">best at the end</text>
-      <text x="400" y="120" class="sm">4× the decoder and joiner calls · Stop wait 2.0–2.5 s with FP32</text>
-      <rect x="400" y="140" width="330" height="54" rx="8" fill="var(--heur-soft)" stroke="var(--heur)"/>
-      <text x="565" y="162" text-anchor="middle" class="b" fill="var(--heur)">hotwords: a bonus for listed phrases</text>
-      <text x="565" y="182" text-anchor="middle" class="sm">today sherpa-onnx attaches this only to beam search</text>
+      <text x="400" y="120" class="sm">4× the decoder and joiner calls</text>
+      <text x="400" y="138" class="sm">Stop wait 2.0–2.5 s with the FP32 encoder</text>
+      <rect x="400" y="150" width="340" height="54" rx="8" fill="var(--heur-soft)" stroke="var(--heur)"/>
+      <text x="570" y="172" text-anchor="middle" class="b" fill="var(--heur)">hotwords: a bonus for listed phrases</text>
+      <text x="570" y="192" text-anchor="middle" class="sm">today sherpa-onnx attaches this only to beam search</text>
     </svg>
-    <div class="cap">The violet box is the thing we want. The amber paths are the price we paid for it. The plan moves the violet box to the teal path.</div>
+    <div class="cap">The violet box is the thing we want. The amber paths are the price we paid for it so far.</div>
   </div>
-  <p>There was a second problem. With the INT8 encoder, beam search broke on one public test clip: 62 errors instead of 5. Nobody found the root cause. The workaround was the FP32 encoder, which is exact but slow and needs 3.1 GB of memory. That workaround is why the Stop wait with beam search is 2 to 2.5 seconds.</p>
+  <div class="q"><b>Your question: beam search broke with the INT8 encoder on one clip, and the fix was the FP32 encoder. That sounds like a weird solution.</b><br>
+  It was a workaround, not a solution, and the note now says so. The facts: on one public 65-word clip, INT8 encoder plus beam search gave 62 wrong words; the same with the FP32 encoder gave 5. Greedy search was fine with both. So the INT8 encoder's small rounding errors do not change the single best token, but they do change the scores of the runner-up tokens, and beam search lives on those runner-up scores. Nobody found the root cause. The shipped INT8 encoder uses the simplest form of rounding (one scale for a whole weight matrix). A finer form (one scale per row) is one flag in the tool we already own and was never tried. With your 25 October rule, the FP32 encoder is acceptable for candidate A, so this does not block anything. It stays a one-day option if candidate A needs less memory or less Stop wait.</div>
 </section>
 
 <!-- LEVEL 6 -->
@@ -293,55 +300,57 @@ text = join_pieces(tokens)</pre>
   <div class="fig">
     <svg viewBox="0 0 760 230" role="img" aria-label="Bar chart. FP32 greedy: 45 German, 24 English errors. FP32 beam 8: 42 and 26. FP32 beam 8 with the 43-word list: 35 and 11. Only the list makes the big difference.">
       <g class="sm"><text x="10" y="20">word errors · fewer is better</text></g>
-      <line x1="200" y1="36" x2="200" y2="200" stroke="var(--line)"/>
-      <!-- scale: 1 error = 10px, origin x=200 -->
-      <text x="190" y="60" text-anchor="end" class="sm">FP32 greedy</text>
-      <rect x="200" y="46" width="450" height="14" fill="var(--cpu)"/><text x="656" y="58" class="mn">DE 45</text>
-      <rect x="200" y="62" width="240" height="14" fill="var(--gpu)"/><text x="446" y="74" class="mn">EN 24</text>
-
-      <text x="190" y="112" text-anchor="end" class="sm">FP32 beam 8</text>
-      <rect x="200" y="98" width="420" height="14" fill="var(--cpu)"/><text x="626" y="110" class="mn">DE 42</text>
-      <rect x="200" y="114" width="260" height="14" fill="var(--gpu)"/><text x="466" y="126" class="mn">EN 26</text>
-
-      <text x="190" y="164" text-anchor="end" class="sm">FP32 beam 8 + 43-word list</text>
-      <rect x="200" y="150" width="350" height="14" fill="var(--cpu)"/><text x="556" y="162" class="mn b">DE 35</text>
-      <rect x="200" y="166" width="110" height="14" fill="var(--gpu)"/><text x="316" y="178" class="mn b">EN 11</text>
-      <text x="200" y="215" class="sm">Beam search alone: German −3, English +2. The list: German −7, English −15.</text>
+      <line x1="230" y1="36" x2="230" y2="200" stroke="var(--line)"/>
+      <text x="220" y="60" text-anchor="end" class="sm">FP32 greedy</text>
+      <rect x="230" y="46" width="450" height="14" fill="var(--cpu)"/><text x="686" y="58" class="mn">DE 45</text>
+      <rect x="230" y="62" width="240" height="14" fill="var(--gpu)"/><text x="476" y="74" class="mn">EN 24</text>
+      <text x="220" y="112" text-anchor="end" class="sm">FP32 beam 8</text>
+      <rect x="230" y="98" width="420" height="14" fill="var(--cpu)"/><text x="656" y="110" class="mn">DE 42</text>
+      <rect x="230" y="114" width="260" height="14" fill="var(--gpu)"/><text x="496" y="126" class="mn">EN 26</text>
+      <text x="220" y="158" text-anchor="end" class="sm">FP32 beam 8</text>
+      <text x="220" y="174" text-anchor="end" class="sm">+ 43-word list</text>
+      <rect x="230" y="150" width="350" height="14" fill="var(--cpu)"/><text x="586" y="162" class="mn b">DE 35</text>
+      <rect x="230" y="166" width="110" height="14" fill="var(--gpu)"/><text x="346" y="178" class="mn b">EN 11</text>
+      <text x="230" y="215" class="sm">Beam search alone: German −3, English +2. The list: German −7, English −15.</text>
     </svg>
     <div class="cap">Source: ADR-007. The 43 listed words were all names and terms that appear in the scripts, so this shows the mechanism works. It does not show how it works on names you did not list.</div>
   </div>
-  <div class="takeaway"><b>The gain comes from the word list.</b> Beam search and FP32 by themselves did not reduce English errors. From 13 to 22 October the work tried to make FP32 and beam search fast, on the GPU and the TPU. That was the wrong lever. The right lever is: make the word list work without beam search.</div>
+  <div class="takeaway"><b>The gain comes from the word list.</b> Beam search and FP32 by themselves did not reduce English errors. From 13 to 22 October the work tried to make FP32 and beam search fast, on the GPU and the TPU. That was the wrong lever. The right lever is the word list.</div>
 </section>
 
 <!-- LEVEL 7 -->
 <section id="l7">
-  <div class="lvl"><span class="n">7</span><span class="eyebrow">Level 7 · FUTO</span></div>
-  <h2>What FUTO gets wrong, and what we get wrong</h2>
-  <p>On 10 October you dictated six scripts into FUTO. That text is on disk. We scored it with the same scorer as our app, and sorted every error into four types. "Listed term" means a name or term that is in our 43-word list. Our numbers are from the laptop; FUTO's are from the phone, on different recordings of the same scripts.</p>
+  <div class="lvl"><span class="n">7</span><span class="eyebrow">Level 7 · Our mistakes</span></div>
+  <h2>Where today's wrong words are</h2>
+  <p>We sorted every wrong word of today's app on six scripts into three types. "Listed term" means a name or term that is in our 43-word list. Numbers come from the laptop with the app's own chunking; the range in brackets is from two other chunk settings.</p>
   <div class="tbl">
     <table>
-      <thead><tr><th>Six scripts</th><th class="num">total</th><th class="num">listed term</th><th class="num">number / format</th><th class="num">other</th></tr></thead>
+      <thead><tr><th>Today's app, six scripts</th><th class="num">total</th><th class="num">listed term</th><th class="num">number / format</th><th class="num">other</th></tr></thead>
       <tbody>
-        <tr><td>German · our default (468 words)</td><td class="num">39</td><td class="num"><b>16</b></td><td class="num">8</td><td class="num">15</td></tr>
-        <tr><td>German · FUTO</td><td class="num">48</td><td class="num">13</td><td class="num">4</td><td class="num">31</td></tr>
-        <tr><td>English · our default (506 words)</td><td class="num">17</td><td class="num"><b>8</b></td><td class="num">2</td><td class="num">7</td></tr>
-        <tr><td>English · FUTO</td><td class="num">19</td><td class="num">4</td><td class="num">3</td><td class="num">12</td></tr>
+        <tr><td>German (468 words)</td><td class="num">39 (36–43)</td><td class="num"><b>16</b></td><td class="num">8</td><td class="num">15</td></tr>
+        <tr><td>English (506 words)</td><td class="num">17 (17–22)</td><td class="num"><b>8</b></td><td class="num">2</td><td class="num">7</td></tr>
       </tbody>
     </table>
   </div>
-  <p>FUTO is ahead of us in exactly one column: listed terms, by 3 errors in German and 4 in English. We are ahead in every other column. A word list fixes exactly the column where we lose.</p>
-  <div class="warn"><b>Read this table with care.</b> The recordings differ. The spread from one recording to the next is unknown. Every name in these scripts is in our list, so the table cannot say how either app does on names you never listed. Our text is from before a chunking fix on 12 October. And if the scorer stops counting "Velo-Tour" against "Velotour", the German totals become 37 for us and 39 for FUTO: most of our German lead is a spacing rule.</div>
-  <p>Two cheap bugs also appeared. "Franken" after a price is lost in 4 of 5 cases, in every variant, because it was never in the list. "Aylin" alone is wrong 4 times, because only "Aylin Demir" is listed. These are list bugs, not model bugs.</p>
+  <p>Names and terms are 41% of the German mistakes and 47% of the English ones. That is the share a word list can reach. Two cheap bugs sit in the list itself: "Franken" after a price is lost in 4 of 5 cases because it was never listed, and "Aylin" alone is wrong 4 times because only "Aylin Demir" is listed.</p>
+  <div class="q"><b>Your rule from 25 October: formatting differences do not count.</b><br>
+  Agreed. "4.80" against "4,80" and "Tensor-Chip" against "Tensor Chip" are now scored as equal, and the plan spends no time on them. The "number / format" column above still contains real word losses such as the missing "Franken"; those stay.</div>
+  <div class="warn"><b>Limit.</b> Every name in these scripts is in the list, so this table cannot say how the app does on names you never listed. That needs new speech with new names, which only you can record.</div>
 </section>
 
 <!-- LEVEL 8 -->
 <section id="l8">
-  <div class="lvl"><span class="n">8</span><span class="eyebrow">Level 8 · The bet</span></div>
-  <h2>The bet: a word list inside greedy search</h2>
-  <p>Keep everything that ships today: the INT8 encoder, the CPU, greedy search. Add one thing: a <b>phrase tree</b> built from your word list. At each step where the model is about to emit a token, add a bonus to the tokens that continue a listed phrase. Take the best token. Move one step along the tree. That is all.</p>
-  <p>This is not our invention. NVIDIA's NeMo toolkit, which trained Parakeet, ships this exact rule for greedy search. The paper is called TurboBias. We copy the rule into sherpa-onnx, about 150 lines of C++. Upstream sherpa-onnx does not have it yet, so we also send the patch back.</p>
+  <div class="lvl"><span class="n">8</span><span class="eyebrow">Level 8 · The plan</span></div>
+  <h2>Two candidates: ship the measured best now, then win the speed back</h2>
+  <div class="grid2">
+    <div class="card" style="border-top:3px solid var(--cpu)"><span class="pill p-cpu">candidate A · zero new code</span><h3>FP32 encoder + beam 8 + your word list</h3><p>Already measured: 35/11 wrong words on the 10 recordings, against 45/22 today. Stop wait 2.0 to 2.5 s on two long takes, memory 3.1 GB. With your new rule this is a product candidate. First step: one phone visit that measures its Stop wait on all 10 recordings against today's app. If the median is at or below 2.5 s, adopt it with a pleasant waiting screen.</p></div>
+    <div class="card" style="border-top:3px solid var(--gpu)"><span class="pill p-gpu">candidate B · about 150 lines</span><h3>Word list inside greedy search</h3><p>The same word-list bonus, but inside greedy search, on today's INT8 encoder. One decoder and one joiner call per step, so the Stop wait stays near one second and memory stays at 2 GB. Expected: a little more than half of A's gain, roughly German 45 → 40 and English 22 → 17. B is the long-term path; A buys time.</p></div>
+  </div>
+  <p>Candidate B is not our invention. NVIDIA's NeMo toolkit, which trained Parakeet, ships this exact rule for greedy search. The paper is called TurboBias. We copy the rule into sherpa-onnx.</p>
+  <div class="q"><b>Your question: what does "send the patch back" mean?</b><br>
+  sherpa-onnx is open source. Our change is a patch to its code. Today only our build has it, which means every future sherpa-onnx update forces us to re-apply it. "Sending it back" means we offer the patch to the sherpa-onnx maintainers as a pull request. If they merge it, the feature becomes part of the library, and our fork disappears. It costs us a clean patch and a short description.</div>
   <div class="fig">
-    <svg viewBox="0 0 760 250" role="img" aria-label="A phrase tree for Zürich, Zug and Thun. The decoder is at the root. The tokens that start a listed phrase get a bonus. After emitting ▁Zür, the state moves to that node and only 'ich' gets the bonus.">
+    <svg viewBox="0 0 860 250" role="img" aria-label="A phrase tree for Zürich, Zug and Thun. The decoder is at the root. The tokens that start a listed phrase get a bonus. After emitting ▁Zür, the state moves to that node and only 'ich' gets the bonus.">
       <text x="10" y="22" class="b">Phrase tree from the list: Zürich · Zug · Thun</text>
       <circle cx="80" cy="130" r="16" fill="var(--heur)"/><text x="80" y="135" text-anchor="middle" class="onfill b">root</text>
       <g stroke="var(--heur)" stroke-width="2" fill="none" marker-end="url(#ar)">
@@ -356,20 +365,19 @@ text = join_pieces(tokens)</pre>
       <rect x="174" y="114" width="60" height="30" rx="6" fill="var(--heur-soft)" stroke="var(--heur)"/><text x="204" y="134" text-anchor="middle" class="mn">▁Zug ✓</text>
       <rect x="174" y="182" width="60" height="30" rx="6" fill="var(--heur-soft)" stroke="var(--heur)"/><text x="204" y="202" text-anchor="middle" class="mn">▁Th</text>
       <rect x="314" y="182" width="60" height="30" rx="6" fill="var(--heur-soft)" stroke="var(--heur)"/><text x="344" y="202" text-anchor="middle" class="mn">un ✓</text>
-      <text x="80" y="170" text-anchor="middle" class="sm">✓ = end of a phrase</text>
-
-      <text x="440" y="22" class="b">One decoding step, state = root</text>
+      <text x="10" y="240" class="sm">✓ = end of a phrase</text>
+      <text x="430" y="22" class="b">One decoding step, state = root</text>
       <g class="mn">
-        <rect x="440" y="40" width="200" height="16" fill="var(--line)"/><text x="646" y="53">▁the  score 3.1</text>
-        <rect x="440" y="62" width="180" height="16" fill="var(--line)"/><text x="626" y="75">▁Zu   score 2.8</text>
-        <rect x="440" y="84" width="170" height="16" fill="var(--line)"/><rect x="610" y="84" width="60" height="16" fill="var(--heur)"/><text x="676" y="97">▁Zür  2.7 + bonus = 3.6</text>
-        <rect x="440" y="106" width="120" height="16" fill="var(--line)"/><text x="566" y="119">blank 2.1</text>
+        <text x="430" y="53">▁the</text><rect x="500" y="40" width="200" height="16" fill="var(--line)"/><text x="706" y="53">3.1</text>
+        <text x="430" y="75">▁Zu</text><rect x="500" y="62" width="180" height="16" fill="var(--line)"/><text x="686" y="75">2.8</text>
+        <text x="430" y="97">▁Zür</text><rect x="500" y="84" width="170" height="16" fill="var(--line)"/><rect x="670" y="84" width="60" height="16" fill="var(--heur)"/><text x="736" y="97">2.7 + bonus = 3.6</text>
+        <text x="430" y="119">blank</text><rect x="500" y="106" width="120" height="16" fill="var(--line)"/><text x="626" y="119">2.1</text>
       </g>
-      <text x="440" y="150" class="sm">▁Zür wins. State moves to the ▁Zür node.</text>
-      <text x="440" y="170" class="sm">Next step: only "ich" gets the bonus.</text>
-      <text x="440" y="190" class="sm">If the model emits "ich": phrase done, back to root.</text>
-      <text x="440" y="210" class="sm">If it emits something else: the bonus is taken back,</text>
-      <text x="440" y="226" class="sm">and no committed token changes.</text>
+      <text x="430" y="150" class="sm">▁Zür wins. The state moves to the ▁Zür node.</text>
+      <text x="430" y="170" class="sm">Next step: only "ich" gets the bonus.</text>
+      <text x="430" y="190" class="sm">If the model emits "ich": phrase done, back to root.</text>
+      <text x="430" y="210" class="sm">If it emits something else: the bonus is taken back.</text>
+      <text x="430" y="230" class="sm">No committed token ever changes.</text>
     </svg>
     <div class="cap">The bonus only ranks tokens against each other. It never decides whether to emit at all.</div>
   </div>
@@ -391,9 +399,9 @@ text = join_pieces(tokens)</pre>
     state = tree.step(state, best)             <span class="c"># back to root at the end of a phrase</span>
 <span class="c"># with an empty list every bonus is 0, so the output equals plain greedy, byte for byte</span></pre>
   <div class="grid2">
-    <div class="card"><span class="pill p-gpu">speed</span><h3>Why the Stop wait does not grow</h3><p>The bonus is read only on steps that already emit a token. The encoder, decoder and joiner run exactly as often as before, also on a one-chunk take. The extra work is one tree lookup per emitted token. We check it: the joiner call count must stay within 2% of today.</p></div>
-    <div class="card"><span class="pill p-heur">accuracy</span><h3>How much we can expect</h3><p>In the TurboBias paper, greedy with the tree recovers 48–57% of listed phrases; beam search recovers 64–76%. So we expect a little more than half of the Level 6 gain: roughly German 45 → 40 and English 22 → 17 on the ten recordings. That alone would move us past FUTO on the six scripts.</p></div>
-    <div class="card"><span class="pill p-cpu">german</span><h3>What makes German harder</h3><p>No listed name is a single token, and the model can split the same name in more than one way. ß and ss are different tokens. "Tensor-Chip" and "Tensor Chip" differ. The list compiler on the laptop adds every spelling form, and both given name and surname as separate entries. Never list number strings: the list had "4.80"; the model writes "4,80".</p></div>
+    <div class="card"><span class="pill p-gpu">speed</span><h3>Why B keeps today's Stop wait</h3><p>The bonus is read only on steps that already emit a token. The encoder, decoder and joiner run exactly as often as before, also on a one-chunk take. We check it: the joiner call count must stay within 2% of today.</p></div>
+    <div class="card"><span class="pill p-heur">accuracy</span><h3>How much B can give</h3><p>In the TurboBias paper, greedy with the tree recovers 48–57% of listed phrases; beam search recovers 64–76%. That paper used English models of a related kind, not ours. So the numbers above are an estimate, and the laptop tool measures the real value on day 3.</p></div>
+    <div class="card"><span class="pill p-cpu">german</span><h3>What makes German harder</h3><p>No listed name is a single token, and the model can split the same name in more than one way. ß and ss are different tokens. The list compiler on the laptop adds both spellings and both given name and surname as separate entries, and logs every listed name the model spelled with pieces that are not in the tree.</p></div>
   </div>
 </section>
 
@@ -406,75 +414,95 @@ text = join_pieces(tokens)</pre>
     <svg viewBox="0 0 760 290" role="img" aria-label="Funnel. Step one, once: run the INT8 encoder on every chunk and cache its output. Step two, seconds each: a Python copy of the greedy loop tries alpha values and word lists on the cached output and writes one CSV row per run. Step three, once: a C++ patch must match the Python copy byte for byte. Step four, one phone visit: default versus patch, alternated, paired differences.">
       <rect x="10" y="20" width="740" height="56" rx="8" fill="var(--surface)" stroke="currentColor"/>
       <text x="24" y="44" class="b">1 · Encoder cache · once, ~10 minutes</text>
-      <text x="24" y="64" class="sm">Run the shipped INT8 encoder on every chunk of the 10 recordings at 3 feed sizes. Save its output lines to disk.</text>
+      <text x="24" y="64" class="sm">Run the shipped INT8 encoder on every chunk of the 10 recordings. Save its output lines to disk.</text>
       <line x1="380" y1="76" x2="380" y2="92" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
       <rect x="60" y="96" width="640" height="56" rx="8" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
       <text x="74" y="120" class="b">2 · Python copy of the greedy loop · seconds per try</text>
-      <text x="74" y="140" class="sm">Try alpha ∈ {0.5 … 6} × lists on the cached lines. Score. One CSV row per try. This is also the written spec.</text>
+      <text x="74" y="140" class="sm">Try alpha values and lists on the cached lines. Score. One CSV row per try. This is the spec.</text>
       <line x1="380" y1="152" x2="380" y2="168" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
       <rect x="110" y="172" width="540" height="56" rx="8" fill="var(--surface)" stroke="currentColor"/>
       <text x="124" y="196" class="b">3 · C++ patch in sherpa-onnx · once</text>
-      <text x="124" y="216" class="sm">With an empty list: same text as today, byte for byte. With the list: same text as the Python copy.</text>
+      <text x="124" y="216" class="sm">Empty list: same text as today, byte for byte. With list: same as the Python copy.</text>
       <line x1="380" y1="228" x2="380" y2="244" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
       <rect x="160" y="248" width="440" height="36" rx="8" fill="var(--heur-soft)" stroke="var(--heur)"/>
-      <text x="380" y="272" text-anchor="middle" class="b">4 · One phone visit · default vs patch, alternated, 3 rounds</text>
+      <text x="380" y="272" text-anchor="middle" class="b">4 · One phone visit · today vs patch, alternated, 3 rounds</text>
     </svg>
-    <div class="cap">The encoder is about 45% of the work and never changes during the search. Caching it once is what makes step 2 take seconds.</div>
+    <div class="cap">The encoder is about 45% of the work and never changes during the search. Caching it once is what makes step 2 take seconds. Candidate A skips steps 1 to 3: it only needs step 4.</div>
   </div>
   <h3>Measuring small differences honestly</h3>
-  <p>The Stop wait of the same build moves by up to 330 ms from run to run. A rule like "no more than 5% slower" is 33 ms and cannot be measured. So the phone visit starts with <b>default against default</b>: 10 recordings, 3 rounds, 30 paired differences. The spread of those differences tells us the smallest change we can see. Only then do we run default against the patch, alternated take by take. If the smallest visible change is above 100 ms, we add rounds; if it is still above 100 ms, we say "unresolved" and ship nothing.</p>
+  <p>The Stop wait of the same build moves by up to 330 ms from run to run. So every phone visit starts with <b>today against today</b>: 10 recordings, 3 rounds, 30 paired differences. The spread of those differences tells us the smallest change we can see. Only then do we run today against the candidate, alternated take by take.</p>
   <div class="grid2">
-    <div class="card"><span class="pill p-bad">stop</span><h3>What we stop doing</h3><ul><li>Frozen plans, reservations and receipts for laptop runs</li><li>One decision record per step</li><li>Reviewer agents on every patch</li><li>All GPU and TPU work</li><li>Building a laptop copy of FUTO</li></ul></div>
+    <div class="card"><span class="pill p-bad">stop</span><h3>What we stop doing</h3><ul><li>Frozen plans and receipts for laptop runs</li><li>One decision record per step</li><li>Reviewer agents on every patch</li><li>All GPU and TPU work</li><li>All comparison with FUTO</li></ul></div>
     <div class="card"><span class="pill p-gpu">keep</span><h3>What we keep</h3><ul><li>The same recordings for every variant</li><li>German and English reported apart</li><li>A no-list control for every list run</li><li>A phone snapshot before every visit that changes state</li><li>Speed numbers only from the phone</li></ul></div>
   </div>
 </section>
 
 <!-- LEVEL 10 -->
 <section id="l10">
-  <div class="lvl"><span class="n">10</span><span class="eyebrow">Level 10 · Limits</span></div>
-  <h2>What the list cannot fix, and what only you can decide</h2>
-  <p>A word list helps only with words that are in the list. It does not help with names you never typed, with German compound words, with mistakes at the edge of a chunk, or with punctuation. No fix for those fits the Stop-wait budget in the next weeks. The product answer is a list you can edit yourself, in the app's settings.</p>
-  <p>There is one more hard limit. Every FUTO number we have comes from a different recording than ours. To compare the two apps on the same sound, you would play each of the 10 recordings from the laptop speaker into FUTO once and into our app twice. The two app passes tell us how noisy the replay is. That takes you 70 to 90 minutes, and it creates new recordings. The project rules currently allow no new recordings. Without this, the plan can prove that the mechanism works. It cannot prove "better than FUTO".</p>
-  <div class="warn"><b>Before day 1, you decide:</b>
-    <ol>
-      <li>Allow laptop inference for this bet, in a draft decision record (ADR-026).</li>
-      <li>Allow the replay recordings, or accept a mechanism verdict only.</li>
-      <li>Decide the compound-spacing rule in the scorer. The German verdict depends on it.</li>
-      <li>Read the one-hour pre-check: how many of our listed-term errors can a bonus fix at all? A spacing error cannot be fixed by a bonus.</li>
-      <li>Write down which FUTO model and settings you use. FUTO recommends Multilingual-74 for German; the goal names Multilingual-244.</li>
-      <li>Write a list of 30 or more real names and terms you dictate, not taken from the test scripts.</li>
-      <li>Confirm you can run the native build on your machine on day 6. The agent could not build on 21 October.</li>
-      <li>Decide whether new test recordings happen in this window at all (ADR-005).</li>
-    </ol>
+  <div class="lvl"><span class="n">10</span><span class="eyebrow">Level 10 · Responsiveness</span></div>
+  <h2>The panel must appear at once</h2>
+  <div class="q"><b>Your requirement from 25 October: the panel with its buttons appears slowly after the microphone key. Startup must be instant; anything the user does not need to see runs in the background.</b><br>
+  Here is what the code does today, and why the slowness is still unexplained. The model loads on a background thread when the app's service is created, not when the panel opens. Recording starts when the panel opens and does not wait for the model: the first chunk simply queues until the model is ready. So by design the panel should never wait for the model. Yet you see it appear slowly, and that was never measured. Three suspects: Android starts our process cold when FUTO hands over; the model load uses all CPU cores at the same moment the panel is drawn and starves it; the hand-over between keyboards itself. The first step is a measurement, not a fix: time-stamp the microphone key, service start, panel shown, recording started and model ready, for ten real takes. Then fix in this order: draw the panel before any other work; load the model with lower thread priority; keep the process alive between takes.</div>
+  <div class="fig">
+    <svg viewBox="0 0 760 170" role="img" aria-label="Timeline of a cold start. Microphone key, then process start, panel shown, recording started, model ready. The target is that the panel and recording come first and the model loads behind them.">
+      <line x1="40" y1="60" x2="720" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#ar)"/>
+      <g class="sm">
+        <circle cx="60" cy="60" r="6" fill="var(--fg)"/><text x="60" y="40" text-anchor="middle">mic key</text>
+        <circle cx="180" cy="60" r="6" fill="var(--cpu)"/><text x="180" y="40" text-anchor="middle">process start</text>
+        <circle cx="300" cy="60" r="6" fill="var(--gpu)"/><text x="300" y="40" text-anchor="middle" class="b">panel shown</text>
+        <circle cx="400" cy="60" r="6" fill="var(--gpu)"/><text x="400" y="40" text-anchor="middle" class="b">recording</text>
+        <circle cx="640" cy="60" r="6" fill="var(--cpu)"/><text x="640" y="40" text-anchor="middle">model ready</text>
+      </g>
+      <rect x="180" y="84" width="460" height="18" rx="4" fill="var(--cpu-soft)" stroke="var(--cpu)"/>
+      <text x="410" y="98" text-anchor="middle" class="sm">model loading in the background · about 4 s cold</text>
+      <rect x="300" y="110" width="420" height="18" rx="4" fill="var(--gpu-soft)" stroke="var(--gpu)"/>
+      <text x="510" y="124" text-anchor="middle" class="sm">you already speak · first chunk queues until the model is ready</text>
+      <text x="40" y="158" class="sm">Target: the distance from "mic key" to "panel shown" is what we measure first. Nothing on this line is measured yet.</text>
+    </svg>
+    <div class="cap">The same waiting screen that hides a slow start also makes candidate A's longer Stop wait pleasant.</div>
   </div>
 </section>
 
 <!-- LEVEL 11 -->
 <section id="l11">
-  <div class="lvl"><span class="n">11</span><span class="eyebrow">Level 11 · History</span></div>
+  <div class="lvl"><span class="n">11</span><span class="eyebrow">Level 11 · Limits</span></div>
+  <h2>What the list cannot fix, and what only you can decide</h2>
+  <p>A word list helps only with words that are in the list. It does not help with names you never typed, with German compound words, or with mistakes at the edge of a chunk. No fix for those fits this window. The product answer is a list you can edit yourself, in the app's settings, that grows every time you correct a name.</p>
+  <div class="warn"><b>Before day 1, you:</b>
+    <ol>
+      <li>Allow laptop inference and one phone visit for candidate A, in a draft decision record (ADR-026).</li>
+      <li>Write a list of 30 or more real names and terms you dictate, not taken from the test scripts.</li>
+      <li>Confirm you can run the native build on your machine. Candidate B needs it on day 6. The agent could not build on 21 October.</li>
+      <li>Decide whether candidate A ships as soon as its phone numbers pass, before B exists.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- LEVEL 12 -->
+<section id="l12">
+  <div class="lvl"><span class="n">12</span><span class="eyebrow">Level 12 · History</span></div>
   <h2>Where two weeks went</h2>
   <p>An audit of every agent transcript from 9 to 22 October, about 75 hours of main-thread work, gives this picture. The numbers are estimates from timestamps.</p>
   <div class="fig">
-    <svg viewBox="0 0 760 240" role="img" aria-label="Bar chart of time shares. Phone wrapper and sandbox 25 percent. Evaluation harness 20 percent. GPU, TPU and WebGPU 17 percent. Docs and decision records 15 percent. Comparing models 12 percent. Other 11 percent.">
-      <!-- scale: 1% = 18px, origin x=250 -->
+    <svg viewBox="0 0 800 240" role="img" aria-label="Bar chart of time shares. Phone wrapper and sandbox 25 percent. Evaluation harness 20 percent. GPU, TPU and WebGPU 17 percent. Docs and decision records 15 percent. Comparing models 12 percent. Other 11 percent.">
       <g class="sm">
-        <text x="240" y="42" text-anchor="end">Phone wrapper, guard, sandbox, hand-applied patches</text>
-        <text x="240" y="76" text-anchor="end">Evaluation harness (26k lines written, 16k deleted)</text>
-        <text x="240" y="110" text-anchor="end">GPU · TPU · WebGPU (result: slower)</text>
-        <text x="240" y="144" text-anchor="end">Docs and decision records (25 in 13 days)</text>
-        <text x="240" y="178" text-anchor="end">Comparing models on accuracy and speed</text>
-        <text x="240" y="212" text-anchor="end">Conversion, recovery, explaining</text>
+        <text x="330" y="42" text-anchor="end">Phone wrapper, guard, sandbox, hand-applied patches</text>
+        <text x="330" y="76" text-anchor="end">Evaluation harness (26k lines written, 16k deleted)</text>
+        <text x="330" y="110" text-anchor="end">GPU · TPU · WebGPU (result: slower)</text>
+        <text x="330" y="144" text-anchor="end">Docs and decision records (25 in 13 days)</text>
+        <text x="330" y="178" text-anchor="end">Comparing models on accuracy and speed</text>
+        <text x="330" y="212" text-anchor="end">Conversion, recovery, explaining</text>
       </g>
-      <rect x="250" y="30" width="450" height="16" fill="var(--cpu)"/><text x="706" y="43" class="mn">25%</text>
-      <rect x="250" y="64" width="360" height="16" fill="var(--cpu)"/><text x="616" y="77" class="mn">20%</text>
-      <rect x="250" y="98" width="306" height="16" fill="var(--bad)"/><text x="562" y="111" class="mn">17%</text>
-      <rect x="250" y="132" width="270" height="16" fill="var(--cpu)"/><text x="526" y="145" class="mn">15%</text>
-      <rect x="250" y="166" width="216" height="16" fill="var(--gpu)"/><text x="472" y="179" class="mn b">12%</text>
-      <rect x="250" y="200" width="198" height="16" fill="var(--line)"/><text x="454" y="213" class="mn">11%</text>
+      <rect x="340" y="30" width="400" height="16" fill="var(--cpu)"/><text x="746" y="43" class="mn">25%</text>
+      <rect x="340" y="64" width="320" height="16" fill="var(--cpu)"/><text x="666" y="77" class="mn">20%</text>
+      <rect x="340" y="98" width="272" height="16" fill="var(--bad)"/><text x="618" y="111" class="mn">17%</text>
+      <rect x="340" y="132" width="240" height="16" fill="var(--cpu)"/><text x="586" y="145" class="mn">15%</text>
+      <rect x="340" y="166" width="192" height="16" fill="var(--gpu)"/><text x="538" y="179" class="mn b">12%</text>
+      <rect x="340" y="200" width="176" height="16" fill="var(--line)"/><text x="522" y="213" class="mn">11%</text>
     </svg>
     <div class="cap">Only the teal bar answered the question the project exists for. Reviewer agents added about 31 hours on top; 71 of 148 helper agents were reviewers.</div>
   </div>
-  <p>Tools were built where ready-made ones existed: a word-error scorer, a frozen-plan framework, a native profiler, and a full GPU integration where a one-hour benchmark of the encoder alone would have given the same answer. The plan above replaces none of them with new tools. It adds one Python file and one patch, and extends the scorer.</p>
+  <p>Tools were built where ready-made ones existed: a word-error scorer, a frozen-plan framework, a native profiler, and a full GPU integration where a one-hour benchmark of the encoder alone would have given the same answer. The plan above adds one Python file and one patch, and extends the scorer.</p>
 </section>
 
 <!-- WORD LIST -->
@@ -486,26 +514,27 @@ text = join_pieces(tokens)</pre>
         <tr><td><b>Take</b></td><td>One recording, from panel open to Stop or cancellation.</td></tr>
         <tr><td><b>Stop wait</b></td><td>The time from pressing Stop until the text is inserted.</td></tr>
         <tr><td><b>Frame</b></td><td>10 ms of audio as 128 numbers.</td></tr>
-        <tr><td><b>Encoder · decoder · joiner</b></td><td>The three parts of the model. The encoder describes the sound (slow, big). The decoder remembers past tokens. The joiner scores the next token.</td></tr>
+        <tr><td><b>Encoder · decoder · joiner</b></td><td>The three parts of the model. The encoder describes the sound (slow, big). The decoder remembers the tokens so far. The joiner scores the next token.</td></tr>
         <tr><td><b>Token · blank</b></td><td>A piece of a word, from a set of 8,192 · the extra "nothing new, move on" token.</td></tr>
         <tr><td><b>TDT</b></td><td>Token-and-Duration Transducer: the model also predicts how many lines to skip.</td></tr>
         <tr><td><b>Chunk</b></td><td>A part of a take, cut at a pause, decoded alone while recording continues.</td></tr>
+        <tr><td><b>LSTM state</b></td><td>The decoder's memory: a small set of numbers that summarizes the last tokens. Restarts at each chunk today.</td></tr>
         <tr><td><b>ONNX · ORT</b></td><td>A file format for models · ONNX Runtime, the program that runs them.</td></tr>
-        <tr><td><b>sherpa-onnx</b></td><td>The library that wraps ORT, makes frames, and runs the search loop.</td></tr>
+        <tr><td><b>sherpa-onnx</b></td><td>The open-source library that wraps ORT, makes frames, and runs the search loop.</td></tr>
         <tr><td><b>Runtime session</b></td><td>One model file loaded and prepared by the runtime with fixed options, created once and reused by many takes.</td></tr>
         <tr><td><b>Execution provider</b></td><td>The runtime component that owns one kind of chip, such as the CPU or WebGPU provider.</td></tr>
         <tr><td><b>FP32 · INT8</b></td><td>32-bit decimal weights (exact, large) · 8-bit whole-number weights (4× smaller, a little less exact).</td></tr>
-        <tr><td><b>Greedy search · beam search</b></td><td>Take the best token at each step · keep several candidate sentences and pick the best at the end.</td></tr>
+        <tr><td><b>Search · greedy · beam</b></td><td>Finding the best token sequence · take the best token at each step · keep several candidate sequences and pick the best at the end.</td></tr>
         <tr><td><b>Hotwords · phrase tree</b></td><td>sherpa-onnx's name for a bonus on listed phrases · the tree of tokens built from the list that tracks where in a phrase we are.</td></tr>
         <tr><td><b>Alpha</b></td><td>How strong the bonus is. The one number we tune.</td></tr>
         <tr><td><b>Listed term</b></td><td>A name or term that is in the word list.</td></tr>
-        <tr><td><b>Feed size</b></td><td>How many samples the laptop replay hands to the chunker at once. Three sizes give a noise floor.</td></tr>
-        <tr><td><b>Paired difference</b></td><td>Candidate minus default on the same take in the same visit. The honest way to measure a small speed change.</td></tr>
+        <tr><td><b>Pull request · upstream</b></td><td>Offering our patch to the library's maintainers so it becomes part of the library.</td></tr>
+        <tr><td><b>Paired difference</b></td><td>Candidate minus today's app on the same take in the same visit. The honest way to measure a small speed change.</td></tr>
         <tr><td><b>ADR</b></td><td>Architecture Decision Record: our numbered decision notes in <code>adrs/</code>.</td></tr>
       </tbody>
     </table>
   </div>
 </section>
 
-<footer>Teaches <code>research/next-direction-2026-10-22.md</code> (revision 3). Decisions live in <code>adrs/</code>. Terms follow <code>GLOSSARY.md</code>. Numbers: ADR-003, ADR-007, ADR-015, ADR-025 and re-scored text in <code>corpus/</code>.</footer>
+<footer>Teaches <code>research/next-direction-2026-10-22.md</code> (revision 4). Decisions live in <code>adrs/</code>. Terms follow <code>GLOSSARY.md</code>. Numbers: ADR-003, ADR-007, ADR-015, ADR-025 and re-scored text in <code>corpus/</code>.</footer>
 </main>
