@@ -84,3 +84,11 @@ was reserved, the unchanged plan may be frozen again under a new id against the 
 evaluator. Nothing is reset, since nothing was charged. Once any attempt is reserved, the
 rule above (original Git revision or explicit new protocol) applies unchanged.
 Precedent: `issue4-webgpu-parity-02` → `-03` after `f97a287` ([ADR-025](025-issue4-one-case-finding.md)).
+
+## Amendment 2026-10-25 (ADR-026): what a frozen plan is for
+
+A frozen comparison plan (`corpus/lab/<id>/plan.json`) is a private, immutable record of the inputs of one
+adoption-deciding phone comparison. It is not a work plan. Laptop screening runs need no frozen plan; they
+append rows to a results file with their identities. Phone visits that only screen keep the wrapper's snapshot
+and `meta.json` receipts. Planned work, gates, thresholds and schedules live only in GitHub specs and tickets,
+never in tracked files. The rules above stay in force for the adoption-deciding comparison.
