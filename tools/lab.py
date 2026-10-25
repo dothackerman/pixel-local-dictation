@@ -8,6 +8,9 @@ reserve PLAN.json RUN        charge one planned attempt before its external exec
 record PLAN.json RUN RESULT  preserve that attempt's result, including failures
 compare PLAN.json            validate all receipts and save a private decision report
 
+Stage variants with `python3 tools/variant.py normalize variants/X.json LAB/variant.json`
+so the phone echoes every setting explicitly (the evaluator reads the echoed variant).
+
 Old run/phone-prepare/phone-score/ledger commands are retired. Historical evaluator
 modules remain readable; historical execution source is retained in Git.
 """

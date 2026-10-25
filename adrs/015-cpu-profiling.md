@@ -20,5 +20,4 @@ Scheduling can hide some work, but cannot remove short-take inference cost. `que
 Endpoint provenance: `925ef8c:docs/research/remaining-improvement-levers-2026-10-19.md`, original run `s2-phone-07-dict-beam8-fp32-s20-stock`.
 Original APP/TEST and 11 lab files restored/verified October 20 at 08:18:41 Europe/Zurich; owner/journal cleared.
 18/18 campaign phone slots consumed including ten earlier functional probes; campaign closed.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit one bounded encoder experiment; preserve timing validity, language-specific quality and full-path costs.

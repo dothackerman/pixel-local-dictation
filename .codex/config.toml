@@ -7,14 +7,12 @@ hooks = true
 extends = ":workspace"
 
 [permissions.dictation.filesystem.":workspace_roots"]
-".claude" = "read"
+".claude/hooks" = "read"
+".claude/settings.json" = "read"
 ".codex" = "read"
-".agents" = "read"
-".git" = "read"
-".aws" = "read"
-"tools/phone" = "read"
 "tools/git-hooks" = "read"
 "AGENTS.md" = "read"
+"CLAUDE.md" = "read"
 
 [permissions.dictation.network]
 enabled = true

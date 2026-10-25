@@ -4,7 +4,7 @@
 
 ## Decision
 
-`DictationSession` owns a take from capture to completion. Production and phone
+`TakeSession` owns a take from capture to completion. Production and phone
 replay construct it through `Pipeline.runtime`. `DictationRuntime` retains the
 recognizer and serial decode queue across takes. A cancelled take cannot commit;
 its native work may still be running. Release follows capture and native drain.
@@ -23,7 +23,7 @@ timing meanings remain unchanged. Python decoding remains a laptop screen.
 ## Experiment interface
 
 `python3 tools/lab.py --help` owns command syntax. It never runs inference or
-device commands. The existing protected wrapper retains sole phone authority.
+device commands. The phone wrapper retains sole phone authority (since 2026-10-21: [ADR-024](024-phone-access-rewrite.md)).
 
 1. `prepare` snapshots a tracked artifact manifest's host artifacts and source hashes.
    `check` shows missing or changed inputs; it never grants measurement readiness.
@@ -36,7 +36,7 @@ device commands. The existing protected wrapper retains sole phone authority.
 
 A missing receipt means reconcile the actual state. It never means retry.
 Reservation is cooperative accounting, not an at-most-once device guarantee.
-Interrupted or failed phone operations still use the wrapper's recovery journal.
+Interrupted or failed phone operations are recovered with the wrapper's `snapshot`/`restore` (ADR-024; the recovery journal is gone).
 Do not reset attempts by copying a plan to another identity.
 
 The comparison plan contains `schema: 1`, `id`, `kind` (`conversion-parity` or
@@ -76,3 +76,11 @@ phone validation.
 
 Revisit only when a second real protocol requires more orchestration. A general
 campaign controller is not part of this change.
+
+## Amendment 2026-10-22: re-freeze before any reservation
+
+Accepted by the user. When the evaluator changed after a freeze and no attempt of that plan
+was reserved, the unchanged plan may be frozen again under a new id against the current
+evaluator. Nothing is reset, since nothing was charged. Once any attempt is reserved, the
+rule above (original Git revision or explicit new protocol) applies unchanged.
+Precedent: `issue4-webgpu-parity-02` → `-03` after `f97a287` ([ADR-025](025-issue4-one-case-finding.md)).

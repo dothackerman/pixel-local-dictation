@@ -37,7 +37,7 @@ def main():
         if errors:
             print('\n'.join(errors), file=sys.stderr)
             return 1
-    for command in ([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
+    for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
                     [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest',
                      'compileBenchmarkAndroidTestKotlin', 'lintBenchmark']):
         result = subprocess.run(command, cwd=ROOT, env=environment)

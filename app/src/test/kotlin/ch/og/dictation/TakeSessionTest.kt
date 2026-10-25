@@ -4,7 +4,7 @@ import java.util.concurrent.Executor
 import org.junit.Assert.*
 import org.junit.Test
 
-class DictationSessionTest {
+class TakeSessionTest {
     private class Queue : Executor {
         private val work = ArrayDeque<Runnable>()
         override fun execute(command: Runnable) { work.add(command) }

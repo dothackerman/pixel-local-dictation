@@ -25,5 +25,19 @@ class RuntimeTests(unittest.TestCase):
             with self.assertRaises(variant.VariantError):
                 variant.validate({'runtime': setting})
 
+    def test_encoder_provider_is_optional_parakeet_only_and_phone_only(self):
+        self.assertNotIn('encoder_provider', variant.validate({})['runtime'])
+        v = variant.validate({'runtime': {'encoder_provider': 'webgpu'}})
+        with self.assertRaises(ValueError):
+            runtime_config.provider(v)
+        logged = variant.validate({'runtime': {'encoder_provider': 'webgpu', 'placement_log': True}})
+        self.assertTrue(logged['runtime']['placement_log'])
+        self.assertNotIn('placement_log', variant.validate({})['runtime'])
+        for bad in ({'runtime': {'placement_log': True}}, {'runtime': {'encoder_provider': 'webgpu', 'placement_log': 1}},
+                    {'runtime': {'encoder_provider': 'gpu'}}, {'runtime': {'encoder_provider': True}},
+                    {'family': 'whisper', 'cutting': {'max_chunk_s': 28.0}, 'runtime': {'encoder_provider': 'webgpu'}}):
+            with self.assertRaises(variant.VariantError):
+                variant.validate(bad)
+
 if __name__ == '__main__':
     unittest.main()

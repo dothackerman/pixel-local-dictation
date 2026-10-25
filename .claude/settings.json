@@ -6,23 +6,26 @@
       "Bash(*platform-tools/adb*)",
       "Bash(*platform-tools/fastboot*)",
       "Bash(sudo:*)",
-      "Edit(/.claude)",
-      "Edit(/.claude/**)",
-      "Edit(/.codex)",
+      "Edit(/.claude/hooks/**)",
+      "Edit(/.claude/settings.json)",
       "Edit(/.codex/**)",
-      "Edit(/.agents)",
-      "Edit(/.agents/**)",
-      "Edit(/.git)",
       "Edit(/.git/**)",
-      "Edit(/.aws)",
-      "Edit(/.aws/**)",
-      "Edit(/tools/phone)",
-      "Edit(/tools/git-hooks)",
       "Edit(/tools/git-hooks/**)",
       "Edit(/AGENTS.md)",
       "Edit(/CLAUDE.md)"
     ],
     "allow": [
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone help)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone check:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone status)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone device)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone app)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone crash)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone logs:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone pull:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone push:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone snapshot:*)"
     ]
   },
   "hooks": {
@@ -41,20 +44,26 @@
   },
   "sandbox": {
     "enabled": true,
-    "autoAllowBashIfSandboxed": false,
-    "allowUnsandboxedCommands": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
     "excludedCommands": [
+      "/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone *",
+      "git *"
     ],
     "filesystem": {
+      "allowWrite": [
+        "~/.gradle"
+      ],
       "denyWrite": [
         "./.claude",
         "./.codex",
-        "./.agents",
-        "./.git",
-        "./.aws",
-        "./tools/phone",
         "./tools/git-hooks",
-        "./AGENTS.md"
+        "./AGENTS.md",
+        "./CLAUDE.md"
+      ],
+      "denyRead": [
+        "~/.android",
+        "~/Android/Sdk/platform-tools"
       ]
     }
   }

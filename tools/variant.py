@@ -53,6 +53,12 @@ DEFAULT = {
 
 _TYPES = {
     "runtime.model_arena": bool, "runtime.model_pattern": bool, "runtime.lid_arena": bool, "runtime.lid_pattern": bool, "runtime.profile": bool,
+    # Optional, never defaulted, so resolved historical variants stay identical. "webgpu" puts only the
+    # Parakeet encoder on WebGPU in the patched ORT 1.31 phone build (tools/ort131-sherpa).
+    "runtime.encoder_provider": str,
+    # Optional diagnostic only: session-level VERBOSE ORT logging for the ADR-023 placement listing
+    # of the in-pipeline WebGPU encoder session (pipeline-placement-v1). Never in timed runs.
+    "runtime.placement_log": bool,
     "schema": int, "name": str, "description": str, "family": str, "model": str, "threads": int,
     "decoding.method": str, "decoding.max_active_paths": int, "decoding.blank_penalty": float,
     "whisper.language": str, "whisper.tail_paddings": int,
@@ -115,6 +121,13 @@ def validate(v):
         raise VariantError("name must be a single token without spaces or slashes")
     if not 1 <= out["threads"] <= 8:
         raise VariantError("threads must be 1..8")
+    encoder = out["runtime"].get("encoder_provider", "cpu")
+    if encoder not in ("cpu", "webgpu"):
+        raise VariantError("runtime.encoder_provider must be cpu or webgpu")
+    if encoder == "webgpu" and out["family"] != "parakeet":
+        raise VariantError("runtime.encoder_provider webgpu is parakeet only")
+    if out["runtime"].get("placement_log") and encoder != "webgpu":
+        raise VariantError("runtime.placement_log needs runtime.encoder_provider webgpu")
     d = out["decoding"]
     if d["method"] not in ("greedy_search", "modified_beam_search"):
         raise VariantError("decoding.method must be greedy_search or modified_beam_search")
@@ -190,8 +203,21 @@ def is_dictionary(v):
     return bool(v["hotwords"]["file"])
 
 
+def normalize(source, target):
+    """Write the defaults-filled variant, so the phone echoes every setting explicitly."""
+    value = load(source)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(value, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return value
+
+
 if __name__ == "__main__":
     import sys
+    if len(sys.argv) == 4 and sys.argv[1] == "normalize":
+        normalize(sys.argv[2], sys.argv[3]); print("normalized", sys.argv[3]); sys.exit(0)
+    if len(sys.argv) < 2:
+        print("usage: variant.py FILE...  |  variant.py normalize IN.json OUT.json"); sys.exit(2)
     for p in sys.argv[1:]:
         try:
             load(p); print("ok", p)

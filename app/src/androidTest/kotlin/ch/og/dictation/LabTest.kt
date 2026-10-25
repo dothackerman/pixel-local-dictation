@@ -22,13 +22,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Stage 2 of the experiment loop (docs/autoresearch.md): runs the variant that tools/phone
- * push-variant put under files/lab/ through the app's own classes (Pipeline, VadSegmenter,
+ * Stage 2 of the experiment loop: runs the variant that `phone push DIR`
+ * put under files/lab/ through the app's own classes (Pipeline, VadSegmenter,
  * TakeTranscriber) on the takes saved in files/benchmark, and writes files/lab/result.json:
  * chunk texts and decode times for every take (fed unpaced, 640 samples at a time, like the
  * laptop twin), a paced run of the longest and the shortest take for the wait after Stop,
  * peak memory, thermal status. No UI, no microphone, nothing leaves the phone.
- * Run with: tools/phone lab
+ * Run with: .claude/hooks/phone run ch.og.dictation.LabTest [k=v] (ADR-024)
  */
 @RunWith(AndroidJUnit4::class)
 class LabTest {
@@ -39,6 +39,20 @@ class LabTest {
     private val labDir = File(ctx.filesDir, "lab")
 
     @Test fun variantOnSavedTakes() {
+        if (File(labDir, "encoder-probe.json").isFile) {
+            // Class and ORT Java/JNI exist only in the explicitly selected diagnostic build.
+            Class.forName("ch.og.dictation.EncoderProbe")
+                .getConstructor(Context::class.java, File::class.java)
+                .newInstance(ctx, labDir).let { it.javaClass.getMethod("run").invoke(it) }
+            return
+        }
+        if (File(labDir, "pipeline-placement.json").isFile) {
+            // Untimed Sherpa session-creation diagnostic; present only in the encoder-probe build.
+            Class.forName("ch.og.dictation.PipelinePlacement")
+                .getConstructor(Context::class.java, File::class.java)
+                .newInstance(ctx, labDir).let { it.javaClass.getMethod("run").invoke(it) }
+            return
+        }
         if (File(labDir, "accelerator-probe.json").isFile) {
             AcceleratorAccessProbe(ctx, labDir).run()
             return
@@ -50,7 +64,7 @@ class LabTest {
         val takes = takesDir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
         val variantFile = File(labDir, "variant.json")
-        assumeTrue("no files/lab/variant.json: run tools/phone push-variant first", variantFile.isFile)
+        assumeTrue("no files/lab/variant.json: run phone push DIR first", variantFile.isFile)
         val v = Variant.parse(variantFile.readText())
         val out = JSONObject().put("variant", JSONObject(variantFile.readText())).put("side", "phone")
         // The new release requires measured content identities before any inference.

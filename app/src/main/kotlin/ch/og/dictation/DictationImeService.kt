@@ -40,7 +40,7 @@ class DictationImeService : InputMethodService() {
     private var returning = false
     /** Session that started the current take; text goes there or nowhere. */
     private var recordingToken: Long? = null
-    private var take: DictationSession? = null
+    private var take: TakeSession? = null
 
     /** A take exists from the start of recording until its text is committed or dropped. */
     private val takeActive: Boolean get() = take?.active == true

@@ -17,7 +17,10 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 The app can record, recognize speech locally and insert text through FUTO's
 microphone workflow. Tags `m1` and `m2` record these prototype gates.
 Improvement over FUTO in both languages remains unproven. The current default
-remains provisional; no experiment is commissioned.
+remains provisional. #4 closed October 21 on one take per language
+([ADR-025](adrs/025-issue4-one-case-finding.md)): the WebGPU encoder keeps exact
+text but every chunk decodes ~3.5× slower than CPU, so Stop wait grows ~5×.
+#5 needs a re-plan; its full-suite and #8's live gates are unstarted.
 
 Read the results and their limits before selecting the next question:
 
@@ -29,6 +32,7 @@ Read the results and their limits before selecting the next question:
 | [Moonshine Small](adrs/014-moonshine-screen.md) | Did not advance. |
 | [CPU profiling](adrs/015-cpu-profiling.md) | Eight phone runs on October 20 found substantial encoder work, but failed timing comparability checks. |
 | [GPU/TPU access](adrs/016-accelerator-access.md) | Physical access proven. GPU FP32 passed the numerical smoke checks; TPU failed one check. Speech acceleration remains unimplemented. |
+| [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU accurate but slower (one case). |
 
 Campaigns are closed. The [next decisions](#remaining-acceptance-gaps-and-next-decisions)
 are proposals. They authorize no new runs or recordings.
@@ -67,7 +71,7 @@ and returns to FUTO.
   [method.xml](app/src/main/res/xml/method.xml) declares a voice subtype without a
   locale and overrides implicit subtype selection. Even an input restart with
   identical attributes discards the take.
-- [DictationSession](app/src/main/kotlin/ch/og/dictation/DictationSession.kt) owns
+- [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt) owns
   each take, including capture drain, cancellation and editor acceptance.
   The IME and phone replay construct it through the same runtime factory.
   [ADR-017](adrs/017-shared-take-experiments.md) defines the seam and timing receipts.
@@ -103,7 +107,8 @@ and returns to FUTO.
 `python3 tools/quality.py` runs Python regression tests, Kotlin benchmark unit
 tests, instrumentation compilation and Android lint offline. It runs no device tests.
 The local pre-commit gate runs it with `--staged`. Stage tracked edits and new
-source, test and build inputs first so the checkout matches the index.
+source, test and build inputs first so the checkout matches the index; a path-limited
+`git commit PATH` with other changes pending therefore fails.
 The gate rejects index changes during the run.
 
 ## Daily use and rollback
@@ -121,26 +126,23 @@ signing; the benchmark build is debuggable. Lock files and build files define ve
 
 ## Phone lab operations
 
-Use this checkout's protected `tools/phone` wrapper, resolved to its exact
-absolute path, with one subcommand per shell call. Its `help` subcommand defines the command grammar.
-Read-only inspection is the default. Installation, uninstallation and app-scoped
-lab writes or tests need authorization for the current task. They are restricted
-to `ch.og.dictation`. [AGENTS.md](AGENTS.md) defines the full boundary.
+Reach the phone only through the shim `.claude/hooks/phone <verb> …` (absolute
+path in [AGENTS.md](AGENTS.md)), called alone on its command line; the result is
+also in `corpus/lab/last.json`, which every call (even `status`) overwrites: save
+it first when later work depends on it. `phone help` lists the verbs and exit codes;
+[ADR-024](adrs/024-phone-access-rewrite.md) is the contract (scope, gating, what
+`restore` cannot bring back).
 
-For phone lab preparation, APK compatibility and recovery, read
-[ADR-009](adrs/009-phone-recovery.md). It defines the recovery boundary and the
-unresolved commitment to return to a release build.
+Typical run: `snapshot NAME` → `check APP.apk TEST.apk` right after building →
+`install` → `push DIR` → `run CLASS k=v` → `pull files/lab/result.json …` (single
+files; `files/lab` holds the 2.4 GB model) → `restore NAME`. Each mutating verb
+and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the installed
+APK and lab hashes; experiments bind receipts to that. Pulled files stay in
+gitignored `corpus/`.
 
-If recovery fails or is interrupted, keep its journal. Inspect the state and
-recover before staging again. Keep lab and profile JSON in `corpus/`.
-To change the protected wrapper, prepare a proposal outside its path and have it
-reviewed. The user applies the change manually; then verify it.
-
-At the start of a fresh session, verify trusted hooks and filesystem protections.
-Approvals apply to one checkout. Hooks are guardrails, not isolation: terminal
-input and specialized tools can bypass them, and escalation bypasses the sandbox.
-Claude’s live filesystem enforcement remains unverified.
-`python3 tools/test_agent_guard.py` runs synthetic guard checks.
+To change the wrapper, edit `tools/phone` and `tools/test_phone.py` on the branch;
+the user installs it with `bash tools/gate/apply.sh`. `python3 tools/test_phone.py`
+and `python3 tools/test_agent_guard.py` run without a phone.
 
 ## Evaluation
 
@@ -196,7 +198,7 @@ Keep personal recordings, transcripts and signing credentials out of Git.
 Recordings stay in gitignored `corpus/`; copying them needs the user's agreement.
 
 Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
-reports, original identities and pruning limits. Retain evidence that changes a
+reports, original identities and pruning limits for ADR-003 to ADR-016. Retain evidence that changes a
 decision, calibration/evaluation inputs and recovery state needed for operation.
 Closed campaign directory trees are not documentation.
 

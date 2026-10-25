@@ -35,7 +35,7 @@ data class TakeResult(
  * Capture may deliver audio on its own thread, through its stop acknowledgement.
  * A cancelled take cannot publish or commit, even when native work completes later.
  */
-class DictationSession internal constructor(
+class TakeSession internal constructor(
     private val capture: TakeCapture,
     private val output: TakeOutput,
     private val deliver: Executor,

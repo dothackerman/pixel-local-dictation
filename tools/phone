@@ -1,1141 +1,646 @@
 #!/usr/bin/env -S python3 -I
-"""Fixed app-scoped phone operations. No writable local imports."""
-import sys
-if __name__ == '__main__' and not sys.flags.isolated:
-    sys.exit('invoke the executable directly; isolated Python is required')
+"""App-scoped phone access for ch.og.dictation (ADR-024).
 
-from pathlib import Path
+Runs through `.claude/hooks/phone`, which executes the copy of this file the
+user installed with `tools/gate/apply.sh`. Every device command is built from fixed templates with the
+package constant; caller strings reach the device only as validated names.
+
+Exit 0: success, one JSON object on stdout.
+Exit 3: `refused: <reason>` (policy).  Exit 1: `failed: <reason>` (device/transport).
+"""
 import hashlib
+import io
 import json
 import os
 import re
-import fcntl
-import uuid
-import shutil
 import shlex
+import shutil
 import subprocess
+import sys
 import tarfile
-import zipfile
+import tempfile
 import time
-import signal
-
+import uuid
+import zipfile
+from pathlib import Path
 
 PKG = 'ch.og.dictation'
-DEADLINE = None
+TEST = PKG + '.test'
+RUNNER = TEST + '/androidx.test.runner.AndroidJUnitRunner'
+MODEL = 'Pixel 10 Pro XL'
+FUTO = ('org.futo.inputmethod.latin', 'org.futo.inputmethod.latin.playstore',
+        'org.futo.voiceinput', 'org.futo.voiceinput.playstore')
+PROPS = ('ro.product.model', 'ro.build.version.release', 'ro.build.version.sdk',
+         'ro.build.version.security_patch', 'ro.build.id', 'ro.build.fingerprint', 'ro.soc.manufacturer', 'ro.soc.model',
+         'ro.hardware', 'ro.hardware.vulkan', 'ro.hardware.egl', 'ro.opengles.version')
+DRIVER_LIBS = re.compile(r'^(libOpenCL.*|libedgetpu.*|vulkan\..*|libGLES.*|libllvm-glnext.*)\.so$')
+PERMISSIONS = {PKG: {'android.permission.RECORD_AUDIO', 'android.permission.WAKE_LOCK'}}
+PERMISSIONS[TEST] = PERMISSIONS[PKG] | {'android.permission.REORDER_TASKS'}  # androidx test runner
+NETWORK = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
+           'android.permission.QUERY_ALL_PACKAGES'}
+DATA_DIRS = ('files', 'shared_prefs', 'databases')
+PULL_ROOTS = ('files/lab', 'files/benchmark')
+NAME = re.compile(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*')
+LIVE_VERBS = ('install', 'restore', 'stop', 'uninstall')
 
 
-def child(argv, *, timeout=30, check=False, capture_output=True, text=False, **kwargs):
-    """All host children share the command deadline, including finalizers."""
-    remaining = timeout if DEADLINE is None else min(timeout, DEADLINE - time.monotonic())
-    if remaining <= 0:
-        raise Refused('command deadline expired; inspect/recover the journaled run')
-    process = subprocess.Popen(argv, stdout=subprocess.PIPE if capture_output else None,
-                               stderr=subprocess.PIPE if capture_output else None,
-                               text=text, start_new_session=True, **kwargs)
-    try:
-        stdout, stderr = process.communicate(timeout=remaining)
-    except BaseException:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
-        if process.stdout:
-            process.stdout.close()
-        if process.stderr:
-            process.stderr.close()
-        raise
-    result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
-    if check:
-        result.check_returncode()
-    return result
+class Refused(Exception):
+    """Policy refusal; retrying the same call will not help."""
 
 
-def identity(info):
-    return {key: info[key] for key in ('sha256', 'version_code')}
+class Failed(Exception):
+    """Device or transport failure; the call may be retried."""
 
 
-
-def diagnostic_manifest(manifest, package):
-    """Only diagnostic installs may vary these optional native-driver declarations.
-
-    Unknown attributes, required drivers, other libraries and all other manifest
-    content stay in the fingerprint. Ordinary installs use the original hash.
-    """
-    drivers = {'libOpenCL.so', 'libOpenCL-pixel.so',
-               'libedgetpu_litert.so', 'libedgetpu_util.so'}
-    namespace = r'(?:android|' + re.escape('http://schemas.android.com/apk/res/android') + ')'
-    name_pattern = re.compile(r'A: ' + namespace +
-        r':name\(0x01010003\)="([^"]+)" \(Raw: "\1"\)')
-    required_pattern = re.compile(r'A: ' + namespace +
-        r':required\(0x0101028e\)=false')
-    extraction_pattern = re.compile(r'A: ' + namespace +
-        r':extractNativeLibs\(0x010104ea\)=(?:true|false)')
-    lines, kept, parents, index = manifest.splitlines(), [], [], 0
-    while index < len(lines):
-        line = lines[index]
-        indent = len(line) - len(line.lstrip())
-        element = re.fullmatch(r'E: ([A-Za-z0-9_-]+)', line.strip())
-        if element:
-            while parents and parents[-1][0] >= indent:
-                parents.pop()
-            if element.group(1) == 'uses-native-library' and parents and parents[-1][1] == 'application':
-                end = index + 1
-                while end < len(lines) and len(lines[end]) - len(lines[end].lstrip()) > indent:
-                    end += 1
-                attributes = [item.strip() for item in lines[index + 1:end]]
-                names = [match.group(1) for item in attributes
-                         if (match := name_pattern.fullmatch(item))]
-                if (len(attributes) == 2 and len(names) == 1 and names[0] in drivers
-                        and sum(bool(required_pattern.fullmatch(item)) for item in attributes) == 1):
-                    index = end
-                    continue
-            parents.append((indent, element.group(1)))
-        elif (package == PKG + '.test' and parents and parents[-1][1] == 'application'
-              and extraction_pattern.fullmatch(line.strip())):
-            index += 1
-            continue
-        kept.append(line)
-        index += 1
-    return hashlib.sha256('\n'.join(kept).encode()).hexdigest()
-
-
-def test_matches(receipt, observed):
-    if not receipt.get('diagnostic'):
-        return True
-    allowed = [receipt['test_apk']]
-    if receipt['phase'] in ('installing', 'recovering', 'restoring-apk'):
-        allowed += [receipt.get('pending_test_apk'), receipt['original_test_apk']]
-    return observed.get('test_apk') in allowed
-
-
-
-class Refused(RuntimeError):
-    pass
-
-
-def validate_profile(payload):
-    if len(payload) > 64 * 1024 * 1024:
-        raise Refused('profile exceeds the fixed 64MiB export bound')
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise Refused('duplicate profile field')
-            result[key] = value
-        return result
-    value = json.loads(payload, object_pairs_hook=unique)
-    fields = {'schema', 'clock', 'enabled', 'spanLimit', 'sessionLimit', 'attempted', 'retained',
-              'dropped', 'runFailures', 'clockFailures', 'sessionDropped', 'activeAtFlush',
-              'complete', 'valid', 'sessions', 'spans'}
-    roles = {'parakeet.encoder', 'parakeet.decoder', 'parakeet.joiner', 'cohere.encoder',
-             'cohere.decoder', 'lid.encoder', 'lid.decoder'}
-    def number(item):
-        return type(item) is int and 0 <= item <= 2**64 - 1
-    if not isinstance(value, dict) or set(value) != fields or value['schema'] != 1 or value['clock'] != 'CLOCK_MONOTONIC':
-        raise Refused('unsupported numeric-only profile schema')
-    if any(type(value[key]) is not bool for key in ('enabled', 'complete', 'valid')) or any(
-            not number(value[key]) for key in ('schema', 'spanLimit', 'sessionLimit', 'attempted', 'retained',
-                                             'dropped', 'runFailures', 'clockFailures', 'sessionDropped', 'activeAtFlush')):
-        raise Refused('invalid profile counters')
-    if value['spanLimit'] != 262144 or value['sessionLimit'] != 128 or not isinstance(value['spans'], list) or not isinstance(value['sessions'], list):
-        raise Refused('unsupported profile capacity')
-    if len(value['spans']) != value['retained'] or len(value['spans']) > 262144 or len(value['sessions']) > 128:
-        raise Refused('profile exceeds fixed record bounds')
-    sessions = {}
-    for row in value['sessions']:
-        if not isinstance(row, dict) or set(row) != {'sessionId', 'role'} or not number(row['sessionId']) or row['sessionId'] == 0 or (not isinstance(row['role'], str) or row['role'] not in roles) or row['sessionId'] in sessions:
-            raise Refused('invalid fixed-role session')
-        sessions[row['sessionId']] = row['role']
-    for row in value['spans']:
-        if not isinstance(row, dict) or set(row) != {'role', 'sessionId', 'startNs', 'endNs', 'status'}:
-            raise Refused('unsupported profile span')
-        if any(not number(row[key]) for key in ('sessionId', 'startNs', 'endNs', 'status')) or row['status'] not in (0, 1) or (not isinstance(row['role'], str) or row['role'] not in roles) or sessions.get(row['sessionId']) != row['role'] or row['endNs'] < row['startNs'] or row['endNs'] > 2**63 - 1:
-            raise Refused('invalid numeric profile span')
-    if not value['complete'] or not value['valid']:
-        raise Refused('native profile is incomplete or invalid; evidence remains on device')
-    if any(value[key] for key in ('dropped', 'runFailures', 'clockFailures', 'sessionDropped', 'activeAtFlush')):
-        raise Refused('native profile has dropped, failed, or in-flight work')
-    if value['attempted'] != value['retained'] or any(row['status'] for row in value['spans']):
-        raise Refused('native profile counters or span statuses are inconsistent')
-    if not value['enabled'] and value['attempted']:
-        raise Refused('disabled native profile contains spans')
+def name(value, root=None):
+    if not NAME.fullmatch(value) or '..' in value.split('/'):
+        raise Refused('unsupported name: ' + value[:60])
+    if root is not None and not any(value == r or value.startswith(r + '/') for r in root):
+        raise Refused('path outside ' + ' or '.join(root))
     return value
 
 
-def profile_binding(measured, payload):
-    """Bind one successful current measurement to its exact numeric-only trace."""
-    value = validate_profile(payload)
-    report = measured.get('report', {}) if isinstance(measured, dict) else {}
-    timeline = report.get('timeline', {}) if isinstance(report, dict) else {}
-    native = timeline.get('nativeProfile', {}) if isinstance(timeline, dict) else {}
-    if (not isinstance(measured, dict) or measured.get('outcome') != 'complete' or not isinstance(native, dict)
-            or native.get('path') != 'profile.json' or native.get('complete') is not True
-            or type(native.get('enabled')) is not bool or native['enabled'] != value['enabled']
-            or type(native.get('byteLimit')) is not int or native['byteLimit'] != 64 * 1024 * 1024
-            or type(native.get('bytes')) is not int or native['bytes'] != len(payload)
-            or native.get('sha256') != hashlib.sha256(payload).hexdigest()
-            or timeline.get('valid') is not True or type(timeline.get('droppedEvents')) is not int
-            or timeline['droppedEvents'] != 0 or timeline.get('nativeClockAlignment') != 'verified-brackets'):
-        raise Refused('current measurement does not verify this complete native profile')
-    return dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest(), enabled=value['enabled'])
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
 
 
-def digest(path):
-    result = hashlib.sha256()
-    with Path(path).open('rb') as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b''):
-            result.update(block)
-    return result.hexdigest()
+def sha_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
-def ordinary_path(path):
-    if any(item.is_symlink() for item in (path, *path.parents)):
-        raise Refused('host state cannot use symlink paths')
+class Device:
+    """The adb adapter. All argv are assembled here, nowhere else."""
 
-
-def sync_directory(path):
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def same_lab(left, right):
-    def measured(value):
-        return dict(value, files={k: v for k, v in value['files'].items() if k not in ('result.json', 'profile.json')})
-    return measured(left) == measured(right)
-
-
-def recorded_lab_restoration(receipt, observed):
-    return bool(receipt.get('lab_restored') and receipt.get('original_apk')
-                and observed['apk'] == receipt['original_apk']
-                and not observed['lab']['accessible'])
-
-
-def recovery_result(receipt, observed):
-    verification = 'not-in-scope' if receipt['original'] is None else (
-        'recorded-before-apk-restore' if recorded_lab_restoration(receipt, observed) else 'current')
-    return dict(run=receipt['run'], outcome='recovered', lab_verification=verification)
-
-
-def cleanup_matches(observed, expected, started):
-    if not observed['exists']:
-        return True
-    if not started:
-        return observed == expected
-    return all(expected['files'].get(name) == value for name, value in observed['files'].items())
-
-
-def remove_owned(device, state, receipt, name):
-    deleting = receipt.setdefault('deleting', [])
-    if name not in deleting:
-        deleting.append(name)
-        save(state / 'active.json', receipt)
-    device.remove(name)
-
-
-def recoverable(receipt, observed):
-    if not receipt or observed['device'] != receipt['device'] or not test_matches(receipt, observed):
-        return False
-    allowed = [receipt['apk']]
-    if receipt['phase'] in ('installing', 'recovering', 'restoring-apk'):
-        allowed += [receipt.get('pending_apk'), receipt.get('original_apk')]
-    if observed['apk'] not in allowed or observed.get('busy', False):
-        return False
-    if receipt.get('original_apk') and (not Path(receipt['rollback']).is_file()
-            or digest(receipt['rollback']) != receipt['original_apk']['sha256']):
-        return False
-    if receipt.get('diagnostic') and (not Path(receipt['test_rollback']).is_file() or
-            digest(receipt['test_rollback']) != receipt['original_test_apk']['sha256']):
-        return False
-    if receipt['original'] is None:
-        return True
-    if recorded_lab_restoration(receipt, observed):
-        return True
-    if not observed['lab']['accessible'] or observed['owner'] not in (None, receipt['run']):
-        return False
-    if not cleanup_matches(observed['discard'], receipt['before'], 'discard' in receipt.get('deleting', [])):
-        return False
-    if observed['disposal']['exists'] and ('disposal_expected' not in receipt or not cleanup_matches(
-            observed['disposal'], receipt['disposal_expected'], 'disposal' in receipt.get('deleting', []))):
-        return False
-    baseline = observed['original'] == receipt['original'] or observed['lab'] == receipt['original']
-    allowed_lab = not observed['lab']['exists'] or any(same_lab(observed['lab'], value)
-                   for value in (receipt['original'], receipt['before'], receipt['candidate']))
-    return baseline and allowed_lab
-
-
-def inventory(path):
-    if path.is_symlink():
-        raise Refused('symlinks are not accepted')
-    for entry in path.rglob('*'):
-        if entry.is_symlink() or not (entry.is_file() or entry.is_dir()):
-            raise Refused('only ordinary files and directories are accepted')
-        if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*', entry.relative_to(path).as_posix()):
-            raise Refused('unsupported filename')
-    return {'accessible': True, 'exists': path.exists(), 'files': {
-        p.relative_to(path).as_posix(): digest(p)
-        for p in sorted(path.rglob('*')) if p.is_file()}}
-
-
-def save(path, value):
-    ordinary_path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + '-' + uuid.uuid4().hex + '.pending')
-    with temporary.open('x') as output:
-        json.dump(value, output, sort_keys=True)
-        output.flush()
-        os.fsync(output.fileno())
-    temporary.replace(path)
-    sync_directory(path.parent)
-
-
-def retain_apk(device, state, source):
-    if source.is_symlink() or not source.is_file() or source.suffix != '.apk':
-        raise Refused('need an ordinary local APK file')
-    folder = state / 'apks'
-    ordinary_path(folder)
-    folder.mkdir(exist_ok=True)
-    temporary = folder / (uuid.uuid4().hex + '.apk')
-    try:
-        with source.open('rb') as input_file, temporary.open('xb') as output:
-            shutil.copyfileobj(input_file, output)
-            output.flush()
-            os.fsync(output.fileno())
-        info = device.apk_info(temporary)
-        if digest(temporary) != info['sha256']:
-            raise Refused('APK snapshot changed during verification')
-        target = folder / (info['sha256'] + '.apk')
-        ordinary_path(target)
-        if target.exists():
-            if digest(target) != info['sha256']:
-                raise Refused('retained APK changed')
-        else:
-            temporary.chmod(0o400)
-            temporary.replace(target)
-            sync_directory(folder)
-        return target, info
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def run(argv, *, device, state):
-    global DEADLINE
-    previous = DEADLINE
-    budget = 600 if argv and argv[0] in ('lab', 'test', 'install', 'profile-install', 'push-variant') else 900 if argv and argv[0] == 'recover' else 30
-    DEADLINE = min(previous, time.monotonic() + budget) if previous is not None else time.monotonic() + budget
-    try:
-        return bounded_run(argv, device=device, state=state)
-    finally:
-        DEADLINE = previous
-
-
-def bounded_run(argv, *, device, state):
-    ordinary_path(Path(state))
-    if argv == ['inspect']:
-        return execute(argv, device=device, state=state)
-    if len(argv) == 1 and argv[0] in ('status', 'versions', 'thermal', 'logs', 'crash', 'subtypes', 'pull-report'):
-        return device.readonly(argv[0])
-    grammar = {'push-variant': (3, 2), 'recover': (2, 1), 'uninstall': (1, None), 'stop-app': (1, None),
-               'lab': (3, 1), 'test': (3, 1), 'pull-results': (2, 1), 'install': (4, 3),
-               'profile-install': (6, 5), 'pull-profile': (2, 1)}
-    if not argv or argv[0] not in grammar or len(argv) != grammar[argv[0]][0]:
-        raise Refused('unknown command or arguments')
-    token = argv[grammar[argv[0]][1]] if grammar[argv[0]][1] is not None else None
-    if token is not None and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
-        raise Refused('invalid run identity')
-    if argv[0] == 'push-variant':
-        source = Path(argv[1])
-        inventory(source)
-        if not (source / 'variant.json').is_file() or not (source / 'model').is_dir():
-            raise Refused('need variant.json and model directory')
-    state = Path(state)
-    state.mkdir(parents=True, exist_ok=True)
-    with (state / 'command.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Refused('another command is active') from None
-        if token and argv[0] != 'recover' and (state / (token + '.json')).exists():
-            raise Refused('run identity was already completed; choose a fresh identity')
-        return execute(argv, device=device, state=state)
-
-
-def execute(argv, *, device, state):
-    state = Path(state)
-    journal = state / 'active.json'
-    receipt = json.loads(journal.read_text()) if journal.exists() else None
-    observed = device.inspect()
-    if (argv == ['inspect'] or argv[0] == 'profile-install' or (receipt and receipt.get('diagnostic'))) and hasattr(device, 'app_identity'):
-        observed['test_apk'] = device.app_identity(PKG + '.test')
-    accessible = observed['lab']['accessible']
-    if argv == ['inspect']:
-        return dict(observed, lab_status='observed' if accessible else 'inaccessible',
-                    recoverable=recoverable(receipt, observed), recovery=receipt)
-    if argv == ['uninstall']:
-        if receipt or observed['owner']:
-            raise Refused('recover the active run before destructive removal')
-        device.idle()
-        device.uninstall()
-        return {'outcome': 'uninstalled', 'recoverable': False}
-    if receipt:
-        allowed = [receipt['apk']]
-        if receipt['phase'] in ('installing', 'recovering', 'restoring-apk'):
-            allowed += [receipt.get('pending_apk'), receipt.get('original_apk')]
-        if observed['device'] != receipt['device'] or observed['apk'] not in allowed or not test_matches(receipt, observed):
-            raise Refused('device or installed app changed; recovery refused')
-    if argv == ['stop-app']:
-        if observed['owner'] and (not receipt or observed['owner'] != receipt['run']):
-            raise Refused('another operator owns the on-device lab')
-        device.stop_app()
-        return {'outcome': 'stopped'}
-    if argv[0] == 'profile-install':
-        if receipt or observed['owner'] is not None:
-            raise Refused('recover the current run before diagnostic provisioning')
-        candidate, original, test_candidate, test_original = map(Path, argv[1:5])
-        token = argv[5]
-        retained = [retain_apk(device, state, item) for item in (original, candidate, test_original, test_candidate)]
-        (rollback, old), (snapshot, new), (test_rollback, test_old), (test_snapshot, test_new) = retained
-        if identity(old) != observed['apk'] or identity(test_old) != observed['test_apk']:
-            raise Refused('both retained originals must match installed APK bytes')
-        for before, after, package in ((old, new, PKG), (test_old, test_new, PKG + '.test')):
-            if before['package'] != package or after['package'] != package or any(
-                    before[field] != after[field] for field in ('version_code', 'signer', 'diagnostic_manifest')):
-                raise Refused('diagnostic APKs require the same package/version/signer and constrained manifest')
-        if test_old.get('target') != PKG or test_new.get('target') != PKG:
-            raise Refused('diagnostic instrumentation must target only the dictation app')
-        if old.get('debuggable') is not True:
-            raise Refused('diagnostic baseline must be a verified debuggable original APK')
-        device.idle()
-        fresh = device.inspect()
-        if (fresh['apk'] != identity(old) or device.app_identity(PKG + '.test') != identity(test_old)
-                or fresh['lab'] != observed['lab'] or not fresh['lab']['accessible']
-                or fresh.get('owner') is not None
-                or any(fresh[name]['exists'] for name in ('original', 'stage', 'discard', 'disposal'))):
-            raise Refused('need a fresh accessible exact original APK pair and unowned lab baseline')
-        receipt = dict(run=token, kind='lab', diagnostic=True, device=observed['device'],
-                       apk=observed['apk'], test_apk=observed['test_apk'], original=fresh['lab'],
-                       before=fresh['lab'], candidate=fresh['lab'],
-                       original_apk=observed['apk'], original_test_apk=observed['test_apk'],
-                       rollback=str(rollback), test_rollback=str(test_rollback),
-                       phase='snapshotting', pending_apk=identity(new), pending_test_apk=identity(test_new))
-        save(journal, receipt)
-        device.claim(token)
-        if fresh['lab']['exists']:
-            device.move('lab', 'original')
-        if device.inventory('original') != fresh['lab']:
-            raise Refused('pre-install lab snapshot did not verify; recover this run')
-        receipt['phase'] = 'installing'
-        save(journal, receipt)
-        device.install(snapshot)
-        if device.app_identity() != receipt['pending_apk']:
-            raise Refused('diagnostic app installation did not verify; recover this run')
-        device.install_test(test_snapshot)
-        actual = device.inspect()
-        actual['test_apk'] = device.app_identity(PKG + '.test')
-        if actual['apk'] != receipt['pending_apk'] or actual['test_apk'] != receipt['pending_test_apk']:
-            raise Refused('diagnostic APK pair did not verify; recover this run')
-        receipt.update(apk=actual['apk'], test_apk=actual['test_apk'], before=actual['lab'],
-                       candidate=actual['lab'], phase='installed')
-        save(journal, receipt)
-        return dict(run=token, outcome='installed-diagnostic-pair')
-    if argv[0] == 'install':
-        if receipt and receipt.get('diagnostic'):
-            raise Refused('recover diagnostic provisioning before ordinary install')
-        candidate, original, token = Path(argv[1]), Path(argv[2]), argv[3]
-        if receipt and (receipt['run'] != token or receipt['kind'] != 'install' or receipt['phase'] != 'installed'):
-            raise Refused('recover the current run before installing another build')
-        if observed['owner'] is not None:
-            raise Refused('an on-device lab run owns the application')
-        rollback, old_info = retain_apk(device, state, original)
-        candidate_snapshot, new_info = retain_apk(device, state, candidate)
-        baseline = receipt['original_apk'] if receipt else observed['apk']
-        if old_info['sha256'] != baseline['sha256']:
-            raise Refused('original APK does not match installed baseline')
-        for field in ('package', 'version_code', 'payload', 'signer', 'manifest'):
-            if old_info[field] != new_info[field]:
-                raise Refused('only same-version, same-signer, unchanged-payload builds are recoverable')
-        if old_info['package'] != PKG or old_info['version_code'] != observed['apk']['version_code']:
-            raise Refused('wrong package or unsupported version rollback')
-        device.idle()
-        if receipt is None:
-            receipt = dict(run=token, kind='install', device=observed['device'], apk=observed['apk'],
-                           original=None, original_apk=baseline, rollback=str(rollback))
-        receipt.update(phase='installing', pending_apk={
-            'sha256': new_info['sha256'], 'version_code': new_info['version_code']})
-        save(journal, receipt)
-        device.install(candidate_snapshot)
-        actual = device.inspect()['apk']
-        if actual != receipt['pending_apk']:
-            raise Refused('installed APK identity did not verify; recover this run')
-        receipt.update(apk=actual, phase='installed')
-        save(journal, receipt)
-        return dict(run=token, outcome='installed')
-    if argv[0] in ('lab', 'test', 'pull-results', 'pull-profile'):
-        if not receipt or receipt['run'] != argv[1] or observed['owner'] != receipt['run']:
-            raise Refused('no matching active run')
-        if not same_lab(observed['lab'], receipt['candidate']):
-            raise Refused('lab changed outside the active run')
-        if argv[0] == 'pull-profile':
-            if not receipt.get('diagnostic') or (receipt['phase'] != 'active' or not receipt.get('profile_complete')):
-                raise Refused('profile retrieval requires a completed diagnostic measurement')
-            payload = device.profile_result()
-            binding = profile_binding(json.loads(device.result()), payload)
-            if binding != receipt.get('profile_binding'):
-                raise Refused('profile differs from the successful measurement receipt')
-            target = state / 'results' / (receipt['run'] + '-profile-' + uuid.uuid4().hex + '.json')
-            target.parent.mkdir(exist_ok=True)
-            ordinary_path(target)
-            with target.open('xb') as output:
-                output.write(payload)
-            return dict(run=receipt['run'], path=str(target), files=1, bytes=len(payload))
-        if argv[0] in ('lab', 'test'):
-            if receipt['phase'] != 'active':
-                raise Refused('interrupted operation requires recovery')
-            device.idle()
-            receipt['phase'] = 'running'
-            receipt['profile_complete'] = False
-            receipt.pop('profile_binding', None)
-            save(journal, receipt)
-            device.clear_result()
-            if receipt.get('diagnostic'):
-                output = device.instrument(Path(argv[2]), full=argv[0] == 'test', native_profile=True)
-            else:
-                output = device.instrument(Path(argv[2]), full=argv[0] == 'test')
-            (state / (receipt['run'] + '-instrumentation.txt')).write_text(output)
-            if not re.search(r'OK \([1-9][0-9]* tests?\)', output) or any(
-                    marker in output for marker in ('FAILURES!!!', 'INSTRUMENTATION_FAILED', 'Process crashed')) or (
-                    re.search(r'^INSTRUMENTATION_STATUS_CODE:\s*-\d+\s*$', output, re.M)) or not (
-                    re.search(r'^INSTRUMENTATION_CODE:\s*-1\s*$', output, re.M)):
-                raise Refused('instrumentation did not report a successful nonempty test run')
-            measured = json.loads(device.result())
-            if not isinstance(measured, dict) or not (measured.get('takes') or measured.get('outcome') == 'complete'):
-                raise Refused('instrumentation produced no complete fresh lab result')
-            if receipt.get('diagnostic'):
-                receipt['profile_binding'] = profile_binding(measured, device.profile_result())
-            receipt['phase'] = 'active'
-            receipt['profile_complete'] = bool(receipt.get('diagnostic'))
-            save(journal, receipt)
-            return dict(run=receipt['run'], outcome='complete')
-        payload = device.result()
-        json.loads(payload)
-        target = state / 'results' / (receipt['run'] + '-' + uuid.uuid4().hex + '.json')
-        target.parent.mkdir(exist_ok=True)
-        ordinary_path(target)
-        with target.open('xb') as output:
-            output.write(payload)
-        return dict(run=receipt['run'], path=str(target))
-    if len(argv) == 3 and argv[0] == 'push-variant':
-        source, token = Path(argv[1]), argv[2]
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
-            raise Refused('invalid run identity')
-        staged = inventory(source)
-        if not (source / 'variant.json').is_file() or not (source / 'model').is_dir():
-            raise Refused('need variant.json and model directory')
-        if not accessible:
-            raise Refused('app-private lab state inaccessible; no baseline can be preserved')
-        if (receipt is None or receipt['kind'] == 'install') and observed['owner'] is not None:
-            raise Refused('on-device owner has no matching local lab receipt')
-        if receipt and (receipt['run'] != token or (receipt['kind'] == 'lab' and observed['owner'] != token)):
-            raise Refused('another run owns the recovery baseline')
-        if receipt and receipt['phase'] not in ('active', 'installed'):
-            raise Refused('interrupted operation requires recovery')
-        if receipt and receipt['kind'] == 'lab' and not same_lab(observed['lab'], receipt['candidate']):
-            raise Refused('lab changed outside the active run')
-        if receipt and receipt['kind'] == 'lab' and observed['original'] != receipt['original']:
-            raise Refused('preserved original changed or disappeared')
-        if any(observed[name]['exists'] for name in ('stage', 'discard', 'disposal')):
-            raise Refused('unexpected staging state; recover first')
-        device.idle()
-        if receipt is None:
-            receipt = dict(run=token, kind='lab', device=observed['device'], apk=observed['apk'],
-                           original=observed['lab'], original_apk=None)
-        if receipt['kind'] == 'install':
-            receipt.update(kind='lab', original=observed['lab'])
-        first = observed['owner'] is None
-        if first and observed['original']['exists']:
-            raise Refused('unowned preserved lab exists')
-        receipt.update(before=observed['lab'], candidate=staged, phase='staging', deleting=[], profile_complete=False)
-        save(journal, receipt)
-        if first:
-            device.claim(token)
-        receipt['copy_id'] = uuid.uuid4().hex
-        receipt['copy_pending'] = True
-        save(journal, receipt)
-        device.stage(source, receipt['copy_id'])
-        receipt['copy_pending'] = False
-        save(journal, receipt)
-        if device.inventory('stage') != staged:
-            raise Refused('staged content does not match')
-        if device.inventory('lab') != observed['lab']:
-            raise Refused('lab changed while staging')
-        receipt['phase'] = 'promoting'
-        save(journal, receipt)
-        if receipt['original']['exists'] and not device.inventory('original')['exists']:
-            device.move('lab', 'original')
-        elif device.inventory('lab')['exists']:
-            device.move('lab', 'discard')
-        device.move('stage', 'lab')
-        remove_owned(device, state, receipt, 'discard')
-        receipt['phase'] = 'active'
-        save(journal, receipt)
-        device.cleanup_copy(receipt['copy_id'])
-        return dict(run=token, outcome='staged')
-    if len(argv) == 2 and argv[0] == 'recover':
-        if receipt is None:
-            previous = state / (argv[1] + '.json')
-            if previous.exists():
-                receipt = json.loads(previous.read_text())
-                if receipt.get('diagnostic') and hasattr(device, 'app_identity'):
-                    observed['test_apk'] = device.app_identity(PKG + '.test')
-                if observed['device'] != receipt['device'] or observed['apk'] != receipt['apk'] or not test_matches(receipt, observed):
-                    raise Refused('device or installed app changed')
-                if receipt['original'] is None or observed['lab'] == receipt['original'] or recorded_lab_restoration(receipt, observed):
-                    return recovery_result(receipt, observed)
-                raise Refused('recovered state has since changed')
-        if receipt is None or receipt['run'] != argv[1]:
-            raise Refused('no matching recovery receipt')
-        # Never mutate private paths or restore APKs while a detached copy may run.
-        if receipt.get('copy_pending'):
-            device.stage_quiescent(receipt['copy_id'])
-            receipt['copy_pending'] = False
-            save(journal, receipt)
-        device.idle()
-        if (receipt.get('diagnostic') and receipt['original'] is not None and accessible
-                and observed.get('owner') is None and not receipt.get('ownership_handoff')
-                and receipt['phase'] not in ('staging', 'snapshotting')):
-            raise Refused('diagnostic owner disappeared before journaled restoration handoff')
-        if receipt['original'] is not None and not recorded_lab_restoration(receipt, observed):
-            if not accessible:
-                raise Refused('private lab state is inaccessible without a verified restoration milestone')
-            if observed['owner'] not in (receipt['run'], None):
-                raise Refused('different operation owns this lab')
-            if observed['lab']['exists'] and not any(same_lab(observed['lab'], allowed)
-                    for allowed in (receipt['original'], receipt['before'], receipt['candidate'])):
-                raise Refused('lab changed outside the active run')
-            if observed['original']['exists'] and observed['original'] != receipt['original']:
-                raise Refused('preserved original changed')
-            if not cleanup_matches(observed['discard'], receipt['before'], 'discard' in receipt.get('deleting', [])):
-                raise Refused('displaced lab changed')
-            if observed['disposal']['exists'] and ('disposal_expected' not in receipt or not cleanup_matches(
-                    observed['disposal'], receipt['disposal_expected'], 'disposal' in receipt.get('deleting', []))):
-                raise Refused('recovery disposal changed')
-            receipt['phase'] = 'recovering'
-            save(journal, receipt)
-            must_displace = observed['lab']['exists'] and (observed['original']['exists'] or not receipt['original']['exists'])
-            if must_displace:
-                if observed['disposal']['exists']:
-                    raise Refused('both active candidate and recovery disposal exist')
-                receipt['disposal_expected'] = observed['lab']
-                save(journal, receipt)
-                device.move('lab', 'disposal')
-            if observed['original']['exists']:
-                device.move('original', 'lab')
-            elif observed['lab'] != receipt['original']:
-                if receipt['original']['exists']:
-                    raise Refused('preserved original missing')
-            remove_owned(device, state, receipt, 'stage')
-            remove_owned(device, state, receipt, 'discard')
-            remove_owned(device, state, receipt, 'disposal')
-            device.cleanup_transfer(receipt['run'])
-            if receipt.get('copy_id'):
-                device.cleanup_copy(receipt['copy_id'])
-            if device.inventory('lab') != receipt['original']:
-                raise Refused('restored lab does not match original')
-            receipt['lab_restored'] = True
-            save(journal, receipt)
-        if receipt.get('diagnostic'):
-            receipt['phase'] = 'restoring-apk'
-            save(journal, receipt)
-            test_rollback = Path(receipt['test_rollback'])
-            if digest(test_rollback) != receipt['original_test_apk']['sha256']:
-                raise Refused('retained original test APK changed')
-            if device.app_identity(PKG + '.test') != receipt['original_test_apk']:
-                device.install_test(test_rollback)
-            if device.app_identity(PKG + '.test') != receipt['original_test_apk']:
-                raise Refused('test APK recovery did not verify')
-            receipt['test_apk'] = receipt['original_test_apk']
-            save(journal, receipt)
-        if receipt.get('original_apk'):
-            receipt['phase'] = 'restoring-apk'
-            save(journal, receipt)
-            # Final APP may disable run-as. Transfer ownership to the durable
-            # local receipt only after lab and TEST restoration are verified.
-            if receipt['original'] is not None and not receipt.get('remote_released'):
-                handoff = device.inspect()
-                if handoff['lab'] != receipt['original'] or handoff.get('owner') not in (receipt['run'], None):
-                    raise Refused('restoration ownership handoff did not verify')
-                receipt['ownership_handoff'] = True
-                save(journal, receipt)
-                if handoff.get('owner') == receipt['run']:
-                    device.release(receipt['run'])
-                if device.inspect().get('owner') is not None:
-                    raise Refused('restoration ownership release did not verify')
-                receipt['remote_released'] = True
-                save(journal, receipt)
-            rollback = Path(receipt['rollback'])
-            if digest(rollback) != receipt['original_apk']['sha256']:
-                raise Refused('retained original APK changed')
-            if device.inspect()['apk'] != receipt['original_apk']:
-                device.install(rollback)
-            if device.inspect()['apk'] != receipt['original_apk']:
-                raise Refused('APK recovery did not verify')
-            receipt['apk'] = receipt['original_apk']
-        if not receipt.get('original_apk') and receipt['original'] is not None:
-            release_state = device.inspect()
-            if release_state.get('owner') == receipt['run']:
-                device.release(receipt['run'])
-            if device.inspect().get('owner') is not None:
-                raise Refused('recovery ownership release did not verify')
-        final = device.inspect()
-        if receipt.get('diagnostic'):
-            final['test_apk'] = device.app_identity(PKG + '.test')
-        if receipt.get('diagnostic') and (final['apk'] != receipt['original_apk'] or final['test_apk'] != receipt['original_test_apk']):
-            raise Refused('restored APK pair did not verify')
-        receipt['phase'] = 'recovered'
-        save(state / (receipt['run'] + '.json'), receipt)
-        journal.unlink()
-        return recovery_result(receipt, final)
-    raise Refused('unknown command or arguments')
-
-
-class AndroidPhone:
-    """The external device adapter. Every remote path and package is fixed here."""
-    paths = {'lab': 'files/lab', 'original': 'files/.phone-lab-original',
-             'stage': 'files/.phone-lab-stage', 'discard': 'files/.phone-lab-discard',
-             'disposal': 'files/.phone-lab-disposal'}
-    owner_path = 'files/.phone-lab-owner'
-    test_package = PKG + '.test'
-    runner = test_package + '/androidx.test.runner.AndroidJUnitRunner'
-
-    def __init__(self, corpus):
-        self.corpus = corpus
-        self.sdk = Path(os.environ.get('ANDROID_HOME', Path.home() / 'Android/Sdk'))
-        self.bridge_path = self.sdk / 'platform-tools/adb'
+    def __init__(self, sdk, runner=subprocess.run):
+        self.sdk = Path(sdk)
+        self.adb = self.sdk / 'platform-tools/adb'
+        self.runner = runner
         self.serial = None
 
-    def bridge(self, *args, check=True, text=True, timeout=30):
-        command = [str(self.bridge_path)]
-        if self.serial:
-            command += ['-s', self.serial]
-        result = child(command + list(args), capture_output=True, text=text, timeout=timeout)
+    def run(self, *args, timeout=60, binary=False, check=True, stdin=None):
+        argv = [str(self.adb)] + (['-s', self.serial] if self.serial else []) + list(args)
+        try:
+            result = self.runner(argv, capture_output=True, text=not binary, timeout=timeout, input=stdin)
+        except subprocess.TimeoutExpired:
+            raise Failed('device command timed out after %ds' % timeout) from None
+        except OSError as error:
+            raise Failed('cannot start adb: ' + error.strerror) from None
         if check and result.returncode:
-            raise Refused('device command failed; inspect/recover before retrying')
-        return result
+            err = result.stderr if isinstance(result.stderr, str) else result.stderr.decode(errors='replace')
+            what = ' '.join(args[:2]).split('run-as')[0].strip()[:60]
+            raise Failed(self.redact('%s: %s' % (what, err.strip()[-400:] or 'adb exited %d' % result.returncode)))
+        return result.stdout
+
+    def redact(self, text):
+        text = text.replace(str(self.adb), 'adb')
+        return text.replace(self.serial, '<serial>') if self.serial else text
 
     def connect(self):
         if self.serial:
             return
-        output = self.bridge('devices').stdout
-        devices = [line.split() for line in output.splitlines()[1:] if line.strip()]
-        if len(devices) != 1 or devices[0][1:] != ['device']:
-            raise Refused('need exactly one authorized phone connection')
-        self.serial = devices[0][0]
-        model = self.bridge('shell', 'getprop ro.product.model').stdout.strip()
-        if model != 'Pixel 10 Pro XL':
-            raise Refused('connected device is not the permitted Pixel 10 Pro XL')
+        rows = [line.split() for line in self.run('devices').splitlines()[1:] if line.strip()]
+        if len(rows) != 1:
+            raise Failed('need exactly one authorized phone; found %d' % len(rows))
+        state = (rows[0][1:2] or ['unknown'])[0]
+        if state != 'device':
+            hint = ' (accept the USB debugging prompt on the phone)' if state == 'unauthorized' else ''
+            raise Failed('phone state is %s, not device%s' % (state, hint))
+        self.serial = rows[0][0]
+        if self.shell('getprop ro.product.model').strip() != MODEL:
+            self.serial = None
+            raise Refused('connected device is not the permitted ' + MODEL)
 
-    def shell(self, code, **kwargs):
+    def shell(self, code, **kw):
         self.connect()
-        return self.bridge('shell', code, **kwargs)
+        return self.run('shell', code, **kw)
 
-    def private(self, code, **kwargs):
-        return self.shell('run-as ' + PKG + ' sh -c ' + shlex.quote(code), **kwargs)
+    def private(self, code, **kw):
+        return self.shell('run-as %s sh -c %s' % (PKG, shlex.quote(code)), **kw)
 
-    def app_identity(self, package=PKG):
-        if package not in (PKG, self.test_package):
-            raise Refused('unsupported package')
-        output = self.shell('pm path ' + package).stdout
-        paths = [line.removeprefix('package:') for line in output.splitlines() if line.startswith('package:')]
-        if len(paths) != 1:
-            raise Refused('need one installed base APK; split/missing packages are unsupported')
-        hashed = self.shell('sha256sum -- ' + shlex.quote(paths[0])).stdout.split()[0]
-        if not re.fullmatch('[0-9a-f]{64}', hashed):
-            raise Refused('installed APK hash unavailable')
-        details = self.shell('dumpsys package ' + package).stdout
-        version = re.search(r'\bversionCode=(\d+)', details)
-        if not version:
-            raise Refused('installed version code unavailable')
-        return {'sha256': hashed, 'version_code': int(version.group(1))}
+    # --- read-only -------------------------------------------------------
+    def props(self):
+        return {p: self.shell('getprop ' + p).strip() for p in PROPS}
 
-    def inventory(self, name):
-        scope = self.paths[name]
-        code = f'''if [ -L {scope} ]; then exit 73; fi
-if [ -d {scope} ]; then
-  [ -z "$(find {scope} -type l -print -quit)" ] || exit 73
-  printf 'present\\n'
-  cd {scope} && find . -type f -exec sha256sum {{}} +
-elif [ -e {scope} ]; then exit 73
-else printf 'absent\\n'; fi'''
-        output = self.private(code).stdout.splitlines()
-        if output == ['absent']:
-            return {'accessible': True, 'exists': False, 'files': {}}
-        if not output or output[0] != 'present':
-            raise Refused('private file inventory unavailable')
+    def thermal(self):
+        dump = self.shell('dumpsys thermalservice')
+        status = re.search(r'^Thermal Status: *(\d)', dump, re.M)
+        return int(status.group(1)) if status else None
+
+    def driver_libs(self):
+        names = self.shell('ls /vendor/lib64 /system/lib64 2>/dev/null').split()
+        return sorted({n for n in names if DRIVER_LIBS.match(n)})
+
+    def package(self, pkg):
+        if pkg not in (PKG, TEST) + FUTO:
+            raise Refused('package outside scope')
+        # pm exits 1 for a package that is not installed; that is an answer, not a failure.
+        paths = [l[8:] for l in self.shell('pm path ' + pkg, check=False).splitlines() if l.startswith('package:')]
+        if not paths:
+            return {'installed': False}
+        dump = self.shell('dumpsys package ' + pkg)
+        version_name = (re.search(r'\bversionName=(\S+)', dump) or [0, 'null'])[1]
+        info = {'installed': True,
+                'versionCode': int((re.search(r'\bversionCode=(\d+)', dump) or [0, 0])[1]),
+                'versionName': None if version_name == 'null' else version_name}
+        if pkg in FUTO:
+            return info
+        info['sha256'] = self.shell('sha256sum -- ' + shlex.quote(paths[0])).split()[0]
+        info['apk_path'] = paths[0]
+        uid = re.search(r'^\s*(?:userId|appId|uid)=(\d+)\s*$', dump, re.M)
+        if not uid or int(uid.group(1)) < 10000:
+            raise Failed('cannot determine the app uid from the package dump; refusing to guess')
+        info['uid'] = int(uid.group(1))
+        info['granted'] = sorted(set(re.findall(r'^\s+(android\.permission\.\S+): granted=true', dump, re.M)))
+        pid = self.shell('pidof ' + pkg, check=False).split()
+        info['pid'] = int(pid[0]) if pid and pid[0].isdigit() else None
+        return info
+
+    def ime(self):
+        """Booleans about our IME only; nothing about other keyboards."""
+        dump = self.shell('dumpsys input_method')
+        enabled = any(l.strip().startswith(PKG + '/') for l in self.shell('ime list -s').splitlines())
+        selected = bool(re.search(r'^\s*(?:mCurMethodId|mSelectedMethodId)=' + re.escape(PKG) + '/', dump, re.M))
+        bound = bool(re.search(r'^\s*(?:mCurId|mCurImeId)=' + re.escape(PKG) + '/', dump, re.M))
+        shown = bool(re.search(r'^\s*mInputShown=true', dump, re.M))
+        return {'enabled': enabled, 'selected': selected, 'bound': bound, 'input_shown': bound and shown}
+
+    def inventory(self, rel):
+        code = ('cd %s 2>/dev/null || exit 3; [ -z "$(find . -type l -print -quit)" ] || exit 4; '
+                'find . -type f -exec sha256sum {} +') % shlex.quote(rel)
+        self.connect()
+        result = self.runner([str(self.adb), '-s', self.serial, 'shell', 'run-as %s sh -c %s' % (PKG, shlex.quote(code))],
+                             capture_output=True, text=True, timeout=120)
+        if result.returncode == 3:
+            return None
+        if result.returncode == 4:
+            raise Refused('symlink inside app data; not touching it')
+        if result.returncode:
+            raise Failed(self.redact(result.stderr.strip()[-300:]))
         files = {}
-        for line in output[1:]:
-            matched = re.fullmatch(r'([0-9a-f]{64})  \./([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)', line)
-            if not matched or '..' in Path(matched.group(2)).parts:
-                raise Refused('unsafe or unsupported private filename')
-            files[matched.group(2)] = matched.group(1)
-        return {'accessible': True, 'exists': True, 'files': files}
+        for line in result.stdout.splitlines():
+            digest, _, path = line.partition('  ./')
+            files[name(path)] = digest
+        return files
 
-    def inspect(self):
+    def logcat(self, uid, since=None, crash=False):
+        if not crash and (type(uid) is not int or uid < 10000):
+            raise Refused('logs need our app uid; system or unknown uids are out of scope')
+        args = ['logcat', '-d', '-v', 'time']
+        args += ['-b', 'crash'] if crash else ['--uid', str(uid)]
+        if since:
+            args += ['-T', since]
         self.connect()
-        observed = dict(device=self.serial, apk=self.app_identity(), owner=None)
-        if self.private('pwd', check=False).returncode:
-            observed.update({name: {'accessible': False} for name in self.paths})
-            return observed
-        observed.update({name: self.inventory(name) for name in self.paths})
-        owner = self.private(f'if [ -L {self.owner_path} ]; then readlink {self.owner_path}; '
-                             f'elif [ -e {self.owner_path} ]; then printf invalid; fi').stdout.strip()
-        observed['owner'] = owner or None
-        return observed
+        text = self.run(*args, timeout=120)
+        if crash:
+            lines = text.splitlines()
+            keep = set()
+            for i, line in enumerate(lines):
+                if PKG in line:
+                    keep.update(range(max(0, i - 2), min(len(lines), i + 40)))
+            text = '\n'.join(lines[i] for i in sorted(keep)[-400:])
+        return self.redact(text)
 
-    def idle(self):
-        probe = self.shell('pidof ' + PKG, check=False)
-        if probe.returncode == 0 and re.fullmatch(r'\d+(?:\s+\d+)*', probe.stdout.strip()) and not probe.stderr.strip():
-            raise Refused('dictation process exists; explicit stop-app approval is required, not just closing the UI')
-        if probe.returncode != 1 or probe.stdout.strip() or probe.stderr.strip():
-            raise Refused('cannot establish that the dictation process has stopped')
+    def device_time(self):
+        return self.shell("date '+%m-%d %H:%M:%S.000'").strip()
 
-    def stop_app(self):
-        # Explicit operation only. Never use it as an implicit idle() fallback.
-        if self.shell('am get-current-user').stdout.strip() != '0':
-            raise Refused('stop-app supports only the active primary user 0')
-        before = self.ime_state()
-        processes = self.shell('dumpsys activity processes').stdout
-        headers = list(re.finditer(r'^ACTIVITY MANAGER RUNNING PROCESSES \(dumpsys activity processes\)$', processes, re.M))
-        completed = list(re.finditer(r'^  mDeviceIdleTempAllowlist=\[[^\n]*\]\s*$', processes, re.M))
-        if len(headers) != 1 or len(completed) != 1 or completed[0].start() <= headers[0].end() or re.search(
-                r'Active instrumentation:|Instrumentation #|ActiveInstrumentation\{|mActiveInstrumentation=|'
-                r'Permission Denial|Permission denied|DUMP TIMEOUT|Exception|Error dumping|Can.t find service', processes):
-            raise Refused('instrumentation is active or process state is unrecognized')
-        if self.shell('am get-current-user').stdout.strip() != '0' or self.ime_state() != before:
-            raise Refused('user or IME state changed before stop')
-        self.shell('am force-stop --user 0 ' + PKG)
-        self.idle()
-        if self.ime_state() != before:
-            raise Refused('IME selection changed during stop; no settings restoration attempted')
-
-    def ime_state(self):
-        output = self.shell('dumpsys input_method').stdout
-        users = re.findall(r'^\s*(?:mCurrentUserId|UserId)=(\d+)\s*$', output, re.M)
-        selected = re.findall(r'^\s*(?:mCurMethodId|mSelectedMethodId|mSelectedImeId)=([^\s]+)', output, re.M)
-        bound = re.findall(r'^\s*(?:mCurId|mCurImeId)=([^\s]+)', output, re.M)
-        values = selected + bound
-        invalid = sum(value != 'null' and not re.fullmatch(r'[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+', value) for value in values)
-        if not users or set(users) != {'0'} or not selected or not bound or invalid:
-            markers = {name: len(re.findall(r'^\s*' + name + r'=', output, re.M))
-                       for name in ('mCurrentUserId', 'mCurrentImeUserId', 'UserId')}
-            raise Refused('cannot establish IME state: ' + json.dumps(dict(
-                user_markers=markers, parsed_user_fields=len(users), primary_only=bool(users) and set(users) == {'0'},
-                selected_fields=len(selected), binding_fields=len(bound), invalid_components=invalid), sort_keys=True))
-        if any(value.startswith(PKG + '/') for value in values):
-            raise Refused('dictation is selected or bound; stopping it could change keyboard settings')
-        keys = ('default_input_method', 'enabled_input_methods', 'selected_input_method_subtype',
-                'input_methods_subtype_history')
-        settings = tuple(self.shell('settings --user 0 get secure ' + key).stdout.strip() for key in keys)
-        if not settings[0] or settings[0] == 'null' or settings[0] not in selected or settings[0].startswith(PKG + '/'):
-            raise Refused('IME selection is missing or changing')
-        return settings
-
-    def claim(self, token):
-        quoted = shlex.quote(token)
-        self.private(f'ln -s {quoted} {self.owner_path} || '
-                     f'[ "$(readlink {self.owner_path})" = {quoted} ]')
-
-    def release(self, token):
-        self.private(f'[ "$(readlink {self.owner_path})" = {shlex.quote(token)} ] && rm {self.owner_path}')
-
-    def stage(self, source, copy_id):
-        token = self.private('readlink ' + self.owner_path).stdout.strip()
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
-            raise Refused('missing operation owner')
-        temporary = '/data/local/tmp/dictation-lab-' + token
-        self.shell('mkdir ' + temporary)
-        self.bridge('push', str(source.resolve()) + '/.', temporary, timeout=300)
-        # Unique per-attempt marker, bound to the durable local journal.
-        # Toybox timeout waits for its direct child (cp), including SIGKILL.
-        # An absent marker is unknown remote state, even after host transport death.
-        if not re.fullmatch('[0-9a-f]{32}', copy_id):
-            raise Refused('invalid copy attempt')
-        marker = 'files/.phone-copy-' + copy_id
-        self.private('[ ! -e ' + marker + ' ] && [ ! -L ' + marker + ' ] && mkdir ' + self.paths['stage'] +
-                     ' && { toybox timeout -s KILL 240 cp -r ' + temporary + '/. ' +
-                     self.paths['stage'] + '/; result=$?; printf \'%s\\n\' "$result" > ' +
-                     marker + '; exit "$result"; }', timeout=300)
-        self.stage_quiescent(copy_id, success=True)
-        self.cleanup_transfer(token)
-
-    def stage_quiescent(self, token, success=False):
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
-            raise Refused('invalid copy owner')
-        marker = 'files/.phone-copy-' + token
-        result = self.private('[ ! -L ' + marker + ' ] && [ -f ' + marker +
-                              ' ] && cat ' + marker, check=False)
-        if (result.returncode or not re.fullmatch(r'(?:0|[1-9][0-9]{0,2})\n?', result.stdout)
-                or int(result.stdout.strip()) > 255):
-            raise Refused('remote copy completion is unproven; journal and all paths retained')
-        if success and result.stdout.strip() != '0':
-            raise Refused('remote staging copy failed; recover this run')
-
-    def move(self, source, target):
-        self.private('mv ' + self.paths[source] + ' ' + self.paths[target])
-
-    def remove(self, name):
-        self.private('rm -rf -- ' + self.paths[name])
-
-    def cleanup_transfer(self, token):
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', token):
-            raise Refused('invalid transfer owner')
-        self.shell('rm -rf -- /data/local/tmp/dictation-lab-' + token)
-
-    def cleanup_copy(self, token):
-        if not re.fullmatch('[0-9a-f]{32}', token):
-            raise Refused('invalid copy attempt')
-        self.private('rm -f -- files/.phone-copy-' + token)
-
-    def sdk_tool(self, name):
-        candidates = list((self.sdk / 'build-tools').glob('*/' + name))
-        if not candidates:
-            raise Refused('Android SDK build tool missing: ' + name)
-        return max(candidates, key=lambda p: tuple(int(n) for n in re.findall(r'\d+', p.parent.name)))
+    # --- host-side APK inspection ---------------------------------------
+    def tool(self, binary):
+        found = sorted((self.sdk / 'build-tools').glob('*/' + binary))
+        if not found:
+            raise Failed('Android build tool missing: ' + binary)
+        return str(found[-1])
 
     def apk_info(self, path):
-        if path.is_symlink() or path.suffix != '.apk' or not path.is_file():
-            raise Refused('need an ordinary local APK file')
-        badging = child([str(self.sdk_tool('aapt2')), 'dump', 'badging', str(path)],
-                                 check=True, capture_output=True, text=True).stdout
-        package = re.search(r"^package: name='([^']+)' versionCode='(\d*)'", badging, re.M)
-        if not package or package.group(1) not in (PKG, self.test_package) or (package.group(1) == PKG and not package.group(2)):
-            raise Refused('APK is outside the permitted dictation package family')
-        permissions = set(re.findall(r"uses-permission(?:-sdk-23)?: name='([^']+)'", badging))
-        if package.group(1) == PKG and permissions - {'android.permission.RECORD_AUDIO', 'android.permission.WAKE_LOCK'}:
-            raise Refused('unsupported application permissions')
-        tree = child([str(self.sdk_tool('aapt2')), 'dump', 'xmltree', str(path),
-                               '--file', 'AndroidManifest.xml'], check=True, capture_output=True, text=True).stdout
-        lines, kept, index = tree.splitlines(), [], 0
-        while index < len(lines):
-            line = lines[index]
-            if 'E: uses-permission ' in line or line.strip() == 'E: uses-permission':
-                indent, end = len(line) - len(line.lstrip()), index + 1
-                while end < len(lines) and len(lines[end]) - len(lines[end].lstrip()) > indent:
-                    end += 1
-                if any('"android.permission.WAKE_LOCK"' in item for item in lines[index:end]):
-                    index = end
-                    continue
-            if not re.search(r'A: android:debuggable\(', line):
-                kept.append(re.sub(r'\s*\(line=\d+\)', '', line))
-            index += 1
-        manifest = '\n'.join(kept)
-        targets = re.findall(r'A: (?:android|http://schemas.android.com/apk/res/android):targetPackage[^=]*="([^"]+)"', tree)
-        signing = child([str(self.sdk_tool('apksigner')), 'verify', '--print-certs', str(path)],
-                                 check=True, capture_output=True, text=True).stdout
-        signers = set(re.findall(r'^(?:Signer #\d+|V\d+ Signer): certificate SHA-256 digest: ([0-9a-f]{64})$', signing, re.M))
+        path = Path(path)
+        if path.is_symlink() or not path.is_file() or path.suffix != '.apk':
+            raise Refused('need an ordinary .apk file')
+        badging = subprocess.run([self.tool('aapt2'), 'dump', 'badging', str(path)],
+                                 capture_output=True, text=True, check=True).stdout
+        header = re.search(r"^package: name='([^']+)' versionCode='(\d*)'", badging, re.M)
+        if not header or header.group(1) not in (PKG, TEST):
+            raise Refused('APK is not the dictation app or its test package')
+        pkg = header.group(1)
+        perms = set(re.findall(r"^uses-permission(?:-sdk-23)?: name='([^']+)'", badging, re.M))
+        if perms & NETWORK:
+            raise Refused('APK requests network or package-query permission: ' + ', '.join(sorted(perms & NETWORK)))
+        if perms - PERMISSIONS[pkg]:
+            raise Refused('APK permissions outside allowlist: ' + ', '.join(sorted(perms - PERMISSIONS[pkg])))
+        tree = subprocess.run([self.tool('aapt2'), 'dump', 'xmltree', str(path), '--file', 'AndroidManifest.xml'],
+                              capture_output=True, text=True, check=True).stdout
+        if re.search(r'^\s*E: queries', tree, re.M):
+            raise Refused('APK declares <queries>; package enumeration is out of scope')
+        target = re.findall(r'targetPackage[^=]*="([^"]+)"', tree)
+        if pkg == TEST and target != [PKG]:
+            raise Refused('test APK must instrument only ' + PKG)
+        signing = subprocess.run([self.tool('apksigner'), 'verify', '--print-certs', str(path)],
+                                 capture_output=True, text=True, check=True).stdout
+        signers = set(re.findall(r'certificate SHA-256 digest: ([0-9a-f]{64})', signing))
         if len(signers) != 1:
-            raise Refused('need one verified APK signer')
-        payload = hashlib.sha256()
-        with zipfile.ZipFile(path) as archive:
-            names = archive.namelist()
-            if len(names) != len(set(names)):
-                raise Refused('duplicate APK archive entries')
-            for name in sorted(names):
-                if name == 'AndroidManifest.xml' or name.startswith('META-INF/'):
-                    continue
-                payload.update(name.encode() + b'\0')
-                with archive.open(name) as stream:
-                    for block in iter(lambda: stream.read(1024 * 1024), b''):
-                        payload.update(block)
-        return dict(package=package.group(1), version_code=int(package.group(2) or '0'),
-                    sha256=digest(path), signer=next(iter(signers)), payload=payload.hexdigest(),
-                    manifest=hashlib.sha256(manifest.encode()).hexdigest(),
-                    diagnostic_manifest=diagnostic_manifest(manifest, package.group(1)),
-                    target=targets[0] if len(targets) == 1 else None,
-                    debuggable=bool(re.search(r'^application-debuggable\s*$', badging, re.M)))
+            raise Refused('need exactly one APK signer')
+        return {'package': pkg, 'versionCode': int(header.group(2) or 0), 'sha256': sha_file(path),
+                'signer': signers.pop(), 'permissions': sorted(perms)}
 
+    # --- mutations --------------------------------------------------------
     def install(self, path):
-        if self.apk_info(path)['package'] != PKG:
-            raise Refused('only the dictation app may be installed')
-        self.bridge('install', '-r', str(path), timeout=600)
+        self.connect()
+        self.run('install', '-r', str(path), timeout=600)
 
-    def install_test(self, path):
-        info = self.apk_info(path)
-        if info['package'] != self.test_package or info['target'] != PKG:
-            raise Refused('instrumentation may target only the dictation app')
-        self.bridge('install', '-r', str(path), timeout=600)
+    def uninstall(self, pkg):
+        if pkg not in (PKG, TEST):
+            raise Refused('package outside scope')
+        self.connect()
+        self.run('uninstall', pkg, timeout=120)
+
+    def stop(self):
+        self.shell('am force-stop ' + PKG)
+
+    def push(self, directory, rel, changed, removed):
+        """Make files/<rel> equal to the host directory: send only `changed` files, delete `removed`."""
+        directory = validate_directory(directory)
+        quoted_rel = shlex.quote(rel)
+        if removed:
+            self.private('cd %s && rm -f -- %s' % (quoted_rel, ' '.join(shlex.quote(name(r)) for r in sorted(removed))),
+                         timeout=120)
+        if not changed:
+            return
+        tmp = '/data/local/tmp/dictation-' + uuid.uuid4().hex
+        self.shell('mkdir ' + tmp)
+        try:
+            with tempfile.TemporaryDirectory() as staging:
+                for item in sorted(changed):  # same layout, only the files that differ
+                    target = Path(staging) / item
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        os.link(directory / item, target)
+                    except OSError:
+                        shutil.copyfile(directory / item, target)
+                self.run('push', staging + '/.', tmp, timeout=900)
+            self.private('mkdir -p %s && cp -r %s/. %s/' % (quoted_rel, tmp, quoted_rel), timeout=600)
+        finally:
+            self.shell('rm -rf -- ' + tmp)
+
+    def tar(self, *rels):
+        existing = [r for r in rels if self.private('[ -e %s ] && echo y' % shlex.quote(r), check=False).strip() == 'y']
+        if not existing:
+            return b''
+        self.connect()
+        return self.run('exec-out', 'run-as', PKG, 'tar', 'c', *existing, timeout=900, binary=True)
+
+    def pull_apk(self, remote, local):
+        self.connect()
+        if not re.fullmatch(r'/data/app/[A-Za-z0-9_./=~+-]+\.apk', remote):
+            raise Refused('unexpected installed APK path')
+        Path(local).write_bytes(self.run('exec-out', 'cat', remote, timeout=600, binary=True))
+
+    def replace_data(self, archive):
+        """Wipe app data dirs and extract a host-validated tar.
+
+        The archive is uploaded before anything is wiped: exec-out does not pass stdin EOF,
+        so streaming into `tar x` hung after the wipe (2026-10-21)."""
+        if not archive:
+            self.private('rm -rf -- ' + ' '.join(DATA_DIRS))
+            return
+        remote = '/data/local/tmp/dictation-' + uuid.uuid4().hex + '.tar'
+        with tempfile.NamedTemporaryFile(suffix='.tar') as local:
+            local.write(archive)
+            local.flush()
+            os.chmod(local.name, 0o644)  # adb push keeps the mode; run-as must read it
+            self.connect()
+            self.run('push', local.name, remote, timeout=900)
+        try:
+            self.private('rm -rf -- %s && tar xf %s' % (' '.join(DATA_DIRS), remote), timeout=900)
+        finally:
+            self.shell('rm -f -- ' + remote)
+
+    def instrument(self, classes, extras, timeout):
+        args = ' '.join('-e %s %s' % (shlex.quote(k), shlex.quote(v)) for k, v in extras)
+        return self.shell('am instrument -w -r -e class %s %s %s' % (shlex.quote(classes), args, RUNNER), timeout=timeout)
+
+
+def validate_directory(directory):
+    """Only regular files and directories with safe names may leave the host."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise Refused('push needs a directory')
+    for p in [directory, *directory.rglob('*')]:
+        if p.is_symlink() or not (p.is_dir() or p.is_file()):
+            raise Refused('only regular files and directories can be pushed')
+        if p != directory:
+            name(p.relative_to(directory).as_posix())
+    return directory
+
+
+def validate_tar(payload):
+    """Members must be regular files/dirs under the app data dirs; no .., links, devices."""
+    if not payload:
+        return
+    with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
+        for member in archive:
+            parts = Path(member.name).parts
+            if not parts or parts[0] not in DATA_DIRS or '..' in parts or member.name.startswith('/'):
+                raise Refused('archive member outside app data: ' + member.name[:80])
+            if not (member.isfile() or member.isdir()):
+                raise Refused('archive member is not a regular file: ' + member.name[:80])
+
+
+class Phone:
+    """The command layer. `state` is corpus/lab."""
+
+    def __init__(self, device, state):
+        self.device = device
+        self.state = Path(state)
+
+    # --- helpers ---------------------------------------------------------
+    def app(self):
+        return self.device.package(PKG)
+
+    def identity(self):
+        app, test = self.device.package(PKG), self.device.package(TEST)
+        lab = self.device.inventory('files/lab') if app['installed'] else None
+        return {'app_sha256': app.get('sha256'), 'test_sha256': test.get('sha256'),
+                'lab_sha256': sha(json.dumps(lab, sort_keys=True).encode()) if lab is not None else None}
+
+    def meta(self, verb, **extra):
+        folder = self.state / 'runs' / (time.strftime('%Y%m%dT%H%M%S') + '-' + verb + '-' + uuid.uuid4().hex[:6])
+        folder.mkdir(parents=True, exist_ok=False)
+        record = dict(verb=verb, ts=time.strftime('%Y-%m-%dT%H:%M:%S'), **self.identity(), **extra)
+        (folder / 'meta.json').write_text(json.dumps(record, indent=1, sort_keys=True))
+        return folder
+
+    def not_live(self, verb):
+        ime = self.device.ime()
+        if ime['bound'] or ime['input_shown']:
+            raise Refused(verb + ' refused: the dictation keyboard is in use right now')
+
+    def lock(self):
+        import fcntl
+        self.state.mkdir(parents=True, exist_ok=True)
+        handle = (self.state / '.phone.lock').open('a')
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused('another phone command is running') from None
+        return handle
+
+    # --- verbs -----------------------------------------------------------
+    def status(self):
+        try:
+            self.device.connect()
+        except Failed as error:
+            return {'connected': False, 'reason': str(error)}
+        return {'connected': True, 'model': MODEL}
+
+    def device_info(self):
+        return {'props': self.device.props(), 'thermal_status': self.device.thermal(),
+                'driver_libs': self.device.driver_libs()}
+
+    def app_info(self):
+        info = {'app': self.app(), 'test': self.device.package(TEST), 'ime': self.device.ime(),
+                'futo': {p: self.device.package(p) for p in FUTO}}
+        for key in ('app', 'test'):
+            info[key].pop('apk_path', None)
+        info['lab'] = self.device.inventory('files/lab') if info['app']['installed'] else None
+        return info
+
+    def check(self, app_apk, test_apk=None):
+        """Host-only APK acceptance check; run it in the build step, before the phone stage."""
+        infos = [self.device.apk_info(app_apk)] + ([self.device.apk_info(test_apk)] if test_apk else [])
+        if infos[0]['package'] != PKG or (test_apk and infos[1]['package'] != TEST):
+            raise Refused('arguments are APP.apk then TEST.apk')
+        if len({i['signer'] for i in infos}) != 1:
+            raise Refused('app and test APK must share one signer')
+        return infos
+
+    def install(self, app_apk, test_apk=None):
+        infos = self.check(app_apk, test_apk)
+        # Signer continuity against the installed app is enforced by Android itself.
+        self.not_live('install')
+        folder = self.meta('install', apks=[i['sha256'] for i in infos])
+        self.device.install(app_apk)
+        if test_apk:
+            self.device.install(test_apk)
+        after = self.identity()
+        if after['app_sha256'] != infos[0]['sha256'] or (test_apk and after['test_sha256'] != infos[1]['sha256']):
+            raise Failed('installed identity does not match the given APKs')
+        return {'outcome': 'installed', **after, 'meta': str(folder / 'meta.json')}
+
+    def push(self, directory, rel='lab'):
+        rel = name(rel)
+        directory = validate_directory(directory)
+        expected = {p.relative_to(directory).as_posix(): sha_file(p) for p in directory.rglob('*') if p.is_file()}
+        before = self.device.inventory('files/' + rel) or {}
+        changed = {item for item, digest in expected.items() if before.get(item) != digest}
+        removed = set(before) - set(expected)
+        if changed or removed:
+            self.device.push(directory, 'files/' + rel, changed, removed)
+        actual = self.device.inventory('files/' + rel) or {}
+        if actual != expected:
+            raise Failed('pushed inventory differs from the host directory')
+        folder = self.meta('push', target='files/' + rel, files=len(expected), sent=len(changed), removed=len(removed))
+        return {'outcome': 'pushed' if changed or removed else 'unchanged', 'target': 'files/' + rel,
+                'files': len(expected), 'sent': len(changed), 'removed': len(removed), 'meta': str(folder / 'meta.json')}
+
+    def pull(self, paths, to=None):
+        rels = [name(p, PULL_ROOTS) for p in paths]
+        payload = self.device.tar(*rels)
+        validate_tar(payload)
+        dest = Path(to) if to else self.state / 'pull' / time.strftime('%Y%m%dT%H%M%S')
+        dest.mkdir(parents=True, exist_ok=False)
+        count = 0
+        if payload:
+            with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
+                for member in archive:
+                    if member.isfile():
+                        target = dest / member.name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.extractfile(member) as src, target.open('xb') as out:
+                            shutil.copyfileobj(src, out)
+                        count += 1
+        return {'outcome': 'pulled', 'files': count, 'path': str(dest)}
+
+    def run(self, classes, extras, timeout=1800):
+        if not re.fullmatch(r'[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?(?:,[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?)*', classes):
+            raise Refused('unsupported test class list')
+        pairs = []
+        for item in extras:
+            key, eq, value = item.partition('=')
+            if not eq or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', key) or len(value) > 256:
+                raise Refused('extras are key=value with a short value')
+            pairs.append((key, value))
+        if not self.device.package(TEST)['installed']:
+            raise Refused('test package is not installed; use install APP.apk TEST.apk')
+        folder = self.meta('run', classes=classes, extras=pairs)
+        since = self.device.device_time()
+        uid = self.app()['uid']
+        output = self.device.instrument(classes, pairs, timeout)
+        (folder / 'instrumentation.txt').write_text(output)
+        (folder / 'logcat.txt').write_text(self.device.logcat(uid, since=since))
+        ok = bool(re.search(r'^OK \(\d+ tests?\)', output, re.M)) and 'INSTRUMENTATION_CODE: -1' in output
+        return {'outcome': 'passed' if ok else 'failed', 'path': str(folder),
+                'lab': self.device.inventory('files/lab')}
+
+    def logs(self, since=None):
+        app = self.app()
+        if not app['installed']:
+            raise Refused('app not installed')
+        return {'logs': self.device.logcat(app['uid'], since=since)}
+
+    def crash(self):
+        return {'crash': self.device.logcat(None, crash=True)}
+
+    def stop(self):
+        self.not_live('stop')
+        self.device.stop()
+        return {'outcome': 'stopped'}
+
+    def snapshot(self, label):
+        label = name(label)
+        folder = self.state / 'snapshots' / label
+        if folder.exists():
+            raise Refused('snapshot exists: ' + label)
+        app, test = self.device.package(PKG), self.device.package(TEST)
+        if not app['installed']:
+            raise Refused('nothing to snapshot; app not installed')
+        folder.mkdir(parents=True)
+        self.device.pull_apk(app['apk_path'], folder / 'app.apk')
+        if test['installed']:
+            self.device.pull_apk(test['apk_path'], folder / 'test.apk')
+        payload = self.device.tar(*DATA_DIRS)
+        validate_tar(payload)
+        (folder / 'data.tar').write_bytes(payload)
+        record = {'app_sha256': app['sha256'], 'test_sha256': test.get('sha256'), 'granted': app['granted'],
+                  'ime': self.device.ime(), 'data_sha256': sha(payload), 'ts': time.strftime('%Y-%m-%dT%H:%M:%S')}
+        for key, local in (('app_sha256', 'app.apk'), ('test_sha256', 'test.apk')):
+            if record[key] and sha_file(folder / local) != record[key]:
+                raise Failed('pulled APK differs from the installed one')
+        (folder / 'snapshot.json').write_text(json.dumps(record, indent=1, sort_keys=True))
+        return {'outcome': 'snapshotted', 'path': str(folder), **record}
+
+    def restore(self, label):
+        folder = self.state / 'snapshots' / name(label)
+        record = json.loads((folder / 'snapshot.json').read_text())
+        payload = (folder / 'data.tar').read_bytes()
+        if sha(payload) != record['data_sha256']:
+            raise Refused('snapshot archive changed since it was taken')
+        validate_tar(payload)
+        for key, local in (('app_sha256', 'app.apk'), ('test_sha256', 'test.apk')):
+            if record.get(key) and sha_file(folder / local) != record[key]:
+                raise Refused('snapshot APK changed since it was taken')
+        self.not_live('restore')
+        meta = self.meta('restore', snapshot=label)
+        current = self.identity()
+        if current['app_sha256'] != record['app_sha256']:
+            self.device.install(folder / 'app.apk')
+        if record.get('test_sha256') and current['test_sha256'] != record['test_sha256']:
+            self.device.install(folder / 'test.apk')
+        self.device.replace_data(payload)
+        after = self.identity()
+        app = self.app()
+        if after['app_sha256'] != record['app_sha256'] or (
+                record.get('test_sha256') and after['test_sha256'] != record['test_sha256']):
+            raise Failed('restored APK identity does not match the snapshot')
+        not_restored = {'granted_permissions_missing': sorted(set(record['granted']) - set(app['granted'])),
+                        'ime_state_then': record['ime'], 'ime_state_now': self.device.ime(),
+                        'note': 'microphone grant, IME enablement/selection and FUTO toggles are not restorable here'}
+        return {'outcome': 'restored', **after, 'not_restored': not_restored, 'meta': str(meta / 'meta.json')}
 
     def uninstall(self):
-        self.bridge('uninstall', PKG)
-
-    def instrument(self, test_apk, full=False, native_profile=False):
-        metadata = self.apk_info(test_apk)
-        installed = self.app_identity(self.test_package)
-        if metadata['package'] != self.test_package or metadata['sha256'] != installed['sha256']:
-            raise Refused('prepared test APK does not match installed instrumentation; no automatic installation')
-        instrumentation = self.shell('pm list instrumentation').stdout
-        if f'instrumentation:{self.runner} (target={PKG})' not in instrumentation.splitlines():
-            raise Refused('installed instrumentation does not target the permitted app')
-        classes = PKG + '.LabTest'
-        if full:
-            classes += ',' + PKG + '.PipelineTest,' + PKG + '.ReplayTest'
-        remaining = 570 if DEADLINE is None else min(570, DEADLINE - time.monotonic() - 30)
-        if remaining <= 0:
-            raise Refused('insufficient measurement budget; recover the journaled run')
-        options = ' -e nativeRoleProfiler true' if native_profile else ''
-        try:
-            return self.shell('am instrument -w -r -e class ' + classes + options + ' ' + self.runner, timeout=remaining).stdout
-        except subprocess.TimeoutExpired:
-            # Diagnostic profiling explicitly includes this app-scoped timeout abort.
-            if not native_profile:
-                raise Refused('measurement timed out; remote state unknown, inspect/recover required') from None
-            self.abort_measurement()
-            raise Refused('measurement timed out; app quiescence verified, run remains incomplete') from None
-
-    def abort_measurement(self):
-        if self.shell('am get-current-user').stdout.strip() != '0':
-            raise Refused('cannot abort measurement outside primary user 0')
-        before = self.ime_state()
-        self.shell('am force-stop --user 0 ' + PKG)
-        self.idle()
-        if self.ime_state() != before or self.shell('am get-current-user').stdout.strip() != '0':
-            raise Refused('abort verification failed; journal remains incomplete')
-        processes = self.shell('dumpsys activity processes').stdout
-        if 'ACTIVITY MANAGER RUNNING PROCESSES' not in processes or 'mDeviceIdleTempAllowlist=' not in processes or re.search(
-                r'Active instrumentation:|Instrumentation #|ActiveInstrumentation\{|mActiveInstrumentation=|Permission Denial|DUMP TIMEOUT|Exception|Error dumping', processes):
-            raise Refused('cannot verify instrumentation quiescence; journal remains incomplete')
-
-    def result(self):
-        return self.bridge('exec-out', 'run-as ' + PKG + ' cat files/lab/result.json', text=False).stdout
-
-    def profile_result(self):
-        limit = 64 * 1024 * 1024
-        # Fixed path, ordinary file, bounded device output; never tar a directory.
-        code = 'test -f files/lab/profile.json && test ! -L files/lab/profile.json && head -c ' + str(limit + 1) + ' files/lab/profile.json'
-        payload = self.bridge('exec-out', 'run-as ' + PKG + ' sh -c ' + shlex.quote(code), text=False).stdout
-        if len(payload) > limit:
-            raise Refused('profile exceeds the fixed 64MiB export bound')
-        return payload
-
-    def clear_result(self):
-        self.private('rm -f -- files/lab/result.json files/lab/profile.json')
-
-    def readonly(self, command):
-        if command == 'status':
-            return {'status': self.bridge('devices', '-l').stdout}
-        self.connect()
-        if command == 'versions':
-            properties = ('ro.product.model', 'ro.build.version.release', 'ro.build.version.sdk',
-                          'ro.build.id', 'ro.build.display.id', 'ro.soc.model')
-            versions = {prop: self.shell('getprop ' + prop).stdout.strip() for prop in properties}
-            packages = (PKG, 'org.futo.inputmethod.latin', 'org.futo.inputmethod.latin.playstore',
-                        'org.futo.voiceinput', 'org.futo.voiceinput.playstore')
-            for package in packages:
-                details = self.shell('dumpsys package ' + package, check=False).stdout
-                version = re.search(r'\bversionName=([^\s]+)', details)
-                versions[package] = version.group(1) if version else 'not installed'
-            versions['input_methods'] = self.shell('ime list -s').stdout.splitlines()
-            return versions
-        if command == 'thermal':
-            dump = self.shell('dumpsys thermalservice').stdout
-            fields = {}
-            for name in ('IsStatusOverride', 'Thermal Status', 'HAL Ready'):
-                values = re.findall(r'^' + re.escape(name) + r':([^\r\n]*)\r?$', dump, re.M)
-                if len(values) != 1:
-                    raise Refused('missing or duplicate thermal field')
-                fields[name] = values[0].removeprefix(' ')
-            if fields['IsStatusOverride'] != 'false' or fields['HAL Ready'] != 'true' or not re.fullmatch('[0-6]', fields['Thermal Status']):
-                raise Refused('thermal service unavailable, overridden or invalid')
-            return dict(schema='idle-thermal-status-v1', source='android-thermalservice',
-                        thermalStatus=int(fields['Thermal Status']))
-        if command == 'logs':
-            child([str(self.bridge_path), '-s', self.serial, 'logcat', '-v', 'time', '-T', '1',
-                            'DictationIme:V', 'Recorder:V', 'Recognizer:V', 'ReplayTest:V',
-                            'LabTest:V', 'AndroidRuntime:E', '*:S'], check=True, capture_output=False)
-            return {'outcome': 'logs ended'}
-        if command == 'crash':
-            lines = self.bridge('logcat', '-d', '-b', 'crash').stdout.splitlines()
-            selected = set()
-            for index, line in enumerate(lines):
-                if PKG in line:
-                    selected.update(range(max(0, index - 2), min(len(lines), index + 41)))
-            return {'crash': '\n'.join(lines[i] for i in sorted(selected)[-200:])}
-        if command == 'subtypes':
-            return {'subtypes': '\n'.join(line for line in self.shell('ime list -a').stdout.splitlines()
-                                        if re.search(r'^[^ ]|mId=|mMode=|mLocale=|mIsAuxiliary=|mSubtypeId=|Enabled', line))}
-        if command == 'pull-report':
-            return self.pull_report()
-        raise Refused('unknown read-only operation')
-
-    def pull_report(self):
-        # Explicit user authorization is still required for every recording export.
-        destination = self.corpus / 'files' / 'benchmark'
-        ordinary_path(destination)
-        destination.mkdir(parents=True, exist_ok=True)
-        import io
-        result = self.bridge('exec-out', 'run-as', PKG, 'tar', 'c', 'files/benchmark', text=False)
-        count = 0
-        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode='r:') as archive:
-            for member in archive:
-                name = Path(member.name)
-                if member.isdir() and name.parts[:2] == ('files', 'benchmark'):
-                    continue
-                if not member.isfile() or name.parts[:2] != ('files', 'benchmark') or len(name.parts) != 3 or '..' in name.parts:
-                    raise Refused('unexpected benchmark export path')
-                target = destination / name.name
-                if target.exists():
-                    raise Refused('refusing to overwrite an existing benchmark export')
-                with archive.extractfile(member) as source, target.open('xb') as output:
-                    shutil.copyfileobj(source, output)
-                count += 1
-        return {'files': count, 'path': str(destination)}
+        token = self.state / '.allow-uninstall'
+        if not token.is_file():
+            raise Refused('uninstall needs the user to create ' + str(token))
+        if self.device.ime()['enabled']:
+            raise Refused('uninstall refused while the dictation keyboard is enabled; disable it first')
+        self.not_live('uninstall')
+        self.meta('uninstall')
+        token.unlink()
+        for pkg in (TEST, PKG):
+            if self.device.package(pkg)['installed']:
+                self.device.uninstall(pkg)
+        return {'outcome': 'uninstalled'}
 
 
-USAGE = '''App-scoped phone operations; invoke this executable by its exact absolute path.
-  inspect                              read-only APK/lab identities and recovery status
-  stop-app                             explicit approval; stop only unselected primary-user app
-  push-variant DIR RUN                  preserve original lab; hash and activate candidate
-  install CANDIDATE.apk ORIGINAL.apk RUN same version/signer/payload only; retain rollback
-  profile-install APP.apk ORIGINAL.apk TEST.apk ORIGINAL-TEST.apk RUN
-                                       explicit diagnostic pair; retain both originals
-  pull-profile RUN                     one bounded counters-only profile JSON
-  lab RUN INSTALLED-TEST.apk             fixed LabTest against verified installed artifacts
-  test RUN INSTALLED-TEST.apk            additionally writes benchmark diagnostic reports
-  pull-results RUN                      JSON only, into gitignored corpus/lab
-  recover RUN                           verify and restore this run's original lab/APK
-  status | versions | thermal | logs | crash | subtypes
-  pull-report                           recordings export; separate explicit consent required
-  uninstall                             destructive app removal; no recovery promise
-Build artifacts on the host first. No command builds. Only profile-install replaces instrumentation.
-RUN must be unique; use one operator and the same run identity through recovery.
-No preferences, recordings, permissions, settings or app-data migrations are restored.
-'''
+USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON object.
+  status                          phone connected and permitted
+  device                          allowlisted hardware/OS props, thermal status, GPU/TPU driver libs
+  app                             our app, test package, our IME state, FUTO versions, files/lab inventory
+  check APP.apk [TEST.apk]        host-only: would install accept these APKs? (no phone needed)
+  install APP.apk [TEST.apk]      only our packages; permission allowlist; no network permissions
+  push DIR [NAME]                 make files/NAME (default lab) equal DIR; sends only changed files
+  pull PATH... [--to DIR]         from files/lab or files/benchmark into corpus/lab/pull/<ts>/
+  run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat
+  logs [--since 'MM-DD HH:MM:SS.mmm'] | crash
+  stop                            force-stop our app
+  snapshot NAME | restore NAME    retained APKs + files/, shared_prefs/, databases/; reports what it cannot restore
+  uninstall                       needs corpus/lab/.allow-uninstall created by the user
+Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
+install, restore, stop, uninstall refuse while the keyboard is in use."""
 
 
-def main():
-    global DEADLINE
-    operation = sys.argv[1] if len(sys.argv) > 1 else 'help'
-    budget = 600 if operation in ('lab', 'test', 'install', 'profile-install', 'push-variant') else 900 if operation == 'recover' else 30
-    DEADLINE = time.monotonic() + budget
+def dispatch(argv, phone):
+    verb, args = (argv[0] if argv else 'help'), argv[1:]
+    if verb in ('help', '-h', '--help'):
+        return {'usage': USAGE}
+    simple = {'status': phone.status, 'device': phone.device_info, 'app': phone.app_info,
+              'crash': phone.crash, 'stop': phone.stop, 'uninstall': phone.uninstall}
+    if verb in simple:
+        if args:
+            raise Refused(verb + ' takes no arguments')
+        return simple[verb]()
+    if verb == 'check' and 1 <= len(args) <= 2:
+        return phone.check(*args)
+    if verb == 'install' and 1 <= len(args) <= 2:
+        return phone.install(*args)
+    if verb == 'push' and 1 <= len(args) <= 2:
+        return phone.push(*args)
+    if verb == 'pull' and args:
+        to = None
+        if '--to' in args:
+            i = args.index('--to')
+            to, args = args[i + 1] if i + 1 < len(args) else None, args[:i] + args[i + 2:]
+            if to is None:
+                raise Refused('--to needs a directory')
+        return phone.pull(args, to)
+    if verb == 'run' and args:
+        return phone.run(args[0], args[1:])
+    if verb == 'logs' and len(args) in (0, 2):
+        return phone.logs(args[1] if args else None)
+    if verb in ('snapshot', 'restore') and len(args) == 1:
+        return getattr(phone, verb)(args[0])
+    raise Refused('unknown command or arguments; see help')
+
+
+def main(argv):
+    root = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    if root.returncode:
+        raise Failed('run from inside the checkout')
+    state = Path(root.stdout.strip()) / 'corpus' / 'lab'
     os.umask(0o077)
-    if sys.argv[1:] in ([], ['help']):
-        print(USAGE)
-        return 0 if sys.argv[1:] else 2
-    script = Path(__file__).resolve()
-    if script.parent.name != 'tools' or script.name != 'phone':
-        raise Refused('only the checkout tools entry point may contact the phone')
-    common = child(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                            cwd=script.parent, check=True, capture_output=True, text=True).stdout.strip()
-    corpus = Path(common).resolve().parent / 'corpus'
-    state = corpus / 'lab' / 'phone-operations'
-    print(json.dumps(run(sys.argv[1:], device=AndroidPhone(corpus), state=state), sort_keys=True))
+    phone = Phone(Device(os.environ.get('ANDROID_HOME', Path.home() / 'Android/Sdk')), state)
+    verb = argv[0] if argv else 'help'
+    handle = phone.lock() if verb not in ('help', '-h', '--help', 'status') else None
+    try:
+        result = dispatch(argv, phone)
+    finally:
+        if handle:
+            handle.close()
+    text = result['usage'] if set(result) == {'usage'} else json.dumps(result, indent=1, sort_keys=True)
+    if verb not in ('help', '-h', '--help'):
+        state.mkdir(parents=True, exist_ok=True)
+        (state / 'last.json').write_text(text)  # the shim must run alone; read this instead of piping
+    print(text)
     return 0
 
 
 if __name__ == '__main__':
     try:
-        sys.exit(main())
-    except (Refused, OSError, ValueError, KeyError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
-        sys.exit('phone: ' + str(error))
+        sys.exit(main(sys.argv[1:]))
+    except Refused as error:
+        print('refused: ' + str(error), file=sys.stderr)
+        sys.exit(3)
+    except (Failed, OSError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile, ValueError, KeyError) as error:
+        print('failed: ' + str(error), file=sys.stderr)
+        sys.exit(1)

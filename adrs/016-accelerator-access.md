@@ -9,7 +9,7 @@ TPU: one executable DISPATCH_OP without original CPU graph, loaded Tensor dispat
 TPU gradient passed; checkerboard failed (mean 0.108865, max 2.250799, class agreement 94.9997%). Access is not numerical acceptance.
 No thresholds relaxed. Neither image-model route proves speech compatibility, accuracy, latency or energy benefit.
 GPU creation ~2.3 s; two invocations 298/46 ms versus CPU 249/209 ms: exploratory observations, not a speech benchmark.
-Keep daily recognizer CPU. Next proposed comparison: original ONNX CPU → converted LiteRT CPU → same converted encoder GPU.
+Keep daily recognizer CPU. Next proposed comparison: original ONNX CPU → converted LiteRT CPU → same converted encoder GPU (superseded by ADR-019/ADR-020: ONNX WebGPU, no conversion).
 Start with Parakeet FP32; Cohere needs its own suitable reference because installed export is INT8.
 Hold decoder/search/dictionary fixed; verify representative lengths, masks, precision, transfers and real Stop wait.
 Proposed gate: ≥20% lower warm Stop wait beyond paired variation, with per-language statistic/absolute saving frozen before launch and no semantic regression.
@@ -19,5 +19,4 @@ The user manually applied the constrained diagnostic compatibility patch; no OS 
 Both JUnit runs passed but lab rejected non-ASR completion format; genuine synthetic JSON was pulled before recovery, without fake ASR records.
 Both original APKs/all 11 lab hashes restored and independently verified; no owner/recovery journal remained.
 Two of two separately frozen access slots consumed; no further inference authorized.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit numerical correctness first, then transfer-inclusive encoder/app value; custom GPU/TPU speech remains unimplemented.

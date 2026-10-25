@@ -1,6 +1,6 @@
 # ADR-009 — Bounded phone recovery
 
-2026-10-19 · Approved/implemented in d86f527; diagnostic support extended October 20. Supersedes ADR-004 staging mechanics.
+2026-10-19 · **Superseded by [ADR-024](024-phone-access-rewrite.md) on 2026-10-21.** Approved/implemented in d86f527; diagnostic support extended October 20. Supersedes ADR-004 staging mechanics.
 
 Keep fixed capabilities in the protected main-checkout wrapper; prepare artifacts on host, run verified installed instrumentation.
 One owner/run retains the first lab baseline; inspect unknown storage as unknown, never empty.
@@ -14,5 +14,4 @@ The user applied the reviewed protected-wrapper patch manually; no OS/security c
 Successful later profile/access recoveries matched both original APKs and all 11 lab file hashes.
 Remaining gaps: absent-original recovery, some interruption paths, ordinary compatible rollback and next daily session.
 Release-return promise from ADR-004 remains unresolved against the benchmark baseline retained by allocation; establish final build before launch.
-Evidence: private `corpus/retained/evidence.json` indexes retained reports and original run identities.
 Revisit when required preservation exceeds the wrapper contract; never weaken R6 to fit it.

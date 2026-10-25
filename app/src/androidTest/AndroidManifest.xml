@@ -3,6 +3,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
   <uses-feature android:name="android.hardware.npu" tools:node="remove" />
+  <!-- androidx-test merges package visibility for orchestrator/test services; unused, and ADR-024 refuses <queries>. -->
+  <queries tools:node="remove" />
   <application>
     <uses-native-library tools:node="removeAll" />
     <uses-native-library android:name="libOpenCL.so" android:required="false" />

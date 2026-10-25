@@ -1,8 +1,0 @@
-# Supplemental escalation restrictions; the shared hook inspects every shell command.
-prefix_rule(pattern = ["adb"], decision = "forbidden", justification = "Use the project wrapper; direct device access and privilege escalation are prohibited.")
-prefix_rule(pattern = ["fastboot"], decision = "forbidden", justification = "Use the project wrapper; direct device access and privilege escalation are prohibited.")
-prefix_rule(pattern = ["sudo"], decision = "forbidden", justification = "Use the project wrapper; direct device access and privilege escalation are prohibited.")
-
-# Match the existing Claude lab approvals for this checkout only.
-
-# Read-only identity inspection and run-scoped recovery; task authorization remains required.

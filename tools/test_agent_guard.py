@@ -1,125 +1,114 @@
-"""Exercise both harness contracts without executing a phone command."""
-import json
+"""Exercise the shared PreToolUse guard without executing any phone command.
+
+Imports the live hook copy when applied, else the staged copy in tools/gate.
+"""
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
 from pathlib import Path
-import subprocess
-import tempfile
-import tomllib
 import unittest
 
-
 ROOT = Path(__file__).resolve().parents[1]
-GUARD = ROOT / '.claude/hooks/phone-guard.sh'
-WRAPPER = str(ROOT / 'tools/phone')
+STAGED = ROOT / 'tools/gate/phone_guard.py'
+LIVE = ROOT / '.claude/hooks/phone_guard.py'
+SOURCE = LIVE if LIVE.exists() and LIVE.read_bytes() == STAGED.read_bytes() else STAGED
+loader = importlib.machinery.SourceFileLoader('phone_guard_module', str(SOURCE))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+guard = importlib.util.module_from_spec(spec)
+loader.exec_module(guard)
+
+SHIM = str(ROOT / '.claude/hooks/phone')
 
 
-def call(tool, args, cwd=ROOT):
-    return subprocess.run(['bash', str(GUARD)], input=json.dumps({
-        'tool_name': tool, 'tool_input': args, 'cwd': str(cwd),
-    }), text=True, capture_output=True)
+def quiet(event):
+    with contextlib.redirect_stderr(io.StringIO()):
+        return guard.check(event)
 
 
-class GuardTests(unittest.TestCase):
-    def test_single_wrapper_and_normal_build_commands_pass_both_contracts(self):
-        for tool, key in [('Bash', 'command'), ('exec_command', 'cmd')]:
-            for command in [WRAPPER+' status', WRAPPER+' install build/app.apk',
-                            WRAPPER+' push-variant corpus/lab/push/baseline',
-                            WRAPPER+' lab', WRAPPER+' pull-results',
-                            './gradlew test', 'git status --short']:
-                with self.subTest(tool=tool, command=command):
-                    self.assertEqual(call(tool, {key: command}).returncode, 0)
+def bash(command, tool='Bash'):
+    key = 'cmd' if tool == 'exec_command' else 'command'
+    return quiet({'tool_name': tool, 'tool_input': {key: command}, 'cwd': str(ROOT)})
 
-    def test_chaining_substitution_direct_access_and_gate_changes_block(self):
-        commands = ['tools/phone status; true', 'tools/phone status\ntrue',
-                    'tools/phone status > /tmp/out', 'tools/phone $(echo status)',
-                    'adb devices', '/opt/custom/adb devices', 'fastboot devices',
-                    'sudo true', 'echo adb', 'cp x .codex/config.toml',
-                    'rm .claude/hooks/phone-guard.sh', 'chmod +w tools/git-hooks/pre-commit',
-                    'git config core.hooksPath /tmp', 'python3', 'bash',
-                    'cat > AGENTS.md', 'tools/phone status --anything']
-        for tool in ['Bash', 'exec_command']:
-            for command in commands:
-                with self.subTest(tool=tool, command=command):
-                    self.assertEqual(call(tool, {'command': command}).returncode, 2)
 
-    def test_wrapper_identity_is_independent_of_execution_directory(self):
-        for cwd in [ROOT, ROOT/'app', Path('/tmp')]:
-            for command in ['tools/phone status', './tools/phone status', '/tmp/tools/phone status']:
-                self.assertEqual(call('Bash', {'command': command}, cwd).returncode, 2)
-            self.assertEqual(call('Bash', {'command': WRAPPER+' status', 'workdir': '/tmp'}, cwd).returncode, 0)
+class ShellRuleTests(unittest.TestCase):
+    def test_mentioning_protected_words_in_read_only_commands_passes(self):
+        for command in ['cat AGENTS.md', 'grep -n adb tools/phone', 'git log -- tools/phone .claude/hooks',
+                        'sed -n 1,40p .claude/settings.json', 'git show HEAD:tools/phone | head',
+                        "python3 - <<'PY'\nprint('adb')\nPY", 'cat > docs.md <<EOF\nuse adb never\nEOF',
+                        'rg fastboot tools', 'wc -l tools/phone; ls .codex', 'echo "the adb word"',
+                        './gradlew :app:assembleBenchmark :app:lintBenchmark', 'python3 tools/test_agent_guard.py',
+                        "rg -n 'pull-results|adb |profile-install' tools -g '!.gradle'",
+                        "python3 - <<'PY'\nimport subprocess\nprint(len('adb'))\nPY",
+                        "cat <<EOF > notes.md\nrun: adb devices (never do this)\nEOF\necho done",
+                        'git log --grep="adb devices" --oneline', 'ls | grep adb', 'echo $(ls) | grep fastboot',
+                        'python3 -c "import re; re.compile(\'adb\')"', 'gradle --version', './gradlew tasks --all']:
+            for tool in ('Bash', 'exec_command'):
+                with self.subTest(command=command, tool=tool):
+                    self.assertEqual(bash(command, tool), 0)
 
-    def test_native_edits_and_patch_moves_protect_the_same_files(self):
-        gates = ['.claude/settings.json', '.codex/config.toml', '.agents/skills/new/SKILL.md',
-                 '.git/config', '.aws/credentials', 'tools/phone',
-                 'tools/git-hooks/pre-commit', 'AGENTS.md', 'CLAUDE.md']
-        for path in gates:
-            for tool in ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']:
-                with self.subTest(tool=tool, path=path):
-                    self.assertEqual(call(tool, {'file_path': path}).returncode, 2)
-            patch = '*** Begin Patch\n*** Update File: app/example\n*** Move to: '+path+'\n@@\n-a\n+b\n*** End Patch'
-            self.assertEqual(call('apply_patch', {'command': patch}).returncode, 2)
-        for tool in ['Edit', 'Write']:
-            self.assertEqual(call(tool, {'file_path': 'app/example'}).returncode, 0)
-        patch = '*** Begin Patch\n*** Add File: app/example\n+ok\n*** End Patch'
-        self.assertEqual(call('apply_patch', {'command': patch}).returncode, 0)
+    def test_invoking_adb_or_fastboot_in_any_position_is_denied(self):
+        for command in ['adb devices', 'fastboot flash boot x.img', 'ls; adb shell', 'true && adb shell id',
+                        'echo x | adb shell cat', '$(adb shell pidof x)', '`adb devices`', 'sh -c "adb devices"',
+                        "bash -c 'adb shell'", 'env ANDROID_SERIAL=x adb shell', 'timeout 30 adb logcat',
+                        '/home/oriol/Android/Sdk/platform-tools/adb devices', '~/Android/Sdk/platform-tools/fastboot devices',
+                        'echo serial | xargs adb -s', '(adb devices)', 'nice -n 5 adb shell',
+                        'ls\nadb devices', 'FOO=1 BAR=2 adb shell id', 'exec adb shell', 'command adb devices',
+                        'sh -c "ls; adb shell id"', 'bash -c \'echo x && adb devices\'',
+                        'xargs -0 -n1 adb install < list']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 2)
 
-    def test_absolute_subdirectory_and_symlink_edits_block(self):
-        self.assertEqual(call('Edit', {'file_path': str(ROOT/'tools/phone')}).returncode, 2)
-        self.assertEqual(call('Edit', {'file_path': '../.codex/config.toml'}, ROOT/'app').returncode, 2)
-        with tempfile.TemporaryDirectory() as directory:
-            alias = Path(directory)/'alias'
-            alias.symlink_to(ROOT/'tools/phone')
-            self.assertEqual(call('Write', {'file_path': str(alias)}).returncode, 2)
+    def test_git_runs_plain_but_cannot_smuggle_programs_out_of_the_sandbox(self):
+        for command in ['git commit -q -m "x"', 'git add -A && git commit -m x', 'git log --oneline -5',
+                        'git commit --no-verify -m wip', 'git -P status', 'git status --short | head']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 0)
+        for command in ['git -c core.hooksPath=/tmp/h commit -m x', "git -c alias.x='!adb devices' x",
+                        'GIT_SSH_COMMAND="adb devices" git commit -m x', 'git --exec-path=/tmp/x commit -m x',
+                        'git -C /other commit -m x', 'git --git-dir=/tmp/g commit -m x',
+                        'GIT_DIR=/tmp/g git commit -m x', 'ls; git -c x.y=z commit']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 2)
 
-    def test_malformed_input_blocks_instead_of_silently_passing(self):
-        for raw in ['{', '[]', '{}', '{"tool_name":"Bash","tool_input":{}}']:
-            result = subprocess.run(['bash', str(GUARD)], input=raw, text=True, capture_output=True)
-            self.assertEqual(result.returncode, 2)
+    def test_gradle_device_tasks_are_denied(self):
+        for command in ['./gradlew installBenchmark', './gradlew :app:connectedBenchmarkAndroidTest',
+                        './gradlew uninstallAll', 'gradle :app:installDebug', './gradlew assemble connectedCheck']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 2)
 
-    def test_codex_reuses_the_same_guard(self):
-        self.assertEqual((ROOT/'.codex/hooks').resolve(), (ROOT/'.claude/hooks').resolve())
+    def test_the_shim_itself_passes_including_redirects_and_pipes(self):
+        for command in [SHIM + ' status', SHIM + ' app > corpus/lab/app.json', SHIM + ' logs | head -50',
+                        SHIM + ' run ch.og.dictation.LabTest provider=webgpu && echo done']:
+            with self.subTest(command=command):
+                self.assertEqual(bash(command), 0)
 
-    def test_configuration_protects_both_harnesses(self):
-        claude = json.loads((ROOT/'.claude/settings.json').read_text())
-        codex = tomllib.loads((ROOT/'.codex/config.toml').read_text())
-        paths = codex['permissions']['dictation']['filesystem'][':workspace_roots']
-        for path, access in paths.items():
-            self.assertEqual(access, 'read')
-            self.assertIn('Edit(/'+path+')', claude['permissions']['deny'])
-            self.assertIn('./'+path, claude['sandbox']['filesystem']['denyWrite'])
-        self.assertTrue(claude['sandbox']['enabled'])
-        self.assertEqual(claude['sandbox']['excludedCommands'], [])
-        self.assertEqual(claude['permissions']['allow'], [])
-        for settings in [claude, json.loads((ROOT/'.codex/hooks.json').read_text())]:
-            registration = settings['hooks']['PreToolUse'][0]
-            for tool in ['Bash', 'Edit', 'Write', 'apply_patch']:
-                self.assertIn(tool, registration['matcher'])
-            self.assertIn('git rev-parse --show-toplevel', registration['hooks'][0]['command'])
 
-    def test_launcher_and_registration_failures_block(self):
-        with tempfile.TemporaryDirectory() as directory:
-            launcher = Path(directory)/'guard.sh'
-            launcher.write_text(GUARD.read_text())
-            # No policy module next to this launcher: Python startup must block.
-            result = subprocess.run(['bash', str(launcher)], input='{}', text=True, capture_output=True)
-            self.assertEqual(result.returncode, 2)
-            for file in ['.claude/settings.json', '.codex/hooks.json']:
-                config = json.loads((ROOT/file).read_text())
-                command = config['hooks']['PreToolUse'][0]['hooks'][0]['command']
-                result = subprocess.run(['bash', '-c', command], cwd=directory,
-                                        input='{}', text=True, capture_output=True)
-                self.assertEqual(result.returncode, 2)
+class EditRuleTests(unittest.TestCase):
+    def edit(self, path, tool='Edit'):
+        return quiet({'tool_name': tool, 'tool_input': {'file_path': path}, 'cwd': str(ROOT)})
 
-    def test_registered_hooks_allow_normal_calls_and_block_forbidden_calls(self):
-        for file in ['.claude/settings.json', '.codex/hooks.json']:
-            config = json.loads((ROOT/file).read_text())
-            command = config['hooks']['PreToolUse'][0]['hooks'][0]['command']
-            for cwd in [ROOT, ROOT/'app']:
-                for pending, expected in [('git status --short', 0), ('adb devices', 2)]:
-                    with self.subTest(config=file, cwd=cwd, pending=pending):
-                        payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': pending}, 'cwd': str(cwd)})
-                        result = subprocess.run(['bash', '-c', command], cwd=cwd,
-                                                input=payload, text=True, capture_output=True)
-                        self.assertEqual(result.returncode, expected, result.stderr)
+    def test_harness_files_are_read_only_and_the_wrapper_is_not(self):
+        for path in ['.claude/hooks/phone', '.claude/hooks/phone_guard.py', '.claude/settings.json', '.codex/config.toml',
+                     '.codex/hooks/phone-guard.sh', 'tools/git-hooks/pre-commit', 'AGENTS.md', 'CLAUDE.md', '.git/config']:
+            with self.subTest(path=path):
+                self.assertEqual(self.edit(path), 2)
+                self.assertEqual(self.edit(str(ROOT / path), 'Write'), 2)
+        for path in ['tools/phone', 'tools/test_phone.py', 'tools/gate/phone_guard.py', 'README.md',
+                     '.claude/skills/retro/SKILL.md', 'app/build.gradle.kts']:
+            with self.subTest(path=path):
+                self.assertEqual(self.edit(path), 0)
+
+    def test_apply_patch_follows_the_same_paths(self):
+        patch = '*** Begin Patch\n*** Update File: AGENTS.md\n@@\n-x\n+y\n*** End Patch'
+        self.assertEqual(quiet({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 2)
+        patch = patch.replace('AGENTS.md', 'tools/phone')
+        self.assertEqual(quiet({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}, 'cwd': str(ROOT)}), 0)
+
+    def test_malformed_input_is_denied(self):
+        self.assertEqual(quiet({'tool_name': 'Bash', 'tool_input': 'nope'}), 2)
+        self.assertEqual(quiet({'tool_name': 'Bash', 'tool_input': {}}), 2)
+        self.assertEqual(quiet({'tool_name': 'Read', 'tool_input': {'file_path': '.claude/hooks/phone'}}), 0)
 
 
 if __name__ == '__main__':

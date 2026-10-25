@@ -7,7 +7,7 @@ The strongest measured lead is FP32 dictionary decoding’s development quality 
 
 ## Next decisions
 
-1. **Primary track — rescue the measured gain:** Parakeet original ONNX CPU → converted LiteRT CPU → explicit FP32 GPU. First establish encoder numerical and beam/dictionary quality parity; then measure unprofiled, transfer-inclusive full-path costs (ADR-016). The experiment specification and acceptance criteria are in GitHub issue #1.
+1. **Primary track — rescue the measured gain:** Parakeet original ONNX CPU → converted LiteRT CPU → explicit FP32 GPU. (Route superseded: conversion failed in [ADR-019](019-encoder-conversion.md); [ADR-020](020-onnx-webgpu-investigation.md) chose unchanged ONNX on WebGPU. The gain to rescue is unchanged.) First establish encoder numerical and beam/dictionary quality parity; then measure unprofiled, transfer-inclusive full-path costs (ADR-016). The experiment specification and acceptance criteria are in GitHub issue #1.
 2. **Bounded diagnosis:** inspect Cohere’s saved English-prefix failures before further inference. Correct routing did not prevent 90/115 errors in two prefixes. Advance only with a specific, falsifiable cause; acceleration cannot repair a quality failure.
 3. **Product validation:** only a surviving candidate earns frozen automatic-path comparison with FUTO: each language, correction effort/meaning, short and spontaneous speech, ambiguous starts, cold/warm Stop, memory and sustained heat/battery. Existing repeated scripts nominate candidates; they cannot establish R4. Recording-policy authorization remains separate (ADR-005).
 
