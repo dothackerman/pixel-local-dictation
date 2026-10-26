@@ -37,3 +37,39 @@ quantization (ADR-013) if candidate A needs less memory. Rejected now: a laptop 
 decoding (8 of 56 errors near cuts on the shipped chunker, below its own firing rule).
 
 Review when #11 closes with an adoption verdict, or when the R8 measurement shows the panel delay is not startup work.
+
+## Candidate A phone result — 2026-10-26
+
+The authorized #15 replay rejects FP32 beam 8 with dictionary score 1.5 under the ticket's existing
+2.5 s median Stop-wait limit. All 120 frozen measurements validated: 30 default/default pairs, then
+30 default/candidate pairs, three rounds with alternating arms. All control pairs produced identical
+text; the largest absolute paired Stop difference was 205.83 ms.
+
+Candidate median Stop wait was **3153.69 ms**, maximum **5456.04 ms**; paired slowdown median
+**2019.61 ms**, maximum **3880.28 ms**. The endpoint is simulated editor acceptance, not observed
+live insertion. Across three repeats, German errors fell 108 → 93 and English 66 → 45, equivalent
+to the development-suite totals 36 → 31 and 22 → 15 per round. These remain known-script results.
+The earlier held-script German harm (+1/0/+2 across feeds) remains a separate limitation.
+
+| Resource | Default | Candidate A |
+|---|---:|---:|
+| Median cold load (ms) | 3746.5 | 4084.0 |
+| Maximum cold load (ms) | 5281 | 4146 |
+| Peak memory (KiB) | 1630812 | 3177308 |
+| Maximum thermal status | 0 | 0 |
+
+The default resource column includes both phases' default arms. No meaning-changing false-accept
+verdict or supervised live result is claimed; the latency failure alone rejects the candidate.
+No dictionary editor or daily-default change advances. Candidate B already stopped without a
+passing alpha (#16); #18/#19 remain blocked. Startup measurement #14 and its evidence-dependent
+fix #17 remain open.
+
+Private evidence: `corpus/lab/issue11/visit-a-s15/plan.json`,
+`report-c8612eb71eb64c7188431bf00a825308.json` and matching CSV, plus `raw/` and `receipts/`.
+Snapshot `issue11-20261026-resume` is verified. Install and restore were approved; restoration is
+pending the owner's final startup takes. The benchmark build remains installed with no live
+candidate selected. #15 stays open until recovery is verified; #11 is incomplete.
+
+This records the measured rejection under existing authorization, not a new owner-approved
+adoption decision. Revisit Candidate A only with evidence addressing its Stop wait and held-script
+harm; do not relax the completed experiment's gate retrospectively.

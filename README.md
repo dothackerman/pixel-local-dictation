@@ -23,7 +23,7 @@ one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
 
 Local implementation and screening for #11 completed on 2026-10-26 on
-`codex/issue-11-dictionary`; no phone measurements or adoption. The versioned
+`codex/issue-11-dictionary`. The versioned
 scorer reproduces the historical totals, and the Python greedy decoder matches
 the stock wheel on all 210 public clips. Eight greedy dictionary boosts failed
 the reviewed screen; the native greedy dictionary patch is not implemented.
@@ -31,9 +31,12 @@ FP32 beam-8 with dictionary score 1.5 reduced primary-feed German/English errors
 from 36/22 to 31/15, with gains on all three feeds and zero dictionary-word false
 accepts on the public guards. Its held-script check added 1/0/2 German errors at
 feeds 640/512/800 against the matching no-dictionary control, so it is not a clean
-screening pass. These are development results under `dictionary-words-v2`, not
-phone timing or unseen-name evidence. Private results and the unfrozen visit
-preparation are indexed by `corpus/lab/issue11/HANDOFF.md`.
+screening pass. The 120-run frozen phone comparison subsequently rejected
+Candidate A: median Stop wait 3.154 s exceeds the ticket's 2.5 s limit, despite
+the same accuracy gain. All 30 default/default pairs matched text; observed
+timing variability was 206 ms. No candidate was adopted; see the measured
+result and limits in [ADR-026](adrs/026-dictionary-first.md#candidate-a-phone-result--2026-10-26).
+Private evidence is indexed by `corpus/lab/issue11/HANDOFF.md`.
 
 Read the results and their limits before selecting the next question:
 
@@ -225,9 +228,11 @@ Answered calls, longer battery-only model survival and a clean full FP32 export
 remain unverified. Dictionary entry and editing ship only with an adopt verdict
 ([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
 work: spec #11 and its tickets. Startup instrumentation and paired/live comparison
-tools are implemented, but the ten real startup takes, candidate phone timings,
-supervised live validation and adoption verdict are absent. The startup behavior
-has not been changed on the basis of unmeasured causes.
+tools are implemented; Candidate A's phone timing rejects it. Ten real startup
+takes remain pending, so startup behavior has not been changed on the basis of
+unmeasured causes. No candidate advances to supervised live validation or adoption.
+The benchmark build remains installed for the owner's final startup takes;
+approved restoration is pending, so #15 remains open.
 
 ## Evidence and history
 
@@ -241,9 +246,10 @@ reports, original identities and pruning limits for ADR-003 to ADR-016. Retain e
 decision, calibration/evaluation inputs and recovery state needed for operation.
 Closed campaign directory trees are not documentation.
 The #11 evidence is in `corpus/lab/issue11/`: final scorer and held-script reports,
-decoder parity, reviewed greedy-screen results, and final APK/check receipts.
-The protected host-only APK check passed after the owner applied the wrapper
-output fix; this did not access the phone.
+decoder parity, reviewed greedy-screen results, final APK/check receipts, and
+the validated 120-run phone comparison. `visit-20261026-resume/` records device,
+snapshot and installation identities; `visit-a-s15/` preserves the frozen plan
+and every measurement. Restoration has not yet been verified.
 
 Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
 source. The file hash identifies the current reference. Historical identities
