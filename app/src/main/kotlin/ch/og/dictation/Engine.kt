@@ -312,6 +312,8 @@ object Engine {
     /** Serial: model load first, then segments in order. */
     private val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
     private var runtime: DictationRuntime? = null
+    @Volatile var modelReadyNs: Long? = null
+        private set
 
     @Synchronized fun runtime(context: Context): DictationRuntime =
         runtime ?: ModelFiles.asset(context.applicationContext, ASSET_MODEL).let { files ->
@@ -319,9 +321,9 @@ object Engine {
         }
 
     /** Starts loading the model in the background; safe to call repeatedly. */
-    fun warmUp(context: Context) {
+    fun warmUp(context: Context) =
         runtime(context).warmUp().whenComplete { _, failure ->
             if (failure != null) Log.e(TAG, "model load failed", failure)
+            else if (modelReadyNs == null) modelReadyNs = System.nanoTime()
         }
-    }
 }
