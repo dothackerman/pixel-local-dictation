@@ -31,7 +31,7 @@ class Recorder {
      */
     // Sole caller checks microphone permission and catches SecurityException via Exception.
     @SuppressLint("MissingPermission")
-    fun start(onSamples: (FloatArray) -> Unit = {}) {
+    fun start(onSamples: (FloatArray) -> Unit = {}, onStarted: (() -> Unit)? = null) {
         if (thread != null) return
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
         // One second of headroom: the first chunk of a process also pays for setting up the segmenter.
@@ -44,6 +44,7 @@ class Recorder {
         record = rec
         buffer.reset()
         rec.startRecording()
+        onStarted?.let { runCatching(it) }
         capturing = true
         thread = Thread {
             val chunk = ShortArray(minBuf / 2)

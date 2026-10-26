@@ -44,6 +44,24 @@ class TakeSessionTest {
         }
     }
 
+    @Test fun startupReceiptsDistinguishCaptureRequestFromFirstAudio() {
+        val runtime = DictationRuntime(Variant.DEFAULT, direct, { FakeRecognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        var now = 10L
+        val session = runtime.open(capture, output, direct, timeline = TimelineObserver {}, clock = { now })
+        session.start()
+        now = 30L
+        capture.feed(floatArrayOf(1f))
+        now = 50L
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        capture.drained(Result.success(byteArrayOf()))
+        val events = output.results.single().eventsNs
+        assertEquals(10L, events["captureStart"])
+        assertEquals(30L, events["firstAudio"])
+    }
+
     @Test fun stopWaitsForCaptureDrainAndInsertsOnce() {
         val queue = Queue()
         val runtime = DictationRuntime(Variant.DEFAULT, queue, { FakeRecognizer { "word" } }, segments)

@@ -41,6 +41,8 @@ class DictationImeService : InputMethodService() {
     /** Session that started the current take; text goes there or nowhere. */
     private var recordingToken: Long? = null
     private var take: TakeSession? = null
+    private var startup: StartupTrace? = null
+    private var startupTake: String? = null
 
     /** A take exists from the start of recording until its text is committed or dropped. */
     private val takeActive: Boolean get() = take?.active == true
@@ -53,13 +55,31 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onCreate() {
+        val createdNs = System.nanoTime()
         super.onCreate()
+        if (resources.getBoolean(R.bool.startup_timing)) {
+            startup = StartupTrace(applicationContext).also { it.event("serviceCreate", ns = createdNs) }
+        }
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
-        Engine.warmUp(this)
+        Engine.warmUp(this).whenComplete { _, failure ->
+            startup?.event(if (failure == null) "modelReady" else "modelFailed",
+                ns = Engine.modelReadyNs ?: System.nanoTime())
+        }
     }
 
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.ime, null)
+        if (startup != null) {
+            var drawnTake: String? = null
+            v.viewTreeObserver.addOnDrawListener {
+                val id = startupTake
+                if (id != null && id != drawnTake) {
+                    drawnTake = id
+                    // Render submission, NOT proof of the physical display time or microphone-key time.
+                    startup?.event("panelDraw", id)
+                }
+            }
+        }
         status = v.findViewById(R.id.status)
         preview = v.findViewById(R.id.preview)
         banner = v.findViewById(R.id.benchmark_banner)
@@ -91,6 +111,7 @@ class DictationImeService : InputMethodService() {
             discardTake("input session changed")
         }
         saveTake = BenchmarkStore.isEnabled(this)
+        startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
@@ -115,6 +136,7 @@ class DictationImeService : InputMethodService() {
     private fun startRecording() {
         if (takeActive) return
         if (!hasMicPermission()) { status?.setText(R.string.status_no_permission); return }
+        if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         try {
             val token = session.token()
             recordingToken = token
@@ -140,6 +162,7 @@ class DictationImeService : InputMethodService() {
                             recordingMs, wait, result)
                     }
                     recordingToken = null
+                    startupTake = null
                     showIdle()
                     if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         Log.e(tag, "take failed: ${result.outcome}", result.failure)
@@ -150,9 +173,21 @@ class DictationImeService : InputMethodService() {
             status?.setText(R.string.status_recording)
             preview?.text = ""
             recordBtn?.isEnabled = false; stopBtn?.isEnabled = true
-            take = Engine.runtime(this).open(MicrophoneCapture(), output, mainExecutor).also { it.start() }
+            val trace = startup
+            val traceTake = startupTake
+            val capture = MicrophoneCapture(if (trace == null) null else {
+                { trace.event("recordingStarted", traceTake) }
+            })
+            val observer = if (trace == null) null else TimelineObserver { event ->
+                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
+                    trace.event(event.phase, traceTake, event.ns)
+                }
+            }
+            take = Engine.runtime(this).open(capture, output, mainExecutor, observer).also { it.start() }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
+            startup?.event("recordingFailed", startupTake)
+            startupTake = null
             Log.e(tag, "start failed", e); status?.text = e.message
         }
     }
