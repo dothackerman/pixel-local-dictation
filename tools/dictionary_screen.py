@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import time
+import sys
 
 import dictionary_score as score
 from dictionary_boost import PhraseTree, compile_dictionary
@@ -27,6 +28,26 @@ def counts(reference, text, lang, entries):
     return {k: result[k] for k in score.COUNTS}
 
 
+def held_out_entries(entries, references):
+    """Remove every phrase that could boost a listed word in the held script.
+
+    A held standalone name also excludes longer entries containing that name.
+    Matching respects word boundaries, including whole compound spellings.
+    """
+    excluded = set()
+    for lang, text in references:
+        words = score.normalise(text, lang)
+        spans = {''.join(words[start:end]) for start in range(len(words))
+                 for end in range(start + 1, len(words) + 1)}
+        forms = {entry: score.normalise(entry, lang) for entry in entries}
+        held = {word for tokens in forms.values() for word in tokens if word in spans}
+        for tokens in forms.values():
+            if ''.join(tokens) in spans:
+                held.update(tokens)
+        excluded.update(entry for entry, tokens in forms.items() if held.intersection(tokens))
+    return [entry for entry in entries if entry not in excluded]
+
+
 def missing_segmentations(result, symbols, compiled, language):
     known = {tuple(row['tokens']) for row in compiled}
     terms = {''.join(score.normalise(row['form'], language)): row['term'] for row in compiled}
@@ -36,9 +57,12 @@ def missing_segmentations(result, symbols, compiled, language):
             groups.append([])
         groups[-1].append(token)
     missing = []
+    # Alternative tokenizations can split a compound into more word groups than
+    # its canonical token path. Character length bounds those nonempty groups.
+    max_groups = max((len(row['form']) for row in compiled), default=0)
     for start in range(len(groups)):
         span = []
-        for group in groups[start:start+8]:
+        for group in groups[start:start + max_groups]:
             span += group
             trimmed = list(span)
             while trimmed and not any(c.isalnum() for c in symbols[trimmed[-1]]):
@@ -50,13 +74,13 @@ def missing_segmentations(result, symbols, compiled, language):
 
 
 def run(args):
-    import pipeline
-    import variant
     root = args.root.resolve()
     output = args.output.resolve()
     if not output.is_relative_to(root/'corpus'):
         raise ValueError('screen evidence must remain inside corpus/')
-    output.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=False)
+    import pipeline
+    import variant
     dictionary_path = root/'corpus/lab/issue11-dictionary.txt'
     entries = dictionary_path.read_text().splitlines()
     refs = json.loads((root/'corpus/lab/issue11/references.json').read_text())
@@ -67,6 +91,23 @@ def run(args):
     (output/'dictionary.json').write_text(json.dumps(compiled, ensure_ascii=False, indent=2)+'\n')
     tree = PhraseTree([row['tokens'] for row in compiled])
     decoder = Decoder(model, args.runtime, root/'corpus/lab/issue11/encoder-cache')
+    guard_refs = list(csv.DictReader((root/'models/guard/refs.tsv').open(), delimiter='\t'))
+    source_names = ('dictionary_screen.py', 'tdt_decoder.py', 'dictionary_boost.py',
+                    'dictionary_score.py', 'pipeline.py', 'variant.py', 'score.py', 'runtime_config.py')
+    dependencies = ('variants/baseline.json', 'models/silero_vad.onnx', 'corpus/takes.json',
+                    'models/guard/refs.tsv', 'models/parakeet-v3-matmul8/bpe.vocab',
+                    'corpus/lab/issue11/baseline-fresh.json', 'corpus/lab/issue11/python-parity-eigen.json')
+    manifest = dict(protocol='dictionary-greedy-screen-v2', alphas=args.alpha, tuning_feed=640,
+                    runtime=decoder.identity, dictionary_sha256=sha(dictionary_path),
+                    references_sha256=sha(root/'corpus/lab/issue11/references.json'),
+                    sources={name: sha(Path(__file__).with_name(name)) for name in source_names},
+                    dependencies={name: sha(root/name) for name in dependencies},
+                    command=[sys.executable, *sys.argv], scoring_revision=score.REVISION,
+                    inputs=[dict(id=name, feed=feed, input_sha256=sha(root/'corpus/files/benchmark'/name))
+                            for name in refs for feed in (640, 512, 800)] +
+                           [dict(id=row['id'], input_sha256=sha(root/'models/guard'/row['lang']/(row['id']+'.wav')))
+                            for row in guard_refs])
+    (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     cells = []
     for name, (lang, reference) in refs.items():
         path = root/'corpus/files/benchmark'/name
@@ -76,7 +117,7 @@ def run(args):
             cells.append(dict(id=name, script=scripts[name], lang=lang, reference=reference,
                               feed=feed, encoded=encoded, input_sha256=sha(path)))
     guard = []
-    for row in csv.DictReader((root/'models/guard/refs.tsv').open(), delimiter='\t'):
+    for row in guard_refs:
         path = root/'models/guard'/row['lang']/(row['id']+'.wav')
         guard.append(dict(id=row['id'], lang=row['lang'], reference=row['reference'],
                           encoded=decoder.encode(pipeline.read_wav(str(path)))[0], input_sha256=sha(path)))
@@ -84,16 +125,8 @@ def run(args):
     fold_trees = {}
     for script in set(scripts.values()):
         script_refs = [(lang,text) for name,(lang,text) in refs.items() if scripts[name]==script]
-        held_terms = {term for term in entries if any(
-            ''.join(score.normalise(term,lang)) in ''.join(score.normalise(text,lang)) for lang,text in script_refs)}
-        fold_trees[script] = PhraseTree([row['tokens'] for row in compiled if row['term'] not in held_terms])
-    manifest = dict(protocol='dictionary-greedy-screen-v1', alphas=args.alpha, tuning_feed=640,
-                    runtime=decoder.identity, dictionary_sha256=sha(dictionary_path),
-                    references_sha256=sha(root/'corpus/lab/issue11/references.json'),
-                    sources={p.name:sha(p) for p in [Path(__file__),Path(__file__).with_name('tdt_decoder.py'),
-                        Path(__file__).with_name('dictionary_boost.py'),Path(__file__).with_name('dictionary_score.py')]},
-                    inputs=[{k:v for k,v in c.items() if k in ('id','feed','input_sha256')} for c in cells+guard])
-    (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+        kept = set(held_out_entries(entries, script_refs))
+        fold_trees[script] = PhraseTree([row['tokens'] for row in compiled if row['term'] in kept])
     rows = []
     controls = {}
     stock_report = json.loads((root/'corpus/lab/issue11/baseline-fresh.json').read_text())
@@ -195,7 +228,7 @@ def run(args):
                 and bool(held) and sum(r['errors_delta'] for r in held)<=0)
     rows+=carried_control+carried+carried_held;save()
     verdict=dict(chosen_alpha=chosen,verdict='advance' if chosen is not None else 'stop',
-                 carried_alpha=diagnostic_alpha,carry_predictor_and_tree=keep,
+                 carried_alpha=diagnostic_alpha,carry_retained=keep, carried_state='predictor-and-tree',
                  carry_rows=carried,carry_controls=carried_control,carry_leave_scripts_out=carried_held,
                  limits='Development evidence; no phone result or adoption. Guards require absolute zero, including pre-existing baseline errors.')
     (output/'verdict.json').write_text(json.dumps(verdict,ensure_ascii=False,indent=2)+'\n')

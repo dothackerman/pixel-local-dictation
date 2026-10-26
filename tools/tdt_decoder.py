@@ -172,8 +172,6 @@ def main():
     import json
     from pathlib import Path
     import time
-    import soundfile as sf
-    import sherpa_onnx
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model', type=Path, required=True)
     parser.add_argument('--runtime', type=Path, required=True)
@@ -181,13 +179,18 @@ def main():
     parser.add_argument('--guard', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    # Reserve once before loading models; later writes are this run's checkpoints.
+    with args.output.open('x'):
+        pass
+    import soundfile as sf
+    import sherpa_onnx
     decoder = Decoder(args.model, args.runtime, args.cache)
     stock = sherpa_onnx.OfflineRecognizer.from_transducer(
         encoder=str(args.model/'encoder.int8.onnx'), decoder=str(args.model/'decoder.onnx'),
         joiner=str(args.model/'joiner.onnx'), tokens=str(args.model/'tokens.txt'),
         model_type='nemo_transducer', num_threads=4)
     rows = []
-    args.output.parent.mkdir(parents=True, exist_ok=True)
     report = {'schema': 1, 'protocol': 'tdt-python-parity-v1', 'runtime': decoder.identity,
               'source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'clips': rows}
     with (args.guard/'refs.tsv').open() as file:

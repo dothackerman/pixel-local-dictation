@@ -6,11 +6,18 @@ import dictionary_score
 
 
 class DictionaryScoringTests(unittest.TestCase):
+    def test_distinct_spoken_numbers_are_not_spacing_variants(self):
+        for lang, reference, hypothesis in [('en', 'two three', 'twenty three'),
+                                            ('de', 'zwei drei', 'dreiundzwanzig')]:
+            with self.subTest(lang=lang):
+                self.assertGreater(dictionary_score.score_text(reference, hypothesis, lang)['errors'], 0)
+
     def test_formatting_forms_do_not_count_as_word_errors(self):
         examples = [
             ('de', 'Der Tensor-Chip kostet 4,80 Franken.', 'Der Tensorchip kostet vier Franken achtzig.'),
             ('en', 'The blue-green box costs £3.80.', 'The blue green box costs three pounds eighty.'),
             ('de', 'Die Strasse hat 16 GB.', 'Die Straße hat sechzehn Gigabytes.'),
+            ('en', 'Pixel 10 has 16 GB.', 'Pixel10 has 16GB.'),
             ('en', 'Meet at nine twenty am.', 'Meet at 9.20 am.'),
             ('de', 'Um vierzehn Uhr fünfunddreissig.', 'Um 14.35 Uhr.'),
         ]
