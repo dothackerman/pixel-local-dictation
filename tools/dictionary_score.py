@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import score as historical
 
-REVISION = 'dictionary-words-v1'
+REVISION = 'dictionary-words-v2'
 
 
 def normalise(text, language):
@@ -46,11 +46,19 @@ def _equal_span(reference, hypothesis, i, j):
     if i == len(reference) or j == len(hypothesis):
         return None
     a, b = reference[i], hypothesis[j]
+    # Number normalization above handles known written/spoken forms. Joining
+    # numeric tokens here would conflate separate values (2 3) with 23.
+    if a != b and any(c.isdigit() for c in a + b):
+        return None
     end_i, end_j = i + 1, j + 1
     while a != b:
         if len(a) < len(b) and b.startswith(a) and end_i < len(reference):
+            if any(c.isdigit() for c in reference[end_i]):
+                return None
             a += reference[end_i]; end_i += 1
         elif len(b) < len(a) and a.startswith(b) and end_j < len(hypothesis):
+            if any(c.isdigit() for c in hypothesis[end_j]):
+                return None
             b += hypothesis[end_j]; end_j += 1
         else:
             return None

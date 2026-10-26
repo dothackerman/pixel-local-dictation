@@ -260,15 +260,11 @@ def stage_run(path, run_id, root=ROOT):
         raise ValueError("unknown run")
     if any(not (folder / "receipts" / (r["id"] + ".json")).is_file() for r in runs[:index]):
         raise ValueError("record all preceding attempts before advancing")
-    for previous in runs[:index]:
-        receipt = json.loads((folder / "receipts" / (previous["id"] + ".json")).read_text())
-        measured = receipt["measurement"]
-        wanted = expected(plan, previous)
-        if (receipt.get("wrapper", {}).get("outcome") != "passed" or
-                receipt["phone"].get("lab_sha256") != lab_hash(plan, previous) or
-                evaluate_v4.evidence_errors(measured, wanted) or evaluate_v4.measurement_errors(measured) or
-                experiment._session_errors(measured["report"], wanted)):
-            raise ValueError("prior attempt invalid; diagnose before continuing")
+    prior = {r["id"]: read_receipt(folder / "receipts" / (r["id"] + ".json"), plan, root)
+             for r in runs[:index]}
+    errors = receipt_errors(plan, runs[:index], prior)
+    if errors:
+        raise ValueError("prior attempt invalid; diagnose before continuing: " + "; ".join(errors))
     if index >= 60:
         for a, b in zip(runs[:60:2], runs[1:60:2]):
             texts = [json.loads((folder / "receipts" / (r["id"] + ".json")).read_text())["measurement"]["report"]["endpoints"][0]["text"]
@@ -326,23 +322,27 @@ def stage_live(path, root=ROOT):
     return target
 
 
+def read_receipt(receipt, plan, root):
+    value = json.loads(receipt.read_text())
+    if value["plan_sha256"] != plan["sha256"]:
+        raise ValueError("receipt belongs to another frozen plan")
+    for prefix in ("measurement", "phone_meta", "wrapper"):
+        original = _private(value[prefix + "_path"], root)
+        if identity.sha(original) != value[prefix + "_sha256"]:
+            raise ValueError("original receipt changed")
+    if (value["measurement"] != json.loads(Path(value["measurement_path"]).read_text()) or
+            value["phone"] != json.loads(Path(value["phone_meta_path"]).read_text()) or
+            value["wrapper"] != json.loads(Path(value["wrapper_path"]).read_text())):
+        raise ValueError("copied receipt changed")
+    return value
+
+
 def report(path, manual=None, root=ROOT):
     plan = frozen(path, root)
     folder = Path(path).parent
     receipts = {}
     for receipt in (folder / "receipts").glob("*.json"):
-        value = json.loads(receipt.read_text())
-        if value["plan_sha256"] != plan["sha256"]:
-            raise ValueError("receipt belongs to another frozen plan")
-        for prefix in ("measurement", "phone_meta", "wrapper"):
-            original = _private(value[prefix + "_path"], root)
-            if identity.sha(original) != value[prefix + "_sha256"]:
-                raise ValueError("original receipt changed")
-        if (value["measurement"] != json.loads(Path(value["measurement_path"]).read_text()) or
-                value["phone"] != json.loads(Path(value["phone_meta_path"]).read_text()) or
-                value["wrapper"] != json.loads(Path(value["wrapper_path"]).read_text())):
-            raise ValueError("copied receipt changed")
-        receipts[receipt.stem] = value
+        receipts[receipt.stem] = read_receipt(receipt, plan, root)
     if manual and manual.get("live_check", {}).get("receipt_file"):
         manual = json.loads(json.dumps(manual))
         ref = manual["live_check"]["receipt_file"]
@@ -355,6 +355,60 @@ def report(path, manual=None, root=ROOT):
     return compare(plan, receipts, manual)
 
 
+def receipt_errors(plan, runs, receipts):
+    """Validate an ordered prefix identically before advancement and final comparison."""
+    errors_by_run = []
+    seen_runs, seen_processes, seen_meta = set(), set(), set()
+    previous_ts = None
+    for run in runs:
+        receipt = receipts[run["id"]]
+        measured, phone = receipt["measurement"], receipt["phone"]
+        wanted = expected(plan, run)
+        errors = evaluate_v4.evidence_errors(measured, wanted)
+        wrapper = receipt.get("wrapper", {})
+        if (wrapper.get("outcome") != "passed" or not receipt.get("measurement_sha256") or
+                wrapper.get("lab", {}).get("result.json") != receipt.get("measurement_sha256")):
+            errors.append("instrumentation failed or pulled result differs from device receipt")
+        errors += evaluate_v4.measurement_errors(measured)
+        errors += experiment._session_errors(measured["report"], wanted)
+        report = measured["report"]
+        for row in report.get("endpoints", []):
+            events = row.get("session", {}).get("eventsNs", {})
+            insertion = [events.get(k) for k in ("finalReady", "commitAccepted", "returnRequested", "takeEnded")]
+            if not all(type(t) is int and t >= 0 for t in insertion) or insertion != sorted(insertion):
+                errors.append("missing or invalid simulated insertion/return receipts")
+        for actual, frozen in (("device", "device"), ("verifiedArtifacts", "artifacts"),
+                               ("verifiedInputs", "inputs"), ("execution", "execution")):
+            if report.get(actual) != wanted[frozen]:
+                errors.append("observed " + actual + " differs from freeze")
+        for field, seen in (("run_id", seen_runs), ("process_start_id", seen_processes)):
+            value = measured["provenance"][field]
+            if value in seen:
+                errors.append("reused " + field)
+            seen.add(value)
+        if (phone.get("verb") != "run" or phone.get("classes") != "ch.og.dictation.LabTest" or
+                phone.get("app_sha256") != wanted["provenance"]["build_sha256"] or
+                phone.get("test_sha256") != wanted["provenance"]["test_build_sha256"] or
+                phone.get("lab_sha256") != lab_hash(plan, run)):
+            errors.append("wrapper run identity differs from freeze")
+        setup = plan["setups"]["default" if run["arm"] == "default-repeat" else run["arm"]]
+        if report.get("variant") != setup["variant"]:
+            errors.append("reported variant differs from freeze")
+        timestamp = datetime.fromisoformat(phone["ts"])
+        if previous_ts is not None and timestamp <= previous_ts:
+            errors.append("wrapper run order differs from paired order")
+        previous_ts = timestamp
+        meta_hash = identity.digest(phone)
+        if meta_hash in seen_meta:
+            errors.append("reused wrapper receipt")
+        seen_meta.add(meta_hash)
+        for memory in report["memory"]:
+            if type(memory.get("thermalStatus")) is not int or memory["thermalStatus"] < 0:
+                errors.append("missing thermal evidence")
+        errors_by_run.extend(f"{run['id']}: {error}" for error in errors)
+    return errors_by_run
+
+
 def compare(plan, receipts, manual=None):
     """Incomplete evidence is inconclusive; successful replay never proves live usability."""
     result = dict(decision="inconclusive", errors=[], product_winner=False)
@@ -364,54 +418,7 @@ def compare(plan, receipts, manual=None):
             raise ValueError("missing or extra run receipts; reconcile all attempts")
         if plan.get("protocol") != PROTOCOL or plan.get("status") != "frozen":
             raise ValueError("final comparison plan is not frozen")
-        seen_runs, seen_processes, seen_meta = set(), set(), set()
-        previous_ts = None
-        for run in runs:
-            receipt = receipts[run["id"]]
-            measured, phone = receipt["measurement"], receipt["phone"]
-            wanted = expected(plan, run)
-            errors = evaluate_v4.evidence_errors(measured, wanted)
-            wrapper = receipt.get("wrapper", {})
-            if (wrapper.get("outcome") != "passed" or not receipt.get("measurement_sha256") or
-                    wrapper.get("lab", {}).get("result.json") != receipt.get("measurement_sha256")):
-                errors.append("instrumentation failed or pulled result differs from device receipt")
-            errors += evaluate_v4.measurement_errors(measured)
-            errors += experiment._session_errors(measured["report"], wanted)
-            report = measured["report"]
-            for row in report.get("endpoints", []):
-                events = row.get("session", {}).get("eventsNs", {})
-                insertion = [events.get(k) for k in ("finalReady", "commitAccepted", "returnRequested", "takeEnded")]
-                if not all(type(t) is int and t >= 0 for t in insertion) or insertion != sorted(insertion):
-                    errors.append("missing or invalid simulated insertion/return receipts")
-            for actual, frozen in (("device", "device"), ("verifiedArtifacts", "artifacts"),
-                                   ("verifiedInputs", "inputs"), ("execution", "execution")):
-                if report.get(actual) != wanted[frozen]:
-                    errors.append("observed " + actual + " differs from freeze")
-            for field, seen in (("run_id", seen_runs), ("process_start_id", seen_processes)):
-                value = measured["provenance"][field]
-                if value in seen:
-                    errors.append("reused " + field)
-                seen.add(value)
-            if (phone.get("verb") != "run" or phone.get("classes") != "ch.og.dictation.LabTest" or
-                    phone.get("app_sha256") != wanted["provenance"]["build_sha256"] or
-                    phone.get("test_sha256") != wanted["provenance"]["test_build_sha256"] or
-                    phone.get("lab_sha256") != lab_hash(plan, run)):
-                errors.append("wrapper run identity differs from freeze")
-            setup = plan["setups"]["default" if run["arm"] == "default-repeat" else run["arm"]]
-            if report.get("variant") != setup["variant"]:
-                errors.append("reported variant differs from freeze")
-            timestamp = datetime.fromisoformat(phone["ts"])
-            if previous_ts is not None and timestamp <= previous_ts:
-                errors.append("wrapper run order differs from paired order")
-            previous_ts = timestamp
-            meta_hash = identity.digest(phone)
-            if meta_hash in seen_meta:
-                errors.append("reused wrapper receipt")
-            seen_meta.add(meta_hash)
-            for memory in report["memory"]:
-                if type(memory.get("thermalStatus")) is not int or memory["thermalStatus"] < 0:
-                    errors.append("missing thermal evidence")
-            result["errors"].extend(f"{run['id']}: {error}" for error in errors)
+        result["errors"].extend(receipt_errors(plan, runs, receipts))
         if result["errors"]:
             return result
         from dictionary_score import score_text

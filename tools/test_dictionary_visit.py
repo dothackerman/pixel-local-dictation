@@ -1,6 +1,9 @@
 import copy
 from datetime import datetime, timedelta
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
 import dictionary_visit
 from test_experiment import fixture as replay_fixture
@@ -43,6 +46,46 @@ def visit_fixture():
 
 
 class DictionaryVisitTests(unittest.TestCase):
+    def test_staging_stops_before_a_next_run_when_prior_receipts_are_invalid(self):
+        for defect in ('result-digest', 'process', 'insertion'):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                folder = root / 'corpus/visit'
+                (folder / 'receipts').mkdir(parents=True)
+                plan, receipts = visit_fixture()
+                snapshot = folder / 'snapshot.json'
+                snapshot.write_text('{}')
+                plan['snapshot'] = {'path': str(snapshot), 'sha256': dictionary_visit.identity.sha(snapshot)}
+                plan['sources'] = dictionary_visit.experiment.source_identity(root)
+                del plan['sha256']
+                plan['sha256'] = dictionary_visit.identity.digest(plan)
+                path = folder / 'plan.json'
+                path.write_text(json.dumps(plan))
+                runs = dictionary_visit.schedule(list(plan['cases']))
+                first, second = (receipts[r['id']] for r in runs[:2])
+                if defect == 'process':
+                    second['measurement']['provenance']['process_start_id'] = first['measurement']['provenance']['process_start_id']
+                elif defect == 'insertion':
+                    del second['measurement']['report']['endpoints'][0]['session']['eventsNs']['commitAccepted']
+                for run in runs[:2]:
+                    value = receipts[run['id']]
+                    value['plan_sha256'] = plan['sha256']
+                    for prefix, content in [('measurement', value['measurement']), ('phone_meta', value['phone'])]:
+                        original = folder / (run['id'] + '-' + prefix + '.json')
+                        original.write_text(json.dumps(content))
+                        value[prefix + '_path'] = str(original)
+                        value[prefix + '_sha256'] = dictionary_visit.identity.sha(original)
+                    value['wrapper']['lab']['result.json'] = value['measurement_sha256']
+                    if defect == 'result-digest' and run == runs[1]:
+                        value['wrapper']['lab']['result.json'] = '0' * 64
+                    wrapper = folder / (run['id'] + '-wrapper.json')
+                    wrapper.write_text(json.dumps(value['wrapper']))
+                    value.update(wrapper_path=str(wrapper), wrapper_sha256=dictionary_visit.identity.sha(wrapper))
+                    (folder / 'receipts' / (run['id'] + '.json')).write_text(json.dumps(value))
+                with self.assertRaisesRegex(ValueError, 'prior attempt invalid'):
+                    dictionary_visit.stage_run(path, runs[2]['id'], root)
+                self.assertFalse((folder / 'attempts').exists())
+
     def test_missing_receipts_cannot_decide_adoption(self):
         result = dictionary_visit.compare({"cases": {f"take{i}": {} for i in range(10)}}, {})
         self.assertEqual("inconclusive", result["decision"])

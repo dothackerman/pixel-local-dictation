@@ -173,6 +173,16 @@ endpoints; decision thresholds; failure rules; and restoration steps. Freeze the
 comparison before an adoption-deciding phone run ([ADR-017](adrs/017-shared-take-experiments.md)
 amendment); laptop screening needs no freeze. Deployment is a separate decision.
 
+Dictionary experiments use `tools/dictionary_score.py` for versioned word scoring;
+historical scorers retain their original rules. `tools/tdt_decoder.py` reproduces
+the pinned greedy decoder through the wheel's own runtime, built with
+`tools/tdt-runtime/build.py`; its requirements file pins host dependencies.
+`tools/dictionary_screen.py` records boosting, guard and held-script results in
+a new private run directory. `tools/dictionary_visit.py` prepares and validates
+paired replay and explicit benchmark-only live checks; it never executes phone
+commands. Each tool's `--help` describes its interface. Replay and local screens
+do not establish adoption or real keyboard usability.
+
 ## Known gaps
 
 Answered calls, longer battery-only model survival and a clean full FP32 export

@@ -1,9 +1,24 @@
 import unittest
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 import numpy as np
 from tdt_decoder import decode_logits
 
 
 class DecoderTest(unittest.TestCase):
+    def test_parity_command_refuses_existing_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / 'parity.json'
+            report.write_text('retained evidence')
+            command = [sys.executable, str(Path(__file__).with_name('tdt_decoder.py')),
+                       '--model', tmp, '--runtime', tmp, '--cache', tmp, '--guard', tmp,
+                       '--output', str(report)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertIn('FileExistsError', result.stderr)
+            self.assertEqual(report.read_text(), 'retained evidence')
+
     def test_blank_zero_duration_advances_without_emitting(self):
         # Model boundary: first frame is blank, second emits token 1 and skips 2.
         logits = iter([[0, 0, 9, 8, 0, 0], [0, 9, 0, 0, 0, 8]])
