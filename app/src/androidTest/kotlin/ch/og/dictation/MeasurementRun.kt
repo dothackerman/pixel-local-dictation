@@ -211,7 +211,11 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             }
             memory("before-load")
             val started = SystemClock.elapsedRealtime()
-            val model = ModelFiles.dir(File(lab, "model"))
+            val modelDirectory = File(lab, manifest.optString("modelDirectory", "model")).canonicalFile
+            require(modelDirectory.toPath().startsWith(lab.canonicalFile.toPath()) && modelDirectory.isDirectory) {
+                "modelDirectory must remain inside the staged lab"
+            }
+            val model = ModelFiles.dir(modelDirectory)
             val lid = File(lab, "lid").takeIf { it.isDirectory }?.let { ModelFiles.dir(it) }
             timeline.record(TimelineEvent("modelConstructionStart"))
             try {
