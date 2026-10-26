@@ -627,7 +627,7 @@ def main(argv):
     finally:
         if handle:
             handle.close()
-    text = result['usage'] if set(result) == {'usage'} else json.dumps(result, indent=1, sort_keys=True)
+    text = result['usage'] if isinstance(result, dict) and set(result) == {'usage'} else json.dumps(result, indent=1, sort_keys=True)
     if verb not in ('help', '-h', '--help'):
         state.mkdir(parents=True, exist_ok=True)
         (state / 'last.json').write_text(text)  # the shim must run alone; read this instead of piping
