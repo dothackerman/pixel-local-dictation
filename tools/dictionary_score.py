@@ -24,6 +24,8 @@ def normalise(text, language):
         protected[key] = format(Decimal(match[0].replace(',', '.')).normalize(), 'f')
         return key
 
+    # Product/unit boundaries are formatting, unlike separate numeric values.
+    text = re.sub(r'(?<=[^\W\d_])(?=\d)', ' ', text)
     text = re.sub(r'(?<=\d)[\u2019\x27](?=\d)', '', text)
     text = re.sub(r'\b\d+[.,]\d+\b', decimal, text)
     text = re.sub(r'([£€])\s*(zzdecimalz*q)', lambda m: m[2] + ' ' + historical.CURRENCY[m[1]], text)
