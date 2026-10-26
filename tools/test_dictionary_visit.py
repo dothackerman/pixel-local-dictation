@@ -81,7 +81,31 @@ class DictionaryVisitTests(unittest.TestCase):
                       live_check=dict(one_insertion_on_stop=True, cancellation_safe=True, usable_futo_return=True,
                                       build_sha256=plan["setups"]["candidate-a"]["provenance"]["build_sha256"], evidence="owner observation"),
                       restoration_verified=True, restoration_evidence="checked restoration")
+        self.assertEqual("pending-manual-validation", dictionary_visit.compare(plan, receipts, manual)["decision"])
+        # A matching APK alone cannot prove the IME loaded the measured candidate.
+        candidate = plan["setups"]["candidate-a"]
+        candidate["provenance"].update(dictionary_sha256="d" * 64)
+        identity = {k: candidate["provenance"][k] for k in ("build_sha256", "configuration_sha256", "model_sha256", "dictionary_sha256")}
+        identity.update(plan_sha256=plan["sha256"], verified=True, artifacts=candidate["artifacts"],
+                        live_config_sha256=dictionary_visit.live_config_hash(plan))
+        events = dict(captureStart=1, stopRequested=2, captureStopped=3, finalReady=4, commitAccepted=5, returnRequested=6, takeEnded=7)
+        manual["live_check"]["receipts"] = [
+            dict(protocol="ime-candidate-live-v1", processId="live", takeId="stop", identity=identity,
+                 outcome="COMPLETED", commitAccepted=True, returnAccepted=True, eventsNs=events),
+            dict(protocol="ime-candidate-live-v1", processId="live", takeId="cancel", identity=identity,
+                 outcome="CANCELLED", commitAccepted=None, returnAccepted=None, eventsNs={"captureStart":1,"takeEnded":2})]
+        for run in dictionary_visit.schedule(list(plan["cases"])):
+            if run["arm"] == "candidate-a":
+                receipts[run["id"]]["measurement"]["provenance"]["dictionary_sha256"] = "d" * 64
+                receipts[run["id"]]["phone"]["lab_sha256"] = dictionary_visit.lab_hash(plan, run)
         self.assertEqual("eligible-for-owner-adoption", dictionary_visit.compare(plan, receipts, manual)["decision"])
+        identity["verified"] = False
+        self.assertEqual("pending-manual-validation", dictionary_visit.compare(plan, receipts, manual)["decision"])
+        identity["verified"] = True
+        original_configuration = identity["configuration_sha256"]
+        identity["configuration_sha256"] = "0" * 64
+        self.assertEqual("pending-manual-validation", dictionary_visit.compare(plan, receipts, manual)["decision"])
+        identity["configuration_sha256"] = original_configuration
         manual["meaning_review"][next(iter(manual["meaning_review"]))] = 1
         self.assertEqual("reject", dictionary_visit.compare(plan, receipts, manual)["decision"])
 

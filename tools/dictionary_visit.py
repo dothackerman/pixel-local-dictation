@@ -66,6 +66,48 @@ def lab_hash(plan, run):
     return hashlib.sha256(json.dumps(inventory, sort_keys=True).encode()).hexdigest()
 
 
+def live_config(plan):
+    setup = plan["setups"]["candidate-a"]
+    value = {k: setup["provenance"][k] for k in
+             ("build_sha256", "configuration_sha256", "model_sha256", "dictionary_sha256")}
+    return dict(value, schema=1, plan_sha256=plan["sha256"], modelDirectory=setup["model_directory"], artifacts=setup["artifacts"])
+
+
+def live_config_hash(plan):
+    return hashlib.sha256(_variant_bytes(live_config(plan))).hexdigest()
+
+
+def live_receipts_valid(plan, rows):
+    if not isinstance(rows, list) or len(rows) < 2:
+        return False
+    expected_identity = live_config(plan)
+    seen, completed, cancelled = set(), False, False
+    for row in rows:
+        actual = row.get("identity", {})
+        if (row.get("protocol") != "ime-candidate-live-v1" or actual.get("verified") is not True or
+                actual.get("live_config_sha256") != live_config_hash(plan) or not row.get("processId") or
+                not row.get("takeId") or row["takeId"] in seen):
+            return False
+        seen.add(row["takeId"])
+        if any(actual.get(k) != expected_identity[k] for k in
+               ("plan_sha256", "build_sha256", "configuration_sha256", "model_sha256", "dictionary_sha256", "artifacts")):
+            return False
+        events = row.get("eventsNs", {})
+        if row.get("outcome") == "COMPLETED":
+            ordered = [events.get(k) for k in ("captureStart", "stopRequested", "captureStopped", "finalReady", "commitAccepted", "returnRequested", "takeEnded")]
+            if (row.get("commitAccepted") is not True or row.get("returnAccepted") is not True or
+                    not all(type(t) is int and t >= 0 for t in ordered) or ordered != sorted(ordered)):
+                return False
+            completed = True
+        elif row.get("outcome") in ("CANCELLED", "INPUT_CHANGED"):
+            if row.get("commitAccepted") is not None or "commitAccepted" in events:
+                return False
+            cancelled = True
+        else:
+            return False
+    return completed and cancelled
+
+
 def _write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x") as sink:
@@ -266,6 +308,24 @@ def record(path, run_id, measurement, wrapper_path, root=ROOT):
     _write(folder / "receipts" / (run_id + ".json"), value)
 
 
+def stage_live(path, root=ROOT):
+    plan = frozen(path, root)
+    result = report(path, root=root)
+    if result["decision"] != "pending-manual-validation" or not result.get("observations_validated"):
+        raise ValueError("complete advancing replay required before the supervised candidate check")
+    folder = Path(path).parent
+    target = folder / "live-stage"
+    target.mkdir(exist_ok=False)
+    for relative, digest in plan["stage_inventory"].items():
+        source = folder / "stage" / relative
+        if identity.sha(source) != digest:
+            raise ValueError("staged artifact changed: " + relative)
+        _link(source, target / relative)
+    (target / "variant.json").write_bytes(_variant_bytes(plan["setups"]["candidate-a"]["variant"]))
+    (target / "live.json").write_bytes(_variant_bytes(live_config(plan)))
+    return target
+
+
 def report(path, manual=None, root=ROOT):
     plan = frozen(path, root)
     folder = Path(path).parent
@@ -283,6 +343,15 @@ def report(path, manual=None, root=ROOT):
                 value["wrapper"] != json.loads(Path(value["wrapper_path"]).read_text())):
             raise ValueError("copied receipt changed")
         receipts[receipt.stem] = value
+    if manual and manual.get("live_check", {}).get("receipt_file"):
+        manual = json.loads(json.dumps(manual))
+        ref = manual["live_check"]["receipt_file"]
+        file = _private(ref["path"], root)
+        if identity.sha(file) != ref["sha256"]:
+            raise ValueError("live receipt file changed")
+        manual["live_check"]["receipts"] = [json.loads(line) for line in file.read_text().splitlines() if line.strip()]
+    elif manual and "receipts" in manual.get("live_check", {}):
+        raise ValueError("supply the original pulled live receipt file and its hash")
     return compare(plan, receipts, manual)
 
 
@@ -411,6 +480,7 @@ def compare(plan, receipts, manual=None):
         live = manual.get("live_check", {})
         live_pass = all(live.get(k) is True for k in ("one_insertion_on_stop", "cancellation_safe", "usable_futo_return"))
         live_pass = live_pass and bool(live.get("evidence")) and live.get("build_sha256") == plan["setups"]["candidate-a"]["provenance"]["build_sha256"]
+        live_pass = live_pass and live_receipts_valid(plan, live.get("receipts"))
         recovered = manual.get("restoration_verified") is True and bool(manual.get("restoration_evidence"))
         if statistics.median(waits) > 2500 or harms is not None and harms > 0 or any(v <= 0 for v in gain.values()):
             result["decision"] = "reject"
@@ -455,7 +525,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     for name, fields in (("prepare", ("folder",)), ("freeze", ("draft", "app", "test", "device", "snapshot")),
                          ("stage", ("plan", "run")), ("record", ("plan", "run", "measurement", "wrapper")),
-                         ("capture-wrapper", ("output",)), ("commands", ("plan",)), ("report", ("plan",))):
+                         ("capture-wrapper", ("output",)), ("commands", ("plan",)), ("report", ("plan",)),
+                         ("stage-live", ("plan",))):
         command = sub.add_parser(name)
         for field in fields:
             command.add_argument(field)
@@ -469,6 +540,8 @@ def main():
         print(freeze(args.draft, args.app, args.test, json.loads(_private(args.device, root).read_text()), args.snapshot, root))
     elif args.command == "stage":
         print(stage_run(args.plan, args.run, root))
+    elif args.command == "stage-live":
+        print(stage_live(args.plan, root))
     elif args.command == "capture-wrapper":
         value = json.loads((root / "corpus/lab/last.json").read_text())
         _write(_private(args.output, root), value)

@@ -110,9 +110,12 @@ class DictationImeService : InputMethodService() {
             if (session.matches(recordingToken)) return
             discardTake("input session changed")
         }
-        saveTake = BenchmarkStore.isEnabled(this)
+        val liveCheck = Engine.liveReceipt() != null
+        // The supervised live check stores timing/identity receipts only, never new recordings.
+        saveTake = !liveCheck && BenchmarkStore.isEnabled(this)
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
+        (banner as? TextView)?.setText(if (liveCheck) R.string.benchmark_live_check else R.string.benchmark_banner)
+        banner?.visibility = if (saveTake || liveCheck) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
     }
@@ -138,6 +141,7 @@ class DictationImeService : InputMethodService() {
         if (!hasMicPermission()) { status?.setText(R.string.status_no_permission); return }
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         try {
+            val liveTakeId = startupTake
             val token = session.token()
             recordingToken = token
             val save = saveTake
@@ -152,6 +156,7 @@ class DictationImeService : InputMethodService() {
                     finally { mainHandler.post { returning = false } }
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
+                    Engine.liveReceipt()?.let { startup?.liveResult(liveTakeId, it, result) }
                     if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
                         val stopped = result.eventsNs["stopRequested"]
                         val final = result.eventsNs["finalReady"]

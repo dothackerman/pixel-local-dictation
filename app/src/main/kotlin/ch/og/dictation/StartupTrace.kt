@@ -23,6 +23,22 @@ class StartupTrace(private val context: Context) {
         return id
     }
 
+    fun liveResult(takeId: String?, identity: JSONObject, result: TakeResult) {
+        val row = JSONObject().put("protocol", "ime-candidate-live-v1").put("processId", processId)
+            .put("serviceId", serviceId).put("takeId", takeId).put("identity", identity)
+            .put("outcome", result.outcome.name).put("eventsNs", JSONObject(result.eventsNs))
+            .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
+            .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
+        writer.execute {
+            runCatching {
+                val file = File(context.filesDir, "lab/live-results.jsonl")
+                file.parentFile?.mkdirs()
+                check(file.length() < 2 * 1024 * 1024) { "live receipt file full" }
+                file.appendText(row.toString() + "\n")
+            }.onFailure { Log.e("StartupTrace", "live receipt unavailable", it) }
+        }
+    }
+
     fun event(phase: String, takeId: String? = null, ns: Long = System.nanoTime(), modelReady: Boolean? = null) {
         val pid = Process.myPid()
         writer.execute {

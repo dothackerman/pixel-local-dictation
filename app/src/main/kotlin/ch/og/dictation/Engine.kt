@@ -272,7 +272,8 @@ object Pipeline {
     fun runtime(
         v: Variant, model: ModelFiles, lid: ModelFiles?, vad: ModelFiles,
         queue: java.util.concurrent.Executor, hotwordsPath: String = "", timeline: TimelineObserver? = null,
-    ) = DictationRuntime(v, queue, { recognizer(v, model, lid, hotwordsPath, timeline) },
+        verify: () -> Unit = {},
+    ) = DictationRuntime(v, queue, { verify(); recognizer(v, model, lid, hotwordsPath, timeline) },
         { VadSegmenter(v, vad) }, ::release)
 
     fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = "", timeline: TimelineObserver? = null): Recognizer {
@@ -312,18 +313,37 @@ object Engine {
     /** Serial: model load first, then segments in order. */
     private val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
     private var runtime: DictationRuntime? = null
+    private var live: BenchmarkLiveConfig? = null
     @Volatile var modelReadyNs: Long? = null
         private set
 
-    @Synchronized fun runtime(context: Context): DictationRuntime =
-        runtime ?: ModelFiles.asset(context.applicationContext, ASSET_MODEL).let { files ->
-            Pipeline.runtime(variant, files, null, files, decodeQueue).also { runtime = it }
+    @Synchronized fun runtime(context: Context): DictationRuntime {
+        val app = context.applicationContext
+        val selected = if (app.resources.getBoolean(R.bool.benchmark_live_variant))
+            BenchmarkLiveConfig.load(File(app.filesDir, "lab")) else null
+        runtime?.let {
+            require(selected?.selectionHash == live?.selectionHash) { "live selection changed; restart the app before checking it" }
+            return it
         }
+        live = selected
+        return if (selected == null) {
+            ModelFiles.asset(app, ASSET_MODEL).let { files -> Pipeline.runtime(variant, files, null, files, decodeQueue) }
+        } else {
+            Pipeline.runtime(selected.variant, ModelFiles.dir(selected.modelDirectory), null,
+                ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, selected.dictionary.absolutePath,
+                verify = { selected.verify(File(app.applicationInfo.sourceDir)) })
+        }.also { runtime = it }
+    }
+
+    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt()
 
     /** Starts loading the model in the background; safe to call repeatedly. */
-    fun warmUp(context: Context) =
-        runtime(context).warmUp().whenComplete { _, failure ->
+    fun warmUp(context: Context): java.util.concurrent.CompletableFuture<Unit> {
+        val ready = try { runtime(context).warmUp() }
+            catch (failure: Exception) { java.util.concurrent.CompletableFuture.failedFuture<Unit>(failure) }
+        return ready.whenComplete { _, failure ->
             if (failure != null) Log.e(TAG, "model load failed", failure)
             else if (modelReadyNs == null) modelReadyNs = System.nanoTime()
         }
+    }
 }
