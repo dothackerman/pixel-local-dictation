@@ -174,6 +174,7 @@ Codex's six checkout protections are rendered for that checkout alone, so auxili
 visualization folders do not inherit nonexistent repository paths. A copied config
 does not protect another worktree: the owner must apply the gate there before agent
 work starts. The installation check rejects a config copied from another checkout.
+Both harnesses permit writes to `~/.gradle` for the host quality gate.
 
 ## Evaluation
 

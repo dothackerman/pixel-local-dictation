@@ -39,13 +39,15 @@ class GateInstallationTests(unittest.TestCase):
                 codex = tomllib.loads((root / '.codex/config.toml').read_text())
                 filesystem = codex['permissions']['dictation']['filesystem']
                 self.assertNotIn(':workspace_roots', filesystem)
-                self.assertEqual(set(filesystem), {str(root.resolve())})
+                self.assertEqual(set(filesystem), {str(root.resolve()), "~/.gradle"})
+                self.assertEqual(filesystem["~/.gradle"], "write")
                 self.assertEqual(codex['permissions']['dictation']['extends'], ':workspace')
                 paths = filesystem[str(root.resolve())]
                 for name in ('.claude/hooks', '.claude/settings.json', '.codex',
                              'tools/git-hooks', 'AGENTS.md', 'CLAUDE.md'):
                     self.assertEqual(paths[name], 'read', name)
                 claude = json.loads((root / '.claude/settings.json').read_text())
+                self.assertEqual(claude['sandbox']['filesystem']['allowWrite'], ['~/.gradle'])
                 for name in ('./AGENTS.md', './CLAUDE.md'):
                     self.assertIn(name, claude['sandbox']['filesystem']['denyWrite'])
             # Copied absolute configuration must fail readiness in another checkout.
@@ -58,7 +60,8 @@ class GateInstallationTests(unittest.TestCase):
             rendered = subprocess.check_output([sys.executable, 'tools/gate/check_installation.py', '--render-codex'],
                                                cwd=other, env=environment, text=True)
             other_config = tomllib.loads(rendered)['permissions']['dictation']['filesystem']
-            self.assertEqual(set(other_config), {str(other.resolve())})
+            self.assertEqual(set(other_config), {str(other.resolve()), "~/.gradle"})
+            self.assertEqual(other_config["~/.gradle"], "write")
             self.assertEqual(other_config[str(other.resolve())], paths)
             # A source/installation mismatch and the old symlink both fail the check.
             for broken in ('different instructions', None):
