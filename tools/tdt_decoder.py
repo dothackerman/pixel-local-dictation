@@ -15,16 +15,21 @@ class DecodeResult:
     durations: list
     joiner_calls: int
     text: str = ''
+    continuation: object = None
 
 
-def decode_logits(encoded, vocab_size, decoder, joiner, state, blank_penalty=0):
+def decode_logits(encoded, vocab_size, decoder, joiner, state, blank_penalty=0, *, tree=None, alpha=0, continuation=None):
     """Decode encoder frames against decoder/joiner model-call boundaries.
 
     Inputs/outputs use the pinned model tensor semantics. Ties choose the first
     index, including duration zero. Blank never updates the prediction state.
     """
     blank = vocab_size - 1
-    prediction, state = decoder(blank, state)
+    if continuation is None:
+        prediction, state = decoder(blank, state)
+        tree_state = 0
+    else:
+        prediction, state, tree_state = continuation
     tokens, timestamps, durations = [], [], []
     t = count = calls = 0
     while t < len(encoded):
@@ -33,6 +38,9 @@ def decode_logits(encoded, vocab_size, decoder, joiner, state, blank_penalty=0):
         if blank_penalty > 0:
             logits[blank] -= blank_penalty
         token = int(np.argmax(logits[:vocab_size]))
+        if token != blank and tree is not None and tree.alphabet and alpha != 0:
+            token = int(np.argmax(logits[:blank] + np.float32(alpha) * tree.scores(tree_state, blank)))
+            _, tree_state = tree.step(tree_state, token)
         skip = int(np.argmax(logits[vocab_size:]))
         if token != blank:
             tokens.append(token)
@@ -47,7 +55,7 @@ def decode_logits(encoded, vocab_size, decoder, joiner, state, blank_penalty=0):
         if token == blank and skip == 0:
             count, skip = 0, 1
         t += skip
-    return DecodeResult(tokens, timestamps, durations, calls)
+    return DecodeResult(tokens, timestamps, durations, calls, continuation=(prediction, state, tree_state))
 
 
 def tokens_to_text(tokens, symbols):
@@ -145,14 +153,14 @@ class Decoder:
         os.replace(temp, path)
         return encoded, False
 
-    def decode(self, encoded, blank_penalty=0):
+    def decode(self, encoded, blank_penalty=0, *, tree=None, alpha=0, continuation=None):
         def decoder(token, state):
             result = self.decoder.run([np.array([[token]], np.int32), np.array([1], np.int32), *state])
             return result[0], result[2:]
         def joiner(frame, prediction):
             return self.joiner.run([np.ascontiguousarray(frame[None,:,None]), prediction])[0]
         state = [np.zeros(self.state_shape, np.float32) for _ in range(2)]
-        result = decode_logits(encoded, self.vocab_size, decoder, joiner, state, blank_penalty)
+        result = decode_logits(encoded, self.vocab_size, decoder, joiner, state, blank_penalty, tree=tree, alpha=alpha, continuation=continuation)
         result.text = tokens_to_text(result.tokens, self.symbols)
         return result
 
