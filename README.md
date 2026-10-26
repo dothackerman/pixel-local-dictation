@@ -22,6 +22,19 @@ engine is Parakeet v3 with a selective INT8 encoder on the CPU
 one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
 
+Local implementation and screening for #11 completed on 2026-10-26 on
+`codex/issue-11-dictionary`; no phone measurements or adoption. The versioned
+scorer reproduces the historical totals, and the Python greedy decoder matches
+the stock wheel on all 210 public clips. Eight greedy dictionary boosts failed
+the reviewed screen; the native greedy dictionary patch is not implemented.
+FP32 beam-8 with dictionary score 1.5 reduced primary-feed German/English errors
+from 36/22 to 31/15, with gains on all three feeds and zero dictionary-word false
+accepts on the public guards. Its held-script check added 1/0/2 German errors at
+feeds 640/512/800 against the matching no-dictionary control, so it is not a clean
+screening pass. These are development results under `dictionary-words-v2`, not
+phone timing or unseen-name evidence. Private results and the unfrozen visit
+preparation are indexed by `corpus/lab/issue11/HANDOFF.md`.
+
 Read the results and their limits before selecting the next question:
 
 | Completed work | Result |
@@ -88,6 +101,13 @@ and returns to FUTO.
   Cohere uses one recognizer, sets the language for each stream and loads models
   from filesystem paths. Canary retains two recognizers:
   [ADR-007](adrs/007-fp32-cohere.md).
+- Benchmark builds can explicitly select the frozen Candidate A for a supervised
+  live check through [BenchmarkLiveConfig](app/src/main/kotlin/ch/og/dictation/BenchmarkLiveConfig.kt).
+  APK, model, dictionary and VAD identities are verified on the decode executor.
+  Release builds ignore this selection. Benchmark startup/live receipts contain
+  timing and identity metadata, not audio or recognized text; they are independent
+  of saved-take recording. Panel draw is not physical display timing, and the app
+  cannot observe FUTO's microphone-key touch.
 - [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and
   [runtime_config.py](tools/runtime_config.py) configure memory allocation for
   the recognizer and language identification (LID) independently. Stock settings
@@ -153,8 +173,10 @@ evidence commands. The tool never executes experiments. A preparation snapshot
 with present artifacts still needs correctness checks. Old lab execution commands
 are retired.
 
-Prepare a fixed set of variants, freeze laptop controls, then collect matched
-phone measurements. Report quality, resource use and evidence completeness
+Keep identified variants and matching laptop controls, then collect matched
+phone measurements. Laptop screening requires no freeze; adoption-deciding phone
+comparisons do ([ADR-017](adrs/017-shared-take-experiments.md), amended by ADR-026).
+Report quality, resource use and evidence completeness
 separately. The method is defined in [ADR-004](adrs/004-closed-loop.md),
 [ADR-005](adrs/005-dictionary.md), [ADR-006](adrs/006-adapter-evaluator.md) and
 [ADR-011](adrs/011-measurement-contract.md).
@@ -188,7 +210,10 @@ do not establish adoption or real keyboard usability.
 Answered calls, longer battery-only model survival and a clean full FP32 export
 remain unverified. Dictionary entry and editing ship only with an adopt verdict
 ([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
-work: spec #11 and its tickets.
+work: spec #11 and its tickets. Startup instrumentation and paired/live comparison
+tools are implemented, but the ten real startup takes, candidate phone timings,
+supervised live validation and adoption verdict are absent. The startup behavior
+has not been changed on the basis of unmeasured causes.
 
 ## Evidence and history
 
@@ -201,6 +226,10 @@ Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
 reports, original identities and pruning limits for ADR-003 to ADR-016. Retain evidence that changes a
 decision, calibration/evaluation inputs and recovery state needed for operation.
 Closed campaign directory trees are not documentation.
+The #11 evidence is in `corpus/lab/issue11/`: final scorer and held-script reports,
+decoder parity, reviewed greedy-screen results, and final APK/check receipts.
+The protected host-only APK check passed after the owner applied the wrapper
+output fix; this did not access the phone.
 
 Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
 source. The file hash identifies the current reference. Historical identities
