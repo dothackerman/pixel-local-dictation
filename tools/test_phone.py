@@ -3,6 +3,7 @@
 FakeDevice stands in for the adb adapter. ArgvDevice drives the real adapter
 with a scripted `runner` to check the exact adb argv it builds.
 """
+from contextlib import redirect_stdout
 import hashlib
 import importlib.machinery
 import importlib.util
@@ -12,6 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 SOURCE = Path(__file__).with_name('phone')
@@ -208,6 +210,26 @@ class PhoneTests(unittest.TestCase):
         result = self.call('check', str(app), str(test))
         self.assertEqual([r['package'] for r in result], [PKG, TEST])
         self.assertEqual(self.device.calls, [])
+
+    def test_check_main_prints_and_persists_the_apk_array_without_device_access(self):
+        app, test = self.root / 'app.apk', self.root / 'test.apk'
+        self.device.apks = {
+            str(app): {'package': PKG, 'sha256': sha(b'app'), 'signer': 's'},
+            str(test): {'package': TEST, 'sha256': sha(b'test'), 'signer': 's'},
+        }
+        root_result = subprocess.CompletedProcess([], 0, str(self.root) + '\n', '')
+        for apks in ([app], [app, test]):
+            with self.subTest(apks=len(apks)):
+                output = io.StringIO()
+                with patch.object(phone.subprocess, 'run', return_value=root_result), \
+                     patch.object(phone, 'Device', return_value=self.device), \
+                     patch.object(phone.os, 'umask'), redirect_stdout(output):
+                    status = phone.main(['check', *(str(apk) for apk in apks)])
+                expected = [self.device.apks[str(apk)] for apk in apks]
+                self.assertEqual(status, 0)
+                self.assertEqual(json.loads(output.getvalue()), expected)
+                self.assertEqual(json.loads((self.root / 'corpus/lab/last.json').read_text()), expected)
+                self.assertEqual(self.device.calls, [])
 
     def test_install_refuses_network_permissions_foreign_packages_and_live_keyboard(self):
         app, test = self.root / 'app.apk', self.root / 'test.apk'
