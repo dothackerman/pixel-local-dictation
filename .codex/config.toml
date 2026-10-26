@@ -6,6 +6,9 @@ hooks = true
 [permissions.dictation]
 extends = ":workspace"
 
+[permissions.dictation.filesystem]
+"~/.gradle" = "write"
+
 [permissions.dictation.filesystem."/home/oriol/Projects/private/pixel-local-dictation"]
 # apply.sh renders this table under the absolute checkout path, not auxiliary roots.
 ".claude/hooks" = "read"
