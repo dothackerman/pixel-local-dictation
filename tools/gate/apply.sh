@@ -21,7 +21,10 @@ install -m 0755 "$gate/phone_guard.py"  .codex/hooks/phone_guard.py
 install -m 0755 "$gate/phone-guard.sh"  .codex/hooks/phone-guard.sh
 install -m 0644 "$gate/hooks.json"      .codex/hooks.json
 install -m 0644 "$gate/settings.json"   .claude/settings.json
-install -m 0644 "$gate/config.toml"     .codex/config.toml
+config=$(mktemp)
+trap 'rm -f "$config"' EXIT
+python3 "$gate/check_installation.py" --render-codex > "$config"
+install -m 0644 "$config" .codex/config.toml
 for instructions in AGENTS.md CLAUDE.md; do
   # Protected symlinks prevent Codex's Linux sandbox from starting.
   rm -f "$instructions"

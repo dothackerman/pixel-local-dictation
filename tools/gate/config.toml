@@ -7,6 +7,7 @@ hooks = true
 extends = ":workspace"
 
 [permissions.dictation.filesystem.":workspace_roots"]
+# apply.sh renders this table under the absolute checkout path, not auxiliary roots.
 ".claude/hooks" = "read"
 ".claude/settings.json" = "read"
 ".codex" = "read"

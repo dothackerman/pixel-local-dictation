@@ -170,6 +170,10 @@ After applying a gate change, start a fresh agent session and run
 without escalation. The installer generates regular `AGENTS.md` and `CLAUDE.md`
 files from one source; protected symlinks can prevent Codex sandbox startup.
 The installation check verifies files only; an escalated pass is not a sandbox check.
+Codex's six checkout protections are rendered for that checkout alone, so auxiliary
+visualization folders do not inherit nonexistent repository paths. A copied config
+does not protect another worktree: the owner must apply the gate there before agent
+work starts. The installation check rejects a config copied from another checkout.
 
 ## Evaluation
 
