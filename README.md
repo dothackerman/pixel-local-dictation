@@ -165,6 +165,12 @@ To change the wrapper, edit `tools/phone` and `tools/test_phone.py` on the branc
 the user installs it with `bash tools/gate/apply.sh`. `python3 tools/test_phone.py`
 and `python3 tools/test_agent_guard.py` run without a phone.
 
+After applying a gate change, start a fresh agent session and run
+`python3 tools/gate/check_installation.py`, then `python3 tools/quality.py`,
+without escalation. The installer generates regular `AGENTS.md` and `CLAUDE.md`
+files from one source; protected symlinks can prevent Codex sandbox startup.
+The installation check verifies files only; an escalated pass is not a sandbox check.
+
 ## Evaluation
 
 For new work, use [the shared take and comparison interface](adrs/017-shared-take-experiments.md).
@@ -199,8 +205,11 @@ Dictionary experiments use `tools/dictionary_score.py` for versioned word scorin
 historical scorers retain their original rules. `tools/tdt_decoder.py` reproduces
 the pinned greedy decoder through the wheel's own runtime, built with
 `tools/tdt-runtime/build.py`; its requirements file pins host dependencies.
-`tools/dictionary_screen.py` records boosting, guard and held-script results in
-a new private run directory. `tools/dictionary_visit.py` prepares and validates
+`tools/dictionary_screen.py` runs the fast scorer and held-script exclusion
+regressions before creating evidence or loading models, then records results in
+a new private run directory. Changed evaluation rules also need focused spec
+review before full inference; passing regressions alone cannot establish their correctness.
+`tools/dictionary_visit.py` prepares and validates
 paired replay and explicit benchmark-only live checks; it never executes phone
 commands. Each tool's `--help` describes its interface. Replay and local screens
 do not establish adoption or real keyboard usability.

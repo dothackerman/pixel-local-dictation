@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import time
 import sys
 
@@ -78,6 +79,10 @@ def run(args):
     output = args.output.resolve()
     if not output.is_relative_to(root/'corpus'):
         raise ValueError('screen evidence must remain inside corpus/')
+    # Known scoring/exclusion regressions must pass before inference creates evidence.
+    subprocess.run([sys.executable, '-m', 'unittest', '-q', 'test_dictionary_score',
+                    'test_dictionary_screen.HeldOutTests'],
+                   cwd=Path(__file__).resolve().parent, check=True)
     output.mkdir(parents=True, exist_ok=False)
     import pipeline
     import variant
