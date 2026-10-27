@@ -181,8 +181,8 @@ and cancellation remain on their existing shared runtime. The tested A silent-ch
 remains enabled; it is disabled in the historical control as before.
 
 Retained-output meaning review is complete with the limitations below. The earlier held-script
-German harm +1/0/+2 remains disclosed. Installation is recorded below; supervised live
-acceptance remains outstanding. UI/UX, dictionary editing and the unresolved #14/#17 startup
+German harm +1/0/+2 remains disclosed. Installation and the completed supervised live
+check are recorded below. UI/UX, dictionary editing and the unresolved #14/#17 startup
 work remain deferred.
 
 The retained-output review found no observed false acceptance of specific listed names/content
@@ -194,8 +194,7 @@ meaning-changing ASR errors. The earlier treatment of these broader transcriptio
 a separate installation blocker overstated that specific review requirement. The owner
 selected A for the overall error/Stop-wait trade-off; these concrete limitations remain
 disclosed, without a blanket safety waiver or perfect-meaning claim. Private examples and
-review limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md`. Installation
-and supervised live results must be recorded from observed evidence.
+review limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md`.
 
 
 ## Candidate A installed — 2026-10-27
@@ -223,5 +222,26 @@ matched the exact frozen A output hashes, with exactly one simulated insertion e
 Private run receipt: `corpus/lab/runs/20261027T081239-run-007ac9/meta.json`; result:
 `corpus/lab/issue11/promotion-a28/normal-parity/files/lab/normal-baseline-result.json`.
 Its verified identity names the installed APK above and the original A configuration, model,
-dictionary and runtime hashes. This focused replay establishes normal-path parity; supervised
-live insertion, cancellation and return to FUTO remain pending. No live Stop wait is inferred.
+dictionary and runtime hashes. This focused replay establishes normal-path parity; live
+evidence is recorded separately below.
+
+
+## Supervised live check and promotion complete — 2026-10-27
+
+The owner confirmed two Stop takes inserted correctly, the third cancelled take inserted
+nothing, and every take returned to the normal keyboard; the flow behaved as expected.
+The two completed receipts bind verified Candidate A and the installed APK above, with
+commit and return accepted. Stop → commit measured **6082.646 ms** and **8280.698 ms**.
+These fresh takes are not paired benchmark measurements and do not replace #15's frozen
+comparison or original rejection. No audio or recognized text was retained.
+
+The cancelled receipt reports `CANCELLED`, no accepted commit, incomplete identity
+verification and no build hash; it does not establish a verified cancellation identity
+or a return-result boolean. The owner observed no insertion and normal keyboard return;
+the protected phone wrapper independently records the installed APK identity.
+
+Private metadata: `corpus/lab/issue11/promotion-a28/live-check/files/lab/live-results.jsonl`;
+summary: `corpus/lab/issue11/promotion-a28/live-check-summary.json`.
+Promotion #28 is complete and A remains the installed provisional baseline. Historical
+INT8 evidence, the recovery snapshot and the disclosed quality limits remain unchanged.
+This does not complete the unresolved #14/#17 startup work or add dictionary editing/UI work.
