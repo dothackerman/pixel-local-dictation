@@ -50,16 +50,16 @@
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:fontFamily="sans-serif"
-        android:textColor="#273122"
+        android:textColor="#5E6A58"
         android:minLines="3"
         android:maxLines="3"
         android:ellipsize="start"
         android:gravity="bottom"
         android:lineSpacingExtra="2dp"
-        android:textSize="18sp" />
+        android:textSize="14sp" />
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="204dp">
+        android:layout_height="255dp">
         <ch.og.dictation.RecordingRingView
             android:id="@+id/recording_ring"
             android:layout_width="match_parent"
@@ -67,12 +67,12 @@
             android:importantForAccessibility="no" />
         <ImageButton
             android:id="@+id/microphone"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
             android:layout_gravity="center"
             android:background="@drawable/mic_background"
             android:src="@drawable/ic_mic"
-            android:padding="16dp"
+            android:padding="20dp"
             android:contentDescription="@string/stop_recording" />
     </FrameLayout>
 </LinearLayout>

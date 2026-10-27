@@ -37,7 +37,7 @@ class DictationImeService : InputMethodService() {
     private var microphoneEnabled = false
     private var microphoneLabel = R.string.status_opening
     private var banner: View? = null
-    /** Decided when the panel opens, so the banner always matches what happens to the take. */
+    /** Only saving audio needs a banner; experiment receipts remain out of the normal panel. */
     private var saveTake = false
     private val session = InputSession()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -153,8 +153,7 @@ class DictationImeService : InputMethodService() {
         saveTake = !liveCheck && BenchmarkStore.isEnabled(this)
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         observeGeometry(startupTake)
-        (banner as? TextView)?.setText(if (liveCheck) R.string.benchmark_live_check else R.string.benchmark_banner)
-        banner?.visibility = if (saveTake || liveCheck) View.VISIBLE else View.GONE
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
     }

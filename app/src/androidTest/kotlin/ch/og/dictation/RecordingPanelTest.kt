@@ -1,6 +1,9 @@
 package ch.og.dictation
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -17,6 +20,28 @@ import kotlin.math.roundToInt
 /** Inflates only our panel: no microphone, keyboard handoff, settings changes or stored audio. */
 @RunWith(AndroidJUnit4::class)
 class RecordingPanelTest {
+    @Test fun quietRingKeepsItsCentreTransparent() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val context = instrumentation.targetContext
+            val density = context.resources.displayMetrics.density
+            val width = (300 * density).roundToInt()
+            val height = (255 * density).roundToInt()
+            val ring = RecordingRingView(context)
+            ring.layout(0, 0, width, height)
+            ring.follow(RecordingFeedback().apply { start() })
+            val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            try {
+                ring.draw(Canvas(image))
+                val gap = image.getPixel(width / 2 + (43 * density).roundToInt(), height / 2)
+                assertTrue("ring filled the gap around the microphone", Color.alpha(gap) < 32)
+                val row = IntArray(width)
+                image.getPixels(row, 0, width, 0, height / 2, width, 1)
+                assertTrue("ring outline was not drawn", row.any { Color.alpha(it) > 200 })
+            } finally { image.recycle() }
+        }
+    }
+
     @Test fun compactPanelKeepsControlsAndPreviewAtLargeFontSizes() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
@@ -36,9 +61,9 @@ class RecordingPanelTest {
                 panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
                 val mic = panel.findViewById<ImageButton>(R.id.microphone)
                 val back = panel.findViewById<ImageButton>(R.id.back)
-                assertEquals((56 * density).roundToInt(), mic.width)
+                assertEquals((70 * density).roundToInt(), mic.width)
                 assertEquals((48 * density).roundToInt(), back.width)
-                assertTrue(preview.textSize > status.textSize)
+                assertTrue(preview.textSize <= status.textSize)
                 assertTrue("status clipped at fontScale=$fontScale",
                     status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
                 // The gap after the last visible line is not clipped text.
@@ -50,7 +75,7 @@ class RecordingPanelTest {
             }
             val metrics = app.resources.displayMetrics
             instrumentation.sendStatus(0, Bundle().apply {
-                putString("stream", "Panel metrics: density=${metrics.density}, screenWidthDp=${app.resources.configuration.screenWidthDp}, micPx=${56 * metrics.density}\n")
+                putString("stream", "Panel metrics: density=${metrics.density}, screenWidthDp=${app.resources.configuration.screenWidthDp}, micPx=${(70 * metrics.density).roundToInt()}\n")
             })
         }
     }

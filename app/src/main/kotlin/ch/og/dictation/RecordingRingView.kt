@@ -18,7 +18,7 @@ import kotlin.math.sin
 class RecordingRingView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     private val ink = Paint(Paint.ANTI_ALIAS_FLAG)
     private val wash = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val ribbon = Path().apply { fillType = Path.FillType.EVEN_ODD }
+    private val ribbon = Path()
     private val inside = Path()
     private val outerX = FloatArray(128)
     private val outerY = FloatArray(128)
@@ -38,8 +38,8 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        ink.shader = LinearGradient(w / 2f - 70 * density, h / 2f - 70 * density,
-            w / 2f + 70 * density, h / 2f + 70 * density,
+        ink.shader = LinearGradient(w / 2f - 87.5f * density, h / 2f - 87.5f * density,
+            w / 2f + 87.5f * density, h / 2f + 87.5f * density,
             intArrayOf(0xff789855.toInt(), 0xff506e3c.toInt(), 0xff6f8d50.toInt()), null, Shader.TileMode.CLAMP)
     }
 
@@ -53,7 +53,7 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
         level += ((target - level) * (1 - exp(-dt / if (target > level) 0.03 else 0.13))).toFloat()
         if (level < 0.001f && target == 0f) level = 0f
         if (animated && target > 0.01f) motion += dt * (0.5 + target * 2)
-        val scale = density * 56f / 94f
+        val scale = density * 70f / 94f
         val cx = width / 2f
         val cy = height / 2f
         for (k in outerX.indices) {
@@ -69,6 +69,8 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
             innerY[k] = (cy + sin(a) * (radius - weight / 2)).toFloat()
         }
         ribbon.rewind()
+        // rewind resets the fill rule; keep the centre hollow on every frame.
+        ribbon.fillType = Path.FillType.EVEN_ODD
         contour(ribbon, outerX, outerY)
         contour(ribbon, innerX, innerY)
         ink.alpha = if (source?.isCapturing == true) 255 else 115
