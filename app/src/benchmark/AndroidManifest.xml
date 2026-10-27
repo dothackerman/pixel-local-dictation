@@ -5,6 +5,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application>
+        <!-- Test-owned editor; no launcher/export in either APK. Release excludes it. -->
+        <activity
+            android:name=".EditorProbeActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <!-- Optional vendor drivers for the synthetic accelerator access probe. -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

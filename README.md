@@ -181,6 +181,47 @@ and returns to FUTO.
   changed geometry receipts, unchanged returned insets and stable final dimensions.
   Host unit tests cannot exercise this cross-window behavior. A synthetic view or
   formula test would not establish the observed handoff's cause.
+- Benchmark-only [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt)
+  is a non-exported, test-owned plain editor for observing the host side of the handoff.
+  No production manifest/permission change. It requests the current keyboard normally;
+  it never selects an IME or reads another app. No animation callback, inset listener,
+  inset consumption, custom transform or animation is installed.
+  After building the benchmark APK pair, immediately run the protected `phone check`
+  with both APK paths, then install using the usual approved phone workflow. Run:
+
+  ```sh
+  /home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run ch.og.dictation.EditorGeometryTest#collectManualKeyboardHandoffs
+  ```
+
+  Keep the phone awake/unlocked and this editor visible. Within the 90-second window,
+  manually tap the current FUTO keyboard microphone, wait for our panel, then Cancel;
+  do this twice total, leaving a few seconds between attempts. Do not type or press Stop.
+  The field is near the top so it remains usable with a keyboard covering the bottom.
+  The runner waits the full window and closes the Activity. It verifies collection,
+  visible IME observation, real laid-out editor bounds, ordered timestamps and receipt
+  budgets. **A passed test does not establish either handoff occurred or passed.**
+  Missing owner handoff confirmation or matching two IME panel requests leaves the
+  experiment incomplete; never infer a handoff count from IME visibility/geometry.
+
+  Pull only `files/lab/editor-geometry.jsonl` into a private `corpus/` visit directory,
+  alongside individual IME geometry/startup receipts. Choreographer polls the host's
+  `rootWindowInsets(Type.ime())` and decor/root/editor `getLocationOnScreen` bounds.
+  Only changed geometry is written, plus start/end rows: at most 4096 geometry rows
+  per run, 90 seconds, 2 MiB total append-only file, asynchronous writes. Full file,
+  destruction or missing keyboard makes collection fail; existing evidence is preserved.
+  Rows contain `editor-geometry-v1`, `CLOCK_MONOTONIC` `ns`, grouping `runStartNs`,
+  `phase`, and `values`: IME visibility/left/top/right/bottom insets and physical-pixel
+  `x`, `y`, `width`, `height` for decor/root/editor. No text, audio or editor identity.
+
+  Correlate the host IME inset plateau/correction with our unchanged exported IME
+  geometry using monotonic timestamps. Reproduction here shows original-editor custom
+  animation is unnecessary. No reproduction does not prove Android is correct.
+  Target 36 enforces edge-to-edge: `adjustResize` does not guarantee root/editor
+  movement, and the top-anchored field may remain stationary. The inset series remains
+  the host observation; fixed editor coordinates are not proof that no inset transition
+  occurred. Polling observes framework geometry, not physical display/compositor motion.
+  This controlled host differs from the original editor and cannot alone establish
+  its behavior, a framework cause, or a production fix.
 - [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and
   [runtime_config.py](tools/runtime_config.py) configure memory allocation for
   the recognizer and language identification (LID) independently. Stock settings
