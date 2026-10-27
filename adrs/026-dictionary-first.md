@@ -245,3 +245,53 @@ summary: `corpus/lab/issue11/promotion-a28/live-check-summary.json`.
 Promotion #28 is complete and A remains the installed provisional baseline. Historical
 INT8 evidence, the recovery snapshot and the disclosed quality limits remain unchanged.
 This does not complete the unresolved #14/#17 startup work or add dictionary editing/UI work.
+
+
+## Candidate A runtime retention correction — 2026-10-27
+
+The earlier promotion's normal-app integration had a runtime retention defect introduced
+by `f81a8eb`. Kotlin bound the trailing `.also { runtime = it }` to the nested fallback/live
+conditional, excluding the new normal Candidate A arm. A compiled minimal reproduction
+returned different runtime objects for successive normal requests; both other arms reused
+the object. Restoring the former two-arm conditional or assigning after the entire
+conditional retained the object on every path.
+
+Consequently, service warm-up and each normal panel request constructed separate runtimes
+and baseline verification records. Each runtime loaded its own model and verified artifacts
+on first recognition. The process-wide `modelReadyNs` remained set after service warm-up,
+so `modelReadyAtPanelRequest=true` did not establish readiness of the take's actual runtime.
+The cancelled receipt's unverified identity and null build hash are consistent with a fresh
+baseline record; cancellation ordering is not established by that receipt alone.
+
+Fix `a9a4b3e` assigns the created runtime outside all conditional arms. Its Android regression
+checks the public `Engine.runtime` interface before/after `Engine.warmUp`, object identity on
+repeated panel requests, and retained verified build identity. Host quality checks passed.
+Corrected APK checks and installation passed. The installed app SHA-256 is
+`a95a05cf7c3dce2672b1d0fa3b12d28184ed964132220f199357f72e59a9074c`; test APK SHA-256 is
+`beb196742948d63e850e61755d7286b694b61c290871b1a940b9f7d2ae04752a`.
+The retained pair is `corpus/lab/issue11/promotion-a28/build-a9a4b3e/app-benchmark.apk`
+and `app-benchmark-androidTest.apk`. Installation receipt:
+`corpus/lab/runs/20261027T082821-install-e82944/meta.json`.
+
+All three `NormalBaselineTest` phone checks passed: canonical runtime fingerprint,
+retained DE/EN output parity, and runtime reuse across warm-up/repeated panel requests.
+Run receipt: `corpus/lab/runs/20261027T082928-run-7395a5/meta.json`.
+Parity evidence: `corpus/lab/issue11/promotion-a28/runtime-fix-parity/files/lab/normal-baseline-result.json`.
+Corrected A remains installed. The owner subsequently reported that it was definitely faster,
+estimating roughly 3–5 s. Two new completed live receipts measured Stop → commit at
+**2253.113 ms** and **1757.637 ms**, with recording durations **10.294 s** and **7.764 s**.
+Both bind verified A and the corrected installed APK, with commit and keyboard return
+accepted, in the same process. Capture drain was **90.669/80.534 ms**; final → commit was
+**1.731/0.705 ms**. Initial model readiness occurred about **4.946 s** after service creation,
+before the first Stop; the second panel reported ready and used the retained runtime.
+Private evidence: `corpus/lab/issue11/promotion-a28/runtime-fix-live-final/files/lab/live-results.jsonl`
+and `startup.jsonl` in the same directory.
+
+The original **6082.646 ms** and **8280.698 ms** live measurements remain immutable evidence
+of the defective integration, not representative measurements of intended A with runtime
+reuse. Historical frozen replay median **3.154 s** is not an estimate of typical live Stop
+wait. The new live takes support repeated verification/model loading as the main explanation
+for the earlier waits; retaining the runtime eliminates that extra load. The recordings
+differ, so they do not establish a controlled numerical speedup or typical live Stop wait.
+The original gate rejection, owner selection, model/configuration/dictionary/runtime
+identities, meaning-review limits and recovery snapshot remain unchanged.

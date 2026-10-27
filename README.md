@@ -47,8 +47,20 @@ normal-app implementation installed and the corrected normal-path replay check p
 one retained take per language matched A exactly, with one simulated insertion each.
 The owner confirmed two Stop takes inserted correctly, Cancel inserted nothing, and all
 three returned to the normal keyboard. Measured live Stop waits were 6.083 s and 8.281 s;
-these fresh takes are not a paired benchmark. See the
+these fresh takes used the defective normal-app integration described below. They do not
+represent the intended A runtime with reuse. The historical 3.154 s replay median is
+not an estimate of typical live Stop wait.
+See the
 decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-candidate-a-as-the-provisional-baseline--2026-10-27).
+A runtime retention defect introduced by `f81a8eb` recreated Candidate A's runtime on
+each panel request, repeating verification and model loading. Process-wide readiness
+could still report true. Fix `a9a4b3e` retains the runtime across warm-up and takes;
+the corrected APK is installed and all three normal-path phone checks passed, including
+runtime reuse and retained DE/EN output parity. Two corrected-build live Stop waits were
+2.253 s and 1.758 s, with verified A identity and accepted insertion/keyboard return.
+These different recordings support the runtime reload diagnosis; they do not establish a
+controlled speedup or typical live wait. The earlier live measurements
+remain unchanged. See [the correction](adrs/026-dictionary-first.md#candidate-a-runtime-retention-correction--2026-10-27).
 The retained-output review found no observed false acceptance of specific listed names/content
 terms for exact A. It also found negation and quantity/unit transcription regressions versus
 phone INT8; the matching FP32 host control already contains some errors, so dictionary-only
@@ -267,7 +279,8 @@ ten short startup takes on October 27; nine complete traces were captured. Warm
 app-request-to-panel draw had median 47 ms and recording start 27 ms. External
 microphone-key timing and live Stop timestamps are absent from those startup traces;
 #14 remains partial and #17 has no established end-to-end cause to fix. The subsequent
-Candidate A live check and retained-output meaning review are complete with the limits above.
+Candidate A live check and retained-output meaning review have the limits above; the
+runtime reuse correction passed phone validation and two fresh live takes, with the timing limits above.
 The earlier #15 visit restored the original app, test APK and data, independently verified
 byte-identical to its pre-visit snapshot. Its original gate rejection is preserved alongside
 the owner's subsequent selection. The October 27 promotion installed A and passed focused
