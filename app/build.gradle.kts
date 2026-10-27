@@ -96,6 +96,7 @@ tasks.matching { it.name.matches(Regex("pre(Release|Benchmark)(AndroidTest)?Buil
     .configureEach { dependsOn(checkReleaseSigning) }
 
 dependencies {
+    implementation("com.google.android.material:material:1.14.0")
     // Recognizer runtime (ADR-003). tools/fetch-assets.sh provides the AAR and the model assets.
     implementation(files(providers.gradleProperty("nativeRoleProfilerAar").orElse("libs/sherpa-onnx-1.13.8.aar").get()))
     testImplementation("junit:junit:4.13.2")

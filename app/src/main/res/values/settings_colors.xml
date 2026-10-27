@@ -1,0 +1,12 @@
+<resources>
+    <color name="dictionary_primary">#426B32</color>
+    <color name="dictionary_on_primary">#FFFFFF</color>
+    <color name="dictionary_primary_container">#CDEDBA</color>
+    <color name="dictionary_on_primary_container">#10200A</color>
+    <color name="dictionary_surface">#F8FAF3</color>
+    <color name="dictionary_on_surface">#1B211B</color>
+    <color name="dictionary_surface_variant">#E1E7DB</color>
+    <color name="dictionary_on_surface_variant">#41493D</color>
+    <color name="dictionary_outline">#71796B</color>
+    <bool name="settings_light_bars">true</bool>
+</resources>

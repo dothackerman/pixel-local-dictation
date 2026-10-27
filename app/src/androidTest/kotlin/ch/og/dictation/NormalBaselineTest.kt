@@ -44,7 +44,10 @@ class NormalBaselineTest {
         }
     }
 
-    @Test fun normalPathMatchesRetainedCandidateAOutputs() {
+    @Test fun normalPathMatchesRetainedCandidateAOutputs() =
+        checkRetainedOutputs("candidate-a-provisional", "normal-baseline-result.json")
+
+    fun checkRetainedOutputs(expectedBaseline: String, resultFile: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lab = File(context.filesDir, "lab")
         require(!File(lab, "live.json").exists()) { "normal-path check forbids benchmark override" }
@@ -53,7 +56,7 @@ class NormalBaselineTest {
         val runtime = Engine.runtime(context)
         runtime.warmUp().get(10, TimeUnit.MINUTES)
         val receipt = requireNotNull(Engine.liveReceipt())
-        assertEquals("candidate-a-provisional", receipt.getString("baseline"))
+        assertEquals(expectedBaseline, receipt.getString("baseline"))
         assertTrue(receipt.getBoolean("verified"))
         val rows = JSONArray()
         val delivery = Executors.newSingleThreadExecutor()
@@ -90,7 +93,7 @@ class NormalBaselineTest {
                 assertEquals("normal output differs: $id", item.getString("output_sha256"), outputHash)
                 rows.put(JSONObject().put("id", id).put("output_sha256", outputHash).put("commits", commits))
             }
-            File(lab, "normal-baseline-result.json").writeText(JSONObject().put("protocol", "normal-baseline-parity-v1")
+            File(lab, resultFile).writeText(JSONObject().put("protocol", "normal-baseline-parity-v1")
                 .put("identity", receipt).put("takes", rows).put("passed", true).toString(2))
         } finally { delivery.shutdown() }
     }
