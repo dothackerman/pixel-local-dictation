@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.TextView
@@ -44,6 +45,13 @@ class DictationImeService : InputMethodService() {
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
+    private var warmUpPending = false
+    private var warmUpDrawView: View? = null
+    private var warmUpDrawListener: ViewTreeObserver.OnDrawListener? = null
+    private val warmUpAfterDraw = Runnable {
+        removeWarmUpDrawListener()
+        requestModelWarmUp()
+    }
     // Observation is separate from take completion, but ends when the input view is hidden.
     private var geometryTake: String? = null
     private var geometryUntilNs = 0L
@@ -69,21 +77,47 @@ class DictationImeService : InputMethodService() {
         super.onCreate()
         val superReturnedNs = System.nanoTime()
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
+        val deferWarmUp = resources.getBoolean(R.bool.warm_up_after_first_draw)
         if (resources.getBoolean(R.bool.startup_timing)) {
-            startup = StartupTrace(applicationContext).also {
+            startup = StartupTrace(applicationContext, if (deferWarmUp) "afterFirstDraw" else "onCreate").also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
                 it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
             }
             observeGeometry()
         }
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
-        val ready = Engine.warmUp(this)
+        if (deferWarmUp) {
+            // Keep synchronous runtime/config setup at the baseline point; only move model work.
+            try {
+                Engine.runtime(applicationContext)
+                warmUpPending = true
+            } catch (failure: Exception) {
+                // Match warmUp's failed-future behavior: service/capture can still handle failure.
+                Log.e(tag, "model load failed", failure)
+                startup?.event("modelFailed")
+            }
+        } else {
+            requestModelWarmUp()
+        }
+        startup?.event("serviceCreateEnd")
+    }
+
+    private fun requestModelWarmUp() {
+        startup?.event("warmUpRequested")
+        val ready = Engine.warmUp(applicationContext)
         startup?.event("warmUpReturned")
         ready.whenComplete { _, failure ->
             startup?.event(if (failure == null) "modelReady" else "modelFailed",
                 ns = Engine.modelReadyNs ?: System.nanoTime())
         }
-        startup?.event("serviceCreateEnd")
+    }
+
+    private fun removeWarmUpDrawListener() {
+        val listener = warmUpDrawListener
+        val observer = warmUpDrawView?.viewTreeObserver
+        if (listener != null && observer?.isAlive == true) observer.removeOnDrawListener(listener)
+        warmUpDrawListener = null
+        warmUpDrawView = null
     }
 
     override fun onCreateInputView(): View {
@@ -91,6 +125,19 @@ class DictationImeService : InputMethodService() {
         val v = layoutInflater.inflate(R.layout.ime, null)
         startup?.event("inputViewInflated")
         panel = v
+        removeWarmUpDrawListener()
+        if (warmUpPending) {
+            val listener = ViewTreeObserver.OnDrawListener {
+                if (warmUpPending) {
+                    warmUpPending = false
+                    // Never load or remove a draw listener inside onDraw; run after this traversal.
+                    mainHandler.post(warmUpAfterDraw)
+                }
+            }
+            warmUpDrawView = v
+            warmUpDrawListener = listener
+            v.viewTreeObserver.addOnDrawListener(listener)
+        }
         observeGeometry(startupTake)
         if (startup != null) {
             v.viewTreeObserver.addOnPreDrawListener {
@@ -222,7 +269,14 @@ class DictationImeService : InputMethodService() {
         super.onFinishInput()
     }
 
-    override fun onDestroy() { unregisterReceiver(screenOff); discardTake("service destroyed"); super.onDestroy() }
+    override fun onDestroy() {
+        warmUpPending = false
+        mainHandler.removeCallbacks(warmUpAfterDraw)
+        removeWarmUpDrawListener()
+        unregisterReceiver(screenOff)
+        discardTake("service destroyed")
+        super.onDestroy()
+    }
 
     private fun startRecording() {
         if (takeActive) return

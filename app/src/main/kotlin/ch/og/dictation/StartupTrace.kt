@@ -10,7 +10,7 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 
 /** Benchmark timing/geometry only: no audio, text, editor identity or permission changes. */
-class StartupTrace(private val context: Context) {
+class StartupTrace(private val context: Context, private val warmUpMode: String = "onCreate") {
     companion object {
         private val processId = UUID.randomUUID().toString()
         private val writer = Executors.newSingleThreadExecutor { Thread(it, "startup-receipts") }
@@ -71,6 +71,7 @@ class StartupTrace(private val context: Context) {
                 val row = JSONObject().put("protocol", "ime-startup-v1")
                     .put("clock", "CLOCK_MONOTONIC").put("processId", processId).put("pid", pid)
                     .put("serviceId", serviceId).put("phase", phase).put("ns", eventNs)
+                    .put("warmUpMode", warmUpMode)
                 eventUptimeMs?.let { row.put("uptimeMs", it) }
                 requestedUptimeMs?.let { row.put("processStartRequestedUptimeMs", it) }
                 startedUptimeMs?.let { row.put("processStartUptimeMs", it) }
