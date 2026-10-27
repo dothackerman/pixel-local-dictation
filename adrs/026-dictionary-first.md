@@ -146,13 +146,12 @@ score 1.5. The owner accepts the measured median Stop wait of 3153.69 ms and obs
 
 This owner decision supersedes rejection of A solely for exceeding the earlier 2500 ms
 criterion. The frozen comparison, original gate and report remain historical evidence;
-no measurement is changed to a pass. German held-script harm +1/0/+2, unreviewed phone
-meaning-changing errors and the absence of a supervised exact-candidate live check remain
-explicit limits. Selection does not assert those checks passed.
+no measurement is changed to a pass. German held-script harm +1/0/+2 and the absence
+of a supervised exact-candidate live check remain explicit limits. The retained-output
+meaning review is recorded below. Selection does not assert every output preserves meaning.
 
-The selected baseline and the installed baseline are currently different: the phone was
-restored to INT8 after the visit, and release still follows that path. Promotion is tracked
-in #28. UI/UX, including dictionary editing, is deferred to later work at the owner's request.
+At selection, the phone had been restored to INT8 after the visit. The subsequent
+normal-path implementation and installation are recorded below; promotion is tracked in #28. UI/UX, including dictionary editing, is deferred to later work at the owner's request.
 Existing safety behavior and no-network constraints remain. #14/#17 retain their unresolved
 startup evidence; selecting A does not complete them. Candidate B's stop after #22 is unchanged.
 
@@ -169,9 +168,10 @@ Review this provisional choice when daily-use evidence or a new candidate change
 
 #28 implements the normal Candidate A path using the packaged acceptance record
 `app/src/main/res/raw/candidate_a.json`. The record binds the exact #15 plan,
-configuration, dictionary, model/VAD artifacts and native runtime. The owner acceptance
-covers the historical Stop-wait limit only. Frozen #15 plans/reports retain their reject
-verdict; no meaning, lifecycle, thermal or other safety gate is relaxed.
+configuration, dictionary, model/VAD artifacts and native runtime. The owner selected A
+for its overall error/Stop-wait trade-off and directed installation. Frozen #15 plans/reports
+retain their original reject verdict; this selection does not establish perfect meaning
+preservation or waive lifecycle, thermal or other safety requirements.
 
 Normal release selection uses provisioned files independently of benchmark live selection.
 Missing or blank dictionary returns the complete historical INT8 pipeline from APK assets;
@@ -180,16 +180,48 @@ no-change behavior against the formerly shipped default. Capture, pause cuts, St
 and cancellation remain on their existing shared runtime. The tested A silent-chunk filter
 remains enabled; it is disabled in the historical control as before.
 
-This is an implementation record, not installed acceptance. Meaning review and the supervised
-normal-path phone check remain separate required evidence. The earlier held-script German
-harm +1/0/+2 remains disclosed. The installed identity and recovery evidence must be recorded
-after an approved installation; until then the restored INT8 installation remains current.
-UI/UX, dictionary editing and the unresolved #14/#17 startup work remain deferred.
+Retained-output meaning review is complete with the limitations below. The earlier held-script
+German harm +1/0/+2 remains disclosed. Installation is recorded below; supervised live
+acceptance remains outstanding. UI/UX, dictionary editing and the unresolved #14/#17 startup
+work remain deferred.
 
-The retained-output meaning review found material meaning errors in A, including errors the
-phone INT8 control transcribes correctly. A matching no-dictionary FP32 host control already
-contains one repeated error, so attribution to dictionary boosting alone is unsupported.
-Quantity/unit regressions versus the phone control also remain. The broad meaning criterion
-has not passed; accepting Stop wait does not accept these harms. Private examples and review
-limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md`. Do not claim an
-approved installed baseline or advance semantic acceptance from the implementation alone.
+The retained-output review found no observed false acceptance of specific listed names/content
+terms in exact A on the known-script, held-script and public guard outputs. It also found
+negation and quantity/unit transcription regressions versus the phone INT8 control. A matching
+no-dictionary FP32 host control already contains some errors, so dictionary boosting alone is
+not an established cause. Zero specific listed-term false accepts does not mean zero
+meaning-changing ASR errors. The earlier treatment of these broader transcription errors as
+a separate installation blocker overstated that specific review requirement. The owner
+selected A for the overall error/Stop-wait trade-off; these concrete limitations remain
+disclosed, without a blanket safety waiver or perfect-meaning claim. Private examples and
+review limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md`. Installation
+and supervised live results must be recorded from observed evidence.
+
+
+## Candidate A installed — 2026-10-27
+
+The checked benchmark APKs from integration commit `a36f362` were installed under the owner's
+direction, then the verified normal A artifacts were provisioned without a benchmark override.
+The corrected build from `cbead7a` is now installed. App SHA256:
+`ace6fa094259b15ce4621f7ee3ac943afcbf9492c6b90b72bcf10b0fe7da8bd1`; test SHA256:
+`ca7c76e19a503fcfbb7da2c578b7decb692d0e8f5ef1f27b959625bbad9612e3`.
+
+Private initial installation receipt: `corpus/lab/runs/20261027T080126-install-494811/meta.json`;
+normal-artifact push receipt: `corpus/lab/runs/20261027T080356-push-4f81f0/meta.json`.
+Corrected installation: `corpus/lab/runs/20261027T081141-install-0ddfb5/meta.json`.
+Recovery snapshot `issue11-20261027-before-a28` preserves the pre-promotion installation.
+A remains installed; no restoration is claimed for this promotion.
+
+The first normal-path check failed before model inference: Android's JSON encoder escaped
+slashes in the native-library inventory, changing its digest despite identical library bytes.
+Private failure trace: `corpus/lab/runs/20261027T080413-run-6cea46/instrumentation.txt`.
+The correction uses the frozen Python inventory encoding on both platforms; manifest and
+native hashes remain unchanged. The rebuilt normal-path phone test passed, including the
+independent canonical-encoding regression. One retained German and one retained English take
+matched the exact frozen A output hashes, with exactly one simulated insertion each.
+
+Private run receipt: `corpus/lab/runs/20261027T081239-run-007ac9/meta.json`; result:
+`corpus/lab/issue11/promotion-a28/normal-parity/files/lab/normal-baseline-result.json`.
+Its verified identity names the installed APK above and the original A configuration, model,
+dictionary and runtime hashes. This focused replay establishes normal-path parity; supervised
+live insertion, cancellation and return to FUTO remain pending. No live Stop wait is inferred.

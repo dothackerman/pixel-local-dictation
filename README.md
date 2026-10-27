@@ -17,10 +17,11 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 
 The app records, recognizes speech locally and inserts text through FUTO's
 microphone workflow. Tags `m1` and `m2` record the prototype gates. The default
-engine currently installed is Parakeet v3 with a selective INT8 encoder on the CPU
-([ADR-003](adrs/003-working-engine.md)). On October 27 the owner selected Candidate A
-(FP32 beam 8, dictionary score 1.5) as the new provisional baseline, accepting its
-measured Stop wait. Promotion to the normal app path is [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28);
+engine currently installed is Candidate A: Parakeet v3 FP32 on the CPU, beam 8,
+dictionary score 1.5. On October 27 the owner selected and installed A as the
+provisional baseline for its error/Stop-wait trade-off. The historical INT8 pipeline
+([ADR-003](adrs/003-working-engine.md)) remains the empty-dictionary fallback.
+Normal-app promotion is [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28);
 UI/UX and dictionary editing are deferred. The WebGPU track stopped at
 one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
@@ -42,11 +43,17 @@ Candidate A: median Stop wait 3.154 s exceeds the ticket's 2.5 s limit, despite
 the same accuracy gain. All 30 default/default pairs matched text; observed
 timing variability was 206 ms. The owner subsequently chose A despite that original
 timing-gate result; the frozen measurements remain unchanged. A is selected, with
-normal-app implementation now present; installation and supervised live acceptance remain outstanding. See the
+normal-app implementation installed and the corrected normal-path replay check passed:
+one retained take per language matched A exactly, with one simulated insertion each.
+Supervised live acceptance remains outstanding. See the
 decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-candidate-a-as-the-provisional-baseline--2026-10-27).
-The retained-output review found material meaning errors and quantity/unit regressions versus
-phone INT8. The broad meaning criterion has not passed; the owner's wait acceptance does
-not waive it. Private review: `corpus/lab/issue11/promotion-a28/meaning-review.md`.
+The retained-output review found no observed false acceptance of specific listed names/content
+terms for exact A. It also found negation and quantity/unit transcription regressions versus
+phone INT8; the matching FP32 host control already contains some errors, so dictionary-only
+causation is unsupported. This specific listed-term review does not certify perfect meaning
+preservation. These errors remain limits of the owner-selected provisional baseline, not a
+claim that the owner waived every safety requirement. Private review:
+`corpus/lab/issue11/promotion-a28/meaning-review.md`.
 Private evidence is indexed by `corpus/lab/issue11/HANDOFF.md`.
 
 Read the results and their limits before selecting the next question:
@@ -258,10 +265,12 @@ ten short startup takes on October 27; nine complete traces were captured. Warm
 app-request-to-panel draw had median 47 ms and recording start 27 ms. External
 microphone-key timing and live Stop timestamps are absent; #14 remains partial
 and #17 has no established end-to-end cause to fix. Candidate A still needs its
-meaning-preservation review and supervised live check. The original app, test APK and data were
-restored and independently verified byte-identical to the pre-visit snapshot;
-#15's comparison is complete; its original gate rejection is preserved alongside
-the owner's subsequent acceptance. Baseline promotion has not yet changed the installed app.
+supervised live check; retained-output meaning review is complete with the limitations above.
+The earlier #15 visit restored the original app, test APK and data, independently verified
+byte-identical to its pre-visit snapshot. Its original gate rejection is preserved alongside
+the owner's subsequent selection. The October 27 promotion installed A and passed focused
+normal-path replay parity; supervised insertion/cancellation/FUTO usability remains pending. Recovery snapshot
+`issue11-20261027-before-a28` preserves the prior installation.
 
 ## Evidence and history
 
