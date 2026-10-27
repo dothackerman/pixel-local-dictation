@@ -61,7 +61,7 @@ The earlier held-script German harm (+1/0/+2 across feeds) remains a separate li
 The default resource column includes both phases' default arms. No meaning-changing false-accept
 verdict or supervised live result is claimed; the latency failure alone rejects the candidate.
 No dictionary editor or daily-default change advances. Candidate B already stopped without a
-passing alpha (#16); #18/#19 remain blocked. Startup measurement #14 and its evidence-dependent
+passing alpha (#16); #18/#19 could not advance. Startup measurement #14 and its evidence-dependent
 fix #17 remain open.
 
 Private evidence: `corpus/lab/issue11/visit-a-s15/plan.json`,
@@ -133,7 +133,7 @@ Restoration completed after collection. Independent snapshot `issue11-20261027-r
 byte-identical app APK, test APK and complete data archive to `issue11-20261026-resume`; grants
 and observed IME state also match. Evidence: `startup-20261027/recovery-verification.json` and
 the original restore receipt. The benchmark visit is over; #15 is complete with a reject verdict.
-#14 remains partial, #17 awaits a measured cause, and #18/#19 remain blocked by the negative
+#14 remains partial, #17 awaits a measured cause, and #18/#19 could not advance after the negative
 greedy screen. These startup observations alone establish no startup fix or dictionary adoption.
 
 ## Owner selects Candidate A as the provisional baseline — 2026-10-27
@@ -155,6 +155,10 @@ restored to INT8 after the visit, and release still follows that path. Promotion
 in #28. UI/UX, including dictionary editing, is deferred to later work at the owner's request.
 Existing safety behavior and no-network constraints remain. #14/#17 retain their unresolved
 startup evidence; selecting A does not complete them. Candidate B's stop after #22 is unchanged.
+
+The owner confirmed that B-only follow-ups #18 (native patch), #19 (phone integration) and
+#20 (upstream contribution) should close. They are closed as **not planned**, not completed
+implementations. The completed negative experiments #16/#22 remain closed as completed.
 
 Future comparisons must name their actual control. Preserve the old INT8 baseline and all
 frozen results under their original identities; do not silently relabel them as Candidate A.

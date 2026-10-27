@@ -32,6 +32,7 @@ the stock wheel on all 210 public clips. Greedy dictionary boosting
 failed the reviewed screen (#16) and its rerun with every emitted token path and strict
 gates (#22): no alpha passes in either language, so candidate B is stopped and the native
 greedy dictionary patch is not implemented ([ADR-026](adrs/026-dictionary-first.md#greedy-boosting-rerun-result--2026-10-27)).
+B-only follow-ups #18–20 are closed as not planned; A's promotion continues in #28.
 FP32 beam-8 with dictionary score 1.5 reduced primary-feed German/English errors
 from 36/22 to 31/15, with gains on all three feeds and zero dictionary-word false
 accepts on the public guards. Its held-script check added 1/0/2 German errors at
