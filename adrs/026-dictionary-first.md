@@ -3,6 +3,46 @@
 2026-10-25 · Accepted by the user. Supersedes ADR-013 "Next decisions" 1–3 and README R4 (2026-10-09 wording).
 Planned work for this decision lives in GitHub: spec #11 and its tickets. No plan document exists in the repo.
 
+## Current delivery and accepted startup limits — 2026-10-27
+
+Candidate A remains the installed provisional baseline, with its exact accepted normal
+configuration, dictionary, model and runtime identities preserved. The final installation
+restored the retained `0efa5b2` APK pair after rejecting the scheduling experiment;
+rollback commit `1b2a04d` has the same tracked tree as `0efa5b2`.
+App SHA-256: `a240610540469f27335a11f8251bc2dedf7bbc91a00feae6e56e0d7fa9efe8ad`.
+Test SHA-256: `d6ebad1d6c1a0d618d47a1963033181a7bdaebe5d21fe854a52a553db11cc11a`.
+Installation receipt: `corpus/lab/runs/20261027T125120-install-964943/meta.json`.
+Earlier installation identities and verdicts below describe their dated stages.
+
+The owner accepts the current observed handoff of roughly **1.3 s cold / 0.25 s warm**
+for now. This is a temporary acceptance of startup cost, not an immediate-panel claim
+or an R8 fix. Later true-cold timing separates process startup from service work;
+most of the measured cold interval preceded service entry. Capture started before panel
+draw, and model readiness did not gate panel drawing or microphone start. Video timing,
+app callbacks and physical pixels remain distinct endpoints; these few observations
+establish neither typical nor tail startup latency.
+
+Benchmark candidate `70df5d7` retained eager runtime/config setup and moved explicit model
+warm-up to a main-queue task posted from first draw. Receipts confirmed the scheduling
+change, but the cold/warm visual comparison showed no gain. One pair does not establish
+a causal regression. Revert `1b2a04d` restores eager warm-up; no replacement workaround
+or panel redesign was adopted. Benchmark-only geometry, editor-animation and startup
+diagnostics remain available; no personal recordings, transcripts or editor identity
+are tracked.
+
+The original #14 ten-take/key-timing acceptance remains partial: nine original complete
+app-side traces exist, without the original external key timing or explicit live Stop
+boundaries. Later probes do not retroactively complete that protocol. #17 is deferred
+and nonblocking under the owner's acceptance above; no startup fix is claimed. Signal
+8.32.3's observed cached-height jump is separate, with no adopted workaround or panel
+redesign. Dictionary editing and other UI/UX remain deferred.
+
+Delivery is tracked by [PR #29](https://github.com/dothackerman/pixel-local-dictation/pull/29),
+ready for final review; #11/#28 close through that PR. Issues #23–27 remain separate
+follow-ups. The frozen #15 rejection, owner-selected A trade-off, meaning-review limits,
+recovery evidence and negative Candidate B result remain unchanged. Revisit startup
+when the owner prioritizes it or new evidence justifies a specific change.
+
 ## Context
 
 #1 asked whether the FP32 encoder on WebGPU cuts the Stop wait at equal text. ADR-025 (one take per language,
@@ -199,9 +239,11 @@ review limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md
 
 ## Candidate A installed — 2026-10-27
 
+Historical installation stage; the current APK pair is identified above.
+
 The checked benchmark APKs from integration commit `a36f362` were installed under the owner's
 direction, then the verified normal A artifacts were provisioned without a benchmark override.
-The corrected build from `cbead7a` is now installed. App SHA256:
+The corrected build from `cbead7a` was installed at this stage. App SHA256:
 `ace6fa094259b15ce4621f7ee3ac943afcbf9492c6b90b72bcf10b0fe7da8bd1`; test SHA256:
 `ca7c76e19a503fcfbb7da2c578b7decb692d0e8f5ef1f27b959625bbad9612e3`.
 
@@ -209,7 +251,7 @@ Private initial installation receipt: `corpus/lab/runs/20261027T080126-install-4
 normal-artifact push receipt: `corpus/lab/runs/20261027T080356-push-4f81f0/meta.json`.
 Corrected installation: `corpus/lab/runs/20261027T081141-install-0ddfb5/meta.json`.
 Recovery snapshot `issue11-20261027-before-a28` preserves the pre-promotion installation.
-A remains installed; no restoration is claimed for this promotion.
+A remained installed after this promotion; no restoration is claimed for it.
 
 The first normal-path check failed before model inference: Android's JSON encoder escaped
 slashes in the native-library inventory, changing its digest despite identical library bytes.
@@ -242,7 +284,7 @@ the protected phone wrapper independently records the installed APK identity.
 
 Private metadata: `corpus/lab/issue11/promotion-a28/live-check/files/lab/live-results.jsonl`;
 summary: `corpus/lab/issue11/promotion-a28/live-check-summary.json`.
-Promotion #28 is complete and A remains the installed provisional baseline. Historical
+Promotion #28 completed; A remained the installed provisional baseline at this stage. Historical
 INT8 evidence, the recovery snapshot and the disclosed quality limits remain unchanged.
 This does not complete the unresolved #14/#17 startup work or add dictionary editing/UI work.
 
@@ -277,7 +319,7 @@ All three `NormalBaselineTest` phone checks passed: canonical runtime fingerprin
 retained DE/EN output parity, and runtime reuse across warm-up/repeated panel requests.
 Run receipt: `corpus/lab/runs/20261027T082928-run-7395a5/meta.json`.
 Parity evidence: `corpus/lab/issue11/promotion-a28/runtime-fix-parity/files/lab/normal-baseline-result.json`.
-Corrected A remains installed. The owner subsequently reported that it was definitely faster,
+This corrected A installation was retained. The owner subsequently reported that it was definitely faster,
 estimating roughly 3–5 s. Two new completed live receipts measured Stop → commit at
 **2253.113 ms** and **1757.637 ms**, with recording durations **10.294 s** and **7.764 s**.
 Both bind verified A and the corrected installed APK, with commit and keyboard return

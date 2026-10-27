@@ -9,7 +9,7 @@ This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
 rules. The [ADRs](adrs/) record decisions and past experiment conclusions.
 Planned work lives only in GitHub Issues, as specs and tickets; a plan, gate,
-schedule or checklist in a tracked file is a defect. The open spec is
+schedule or checklist in a tracked file is a defect. The delivery spec is
 [#11](https://github.com/dothackerman/pixel-local-dictation/issues/11).
 The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
 
@@ -24,7 +24,21 @@ provisional baseline for its error/Stop-wait trade-off. The historical INT8 pipe
 Normal-app promotion [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28) is complete;
 UI/UX and dictionary editing are deferred. The WebGPU track stopped at
 one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
-2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
+2026-10-25: [ADR-026](adrs/026-dictionary-first.md). Delivery of #11/#28 is in
+[PR #29](https://github.com/dothackerman/pixel-local-dictation/pull/29), ready for final
+review; issues #23–27 remain separate follow-ups.
+
+The final installation restored the retained `0efa5b2` APK pair after rollback
+`1b2a04d` (identical tracked tree), preserving exact normal A configuration.
+[Current APK identities and installation receipt](adrs/026-dictionary-first.md#current-delivery-and-accepted-startup-limits--2026-10-27)
+identify the installed build; installation hashes mentioned below are historical stages.
+The owner accepts the observed roughly **1.3 s cold / 0.25 s warm** handoff for now.
+#14's original ten-take/key-timing protocol remains partial; #17 is deferred and
+nonblocking. No immediate-panel or startup-fix claim follows. The benchmark first-draw
+warm-up candidate `70df5d7` showed no visual gain and was reverted by `1b2a04d`;
+eager warm-up is restored. Signal 8.32.3's observed cached-height jump is separate,
+with no adopted workaround or panel redesign. Benchmark geometry/editor/startup
+diagnostics remain available; personal evidence stays in gitignored `corpus/`.
 
 Local implementation and screening for #11 completed on 2026-10-26 on
 `codex/issue-11-dictionary`. The versioned
@@ -55,7 +69,7 @@ decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-ca
 A runtime retention defect introduced by `f81a8eb` recreated Candidate A's runtime on
 each panel request, repeating verification and model loading. Process-wide readiness
 could still report true. Fix `a9a4b3e` retains the runtime across warm-up and takes;
-the corrected APK is installed and all three normal-path phone checks passed, including
+the corrected APK was installed and all three normal-path phone checks passed, including
 runtime reuse and retained DE/EN output parity. Two corrected-build live Stop waits were
 2.253 s and 1.758 s, with verified A identity and accepted insertion/keyboard return.
 These different recordings support the runtime reload diagnosis; they do not establish a
@@ -392,22 +406,22 @@ do not establish adoption or real keyboard usability.
 
 Answered calls, longer battery-only model survival and a clean full FP32 export
 remain unverified. Dictionary entry and editing ship only with an adopt verdict
-([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
-work: spec #11 and its tickets. Startup instrumentation and paired/live comparison
-tools are implemented; the owner accepts Candidate A's measured wait and selects it
-as the provisional baseline. Normal-app promotion #28 is complete; dictionary editing and
-UI/UX are deferred. The owner completed
-ten short startup takes on October 27; nine complete traces were captured. Warm
-app-request-to-panel draw had median 47 ms and recording start 27 ms. External
-microphone-key timing and live Stop timestamps are absent from those startup traces;
-#14 remains partial and #17 has no established end-to-end cause to fix. The subsequent
-Candidate A live check and retained-output meaning review have the limits above; the
-runtime reuse correction passed phone validation and two fresh live takes, with the timing limits above.
-The earlier #15 visit restored the original app, test APK and data, independently verified
-byte-identical to its pre-visit snapshot. Its original gate rejection is preserved alongside
-the owner's subsequent selection. The October 27 promotion installed A and passed focused
-normal-path replay parity and the supervised insertion/cancellation/FUTO check. Recovery snapshot
-`issue11-20261027-before-a28` preserves the prior installation.
+([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. #11/#28 delivery is ready for final review in
+PR #29. Issues #23–27 remain separate; dictionary editing/UI/UX remain deferred.
+The owner accepts A's disclosed accuracy/Stop-wait trade-off and current observed
+startup of roughly 1.3 s cold / 0.25 s warm. The original October 27 #14 collection
+contains nine complete app-side traces after ten reported takes; original external
+key timing and explicit live Stop boundaries are absent. #14 remains partial and
+#17 is deferred, nonblocking under that owner acceptance. Later process/video
+probes and the rejected first-draw warm-up experiment do not establish a startup
+fix. Signal 8.32.3's cached-height jump remains a separate deferred UI issue.
+
+The normal-path runtime reuse correction passed phone validation and fresh live
+insertion checks, with the evidence limits above. The earlier #15 visit restored
+its app, test APK and data byte-for-byte; its original gate rejection is preserved
+alongside the owner's subsequent A selection. A remains installed with the exact
+normal configuration; the current APK identities are recorded in ADR-026.
+Recovery snapshot `issue11-20261027-before-a28` preserves the pre-promotion installation.
 
 ## Evidence and history
 
