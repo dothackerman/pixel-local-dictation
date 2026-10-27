@@ -177,22 +177,6 @@ and returns to FUTO.
   Historical `ns` events (such as `modelReady` and forwarded audio events) omit
   `uptimeMs` unless captured at their actual event; a later observer is not a pair.
   Collection keeps the existing 2 MiB bound, without overwrite.
-  Benchmark scheduling candidate `warm_up_after_first_draw` is enabled only in
-  benchmark resources; release retains eager warm-up. Runtime/config initialization
-  stays in `onCreate`; the same explicit `Engine.warmUp` and readiness observer run
-  once, posted to the main queue from the panel's first draw callback. Startup rows
-  identify `warmUpMode` (`afterFirstDraw` or `onCreate`), with `warmUpRequested` and
-  `warmUpReturned` marking the actual invocation. Listener removal happens outside
-  draw; service destruction removes pending listener/work. Without a draw, no
-  explicit model warm-up runs. Microphone capture remains immediate; a first speech
-  chunk can still load the recognizer lazily. Initialization failure is reported
-  without crashing the service. This tests possible background model-load contention
-  before draw; it cannot remove pre-service process startup and may delay preview
-  readiness. Validate cold/warm Signal video, first audio, Stop and cancellation
-  before calling it an improvement. Draw is still submission, not presentation.
-  Existing `TakeSessionTest` exercises capture before any explicit warm-up, queued
-  decoding/late audio and input-change cancellation; Android draw ordering and
-  destruction before the posted callback require the real lifecycle check.
   `StartupTraceTest` checks actual asynchronous receipt persistence; lifecycle
   placement and visual blank still need a supervised real cold/warm handoff.
   For true cold, our app process must be absent before the normal FUTO microphone

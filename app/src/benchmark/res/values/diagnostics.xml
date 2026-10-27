@@ -1,5 +1,4 @@
 <resources>
-    <bool name="warm_up_after_first_draw">true</bool>
     <bool name="startup_timing">true</bool>
     <bool name="benchmark_live_variant">true</bool>
 </resources>
