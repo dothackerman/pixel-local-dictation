@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-27T15:20:57.251995+00:00",
+  "generatedAt": "2026-10-27T15:26:14.501798+00:00",
   "title": "Design System: Pixel Local Dictation",
   "extensions": {
     "colorMeta": {
@@ -112,9 +112,9 @@
       "name": "Search field structure",
       "kind": "input",
       "refersTo": "search-field",
-      "description": "Structural preview only; native FilledBox has a magnifying start icon, clear action, inline input hint, no floating hint and zero normal/focused strokes. Source: layout/dictionary.xml.",
+      "description": "Structural preview only; native FilledBox has a magnifying start icon, clear action, inline input hint, no floating hint and zero normal/focused strokes. Source: layout/dictionary.xml. Hint explicitly uses colorOnSurfaceVariant; final measured contrast: light 4.94:1, dark 6.56:1.",
       "html": "<div class=\"ds-search-wrap\"><svg class=\"ds-search-icon\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" d=\"M16,10a6,6 0,1 1,-12 0a6,6 0,1 1,12 0M14.5,14.5L20,20\"/></svg><input class=\"ds-search\" aria-label=\"Search terms\" placeholder=\"Search terms\"></div>",
-      "css": ".ds-search-wrap { display:flex; align-items:center; border-radius:28px; background:#E1E7DB; color:#41493D; } .ds-search { border:0; background:transparent; color:#1B211B; font-family:sans-serif; }"
+      "css": ".ds-search-wrap { display:flex; align-items:center; border-radius:28px; background:#E1E7DB; color:#41493D; } .ds-search { border:0; background:transparent; color:#1B211B; font-family:sans-serif; } .ds-search::placeholder { color:#41493D; opacity:1; }"
     },
     {
       "name": "Term label",
@@ -143,7 +143,7 @@
   ],
   "narrative": {
     "northStar": "Native Material3 task UI",
-    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.\n\nVerification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.\n\nNot canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.",
+    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.\n\nVerification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.\n\nNot canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.\n\nFinal contrast correction (`c23d2f1`): search hint explicitly uses `colorOnSurfaceVariant`; measured hint contrast is 4.94:1 in light and 6.56:1 in dark. Four list/empty contrast recaptures under `corpus/lab/dictionary-settings-contrast-review/files/lab/dictionary-settings/` (`phone-list.png`, `phone-empty.png`, `phone-large-light-list.png`, `phone-large-light-empty.png`) supersede the corresponding earlier captures for contrast only. Add/duplicate evidence remains in the final-review directory. Both dark and app-local light/1.3-scale UI tests passed again on the final APK, including keyboard and touch-target checks.",
     "keyCharacteristics": [
       "Native Android Material3 controls.",
       "Dynamic color with light/dark green fallbacks.",

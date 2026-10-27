@@ -79,6 +79,8 @@ This records the implemented Settings/dictionary surface, not a redesign of the 
 
 Verification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.
 
+Final contrast correction (`c23d2f1`): search hint explicitly uses `colorOnSurfaceVariant`; measured hint contrast is 4.94:1 in light and 6.56:1 in dark. Four list/empty contrast recaptures under `corpus/lab/dictionary-settings-contrast-review/files/lab/dictionary-settings/` (`phone-list.png`, `phone-empty.png`, `phone-large-light-list.png`, `phone-large-light-empty.png`) supersede the corresponding earlier captures for contrast only. Add/duplicate evidence remains in the final-review directory. Both dark and app-local light/1.3-scale UI tests passed again on the final APK, including keyboard and touch-target checks.
+
 **Key Characteristics:**
 - Native Android Material3 controls.
 - Dynamic color with light/dark green fallbacks.
@@ -135,7 +137,7 @@ Launcher and Android keyboard settings resolve to the same Settings activity. Se
 
 ### Search and terms
 
-Filled rounded search with a magnifying start icon and clear action. Hint sits inside the single-line input; floating hint is disabled and both normal/focused box strokes are zero. Search IME action disables personalized learning. Filter is trimmed and case-insensitive; displayed entries use German locale collation. Count describes the full dictionary, not just matches. Each row opens editing; its separate delete action has a term-specific accessibility description.
+Filled rounded search with a magnifying start icon and clear action. Hint sits inside the single-line input; floating hint is disabled and both normal/focused box strokes are zero. Search IME action disables personalized learning. Hint text explicitly resolves `colorOnSurfaceVariant`. Filter is trimmed and case-insensitive; displayed entries use German locale collation. Count describes the full dictionary, not just matches. Each row opens editing; its separate delete action has a term-specific accessibility description.
 
 ### Add action and editor
 
