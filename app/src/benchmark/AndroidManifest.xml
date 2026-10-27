@@ -12,6 +12,9 @@
             android:excludeFromRecents="true"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".DictionaryLargeTextPreviewActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings"
+            android:windowSoftInputMode="adjustResize" />
         <!-- Optional vendor drivers for the synthetic accelerator access probe. -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

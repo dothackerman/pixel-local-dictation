@@ -252,6 +252,7 @@ class DictationImeService : InputMethodService() {
             val token = session.token()
             recordingToken = token
             val save = saveTake
+            var identity: () -> org.json.JSONObject? = { null }
             val output = object : TakeOutput {
                 override fun preview(text: String) = showPreview(text)
                 override fun commit(text: String) = commitForSession(token, text)
@@ -263,7 +264,7 @@ class DictationImeService : InputMethodService() {
                     finally { mainHandler.post { returning = false } }
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
-                    Engine.liveReceipt()?.let { startup?.liveResult(liveTakeId, it, result) }
+                    identity()?.let { startup?.liveResult(liveTakeId, it, result) }
                     if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
                         val stopped = result.eventsNs["stopRequested"]
                         val final = result.eventsNs["finalReady"]
@@ -317,7 +318,10 @@ class DictationImeService : InputMethodService() {
                     trace.event(event.phase, traceTake, event.ns)
                 }
             }
-            take = Engine.runtime(this).open(capture, output, mainExecutor, observer).also { it.start() }
+            take = Engine.openTake(this) { runtime, receipt ->
+                identity = receipt
+                runtime.open(capture, output, mainExecutor, observer).also { it.start() }
+            }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
             startup?.event("recordingFailed", startupTake)

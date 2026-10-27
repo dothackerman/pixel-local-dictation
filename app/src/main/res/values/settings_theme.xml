@@ -1,0 +1,17 @@
+<resources>
+    <style name="Theme.Dictation.Settings" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/dictionary_primary</item>
+        <item name="colorOnPrimary">@color/dictionary_on_primary</item>
+        <item name="colorPrimaryContainer">@color/dictionary_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/dictionary_on_primary_container</item>
+        <item name="android:colorBackground">@color/dictionary_surface</item>
+        <item name="colorSurface">@color/dictionary_surface</item>
+        <item name="colorOnSurface">@color/dictionary_on_surface</item>
+        <item name="colorSurfaceVariant">@color/dictionary_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/dictionary_on_surface_variant</item>
+        <item name="colorOutline">@color/dictionary_outline</item>
+        <item name="android:windowLightStatusBar">@bool/settings_light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/settings_light_bars</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+</resources>

@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T15:26:14.501798+00:00",
+  "title": "Design System: Pixel Local Dictation",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Primary"
+      },
+      "on-primary": {
+        "role": "primary",
+        "displayName": "On Primary"
+      },
+      "primary-container": {
+        "role": "primary",
+        "displayName": "Primary Container"
+      },
+      "on-primary-container": {
+        "role": "primary",
+        "displayName": "On Primary Container"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface"
+      },
+      "on-surface": {
+        "role": "neutral",
+        "displayName": "On Surface"
+      },
+      "surface-variant": {
+        "role": "neutral",
+        "displayName": "Surface Variant"
+      },
+      "on-surface-variant": {
+        "role": "neutral",
+        "displayName": "On Surface Variant"
+      },
+      "outline": {
+        "role": "neutral",
+        "displayName": "Outline"
+      },
+      "night-primary": {
+        "role": "primary",
+        "displayName": "Night Primary"
+      },
+      "night-on-primary": {
+        "role": "primary",
+        "displayName": "Night On Primary"
+      },
+      "night-primary-container": {
+        "role": "primary",
+        "displayName": "Night Primary Container"
+      },
+      "night-on-primary-container": {
+        "role": "primary",
+        "displayName": "Night On Primary Container"
+      },
+      "night-surface": {
+        "role": "neutral",
+        "displayName": "Night Surface"
+      },
+      "night-on-surface": {
+        "role": "neutral",
+        "displayName": "Night On Surface"
+      },
+      "night-surface-variant": {
+        "role": "neutral",
+        "displayName": "Night Surface Variant"
+      },
+      "night-on-surface-variant": {
+        "role": "neutral",
+        "displayName": "Night On Surface Variant"
+      },
+      "night-outline": {
+        "role": "neutral",
+        "displayName": "Night Outline"
+      }
+    },
+    "typographyMeta": {
+      "title-large": {
+        "displayName": "Title Large",
+        "purpose": "Native sheet heading."
+      },
+      "body-large": {
+        "displayName": "Body Large",
+        "purpose": "Dictionary term labels."
+      },
+      "body-medium": {
+        "displayName": "Body Medium",
+        "purpose": "Explanation and status."
+      },
+      "label-medium": {
+        "displayName": "Label Medium",
+        "purpose": "Counts and inline feedback."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Toolbar structure",
+      "kind": "nav",
+      "refersTo": "toolbar",
+      "description": "Structural preview only; native MaterialToolbar owns navigation, title style and state layers. Back icon uses colorOnSurface. Source: layout/dictionary.xml.",
+      "html": "<nav class=\"ds-toolbar\">Dictionary</nav>",
+      "css": ".ds-toolbar { min-height:64px; display:flex; align-items:center; color:#1B211B; background:#F8FAF3; font-family:sans-serif; }"
+    },
+    {
+      "name": "Search field structure",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "Structural preview only; native FilledBox has a magnifying start icon, clear action, inline input hint, no floating hint and zero normal/focused strokes. Source: layout/dictionary.xml. Hint explicitly uses colorOnSurfaceVariant; final measured contrast: light 4.94:1, dark 6.56:1.",
+      "html": "<div class=\"ds-search-wrap\"><svg class=\"ds-search-icon\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" d=\"M16,10a6,6 0,1 1,-12 0a6,6 0,1 1,12 0M14.5,14.5L20,20\"/></svg><input class=\"ds-search\" aria-label=\"Search terms\" placeholder=\"Search terms\"></div>",
+      "css": ".ds-search-wrap { display:flex; align-items:center; border-radius:28px; background:#E1E7DB; color:#41493D; } .ds-search { border:0; background:transparent; color:#1B211B; font-family:sans-serif; } .ds-search::placeholder { color:#41493D; opacity:1; }"
+    },
+    {
+      "name": "Term label",
+      "kind": "custom",
+      "refersTo": "term-row",
+      "description": "Static light fallback; native selectable background and row delete control omitted. Source: layout/dictionary_row.xml.",
+      "html": "<div class=\"ds-term\">Example term</div>",
+      "css": ".ds-term { min-height:64px; padding:18px 10px; color:#1B211B; font:16px/24px sans-serif; letter-spacing:0.03125em; }"
+    },
+    {
+      "name": "Editor heading",
+      "kind": "custom",
+      "refersTo": "editor-title",
+      "description": "Type-role preview; actual native sheet includes close icon and outlined field. Source: layout/dictionary_editor.xml.",
+      "html": "<div class=\"ds-title\">Add term</div>",
+      "css": ".ds-title { font:22px/28px sans-serif; letter-spacing:0; }"
+    },
+    {
+      "name": "Inline feedback",
+      "kind": "custom",
+      "refersTo": "feedback",
+      "description": "Static light fallback; actual feedback is a polite Android live region. Source: layout/dictionary_editor.xml.",
+      "html": "<div class=\"ds-feedback\">Only on this device</div>",
+      "css": ".ds-feedback { font:500 12px/16px sans-serif; letter-spacing:0.04166667em; color:#41493D; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Native Material3 task UI",
+    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.\n\nVerification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.\n\nNot canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.\n\nFinal contrast correction (`c23d2f1`): search hint explicitly uses `colorOnSurfaceVariant`; measured hint contrast is 4.94:1 in light and 6.56:1 in dark. Four list/empty contrast recaptures under `corpus/lab/dictionary-settings-contrast-review/files/lab/dictionary-settings/` (`phone-list.png`, `phone-empty.png`, `phone-large-light-list.png`, `phone-large-light-empty.png`) supersede the corresponding earlier captures for contrast only. Add/duplicate evidence remains in the final-review directory. Both dark and app-local light/1.3-scale UI tests passed again on the final APK, including keyboard and touch-target checks.",
+    "keyCharacteristics": [
+      "Native Android Material3 controls.",
+      "Dynamic color with light/dark green fallbacks.",
+      "One-field editing and immediate per-entry saving."
+    ],
+    "rules": [
+      {
+        "name": "System Color",
+        "body": "Resolve semantic theme attributes at runtime; static green values are fallbacks, not a forced brand palette.",
+        "section": "colors"
+      },
+      {
+        "name": "Native Type",
+        "body": "Use Android text appearances and scalable sp text; preserve the system font.",
+        "section": "typography"
+      },
+      {
+        "name": "Native Depth",
+        "body": "Let Material widgets own elevation, state layers and transitions; do not introduce a separate shadow system.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use semantic theme colors and DayNight resources.",
+      "**Do** preserve at least 48dp action targets, system insets and keyboard accommodation.",
+      "**Do** keep saving feedback close to the field and provide Undo after deletion.",
+      "**Do** keep dictionary management in Settings and recording focused on recording."
+    ],
+    "donts": [
+      "**Don't** hardcode the fallback green over dynamic color.",
+      "**Don't** add a global Save step to the per-entry editor.",
+      "**Don't** promise measured accuracy gains for arbitrary new terms."
+    ]
+  }
+}

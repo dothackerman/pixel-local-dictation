@@ -22,4 +22,37 @@
     <string name="benchmark_delete">Delete benchmark data</string>
     <string name="benchmark_delete_confirm">Delete all stored benchmark recordings and results?</string>
     <string name="benchmark_delete_failed">Deleting failed</string>
+    <string name="dictionary_title">Dictionary</string>
+    <string name="dictionary_back">Back to Settings</string>
+    <string name="dictionary_explanation">Help dictation recognise your names and terms.\nSaved changes apply to your next recording.</string>
+    <string name="dictionary_search">Search terms</string>
+    <string name="dictionary_languages">German &amp; English</string>
+    <plurals name="dictionary_count"><item quantity="one">%d term</item><item quantity="other">%d terms</item></plurals>
+    <string name="dictionary_add">Add term</string>
+    <string name="dictionary_add_action">Add</string>
+    <string name="dictionary_edit">Edit term</string>
+    <string name="dictionary_done">Done</string>
+    <string name="dictionary_close">Close without saving</string>
+    <string name="dictionary_entry_hint">Word or phrase</string>
+    <string name="dictionary_spelling">Keep the spelling you want to see.</string>
+    <string name="dictionary_private">Only on this device</string>
+    <string name="dictionary_added">Added · ready for your next recording</string>
+    <string name="dictionary_updated">Term updated</string>
+    <string name="dictionary_deleted">Term deleted</string>
+    <string name="dictionary_restored">Term restored</string>
+    <string name="dictionary_delete">Delete</string>
+    <string name="dictionary_delete_term">Delete %s</string>
+    <string name="dictionary_undo">Undo</string>
+    <string name="dictionary_loading">Loading dictionary…</string>
+    <string name="dictionary_saving">Saving…</string>
+    <string name="dictionary_saving_explanation">Preparing dictation… Your previous dictionary stays active until this finishes.</string>
+    <string name="dictionary_save_failed">Couldn’t save. Your previous dictionary is still available. Try again.</string>
+    <string name="dictionary_conflict">Your dictionary changed elsewhere. The latest terms are loaded; your draft is still here. Try again.</string>
+    <string name="dictionary_refresh_failed">Couldn’t load the latest dictionary. Your draft is still here. Close this editor and tap Retry.</string>
+    <string name="dictionary_model_unavailable">The dictionary needs the speech model installed. Set up the model, then try again.</string>
+    <string name="dictionary_add_as_new">Add as new term</string>
+    <string name="dictionary_original_missing">The original term changed or was deleted. You can add your draft as a new term.</string>
+    <string name="dictionary_load_failed">Couldn’t open your dictionary. Tap here to retry.</string>
+    <string name="dictionary_no_matches">No matching terms.</string>
+    <string name="dictionary_empty">No terms yet. Add a name or phrase you want dictation to recognise.</string>
 </resources>

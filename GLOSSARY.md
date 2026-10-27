@@ -58,6 +58,9 @@ _Avoid_: strict mode, CPU fallback check
 The user's list of names and terms that biases decoding toward them.
 _Avoid_: word list, lexicon, hotwords (the sherpa-onnx option name, in code only)
 
+**Dictionary entry**:
+A name or term the user wants recognised, possibly containing several words.
+
 **Listed term**:
 A word that belongs to a dictionary entry.
 

@@ -49,7 +49,7 @@ class SherpaRecognizer(
     private val qwenVariant: Variant? = null,
 ) : Recognizer {
     companion object {
-        fun parakeet(v: Variant, m: ModelFiles, hotwordsPath: String = ""): SherpaRecognizer {
+        fun parakeet(v: Variant, m: ModelFiles, hotwordsPath: String = "", perStreamDictionary: Boolean = false): SherpaRecognizer {
             val config = OfflineRecognizerConfig()
             config.modelConfig.transducer.encoder = m.onnx("encoder")
             config.modelConfig.transducer.decoder = m.onnx("decoder")
@@ -61,7 +61,7 @@ class SherpaRecognizer(
             config.decodingMethod = v.decoding.method
             config.maxActivePaths = v.decoding.maxActivePaths
             config.blankPenalty = v.decoding.blankPenalty
-            if (hotwordsPath.isNotEmpty()) {
+            if (hotwordsPath.isNotEmpty() || perStreamDictionary) {
                 // Dictionary (ADR-005): hotwords need the model's BPE vocabulary next to the ONNX files.
                 config.hotwordsFile = hotwordsPath
                 config.hotwordsScore = v.hotwords.score
@@ -138,12 +138,12 @@ class SherpaRecognizer(
     override fun transcribe(samples: FloatArray): String = transcribe(samples, emptyMap())
 
     /** [options] are set on the stream before decoding (Cohere: "language"). */
-    fun transcribe(samples: FloatArray, options: Map<String, String>): String {
+    fun transcribe(samples: FloatArray, options: Map<String, String>, dictionary: String? = null): String {
         qwenVariant?.let {
             require(samples.size <= (it.cutting.maxChunkS * SAMPLE_RATE).toInt()) { "qwen3: input exceeds validated chunk duration" }
         }
         val started = SystemClock.elapsedRealtime()
-        val stream = recognizer.createStream()
+        val stream = if (dictionary == null) recognizer.createStream() else recognizer.createStream(dictionary)
         try {
             for ((k, value) in options) stream.setOption(k, value)
             stream.acceptWaveform(samples, SAMPLE_RATE)
@@ -301,6 +301,7 @@ object Pipeline {
             is SwissSpelling -> release(r.inner)
             is SherpaRecognizer -> r.release()
             is LanguageSwitchedRecognizer -> r.release()
+            is DictionaryModels.Lease -> r.release()
         }
     }
 }
@@ -319,6 +320,16 @@ object Engine {
     @Volatile var modelReadyNs: Long? = null
         private set
 
+    private val dictionaryQueue = Executors.newSingleThreadExecutor { Thread(it, "dictionary") }
+    private val dictionaryModels = DictionaryModels()
+    internal val dictionaryModelLoads: Int get() = dictionaryModels.loads
+
+    fun dictionaryStore(context: Context): DictionaryStore {
+        val manifest = org.json.JSONObject(context.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })
+        return DictionaryStore(File(context.filesDir, "dictionary"),
+            File(context.filesDir, "lab/${manifest.getJSONObject("variant").getJSONObject("hotwords").getString("file")}"))
+    }
+
     @Synchronized fun runtime(context: Context): DictationRuntime {
         val app = context.applicationContext
         val selected = if (app.resources.getBoolean(R.bool.benchmark_live_variant))
@@ -329,25 +340,90 @@ object Engine {
         }
         live = selected
         benchmarkReceipts = app.resources.getBoolean(R.bool.benchmark_live_variant)
-        baseline = if (selected == null) ProvisionalBaseline.load(File(app.filesDir, "lab"),
-            org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })) else null
-        val normal = baseline
-        val created = if (normal != null) {
+        val (created, normal) = build(app, selected, if (selected == null) dictionaryStore(app).read() else null)
+        baseline = normal
+        runtime = created
+        return created
+    }
+
+    private fun build(app: Context, selected: BenchmarkLiveConfig?, dictionary: DictionarySnapshot?): Pair<DictationRuntime, ProvisionalBaseline?> {
+        val normal = if (selected == null) ProvisionalBaseline.load(File(app.filesDir, "lab"),
+            org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() }), dictionary) else null
+        val created = if (normal != null && dictionary != null) {
+            DictationRuntime(normal.variant, decodeQueue, {
+                val lease = dictionaryModels.acquire(normal, dictionary, File(app.applicationInfo.sourceDir)) {
+                    SherpaRecognizer.parakeet(normal.variant, ModelFiles.dir(normal.modelDirectory), perStreamDictionary = true)
+                }
+                if (normal.variant.post.swissSs) SwissSpelling(lease) else lease
+            }, { VadSegmenter(normal.variant, ModelFiles.dir(File(app.filesDir, "lab"))) }, Pipeline::release)
+        } else if (normal != null) {
             Pipeline.runtime(normal.variant, ModelFiles.dir(normal.modelDirectory), null,
                 ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, normal.dictionary.absolutePath,
                 verify = { normal.verify(File(app.applicationInfo.sourceDir)) })
         } else if (selected == null) {
-            ModelFiles.asset(app, ASSET_MODEL).let { files -> Pipeline.runtime(historicalControl, files, null, files, decodeQueue) }
+            ModelFiles.asset(app, ASSET_MODEL).let { files -> Pipeline.runtime(historicalControl, files, null, files, decodeQueue,
+                verify = { if (dictionary?.edited == true) dictionary.verify() }) }
         } else {
             Pipeline.runtime(selected.variant, ModelFiles.dir(selected.modelDirectory), null,
                 ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, selected.dictionary.absolutePath,
                 verify = { selected.verify(File(app.applicationInfo.sourceDir)) })
         }
-        runtime = created
-        return created
+        return created to normal
     }
 
-    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt() else null
+    /** Stage/load/verify, then atomically save and publish. A failed refresh preserves the old runtime. */
+    fun saveDictionary(context: Context, expected: DictionarySnapshot, entries: List<String>): java.util.concurrent.CompletableFuture<DictionarySnapshot> {
+        val app = context.applicationContext
+        return java.util.concurrent.CompletableFuture.supplyAsync({
+            val store = dictionaryStore(app)
+            val staged = store.prepare(entries)
+            if (staged.sha256 == expected.sha256) return@supplyAsync expected
+            synchronized(this) {
+                require(live == null) { "Dictionary editing is unavailable during a lab experiment." }
+                require(!app.resources.getBoolean(R.bool.benchmark_live_variant) || BenchmarkLiveConfig.load(File(app.filesDir, "lab")) == null) {
+                    "Dictionary editing is unavailable during a lab experiment."
+                }
+                // Editing Settings alone must not load ASR. Its normal first-use checks still
+                // run when dictation starts; there is no cached runtime to refresh here.
+                if (runtime == null) {
+                    val manifest = app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use {
+                        org.json.JSONObject(it.readText())
+                    }
+                    requireNotNull(ProvisionalBaseline.load(File(app.filesDir, "lab"), manifest, staged)).requireAvailable()
+                    store.commit(staged, expected)
+                    return@supplyAsync staged
+                }
+            }
+            val (prepared, normal) = build(app, null, staged)
+            try {
+                prepared.warmUp().join()
+                synchronized(this) {
+                    store.commit(staged, expected)
+                    val previous = runtime
+                    runtime = prepared
+                    baseline = normal
+                    benchmarkReceipts = app.resources.getBoolean(R.bool.benchmark_live_variant)
+                    modelReadyNs = System.nanoTime()
+                    previous?.retire()
+                }
+            } catch (failure: Throwable) {
+                prepared.retire()
+                throw failure
+            }
+            staged
+        }, dictionaryQueue)
+    }
+
+    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt(perStream = true) else null
+
+    /** Opening and pinning identity must be atomic with publication/retirement of a revision. */
+    @Synchronized fun openTake(context: Context, open: (DictationRuntime, () -> org.json.JSONObject?) -> TakeSession): TakeSession {
+        val current = runtime(context)
+        val selectedLive = live
+        val selectedNormal = baseline
+        val receipts = benchmarkReceipts
+        return open(current) { selectedLive?.receipt() ?: if (receipts) selectedNormal?.receipt(perStream = true) else null }
+    }
 
     /** Starts loading the model in the background; safe to call repeatedly. */
     fun warmUp(context: Context): java.util.concurrent.CompletableFuture<Unit> {

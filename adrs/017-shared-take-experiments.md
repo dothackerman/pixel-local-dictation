@@ -5,8 +5,8 @@
 ## Decision
 
 `TakeSession` owns a take from capture to completion. Production and phone
-replay construct it through `Pipeline.runtime`. `DictationRuntime` retains the
-recognizer and serial decode queue across takes. A cancelled take cannot commit;
+replay share this lifecycle through `DictationRuntime.open`. `DictationRuntime`
+retains the recognizer and serial decode queue across takes. A cancelled take cannot commit;
 its native work may still be running. Release follows capture and native drain.
 Cancellation keeps the take active until capture acknowledges drain. Completion
 then permits a new microphone take; it does not wait for cancelled native work.
@@ -19,6 +19,16 @@ proof that text is visible or the keyboard is ready.
 `MeasurementRun` now requires `dictation-session-replay-v1`. Its editor and
 keyboard are explicitly simulated. Historical reports, evaluator rules and
 timing meanings remain unchanged. Python decoding remains a laptop screen.
+
+### Construction clarification — 2026-10-27
+
+The owner confirmed that the shared take lifecycle is the requirement; a shared
+factory call is not. `Pipeline.runtime` was the original construction path.
+Dictionary revisions now use recognizer leases with immutable terms and a shared
+loaded model (ADR-027), while retaining the same take lifecycle. Setup may differ;
+configuration and output equivalence still require their own evidence. No
+architecture refactor is required solely to restore the original factory call.
+The experiment rules and historical evidence below remain unchanged.
 
 ## Experiment interface
 

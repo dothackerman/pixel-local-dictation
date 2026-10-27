@@ -17,21 +17,27 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 
 The app records, recognizes speech locally and inserts text through FUTO's
 microphone workflow. Tags `m1` and `m2` record the prototype gates. The default
-engine currently installed is Candidate A: Parakeet v3 FP32 on the CPU, beam 8,
+adopted recognition configuration is Candidate A: Parakeet v3 FP32 on the CPU, beam 8,
 dictionary score 1.5. On October 27 the owner selected and installed A as the
 provisional baseline for its error/Stop-wait trade-off. The historical INT8 pipeline
-([ADR-003](adrs/003-working-engine.md)) remains the empty-dictionary fallback.
+([ADR-003](adrs/003-working-engine.md)) remains the legacy fallback for missing/blank
+provisioning when no user dictionary has been saved. A deliberately empty saved dictionary
+keeps the FP32 model and decoding configuration, without vocabulary assistance ([ADR-027](adrs/027-editable-dictionary.md)).
 Normal-app promotion [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28) is complete;
-UI/UX and dictionary editing are deferred. The WebGPU track stopped at
+#31 adds a Settings dictionary editor on `codex/dictionary-settings`; the owner accepted
+the installed smoke build. Open the launcher entry or Android's keyboard settings, then Dictionary;
+both reach the same Settings alongside benchmark mode. Add/Done saves each entry;
+delete offers Undo. Existing takes retain their dictionary; later takes use the saved revision.
+The WebGPU track stopped at
 one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 2026-10-25: [ADR-026](adrs/026-dictionary-first.md). Delivery of #11/#28 is in
 [PR #29](https://github.com/dothackerman/pixel-local-dictation/pull/29), ready for final
 review; issues #23–27 remain separate follow-ups.
 
-The final installation restored the retained `0efa5b2` APK pair after rollback
+Before the #31 smoke build, installation restored the retained `0efa5b2` APK pair after rollback
 `1b2a04d` (identical tracked tree), preserving exact normal A configuration.
 [Current APK identities and installation receipt](adrs/026-dictionary-first.md#current-delivery-and-accepted-startup-limits--2026-10-27)
-identify the installed build; installation hashes mentioned below are historical stages.
+identify that pre-editor build; installation hashes mentioned below are historical stages.
 The owner accepts the observed roughly **1.3 s cold / 0.25 s warm** handoff for now.
 #14's original ten-take/key-timing protocol remains partial; #17 is deferred and
 nonblocking. No immediate-panel or startup-fix claim follows. The benchmark first-draw
@@ -152,7 +158,13 @@ and returns to FUTO.
   nonempty altered files fail verification. Missing/blank dictionary selects the
   unchanged `Variant.HISTORICAL_INT8` pipeline from APK assets (ADR-003), including
   its original greedy decoder and postprocessing. Restart after changing provisioned files.
-  Historical parsing defaults and frozen plans remain unchanged.
+  User edits instead live as private content-addressed revisions under `files/dictionary`.
+  [DictionaryStore](app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt) atomically publishes
+  a revision after runtime preparation succeeds. [DictionaryModels](app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt)
+  retains the verified model and supplies a dictionary per recognition stream; edits, including
+  emptying the dictionary, do not reload it. Old takes hold leases until their queued work ends.
+  Per-stream and edited receipts have distinct configuration identities; the frozen acceptance
+  record and original files remain intact. Historical parsing defaults and plans are unchanged.
 - Lab alternatives use the same schema semantics in Python and Kotlin.
   Cohere uses one recognizer, sets the language for each stream and loads models
   from filesystem paths. Canary retains two recognizers:
@@ -405,9 +417,9 @@ do not establish adoption or real keyboard usability.
 ## Known gaps
 
 Answered calls, longer battery-only model survival and a clean full FP32 export
-remain unverified. Dictionary entry and editing ship only with an adopt verdict
-([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. #11/#28 delivery is ready for final review in
-PR #29. Issues #23–27 remain separate; dictionary editing/UI/UX remain deferred.
+remain unverified. The owner accepted the Settings dictionary editor's smoke test; arbitrary
+new entries are not accuracy-validated. Unlisted-name recall is unmeasured. #11/#28 delivery is ready for final review in
+PR #29. Issues #23–27 remain separate; #31 tracks dictionary editing.
 The owner accepts A's disclosed accuracy/Stop-wait trade-off and current observed
 startup of roughly 1.3 s cold / 0.25 s warm. The original October 27 #14 collection
 contains nine complete app-side traces after ten reported takes; original external
