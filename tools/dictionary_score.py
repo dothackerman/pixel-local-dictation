@@ -5,6 +5,7 @@ Formatting-only token boundaries have zero cost. Other edits cost one word;
 number, listed-term and other counts partition that same alignment.
 """
 import re
+from collections import Counter
 from decimal import Decimal
 
 import score as historical
@@ -104,15 +105,20 @@ def align(reference, hypothesis):
     return result
 
 
-def score_text(reference, hypothesis, language, dictionary=()):
-    r, h = normalise(reference, language), normalise(hypothesis, language)
-    alignment = align(r, h)
+def _listed_words(dictionary, language):
     listed = set()
     for entry in dictionary:
         words = normalise(entry, language)
         listed.update(word for word in words if not any(c.isdigit() for c in word))
         if words and not any(c.isdigit() for c in ''.join(words)):
             listed.add(''.join(words))
+    return listed
+
+
+def score_text(reference, hypothesis, language, dictionary=()):
+    r, h = normalise(reference, language), normalise(hypothesis, language)
+    alignment = align(r, h)
+    listed = _listed_words(dictionary, language)
     strict = listed - STOP_WORDS
     result = dict(revision=REVISION, errors=0, words=len(r), listed_errors=0,
                   number_format_errors=0, other_errors=0,
@@ -144,6 +150,37 @@ def score_text(reference, hypothesis, language, dictionary=()):
                     result[prefix + 'dictionary_insertions'] += 1
                 elif operation == 'substitution':
                     result[prefix + 'dictionary_substitutions'] += 1
+    return result
+
+
+def score_guard(reference, hypothesis, control, language, dictionary=()):
+    """Score a guard candidate against its matched zero-bonus control.
+
+    A false accept is an inserted/substituted listed word at a normalized
+    reference span (or insertion gap). Compare occurrences, including repeated
+    words at one gap: correcting an old error cannot cancel a new identity or
+    a false accept at another reference location. Strict counts exclude STOP_WORDS.
+    """
+    dictionary = tuple(dictionary)
+    result = score_text(reference, hypothesis, language, dictionary)
+    baseline = score_text(reference, control, language, dictionary)
+    listed = _listed_words(dictionary, language)
+
+    def occurrences(scored, words):
+        found = Counter()
+        position = 0
+        for row in scored['alignment']:
+            end = position + len(row['reference'])
+            if row['operation'] in ('insertion', 'substitution'):
+                for word in row['hypothesis']:
+                    if word in words:
+                        found[position, end, word] += 1
+            position = end
+        return found
+
+    for prefix, words in (('', listed), ('strict_', listed - STOP_WORDS)):
+        introduced = occurrences(result, words) - occurrences(baseline, words)
+        result[prefix + 'introduced_dictionary_false_accepts'] = sum(introduced.values())
     return result
 
 

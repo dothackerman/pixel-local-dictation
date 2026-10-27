@@ -6,6 +6,46 @@ import dictionary_score
 
 
 class DictionaryScoringTests(unittest.TestCase):
+    def test_guard_detects_replacing_one_false_accepted_term_with_another(self):
+        result = dictionary_score.score_guard('Go home', 'Go Birch', 'Go Aster',
+                                              'en', ['Aster', 'Birch'])
+        self.assertEqual(result['strict_introduced_dictionary_false_accepts'], 1)
+
+    def test_guard_compares_aligned_occurrences_instead_of_net_error_counts(self):
+        cases = [
+            ('insertion replacement', 'Go home', 'Go home Aster', 'Go home Birch', 1),
+            ('substitution and insertion cancellation', 'Go home now',
+             'Go Aster now Aster', 'Go home Aster Aster', 1),
+            ('unchanged false accept with another correction', 'Go home now',
+             'Go Aster later', 'Go Aster now', 0),
+            ('valid correction', 'Go Aster', 'Go Birch', 'Go Aster', 0),
+            ('same word at another reference location', 'Go home then work',
+             'Go Aster then work', 'Go home then Aster', 1),
+            ('duplicate at same insertion gap', 'Go home',
+             'Go home Aster', 'Go home Aster Aster', 1),
+            ('unchanged duplicates', 'Go home',
+             'Go home Aster Aster', 'Go home Aster Aster', 0),
+            ('case and punctuation normalization', 'Go home',
+             'Go ASTER!', 'Go aster.', 0),
+        ]
+        for label, reference, control, candidate, expected in cases:
+            with self.subTest(label=label):
+                result = dictionary_score.score_guard(reference, candidate, control,
+                                                      'en', ['Aster', 'Birch'])
+                self.assertEqual(result['strict_introduced_dictionary_false_accepts'], expected)
+
+    def test_guard_keeps_strict_listed_set_and_formatting_normalization(self):
+        result = dictionary_score.score_guard('Go home', 'Go and', 'Go home',
+                                              'en', ['Fern & Footpath'])
+        self.assertEqual(result['introduced_dictionary_false_accepts'], 1)
+        self.assertEqual(result['strict_introduced_dictionary_false_accepts'], 0)
+        result = dictionary_score.score_guard('Die Straße ist frei', 'Die Straße ist Aster',
+                                              'Die Strasse ist Aster', 'de', ['Aster'])
+        self.assertEqual(result['strict_introduced_dictionary_false_accepts'], 0)
+        result = dictionary_score.score_guard('Go blue-green home', 'Go blue green Aster',
+                                              'Go bluegreen Aster', 'en', ['Aster'])
+        self.assertEqual(result['strict_introduced_dictionary_false_accepts'], 0)
+
     def test_distinct_spoken_numbers_are_not_spacing_variants(self):
         for lang, reference, hypothesis in [('en', 'two three', 'twenty three'),
                                             ('de', 'zwei drei', 'dreiundzwanzig')]:

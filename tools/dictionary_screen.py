@@ -228,6 +228,11 @@ def run(args):
             else:
                 row['control_id']='alpha0:'+cell['id']
                 deltas(row, controls[cell['id']])
+            guard_score = score.score_guard(cell['reference'], text,
+                                            controls[cell['id']]['text'], cell['lang'], entries)
+            for prefix in ('', 'strict_'):
+                field = prefix + 'introduced_dictionary_false_accepts'
+                row[field] = guard_score[field]
             guards.append(row)
         rows += normal + (held if alpha else []) + guards
         evidence=dict(alpha=alpha,takes=normal,leave_scripts_out=held,guard=guards)
@@ -248,11 +253,11 @@ def run(args):
                 total['passed']=alpha>0 and total['listed_delta']<=-3 and total['nonlisted_delta']<=1 and total['leave_script_errors_delta']<=0
                 totals.append(total)
         false_accepts=sum(r['strict_dictionary_insertions']+r['strict_dictionary_substitutions'] for r in guards)
-        introduced=sum(max(0,r.get('strict_dictionary_insertions_delta',0))+max(0,r.get('strict_dictionary_substitutions_delta',0)) for r in guards)
+        introduced=sum(r['strict_introduced_dictionary_false_accepts'] for r in guards)
         by_language,label=language_results(totals,introduced)
         outcome=dict(alpha=alpha,totals=totals,guard_false_accepts=false_accepts,
                      as_scored_guard_false_accepts=sum(r['dictionary_insertions']+r['dictionary_substitutions'] for r in guards),
-                     as_scored_introduced_guard_false_accepts=sum(max(0,r.get('dictionary_insertions_delta',0))+max(0,r.get('dictionary_substitutions_delta',0)) for r in guards),
+                     as_scored_introduced_guard_false_accepts=sum(r['introduced_dictionary_false_accepts'] for r in guards),
                      introduced_guard_false_accepts=introduced,passed_by_language=by_language,result=label,
                      passed=label=='pass',missing_paths=misses(normal),guard_missing_paths=misses(guards),
                      seconds=time.monotonic()-begun)
