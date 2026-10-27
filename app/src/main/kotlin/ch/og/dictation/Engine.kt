@@ -383,6 +383,12 @@ object Engine {
                 require(!app.resources.getBoolean(R.bool.benchmark_live_variant) || BenchmarkLiveConfig.load(File(app.filesDir, "lab")) == null) {
                     "Dictionary editing is unavailable during a lab experiment."
                 }
+                // Editing Settings alone must not load ASR. Its normal first-use checks still
+                // run when dictation starts; there is no cached runtime to refresh here.
+                if (runtime == null) {
+                    store.commit(staged, expected)
+                    return@supplyAsync staged
+                }
             }
             val (prepared, normal) = build(app, null, staged)
             try {

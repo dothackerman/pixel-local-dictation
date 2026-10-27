@@ -8,8 +8,9 @@ uses a searchable list, one-field editor, repeated Add without closing the keybo
 immediate Delete with Undo. A launcher entry opens Settings directly.
 
 Store user edits as private, immutable dictionary revisions, separately from the provisioned
-Candidate A dictionary and frozen experimental evidence. Prepare and verify a replacement
-runtime before atomically publishing the saved revision. If preparation or saving fails,
+Candidate A dictionary and frozen experimental evidence. Prepare and verify a replacement binding for an existing runtime before atomically
+publishing the saved revision. When ASR has not started, save validated text without
+loading the model; its ordinary first-use identity checks remain in force. If preparation or saving fails,
 keep the previous saved revision/runtime. Existing takes retain their runtime until capture
 and queued native work finish; subsequent takes use the replacement, retained across takes.
 Receipts distinguish edited dictionaries from tested Candidate A and bind their own hashes;

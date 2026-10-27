@@ -15,6 +15,22 @@ import org.junit.runner.RunWith
 /** Synthetic edit; restore the exact original pointer in finally. No speech or terms in output. */
 @RunWith(AndroidJUnit4::class)
 class DictionaryRuntimeUpdateTest {
+    @Test fun coldSettingsChangesDoNotInitialiseTheModel() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals("run this check first in a fresh instrumentation process", 0, Engine.dictionaryModelLoads)
+        val pointer = File(context.filesDir, "dictionary/current.json")
+        val originalPointer = if (pointer.exists()) pointer.readBytes() else null
+        val store = Engine.dictionaryStore(context)
+        val original = store.read()
+        try {
+            val saved = Engine.saveDictionary(context, original, original.entries + "Quarzblütenpost").get(10, TimeUnit.SECONDS)
+            assertEquals(saved, store.read())
+            assertEquals("editing alone must not initialise ASR", 0, Engine.dictionaryModelLoads)
+        } finally {
+            restorePointer(pointer, originalPointer)
+        }
+    }
+
     @Test fun savedRevisionRefreshesOnceAndAnExistingTakeKeepsItsRuntime() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val pointer = File(context.filesDir, "dictionary/current.json")
@@ -72,11 +88,15 @@ class DictionaryRuntimeUpdateTest {
             // Native restoration first; finally restore exact persistence identity, including absent pointer.
             val current = store.read()
             if (current.entries != original.entries) Engine.saveDictionary(context, current, original.entries).get(2, TimeUnit.MINUTES)
-            if (originalPointer == null) check(!pointer.exists() || pointer.delete()) else {
-                val temp = File(pointer.parentFile, "restore.tmp")
-                temp.writeBytes(originalPointer)
-                Files.move(temp.toPath(), pointer.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            }
+            restorePointer(pointer, originalPointer)
         }
     }
+    private fun restorePointer(pointer: File, bytes: ByteArray?) {
+        if (bytes == null) check(!pointer.exists() || pointer.delete()) else {
+            val temp = File(pointer.parentFile, "restore.tmp")
+            temp.writeBytes(bytes)
+            Files.move(temp.toPath(), pointer.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
 }

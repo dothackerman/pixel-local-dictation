@@ -27,7 +27,7 @@ import com.google.android.material.textfield.TextInputLayout
 import java.text.Collator
 import java.util.Locale
 
-class DictionaryActivity : AppCompatActivity() {
+open class DictionaryActivity : AppCompatActivity() {
     private lateinit var model: DictionaryModel
     private lateinit var list: RecyclerView
     private lateinit var root: View
