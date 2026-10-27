@@ -11,6 +11,12 @@ import score as historical
 
 REVISION = 'dictionary-words-v2'
 
+# Generic words that enter the listed set only through multi-word entries
+# ("Frau Keller", "Tensor chip", "Fern & Footpath"). The strict counts (#22)
+# ignore them so a stray "and" is neither a listed error nor a false accept.
+# The as-scored counts keep the full set so both views stay comparable.
+STOP_WORDS = frozenset(('and', 'und', 'frau', 'herr', 'mrs', 'mr', 'station', 'chip', 'bahnhof'))
+
 
 def normalise(text, language):
     """Keep decimal values intact; unify written and spoken currency amounts."""
@@ -107,9 +113,12 @@ def score_text(reference, hypothesis, language, dictionary=()):
         listed.update(word for word in words if not any(c.isdigit() for c in word))
         if words and not any(c.isdigit() for c in ''.join(words)):
             listed.add(''.join(words))
+    strict = listed - STOP_WORDS
     result = dict(revision=REVISION, errors=0, words=len(r), listed_errors=0,
                   number_format_errors=0, other_errors=0,
-                  dictionary_insertions=0, dictionary_substitutions=0, alignment=alignment)
+                  dictionary_insertions=0, dictionary_substitutions=0,
+                  strict_listed_errors=0, strict_dictionary_insertions=0,
+                  strict_dictionary_substitutions=0, alignment=alignment)
     for row in alignment:
         operation = row['operation']
         if operation == 'equal':
@@ -127,16 +136,20 @@ def score_text(reference, hypothesis, language, dictionary=()):
             category = 'other_errors'
         row['category'] = category
         result[category] += 1
-        if any(word in listed for word in after):
-            if operation == 'insertion':
-                result['dictionary_insertions'] += 1
-            elif operation == 'substitution':
-                result['dictionary_substitutions'] += 1
+        row['strict_listed'] = any(word in strict for word in attributed)
+        result['strict_listed_errors'] += row['strict_listed']
+        for words, prefix in ((listed, ''), (strict, 'strict_')):
+            if any(word in words for word in after):
+                if operation == 'insertion':
+                    result[prefix + 'dictionary_insertions'] += 1
+                elif operation == 'substitution':
+                    result[prefix + 'dictionary_substitutions'] += 1
     return result
 
 
 COUNTS = ('errors', 'words', 'listed_errors', 'number_format_errors', 'other_errors',
-          'dictionary_insertions', 'dictionary_substitutions')
+          'dictionary_insertions', 'dictionary_substitutions',
+          'strict_listed_errors', 'strict_dictionary_insertions', 'strict_dictionary_substitutions')
 
 
 def _digest(value):

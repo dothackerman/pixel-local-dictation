@@ -1,7 +1,12 @@
 import math
+from pathlib import Path
+import sys
+import tempfile
+import types
 import unittest
+from unittest.mock import patch
 import numpy as np
-from dictionary_boost import PhraseTree
+from dictionary_boost import PhraseTree, compile_dictionary
 from tdt_decoder import decode_logits
 
 
@@ -43,3 +48,31 @@ class BoostTest(unittest.TestCase):
         plain = decode_logits(np.zeros((2, 3)), 3, decoder, joiner, None)
         empty = decode_logits(np.zeros((2, 3)), 3, decoder, joiner, None, tree=PhraseTree([]), alpha=100)
         self.assertEqual((plain.tokens,plain.durations,plain.joiner_calls), (empty.tokens,empty.durations,empty.joiner_calls))
+
+    def test_compile_keeps_literal_ampersand_and_adds_emitted_paths_once(self):
+        pieces = {'Fern & Footpath': ['▁Fern', '▁&', '▁Foot', 'path'], 'Zürich': ['▁Zürich']}
+        amp = [1, 2, 3, 4]
+
+        class Tokenizer:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def encode(self, text, out_type):
+                return pieces[text]
+        symbols = ['<blk>', '▁Fern', '▁and', '▁Foot', 'path', '▁Zürich', '▁Z', 'ü', 'rich', '<unk>']
+        with tempfile.TemporaryDirectory() as tmp:
+            tokens = Path(tmp) / 'tokens.txt'
+            tokens.write_text(''.join(f'{s} {i}\n' for i, s in enumerate(symbols)))
+            with patch.dict(sys.modules, {'ssentencepiece': types.SimpleNamespace(Ssentencepiece=Tokenizer)}):
+                rows = compile_dictionary(['Fern & Footpath', 'Zürich'], Path(tmp) / 'bpe.vocab', tokens, emitted=[
+                    ('Zürich', [6, 7, 8]), ('Zürich', [6, 7, 8]), ('Zürich', [5]), ('Fern & Footpath', amp)])
+                with self.assertRaisesRegex(ValueError, 'no encodable'):
+                    compile_dictionary(['Fern & Footpath'], Path(tmp) / 'bpe.vocab', tokens)
+                with self.assertRaisesRegex(ValueError, 'listed term'):
+                    compile_dictionary(['Zürich'], Path(tmp) / 'bpe.vocab', tokens, emitted=[('Bern', [5])])
+                with self.assertRaisesRegex(ValueError, 'vocabulary'):
+                    compile_dictionary(['Zürich'], Path(tmp) / 'bpe.vocab', tokens, emitted=[('Zürich', [9])])
+        self.assertEqual([(r['term'], r['form'], r['tokens'], r['source']) for r in rows], [
+            ('Zürich', 'Zürich', [5], 'canonical'),
+            ('Zürich', 'Zürich', [6, 7, 8], 'emitted'),
+            ('Fern & Footpath', 'Fern and Footpath', amp, 'emitted')])

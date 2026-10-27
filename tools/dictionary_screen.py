@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Run the issue-16 laptop dictionary screen; all evidence stays under corpus/.
+"""Run the issue-16/#22 laptop dictionary screen; all evidence stays under corpus/.
 
 One bilingual dictionary, three feed sizes, matched empty controls, public guards,
 leave-script-out dictionaries and one predictor/tree-state carry experiment.
+#22: the tree also holds the token paths the stock decoder emitted for listed
+terms, gates use the strict listed set, guard false accepts count only when
+introduced against the zero-bonus control, and each language passes separately.
 """
 import argparse
 import csv
@@ -49,6 +52,24 @@ def held_out_entries(entries, references):
     return [entry for entry in entries if entry not in excluded]
 
 
+def emitted_paths(evidence):
+    """Distinct (term, tokens) misses logged by a zero-bonus screen run."""
+    paths = {}
+    for section in ('takes', 'leave_scripts_out', 'guard'):
+        for row in evidence.get(section, []):
+            for miss in row.get('missing_segmentations', []):
+                paths.setdefault((miss['term'], tuple(miss['tokens'])), None)
+    return [(term, list(tokens)) for term, tokens in paths]
+
+
+def language_results(totals, introduced):
+    """Per-language verdict: every feed passes and no guard false accept is introduced."""
+    results = {lang: introduced == 0 and all(t['passed'] for t in totals if t['lang'] == lang)
+               for lang in ('de', 'en')}
+    labels = {(True, True): 'pass', (True, False): 'German only', (False, True): 'English only', (False, False): 'fail'}
+    return results, labels[results['de'], results['en']]
+
+
 def missing_segmentations(result, symbols, compiled, language):
     known = {tuple(row['tokens']) for row in compiled}
     terms = {''.join(score.normalise(row['form'], language)): row['term'] for row in compiled}
@@ -92,7 +113,10 @@ def run(args):
     scripts = json.loads((root/'corpus/takes.json').read_text())
     config = variant.load(root/'variants/baseline.json')
     model = root/'models/parakeet-v3-matmul8'
-    compiled = compile_dictionary(entries, model/'bpe.vocab', model/'tokens.txt')
+    prior = json.loads(args.emitted.read_text())
+    emitted = emitted_paths(prior)
+    compiled = compile_dictionary(entries, model/'bpe.vocab', model/'tokens.txt', emitted)
+    added_paths = sum(row['source'] == 'emitted' for row in compiled)
     (output/'dictionary.json').write_text(json.dumps(compiled, ensure_ascii=False, indent=2)+'\n')
     tree = PhraseTree([row['tokens'] for row in compiled])
     decoder = Decoder(model, args.runtime, root/'corpus/lab/issue11/encoder-cache')
@@ -102,8 +126,10 @@ def run(args):
     dependencies = ('variants/baseline.json', 'models/silero_vad.onnx', 'corpus/takes.json',
                     'models/guard/refs.tsv', 'models/parakeet-v3-matmul8/bpe.vocab',
                     'corpus/lab/issue11/baseline-fresh.json', 'corpus/lab/issue11/python-parity-eigen.json')
-    manifest = dict(protocol='dictionary-greedy-screen-v2', alphas=args.alpha, tuning_feed=640,
-                    runtime=decoder.identity, dictionary_sha256=sha(dictionary_path),
+    manifest = dict(protocol='dictionary-greedy-screen-v3', alphas=args.alpha, extend_alpha=args.extend_alpha,
+                    tuning_feed=640, runtime=decoder.identity, dictionary_sha256=sha(dictionary_path),
+                    emitted_source=str(args.emitted), emitted_sha256=sha(args.emitted),
+                    emitted_paths_before=len(emitted), emitted_paths_added=added_paths,
                     references_sha256=sha(root/'corpus/lab/issue11/references.json'),
                     sources={name: sha(Path(__file__).with_name(name)) for name in source_names},
                     dependencies={name: sha(root/name) for name in dependencies},
@@ -165,9 +191,16 @@ def run(args):
             else:
                 control=controls[key]
                 output_row['control_id']=f"alpha0:{cell['id']}:{cell['feed']}:{carry}"
-                for count in score.COUNTS:
-                    output_row[count+'_delta']=output_row[count]-control[count]
+                deltas(output_row, control)
         return outputs
+
+    def deltas(row, control):
+        for count in score.COUNTS:
+            row[count+'_delta']=row[count]-control[count]
+        row['nonlisted_errors_delta']=row['errors_delta']-row['strict_listed_errors_delta']
+
+    def misses(selected):
+        return len({(m['term'],tuple(m['tokens'])) for r in selected for m in r['missing_segmentations']})
 
     def save():
         fields=sorted({key for row in rows for key in row if key not in ('text','missing_segmentations')})
@@ -175,7 +208,8 @@ def run(args):
             writer=csv.DictWriter(file,fieldnames=fields,extrasaction='ignore');writer.writeheader();writer.writerows(rows)
 
     outcomes=[]
-    for alpha in args.alpha:
+    grid=list(args.alpha)
+    for alpha in grid:
         begun=time.monotonic()
         normal=takes(alpha,'reset')
         held=takes(alpha,'leave-script-out') if alpha else normal
@@ -184,15 +218,16 @@ def run(args):
             result=decoder.decode(cell['encoded'],tree=tree if alpha else None,alpha=alpha)
             text=pipeline.post_join(config,[result.text])
             row=dict(id=cell['id'],lang=cell['lang'],alpha=alpha,mode='guard',carry=False,feed=0,
-                     text=text,joiner_calls=result.joiner_calls,**counts(cell['reference'],text,cell['lang'],entries))
+                     text=text,joiner_calls=result.joiner_calls,
+                     missing_segmentations=missing_segmentations(result,decoder.symbols,compiled,cell['lang']),
+                     **counts(cell['reference'],text,cell['lang'],entries))
             if alpha==0:
                 if result.text!=guard_stock[cell['id']]:
                     raise ValueError('zero-bonus guard differs from stock')
                 controls[cell['id']]=row
             else:
                 row['control_id']='alpha0:'+cell['id']
-                for count in score.COUNTS:
-                    row[count+'_delta']=row[count]-controls[cell['id']][count]
+                deltas(row, controls[cell['id']])
             guards.append(row)
         rows += normal + (held if alpha else []) + guards
         evidence=dict(alpha=alpha,takes=normal,leave_scripts_out=held,guard=guards)
@@ -202,19 +237,31 @@ def run(args):
             for lang in ('de','en'):
                 selected=[r for r in normal if r['feed']==feed and r['lang']==lang]
                 left=[r for r in held if r['feed']==feed and r['lang']==lang]
-                total=dict(feed=feed,lang=lang,listed_delta=sum(r.get('listed_errors_delta',0) for r in selected),
-                    nonlisted_delta=sum(r.get('other_errors_delta',0)+r.get('number_format_errors_delta',0) for r in selected),
-                    leave_script_errors_delta=sum(r.get('errors_delta',0) for r in left))
+                total=dict(feed=feed,lang=lang,errors=sum(r['errors'] for r in selected),
+                    listed_errors=sum(r['listed_errors'] for r in selected),
+                    strict_listed_errors=sum(r['strict_listed_errors'] for r in selected),
+                    as_scored_listed_delta=sum(r.get('listed_errors_delta',0) for r in selected),
+                    listed_delta=sum(r.get('strict_listed_errors_delta',0) for r in selected),
+                    nonlisted_delta=sum(r.get('nonlisted_errors_delta',0) for r in selected),
+                    leave_script_errors_delta=sum(r.get('errors_delta',0) for r in left),
+                    missing_paths=misses(selected))
                 total['passed']=alpha>0 and total['listed_delta']<=-3 and total['nonlisted_delta']<=1 and total['leave_script_errors_delta']<=0
                 totals.append(total)
-        false_accepts=sum(r['dictionary_insertions']+r['dictionary_substitutions'] for r in guards)
+        false_accepts=sum(r['strict_dictionary_insertions']+r['strict_dictionary_substitutions'] for r in guards)
+        introduced=sum(max(0,r.get('strict_dictionary_insertions_delta',0))+max(0,r.get('strict_dictionary_substitutions_delta',0)) for r in guards)
+        by_language,label=language_results(totals,introduced)
         outcome=dict(alpha=alpha,totals=totals,guard_false_accepts=false_accepts,
-                     introduced_guard_false_accepts=sum(max(0,r.get('dictionary_insertions_delta',0))+max(0,r.get('dictionary_substitutions_delta',0)) for r in guards),
-                     passed=false_accepts==0 and all(r['passed'] for r in totals),seconds=time.monotonic()-begun)
+                     as_scored_guard_false_accepts=sum(r['dictionary_insertions']+r['dictionary_substitutions'] for r in guards),
+                     as_scored_introduced_guard_false_accepts=sum(max(0,r.get('dictionary_insertions_delta',0))+max(0,r.get('dictionary_substitutions_delta',0)) for r in guards),
+                     introduced_guard_false_accepts=introduced,passed_by_language=by_language,result=label,
+                     passed=label=='pass',missing_paths=misses(normal),guard_missing_paths=misses(guards),
+                     seconds=time.monotonic()-begun)
         outcomes.append(outcome)
         save()
         (output/'outcomes.json').write_text(json.dumps(outcomes,indent=2)+'\n')
         print(json.dumps(outcome),flush=True)
+        if alpha==grid[-1] and args.extend_alpha and introduced==0 and args.extend_alpha not in grid:
+            grid.append(args.extend_alpha)
     passing=[row['alpha'] for row in outcomes if row['passed']]
     chosen=max(passing) if passing else None
     diagnostic_alpha=chosen if chosen is not None else min((row for row in outcomes if row['alpha']>0),key=lambda row:sum(t['listed_delta'] for t in row['totals']))['alpha']
@@ -228,14 +275,21 @@ def run(args):
         for lang in ('de','en'):
             selected=[r for r in carried if r['feed']==feed and r['lang']==lang]
             held=[r for r in carried_held if r['feed']==feed and r['lang']==lang]
-            keep=keep and (sum(r['listed_errors_delta'] for r in selected)<=-3
-                and sum(r['other_errors_delta']+r['number_format_errors_delta'] for r in selected)<=1
+            keep=keep and (sum(r['strict_listed_errors_delta'] for r in selected)<=-3
+                and sum(r['nonlisted_errors_delta'] for r in selected)<=1
                 and bool(held) and sum(r['errors_delta'] for r in held)<=0)
     rows+=carried_control+carried+carried_held;save()
-    verdict=dict(chosen_alpha=chosen,verdict='advance' if chosen is not None else 'stop',
+    zero=outcomes[0]
+    verdict=dict(protocol=manifest['protocol'],chosen_alpha=chosen,verdict='advance' if chosen is not None else 'stop',
+                 alphas=grid,results={f"{o['alpha']:g}":dict(result=o['result'],passed_by_language=o['passed_by_language'],
+                     introduced_guard_false_accepts=o['introduced_guard_false_accepts'],totals=o['totals']) for o in outcomes},
+                 emitted_paths_before=len(emitted),emitted_paths_added=added_paths,
+                 missing_paths_after=zero['missing_paths'],guard_missing_paths_after=zero['guard_missing_paths'],
+                 alpha0_listed_counts=[dict(feed=t['feed'],lang=t['lang'],as_scored=t['listed_errors'],strict=t['strict_listed_errors']) for t in zero['totals']],
+                 alpha0_guard_false_accepts=dict(as_scored=zero['as_scored_guard_false_accepts'],strict=zero['guard_false_accepts']),
                  carried_alpha=diagnostic_alpha,carry_retained=keep, carried_state='predictor-and-tree',
                  carry_rows=carried,carry_controls=carried_control,carry_leave_scripts_out=carried_held,
-                 limits='Development evidence; no phone result or adoption. Guards require absolute zero, including pre-existing baseline errors.')
+                 limits='Development evidence; no phone result or adoption. Guard gate counts strict false accepts introduced against the zero-bonus control.')
     (output/'verdict.json').write_text(json.dumps(verdict,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps({k:v for k,v in verdict.items() if k not in ('carry_rows','carry_controls')}),flush=True)
 
@@ -245,8 +299,12 @@ def main():
     parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--runtime',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--alpha',type=float,nargs='+',default=[0,.1,.25,.5,.75,1,1.5,2])
+    parser.add_argument('--alpha',type=float,nargs='+',default=[0,.5,.75,1,1.5,2])
+    parser.add_argument('--extend-alpha',type=float,default=3,help='Added after the grid only if its last alpha introduces no guard false accept')
+    parser.add_argument('--emitted',type=Path,default=None,help='Zero-bonus screen evidence whose miss log supplies extra token paths')
     args=parser.parse_args()
+    if args.emitted is None:
+        args.emitted=args.root/'corpus/lab/issue11/greedy-screen/alpha-0.json'
     if args.alpha[0]!=0 or len(set(args.alpha))!=len(args.alpha) or any(a<0 for a in args.alpha):
         parser.error('alpha grid must start with zero, be unique and nonnegative')
     run(args)

@@ -38,6 +38,21 @@ class ScreenTests(unittest.TestCase):
             self.assertEqual(original.read_text(), 'retained evidence')
 
 
+class GateTests(unittest.TestCase):
+    def test_emitted_paths_are_distinct_across_sections(self):
+        miss = {'term': 'Aster', 'tokens': [1, 2]}
+        evidence = {'takes': [{'missing_segmentations': [miss, {'term': 'Aster', 'tokens': [3]}]}],
+                    'leave_scripts_out': [{'missing_segmentations': [miss]}], 'guard': [{}]}
+        self.assertEqual(dictionary_screen.emitted_paths(evidence), [('Aster', [1, 2]), ('Aster', [3])])
+
+    def test_one_language_pass_is_named_not_a_pass(self):
+        totals = [dict(lang='de', passed=False), dict(lang='en', passed=True), dict(lang='en', passed=True)]
+        self.assertEqual(dictionary_screen.language_results(totals, 0), ({'de': False, 'en': True}, 'English only'))
+        self.assertEqual(dictionary_screen.language_results(totals, 1)[1], 'fail')
+        totals[0]['passed'] = True
+        self.assertEqual(dictionary_screen.language_results(totals, 0)[1], 'pass')
+
+
 class HeldOutTests(unittest.TestCase):
     def test_held_word_is_not_boosted_through_a_retained_longer_entry(self):
         entries = ['Alice', 'Alice Smith', 'Cedar']

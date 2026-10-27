@@ -62,29 +62,50 @@ class PhraseTree:
         return self._scores[key]
 
 
-def compile_dictionary(entries, vocabulary, tokens):
-    """Canonical tokenization of bilingual spelling forms; no numeric strings."""
+def compile_dictionary(entries, vocabulary, tokens, emitted=()):
+    """Canonical tokenization of bilingual spelling forms; no numeric strings.
+
+    ``emitted`` adds (term, tokens) paths the decoder has produced for a listed
+    term at zero bonus (#22): the tree must match what the model emits, not only
+    the tokenizer's canonical split. Entries keep their literal "&"; no expansion.
+    A spelling the vocabulary cannot encode ("&" is no token) gets no canonical
+    path; its term must then come from an emitted path.
+    """
     from ssentencepiece import Ssentencepiece
     tokenizer = Ssentencepiece(str(vocabulary), num_threads=1)
     symbols = {line.rsplit(' ', 1)[0]: int(line.rsplit(' ', 1)[1]) for line in tokens.read_text().splitlines()}
     forbidden = {symbols.get('<unk>'), symbols.get('<blk>')}
-    rows, seen = [], set()
+    rows, seen, paths = [], set(), set()
     for entry in entries:
         entry = ' '.join(entry.split())
         if not entry or any(c.isdigit() for c in entry):
             raise ValueError('dictionary entries must be nonempty nonnumeric terms')
-        spellings = (entry, entry.replace('ß', 'ss'), entry.replace('ss', 'ß'))
-        forms = [variant for form in spellings for variant in (
-            [form.replace('&', 'and'), form.replace('&', 'und')] if '&' in form else [form])]
-        for form in forms:
+        for form in (entry, entry.replace('ß', 'ss'), entry.replace('ss', 'ß')):
             if form in seen:
                 continue
             # SentencePiece vocabulary uses ASCII apostrophes for typographic quotes.
             encoded_form = form.replace('’', "'")
             pieces = tokenizer.encode(encoded_form, out_type=str)
+            seen.add(form)
+            if any(piece not in symbols for piece in pieces):
+                continue
             ids = [symbols[piece] for piece in pieces]
             if not ids or any(token in forbidden for token in ids):
                 raise ValueError('dictionary entry has an unknown or blank token')
-            rows.append(dict(term=entry, form=form, encoded_form=encoded_form, tokens=ids))
-            seen.add(form)
+            rows.append(dict(term=entry, form=form, encoded_form=encoded_form, tokens=ids, source='canonical'))
+            paths.add(tuple(ids))
+    names = {index: symbol for symbol, index in symbols.items()}
+    terms = {' '.join(entry.split()) for entry in entries}
+    for term, ids in emitted:
+        term = ' '.join(term.split())
+        ids = list(ids)
+        if term not in terms or not ids or any(token in forbidden or token not in names for token in ids):
+            raise ValueError('emitted path must belong to a listed term and use vocabulary tokens')
+        if tuple(ids) in paths:
+            continue
+        form = ''.join(names[token].replace('▁', ' ') for token in ids).strip()
+        rows.append(dict(term=term, form=form, encoded_form=form, tokens=ids, source='emitted'))
+        paths.add(tuple(ids))
+    if terms - {row['term'] for row in rows}:
+        raise ValueError('dictionary entry has no encodable or emitted token path')
     return rows

@@ -42,6 +42,14 @@ class DictionaryScoringTests(unittest.TestCase):
         self.assertEqual(result['dictionary_insertions'], 1)
         self.assertEqual(result['listed_errors'], 1)
 
+    def test_strict_counts_ignore_generic_words_from_multiword_entries(self):
+        result = dictionary_score.score_text('Meet Frau Keller or Aster', 'Meet Herr Keller and Aster Aster',
+                                             'en', ['Frau Keller', 'Fern & Footpath', 'Aster'])
+        self.assertEqual((result['listed_errors'], result['strict_listed_errors']), (2, 1))
+        self.assertEqual((result['dictionary_substitutions'], result['strict_dictionary_substitutions']), (1, 0))
+        self.assertEqual((result['dictionary_insertions'], result['strict_dictionary_insertions']), (1, 1))
+        self.assertTrue(dictionary_score.STOP_WORDS.issuperset({'and', 'und', 'frau', 'chip', 'bahnhof'}))
+
     def test_report_rows_bind_counts_to_feed_run_and_no_dictionary_control(self):
         control = {'variant': {'name': 'control', 'decoding': {'method': 'modified_beam_search'}, 'hotwords': {'file': '', 'score': 2.0}},
                    'takes': [{'file': 'a.wav', 'text': 'Visit wrong', 'jitter': [
