@@ -17,12 +17,19 @@ model, native-runtime and original-artifact checks remain enforced. Edited nonem
 lease one verified loaded model and supply their own stream dictionary, with no default terms
 to reintroduce deleted entries. Reusing that loaded model retains its acceptance check;
 each revision still verifies its own bytes. This avoids reloading 2.4 GB for every edit.
-The first transition from the frozen baseline, or back from empty, prepares a new model.
 Valid user input does
 not imply measured recognition accuracy for that input.
 
-Preserve #31's existing empty-dictionary contract: an explicit saved empty revision selects
-the complete historical INT8 pipeline. Explain this before deleting the final entry; never
-reseed an intentionally empty dictionary on restart. The alternative of keeping FP32 without
-dictionary help was discussed but not approved. No import/export, language selector, weights
-or new recognition model is introduced.
+The owner confirmed that an empty dictionary means no vocabulary help, with the same
+FP32 model, beam search and post-processing. This supersedes #31's historical-INT8
+empty-dictionary criterion for deliberate Settings edits. An intentionally empty dictionary
+stays empty on restart. The original provisioned baseline and historical control remain
+available under their original identities for experimental replay.
+
+Use stream dictionaries from normal startup too: the first edit and clearing all entries
+reuse the model already loaded for dictation. The native stream API adds constructor terms
+to stream terms, so the recognizer must have no constructor dictionary; otherwise deleting
+an entry would silently retain it. Receipts explicitly identify per-stream binding and derive
+a new configuration hash, retaining the tested configuration hash separately. Retained DE/EN
+output parity is checked; no broader accuracy claim follows. No import/export, language
+selector, weights or new recognition model is introduced.

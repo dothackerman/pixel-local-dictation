@@ -349,7 +349,7 @@ object Engine {
     private fun build(app: Context, selected: BenchmarkLiveConfig?, dictionary: DictionarySnapshot?): Pair<DictationRuntime, ProvisionalBaseline?> {
         val normal = if (selected == null) ProvisionalBaseline.load(File(app.filesDir, "lab"),
             org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() }), dictionary) else null
-        val created = if (normal != null && dictionary?.edited == true) {
+        val created = if (normal != null && dictionary != null) {
             DictationRuntime(normal.variant, decodeQueue, {
                 val lease = dictionaryModels.acquire(normal, dictionary, File(app.applicationInfo.sourceDir)) {
                     SherpaRecognizer.parakeet(normal.variant, ModelFiles.dir(normal.modelDirectory), perStreamDictionary = true)
@@ -404,7 +404,7 @@ object Engine {
         }, dictionaryQueue)
     }
 
-    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt() else null
+    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt(perStream = true) else null
 
     /** Opening and pinning identity must be atomic with publication/retirement of a revision. */
     @Synchronized fun openTake(context: Context, open: (DictationRuntime, () -> org.json.JSONObject?) -> TakeSession): TakeSession {
@@ -412,7 +412,7 @@ object Engine {
         val selectedLive = live
         val selectedNormal = baseline
         val receipts = benchmarkReceipts
-        return open(current) { selectedLive?.receipt() ?: if (receipts) selectedNormal?.receipt() else null }
+        return open(current) { selectedLive?.receipt() ?: if (receipts) selectedNormal?.receipt(perStream = true) else null }
     }
 
     /** Starts loading the model in the background; safe to call repeatedly. */

@@ -49,7 +49,5 @@
     <string name="dictionary_save_failed">Couldn’t save. Your previous dictionary is still available. Try again.</string>
     <string name="dictionary_load_failed">Couldn’t open your dictionary. Tap here to retry.</string>
     <string name="dictionary_no_matches">No matching terms.</string>
-    <string name="dictionary_empty">No terms yet. Add a name or phrase you want dictation to recognise. With an empty dictionary, dictation uses the older recognizer.</string>
-    <string name="dictionary_last_title">Delete the last term?</string>
-    <string name="dictionary_last_explanation">An empty dictionary switches dictation to the older recognizer, without vocabulary help. Results and speed may change. Adding a term switches it back.</string>
+    <string name="dictionary_empty">No terms yet. Add a name or phrase you want dictation to recognise.</string>
 </resources>

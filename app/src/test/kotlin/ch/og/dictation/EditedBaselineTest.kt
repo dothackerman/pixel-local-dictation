@@ -40,7 +40,9 @@ class EditedBaselineTest {
             assertFalse(receipt.toString().contains("Bärlauch"))
             File(root, "issue11-dictionary.txt").appendText("tampered")
             assertThrows(IllegalArgumentException::class.java) { selected.verify(apk) }
-            assertNull(ProvisionalBaseline.load(root, manifest, store.prepare(emptyList())))
+            val empty = ProvisionalBaseline.load(root, manifest, store.prepare(emptyList()))!!
+            assertEquals(selected.variant, empty.variant)
+            assertTrue(empty.dictionary.readText().isEmpty())
         } finally { root.deleteRecursively() }
     }
 }

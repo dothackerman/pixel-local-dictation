@@ -20,7 +20,6 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.DynamicColors
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
@@ -182,10 +181,7 @@ class DictionaryActivity : AppCompatActivity() {
     private fun delete(term: String) {
         val all = model.state.value?.snapshot?.entries ?: return
         fun apply() { snackbar?.dismiss(); model.save(all.filter { it != term }, "delete") }
-        if (all.size == 1) MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.dictionary_last_title).setMessage(R.string.dictionary_last_explanation)
-            .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.dictionary_delete) { _, _ -> apply() }.show()
-        else apply()
+        apply()
     }
 
     private fun showMessage(message: Int) {

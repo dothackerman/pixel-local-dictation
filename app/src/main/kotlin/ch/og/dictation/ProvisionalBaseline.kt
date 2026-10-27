@@ -10,9 +10,8 @@ class ProvisionalBaseline private constructor(private val root: File, private va
     companion object {
         /** Empty/missing dictionary means exactly the former shipped pipeline, including INT8. */
         fun load(root: File, manifest: JSONObject, dictionary: DictionarySnapshot? = null): ProvisionalBaseline? {
-            if (dictionary?.entries?.isEmpty() == true) return null
             val selected = ProvisionalBaseline(root.canonicalFile, manifest, dictionary?.takeIf { it.edited })
-            if (!selected.dictionary.exists() || selected.dictionary.readText().isBlank()) return null
+            if (dictionary?.edited != true && (!selected.dictionary.exists() || selected.dictionary.readText().isBlank())) return null
             return selected
         }
     }
@@ -60,13 +59,13 @@ class ProvisionalBaseline private constructor(private val root: File, private va
     fun verifyWithLoadedModel(source: ProvisionalBaseline) {
         require(source.verified && root == source.root && artifacts == source.artifacts && variant == source.variant &&
             manifest.getString("runtime_sha256") == source.manifest.getString("runtime_sha256")) { "different loaded model identity" }
-        requireNotNull(userDictionary) { "user revision required" }.verify()
+        userDictionary?.verify()
         buildHash = source.buildHash
         verified = true
     }
 
     /** No recognized text/audio. A fresh APK hash is deliberately separate from historical replay. */
-    fun receipt() = JSONObject().also { result ->
+    fun receipt(perStream: Boolean = false) = JSONObject().also { result ->
         for (key in listOf("plan_sha256", "configuration_sha256", "model_sha256", "dictionary_sha256", "runtime_sha256", "historical_build_sha256", "decision"))
             result.put(key, manifest.getString(key))
         result.put("baseline", "candidate-a-provisional").put("build_sha256", buildHash ?: JSONObject.NULL)
@@ -79,6 +78,13 @@ class ProvisionalBaseline private constructor(private val root: File, private va
                 .put("configuration_sha256", ArtifactFiles.inventoryHash(mapOf(
                     "accepted_configuration" to manifest.getString("configuration_sha256"), "user_dictionary" to it.sha256)))
                 .put("accuracy_validated", false)
+        }
+        if (perStream) {
+            if (userDictionary == null) result.put("baseline", "candidate-a-stream-dictionary")
+            result.put("dictionary_binding", "per-stream-v1")
+                .put("tested_configuration_sha256", manifest.getString("configuration_sha256"))
+                .put("configuration_sha256", ArtifactFiles.inventoryHash(mapOf(
+                    "dictionary_configuration" to result.getString("configuration_sha256"), "dictionary_binding" to "per-stream-v1")))
         }
     }
 }

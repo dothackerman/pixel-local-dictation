@@ -33,7 +33,7 @@ class NormalBaselineTest {
         assertSame("repeated panels must retain the runtime", first, Engine.runtime(context))
         Engine.warmUp(context).get(10, TimeUnit.MINUTES)
         val verified = requireNotNull(Engine.liveReceipt())
-        assertEquals("candidate-a-provisional", verified.getString("baseline"))
+        assertEquals("candidate-a-stream-dictionary", verified.getString("baseline"))
         assertTrue(verified.getBoolean("verified"))
         assertFalse(verified.isNull("build_sha256"))
         repeat(2) {
@@ -45,7 +45,7 @@ class NormalBaselineTest {
     }
 
     @Test fun normalPathMatchesRetainedCandidateAOutputs() =
-        checkRetainedOutputs("candidate-a-provisional", "normal-baseline-result.json")
+        checkRetainedOutputs("candidate-a-stream-dictionary", "normal-baseline-result.json")
 
     fun checkRetainedOutputs(expectedBaseline: String, resultFile: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -38,7 +38,9 @@ class DictionaryRuntimeUpdateTest {
         Engine.warmUp(context).get(2, TimeUnit.MINUTES)
         val take = Engine.openTake(context) { runtime, _ -> runtime.open(capture, output, direct).also { it.start() } }
         try {
+            val initialLoads = Engine.dictionaryModelLoads
             val saved = Engine.saveDictionary(context, original, original.entries + "Quarzblütenexpress").get(2, TimeUnit.MINUTES)
+            assertEquals("first edit must reuse the loaded model", initialLoads, Engine.dictionaryModelLoads)
             assertTrue(take.active)
             assertEquals(saved, Engine.dictionaryStore(context).read())
             val updated = Engine.runtime(context)
@@ -60,6 +62,8 @@ class DictionaryRuntimeUpdateTest {
             NormalBaselineTest().checkRetainedOutputs("candidate-a-user-dictionary", "edited-dictionary-parity-result.json")
             val empty = Engine.saveDictionary(context, removed, emptyList()).get(2, TimeUnit.MINUTES)
             assertTrue(empty.entries.isEmpty())
+            assertEquals("empty must keep the same loaded model", loads, Engine.dictionaryModelLoads)
+            assertEquals("candidate-a-user-dictionary", requireNotNull(Engine.liveReceipt()).getString("baseline"))
             assertSame(Engine.runtime(context), Engine.runtime(context))
             val restored = Engine.saveDictionary(context, empty, original.entries).get(2, TimeUnit.MINUTES)
             assertEquals(original.entries, restored.entries)
