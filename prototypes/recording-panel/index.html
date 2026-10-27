@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dictation · soft ink ring</title>
+<style>
+:root{color-scheme:dark;--bg:#101211;--text:#eff3ed;--muted:#bbc5b6;--accent:#b8dfa2;--border:#465141;--panel:#e4e9de;--ink:#273122;--space:8px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}main{max-width:920px;margin:auto;padding:28px 24px 36px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.15;letter-spacing:-1px;margin:12px 0}p{color:var(--muted);margin:8px 0}.eyebrow{color:var(--accent);font-size:11px;letter-spacing:1.6px;text-transform:uppercase}
+button,select{font:inherit;min-height:44px;border:1px solid var(--border);border-radius:24px;background:#232a21;color:var(--text);padding:9px 16px;cursor:pointer}button:hover,select:hover{background:#303c29}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:4px}button:disabled{cursor:default}
+.toolbar,.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.toolbar{margin:24px 0 12px}.toolbar button,.toolbar select,.controls{font-size:13px}select{max-width:100%}.meter{display:flex;align-items:center;gap:12px;min-width:170px;color:var(--muted);font-size:12px}.track{display:block;width:80px;height:4px;background:#394332;border-radius:8px;overflow:hidden}.track i{display:block;height:100%;background:var(--accent);width:0}.strength{display:flex;align-items:center;gap:8px;min-height:44px;color:var(--muted)}.strength input{width:108px;min-height:36px;accent-color:var(--accent);cursor:pointer}.strength output{min-width:32px;font-variant-numeric:tabular-nums;color:var(--text)}
+.grid{max-width:500px;margin:24px auto 12px}.card h2,.card>p{display:none}.panel{background:var(--panel);color:var(--ink);border-radius:24px;overflow:hidden;box-shadow:0 12px 32px #0002}.header{height:56px;display:flex;align-items:center;padding:4px 12px;gap:8px}.back{width:48px;height:48px;padding:12px;border:0;background:transparent;color:var(--ink);display:grid;place-items:center}.back:hover{background:#d6e1cc}.back svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.status{font-size:14px;line-height:20px;font-weight:500;color:#52604c}.preview{height:68px;padding:4px 24px;font-size:14px;line-height:20px;color:#5e6a58;overflow:hidden;overflow-wrap:anywhere}.preview-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.stage{height:344px;position:relative;display:grid;place-items:center}canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.mic{z-index:1;min-height:0;width:clamp(56px,22vw,94px);height:clamp(56px,22vw,94px);padding:0;border-radius:50%;border:1px solid #a0b68e;background:#c7dab7;color:#283b21;display:grid;place-items:center;box-shadow:0 3px 6px #2b3e1e12;transition:background 140ms,transform 140ms,opacity 140ms}.mic:hover:not(:disabled){background:#b6d29f}.mic:active:not(:disabled){transform:scale(.95);box-shadow:none}.mic:disabled{opacity:.65}.mic svg{width:34%;height:34%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.panel button:focus-visible{outline-color:#3d592c;outline-offset:4px}
+.compact .grid{max-width:380px}.compact .stage{height:255px}.compact .mic{width:70px;height:70px}.compact .mic svg{width:30px;height:30px}.compact .preview{padding:4px 20px}.size-note{max-width:440px;margin:8px auto 24px;text-align:center;font-size:12px}.notes{max-width:650px;margin:24px auto 0;padding-top:16px;border-top:1px solid #34402f;font-size:13px}.notes p{margin:8px 0}.notes strong{color:var(--text)}a{color:var(--accent);text-underline-offset:3px}a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:600px){main{padding:24px 18px}.toolbar,.controls{gap:8px}.toolbar{margin-top:20px}.toolbar button{padding:8px 14px}.meter{width:100%}.grid{margin-top:20px}}
+@media(prefers-reduced-motion:reduce){.mic{transition:none}.mic:active:not(:disabled){transform:none}}
+@media(forced-colors:active){.panel{border:1px solid CanvasText}.mic{border:2px solid ButtonText}.track{border:1px solid CanvasText}}
+</style>
+<main class="compact" id="study">
+<div class="eyebrow">Issue 30 · direction A · laptop study</div>
+<h1>Small stage. Bigger gestures.</h1>
+<p>Audio gives the ring its shape and weight. Tuned to read at a glance.</p>
+<div class="toolbar">
+<button id="pause">Pause motion</button><button id="restart">Restart take</button>
+<select id="source" aria-label="Synthetic audio scenario"><option value="auto">Automatic · quiet → soft → speech → loud</option><option value="quiet">Quiet</option><option value="soft">Soft speech</option><option value="speech">Normal speech</option><option value="loud">Loud speech</option></select>
+<div class="meter"><span id="signal">Quiet</span><span class="track"><i id="level"></i></span></div>
+</div>
+<div class="controls"><select id="size" aria-label="Preview size"><option value="compact">Compact · 70 dp mic</option><option value="large">Enlarged · 94 px mic</option></select><label class="strength" for="strength">Exaggeration <input id="strength" type="range" min="1" max="3" step="0.1" value="2.4"><output id="strength-value" for="strength">2.4×</output></label></div>
+<div class="grid" id="cards"></div>
+<p class="size-note" id="size-note">70 dp button, shown as 70 CSS pixels. Laptop preview is not physically calibrated.</p>
+<div class="notes"><p><strong>Exaggeration makes it legible.</strong> At the default 2.4×, the ripples reach further and the ink gains much more weight. Set 1× to compare with the earlier motion. Quiet returns to the same fine circle.</p>
+<p>Synthetic 16 kHz audio and an invented preview sentence drive this study; no microphone is used. Shape and thickness follow measured loudness. The contour is stylized, not a literal waveform. Phone density is 2.4375 with 443 dp logical screen width. The 70 dp mic renders at 171 pixels. Real-voice appearance and the Signal height trade-off still need owner review.</p>
+<p>Arrow discards; mic stops. Tap either to preview the state change. Finishing time here is simulated; the app must return as soon as its actual work finishes. Reduced-motion preferences keep a circular shape with gentle changes in weight.</p>
+<p>Inspired by <a href="https://raw.githubusercontent.com/pbakaus/impeccable/refs/heads/main/skill/reference/delight.md">delight through useful feedback</a>.</p></div>
+</main>
+<script>
+const descriptions=[['A · Soft ink','Audio drives shape and weight.','']];
+const svg='<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="12" y="4" width="8" height="15" rx="4"/><path d="M8 14v2a8 8 0 0 0 16 0v-2M16 24v5M11 29h10"/></svg>';
+document.querySelector('#cards').innerHTML=descriptions.map(([title,desc,tag],i)=>`<article class="card"><div class="panel"><div class="header"><button class="back" aria-label="Discard take and return to keyboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7M7 12h13"/></svg></button><span class="status" role="status" aria-live="polite">Recording</span></div><div class="preview"><span class="preview-text"></span></div><div class="stage"><canvas aria-hidden="true"></canvas><button class="mic" aria-label="Stop recording">${svg}</button></div></div><h2>${title}</h2><p>${desc} ${tag?`<span class="tag">${tag}</span>`:''}</p></article>`).join('');
+const canvases=[...document.querySelectorAll('canvas')], contexts=canvases.map(c=>c.getContext('2d'));
+let phase='recording',paused=false,clock=0,sampleIndex=0,seed=8675309,envelope=0,previous=0,accumulator=0,finishAt=0,oscillator=0,visualLevel=0,rafId=0,motionClock=0;
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+let rms=0;
+const sentence='A calmer panel, with a ring that follows my voice.';
+function random(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296*2-1}
+function scenario(){const v=document.querySelector('#source').value;return v==='auto'?['quiet','soft','speech','loud','quiet'][Math.floor(clock%14/2.8)]:v}
+function packet(){const mode=scenario(),gain={quiet:0,soft:.055,speech:.21,loud:.53}[mode];let energy=0;for(let j=0;j<320;j++){let t=sampleIndex++/16000;let syllable=Math.pow(Math.max(0,Math.sin(t*13)+.28*Math.sin(t*29)),1.8)/1.5;syllable=Math.min(1,syllable);let pitch=145+30*Math.sin(t*2.3);oscillator=(oscillator+2*Math.PI*pitch/16000)%(2*Math.PI);let sound=.65*Math.sin(oscillator)+.22*Math.sin(2*oscillator)+.12*Math.sin(5*oscillator)+.09*random();let v=gain*(.12+.88*syllable)*sound+.00035*random();energy+=v*v}rms=Math.sqrt(energy/320);const target=Math.min(1,Math.sqrt(Math.max(0,rms-.0008))*2.6);envelope+=(target-envelope)*(target>envelope?.62:.16);}
+
+function reset(){phase='recording';clock=0;sampleIndex=0;oscillator=0;seed=8675309;envelope=0;visualLevel=0;motionClock=0;rms=0;paused=false;document.querySelector('#pause').textContent='Pause motion';sync()}
+function setText(node,text){if(node.textContent!==text)node.textContent=text}
+function sync(){document.querySelectorAll('.status').forEach(x=>setText(x,phase==='recording'?'Recording':phase==='finishing'?'Finishing…':phase==='inserted'?'Inserted · return to keyboard':'Discarded · return to keyboard'));document.querySelectorAll('.mic').forEach(x=>{x.disabled=phase!=='recording';x.setAttribute('aria-label',phase==='recording'?'Stop recording':phase==='finishing'?'Finishing transcription':phase==='inserted'?'Text inserted':'Take discarded');if(x.dataset.icon!==phase){x.dataset.icon=phase;x.innerHTML=phase==='inserted'?'<svg viewBox="0 0 32 32" aria-hidden="true"><path d="m8 17 5 5 12-13"/></svg>':svg;}});document.querySelectorAll('.preview-text').forEach(x=>x.textContent=phase==='discarded'?'':phase==='inserted'?sentence:sentence.slice(0,Math.min(sentence.length,Math.floor(clock*5))));document.querySelector('#signal').textContent=phase==='recording'?({quiet:'Quiet',soft:'Soft speech',speech:'Normal speech',loud:'Loud speech'}[scenario()]):'Microphone off';document.querySelector('#level').style.width=(phase==='recording'?envelope*100:0)+'%'}
+function draw(i){
+ const c=canvases[i],ctx=contexts[i],box=c.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);
+ if(c.width!==Math.round(box.width*dpr)||c.height!==Math.round(box.height*dpr)){c.width=Math.round(box.width*dpr);c.height=Math.round(box.height*dpr)}
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,box.width,box.height);
+ const cx=box.width/2,cy=box.height/2,active=phase==='recording',level=phase==='discarded'?0:visualLevel;
+ const n=128,outer=[],inner=[],motion=reducedMotion.matches?0:level;
+ const scale=document.querySelector('.mic').getBoundingClientRect().width/94,exaggeration=Number(document.querySelector('#strength').value);
+ for(let k=0;k<n;k++){
+  const a=2*Math.PI*k/n-Math.PI/2;
+  const organic=.55*Math.sin(a*3+motionClock*.52)+.28*Math.sin(a*5-motionClock*.7)+.17*Math.sin(a*2+motionClock*.26);
+  const radius=(70+motion*exaggeration*(12+13*organic))*scale;
+  // The ring is a filled ribbon. Angular variation creates local changes in weight.
+  const weight=(reducedMotion.matches?2+level*2:2.2+level*exaggeration*(4.3+2.7*Math.sin(a*2-motionClock*.48)+1.1*Math.sin(a*3+motionClock*.31)))*scale;
+  outer.push([cx+Math.cos(a)*(radius+weight/2),cy+Math.sin(a)*(radius+weight/2)]);
+  inner.push([cx+Math.cos(a)*(radius-weight/2),cy+Math.sin(a)*(radius-weight/2)]);
+ }
+ function contour(points){const last=points[n-1],first=points[0];ctx.moveTo((last[0]+first[0])/2,(last[1]+first[1])/2);for(let k=0;k<n;k++){const p=points[k],q=points[(k+1)%n];ctx.quadraticCurveTo(p[0],p[1],(p[0]+q[0])/2,(p[1]+q[1])/2)}ctx.closePath()}
+ const ink=ctx.createLinearGradient(cx-95,cy-95,cx+95,cy+95);ink.addColorStop(0,active?'#789855':'#9aa88f');ink.addColorStop(.5,active?'#506e3c':'#9aa88f');ink.addColorStop(1,active?'#6f8d50':'#9aa88f');
+ ctx.beginPath();contour(outer);contour(inner);ctx.fillStyle=ink;ctx.fill('evenodd');
+ // A tiny wash belongs to the ink, kept faint enough to preserve the mic as the target.
+ ctx.beginPath();contour(inner);ctx.fillStyle=`rgba(95,127,62,${.015+level*.025})`;ctx.fill();
+}
+function frame(now){rafId=0;let dt=previous?Math.min(.08,(now-previous)/1000):0;previous=now;
+ if(!paused){if(phase==='recording'){clock+=dt;accumulator+=dt;while(accumulator>=.02){packet();accumulator-=.02}}else if(phase==='finishing'&&now>=finishAt){phase='inserted'}
+ const target=phase==='recording'?envelope:0;visualLevel+=(target-visualLevel)*(1-Math.exp(-dt/(target>visualLevel?.03:.13)));}
+ if(!paused&&phase==='recording'&&envelope>.01)motionClock+=dt*(.5+envelope*2);
+ sync();canvases.forEach((_,i)=>draw(i));if(!document.hidden)rafId=requestAnimationFrame(frame);
+}
+document.querySelector('#size').onchange=()=>{const compact=document.querySelector('#size').value==='compact';document.querySelector('#study').classList.toggle('compact',compact);document.querySelector('#size-note').textContent=compact?'70 dp button, shown as 70 CSS pixels. Laptop preview is not physically calibrated.':'Enlarged to inspect motion. Final phone dimensions remain undecided.';};document.querySelector('#strength').oninput=()=>{document.querySelector('#strength-value').textContent=Number(document.querySelector('#strength').value).toFixed(1)+'×';};document.querySelector('#pause').onclick=()=>{paused=!paused;document.querySelector('#pause').textContent=paused?'Resume motion':'Pause motion'};document.querySelector('#restart').onclick=reset;document.querySelector('#source').onchange=()=>{envelope=0};document.querySelectorAll('.back').forEach(x=>x.onclick=()=>{phase='discarded';sync()});document.querySelectorAll('.mic').forEach(x=>x.onclick=()=>{phase='finishing';finishAt=performance.now()+1600;sync()});document.addEventListener('visibilitychange',()=>{previous=0;accumulator=0;if(rafId)cancelAnimationFrame(rafId);rafId=document.hidden?0:requestAnimationFrame(frame)});rafId=requestAnimationFrame(frame);
+</script>
+</html>

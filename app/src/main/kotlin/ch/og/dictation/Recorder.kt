@@ -31,7 +31,7 @@ class Recorder {
      */
     // Sole caller checks microphone permission and catches SecurityException via Exception.
     @SuppressLint("MissingPermission")
-    fun start(onSamples: (FloatArray) -> Unit = {}, onStarted: (() -> Unit)? = null) {
+    fun start(onSamples: (FloatArray) -> Unit = {}, onStarted: (() -> Unit)? = null, onEnded: (() -> Unit)? = null) {
         if (thread != null) return
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
         // One second of headroom: the first chunk of a process also pays for setting up the segmenter.
@@ -49,16 +49,18 @@ class Recorder {
         thread = Thread {
             val chunk = ShortArray(minBuf / 2)
             val bytes = ByteArray(minBuf)
-            while (capturing) {
-                val n = rec.read(chunk, 0, chunk.size)
-                if (n < 0) break  // device error or interruption; stop() still returns what was captured
-                if (n == 0) continue
-                for (i in 0 until n) {
-                    bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
+            try {
+                while (capturing) {
+                    val n = rec.read(chunk, 0, chunk.size)
+                    if (n < 0) break  // device error or interruption; stop() still returns what was captured
+                    if (n == 0) continue
+                    for (i in 0 until n) {
+                        bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
+                    }
+                    synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
+                    onSamples(FloatArray(n) { chunk[it] / 32768f })
                 }
-                synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
-                onSamples(FloatArray(n) { chunk[it] / 32768f })
-            }
+            } finally { onEnded?.invoke() }
         }.also { it.start() }
     }
 
