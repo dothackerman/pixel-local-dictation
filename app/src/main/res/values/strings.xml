@@ -1,15 +1,19 @@
 <resources>
     <string name="app_name">Dictation</string>
     <string name="ime_label">Local dictation</string>
-    <string name="status_idle">Tap record</string>
+    <string name="status_idle">Tap the microphone to record</string>
+    <string name="status_opening">Opening microphone…</string>
+    <string name="status_capture_ended">Microphone stopped · tap to finish</string>
     <string name="status_recording">Recording…</string>
     <string name="status_finishing">Finishing…</string>
     <string name="status_failed">Recognition failed</string>
     <string name="status_no_permission">Microphone permission missing</string>
-    <string name="record">Record</string>
-    <string name="stop">Stop</string>
+    <string name="discard_recording">Discard recording and return to keyboard</string>
+    <string name="stop_recording">Stop recording</string>
+    <string name="start_recording">Start recording</string>
+    <string name="retry_recording">Retry recording</string>
+    <string name="finish_transcription">Finish transcription</string>
     <string name="cancel">Cancel</string>
-    <string name="back">Keyboard</string>
     <string name="settings_label">Local dictation settings</string>
     <string name="benchmark_switch">Benchmark mode: save recordings</string>
     <string name="benchmark_explanation">When on, every take is stored on this phone as audio plus its recognition result, until you delete it below. Nothing leaves the phone. When off, audio stays in memory and is discarded after use.</string>
