@@ -8,7 +8,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import org.json.JSONObject
 
-/** Benchmark timing only: no audio, text, editor identity or permission changes. */
+/** Benchmark timing/geometry only: no audio, text, editor identity or permission changes. */
 class StartupTrace(private val context: Context) {
     companion object {
         private val processId = UUID.randomUUID().toString()
@@ -36,6 +36,24 @@ class StartupTrace(private val context: Context) {
                 check(file.length() < 2 * 1024 * 1024) { "live receipt file full" }
                 file.appendText(row.toString() + "\n")
             }.onFailure { Log.e("StartupTrace", "live receipt unavailable", it) }
+        }
+    }
+
+    /** Values sampled synchronously at the real IME callback; all distances are pixels. */
+    fun geometry(phase: String, takeId: String?, ns: Long, geometry: JSONObject) {
+        val row = JSONObject().put("protocol", "ime-geometry-v1")
+            .put("clock", "CLOCK_MONOTONIC").put("processId", processId)
+            .put("serviceId", serviceId).put("takeId", takeId ?: JSONObject.NULL).put("phase", phase)
+            .put("ns", ns).put("geometry", geometry).toString() + "\n"
+        writer.execute {
+            runCatching {
+                val file = File(context.filesDir, "lab/geometry.jsonl")
+                file.parentFile?.mkdirs()
+                check(file.length() + row.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
+                    "geometry receipt file full; pull and archive it"
+                }
+                file.appendText(row)
+            }.onFailure { Log.e("StartupTrace", "geometry receipt unavailable", it) }
         }
     }
 

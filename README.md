@@ -155,6 +155,32 @@ and returns to FUTO.
   timing and identity metadata, not audio or recognized text; they are independent
   of saved-take recording. Panel draw is not physical display timing, and the app
   cannot observe FUTO's microphone-key touch.
+  Benchmark `files/lab/geometry.jsonl` adds `ime-geometry-v1` receipts from the
+  real IME `onComputeInsets` (after unchanged `super`) and pre-draw callbacks.
+  No layout requests or animation callbacks are added. Collection covers the first
+  two seconds after service/view creation, input start and each panel request; ends at input
+  finish, deduplicates per callback, and caps each observation at 256 rows and the
+  file at 2 MiB without overwriting. Release collection is disabled.
+  `processId`/`serviceId`/`takeId` join startup receipts; `takeId` is null before
+  the first panel request. `ns` uses the same `CLOCK_MONOTONIC` clock.
+  Every geometry distance is physical pixels: `panelMeasuredHeightPx` is measured
+  size; `panelHeightPx`/`panelWidthPx` are laid-out size; `panelTopWindowPx` is
+  relative to the IME window; `panelTopScreenPx`/`decorTopScreenPx` use Android
+  screen coordinates; `decorHeightPx` is laid-out decor height.
+  `contentTopInsetsPx`/`visibleTopInsetsPx` are the framework's editor-facing top
+  insets relative to the IME window top; `touchableInsets` is Android's mode enum.
+  Pre-draw retains the most recent computed insets, or null before one is observed
+  in that panel request. Missing panel geometry is null. `bannerVisible` is only a
+  visibility boolean. No editor identity, text or audio is collected.
+  Compare size/window-top changes against exported inset changes, then align with
+  startup events and the supervised video. Stable size and exported insets through
+  visible reversal rule out a panel-height explanation; screen coordinates alone
+  do not measure compositor motion or another app's editor animation.
+  Geometry regression requires Android's real visible IME callback seam: record
+  a supervised keyboard handoff in warm and loading states; verify initial and
+  changed geometry receipts, unchanged returned insets and stable final dimensions.
+  Host unit tests cannot exercise this cross-window behavior. A synthetic view or
+  formula test would not establish the observed handoff's cause.
 - [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and
   [runtime_config.py](tools/runtime_config.py) configure memory allocation for
   the recognizer and language identification (LID) independently. Stock settings

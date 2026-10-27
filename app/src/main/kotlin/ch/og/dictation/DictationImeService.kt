@@ -43,6 +43,15 @@ class DictationImeService : InputMethodService() {
     private var take: TakeSession? = null
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
+    private var panel: View? = null
+    // Observation is separate from take completion, but ends when the input view is hidden.
+    private var geometryTake: String? = null
+    private var geometryUntilNs = 0L
+    private var geometryRows = 0
+    private val lastGeometry = mutableMapOf<String, String>()
+    private var contentTopInsets: Int? = null
+    private var visibleTopInsets: Int? = null
+    private var touchableInsets: Int? = null
 
     /** A take exists from the start of recording until its text is committed or dropped. */
     private val takeActive: Boolean get() = take?.active == true
@@ -59,6 +68,7 @@ class DictationImeService : InputMethodService() {
         super.onCreate()
         if (resources.getBoolean(R.bool.startup_timing)) {
             startup = StartupTrace(applicationContext).also { it.event("serviceCreate", ns = createdNs) }
+            observeGeometry()
         }
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         Engine.warmUp(this).whenComplete { _, failure ->
@@ -69,7 +79,13 @@ class DictationImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.ime, null)
+        panel = v
+        observeGeometry(startupTake)
         if (startup != null) {
+            v.viewTreeObserver.addOnPreDrawListener {
+                recordGeometry("preDraw")
+                true
+            }
             var drawnTake: String? = null
             v.viewTreeObserver.addOnDrawListener {
                 val id = startupTake
@@ -92,6 +108,7 @@ class DictationImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        observeGeometry()
         Log.i(tag, "input start: restarting=$restarting take=$takeActive " +
             "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
         // Observed 2026-10-10: a browser reports a move between two fields of one page as a
@@ -114,13 +131,70 @@ class DictationImeService : InputMethodService() {
         // The supervised live check stores timing/identity receipts only, never new recordings.
         saveTake = !liveCheck && BenchmarkStore.isEnabled(this)
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
+        observeGeometry(startupTake)
         (banner as? TextView)?.setText(if (liveCheck) R.string.benchmark_live_check else R.string.benchmark_banner)
         banner?.visibility = if (saveTake || liveCheck) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
     }
 
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        // Observe the framework result; never change the editor's exported insets.
+        if (startup != null) {
+            contentTopInsets = outInsets.contentTopInsets
+            visibleTopInsets = outInsets.visibleTopInsets
+            touchableInsets = outInsets.touchableInsets
+            recordGeometry("computeInsets")
+        }
+    }
+
+    private fun observeGeometry(takeId: String? = null) {
+        if (startup == null) return
+        geometryTake = takeId
+        geometryUntilNs = System.nanoTime() + 2_000_000_000L
+        geometryRows = 0
+        lastGeometry.clear()
+        contentTopInsets = null
+        visibleTopInsets = null
+        touchableInsets = null
+    }
+
+    private fun recordGeometry(phase: String) {
+        val trace = startup ?: return
+        val id = geometryTake
+        val ns = System.nanoTime()
+        if (ns > geometryUntilNs || geometryRows >= 256) return
+        val view = panel
+        val decor = window?.window?.decorView ?: return
+        val inWindow = IntArray(2)
+        val onScreen = IntArray(2)
+        val decorOnScreen = IntArray(2)
+        view?.getLocationInWindow(inWindow)
+        view?.getLocationOnScreen(onScreen)
+        decor.getLocationOnScreen(decorOnScreen)
+        val geometry = JSONObject()
+            .put("decorHeightPx", decor.height)
+            .put("decorTopScreenPx", decorOnScreen[1])
+            .put("panelMeasuredHeightPx", view?.measuredHeight ?: JSONObject.NULL)
+            .put("panelHeightPx", view?.height ?: JSONObject.NULL)
+            .put("panelWidthPx", view?.width ?: JSONObject.NULL)
+            .put("panelTopWindowPx", if (view != null) inWindow[1] else JSONObject.NULL)
+            .put("panelTopScreenPx", if (view != null) onScreen[1] else JSONObject.NULL)
+            .put("bannerVisible", banner?.visibility == View.VISIBLE)
+            .put("contentTopInsetsPx", contentTopInsets ?: JSONObject.NULL)
+            .put("visibleTopInsetsPx", visibleTopInsets ?: JSONObject.NULL)
+            .put("touchableInsets", touchableInsets ?: JSONObject.NULL)
+        val key = geometry.toString()
+        if (lastGeometry[phase] == key) return
+        lastGeometry[phase] = key
+        geometryRows++
+        trace.geometry(phase, id, ns, geometry)
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
+        geometryTake = null
+        geometryUntilNs = 0L
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
         Log.i(tag, "input view finished: finishingInput=$finishingInput take=$takeActive")
@@ -129,6 +203,8 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onFinishInput() {
+        geometryTake = null
+        geometryUntilNs = 0L
         session.invalidate()
         if (takeActive) discardAndReturn("input finished")
         super.onFinishInput()
