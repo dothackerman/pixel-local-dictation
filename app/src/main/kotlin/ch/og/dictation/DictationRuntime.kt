@@ -6,7 +6,8 @@ import java.util.concurrent.Executor
 /**
  * Process lifetime of one setup. The injected decode executor must be serial.
  * Model loading, takes and release share that executor; cancelling a take does not release
- * a model still used by native work. Production and replay use Pipeline.runtime to construct it.
+ * a model still used by native work. Production and replay share this take lifecycle;
+ * recognizer construction and ownership may differ (for example, dictionary leases).
  */
 class DictationRuntime(
     private val variant: Variant,

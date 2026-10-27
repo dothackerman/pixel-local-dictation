@@ -24,8 +24,8 @@ provisional baseline for its error/Stop-wait trade-off. The historical INT8 pipe
 provisioning when no user dictionary has been saved. A deliberately empty saved dictionary
 keeps the FP32 model and decoding configuration, without vocabulary assistance ([ADR-027](adrs/027-editable-dictionary.md)).
 Normal-app promotion [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28) is complete;
-#31 adds a Settings dictionary editor on `codex/dictionary-settings`, installed for owner
-smoke testing. Open the launcher entry or Android's keyboard settings, then Dictionary;
+#31 adds a Settings dictionary editor on `codex/dictionary-settings`; the owner accepted
+the installed smoke build. Open the launcher entry or Android's keyboard settings, then Dictionary;
 both reach the same Settings alongside benchmark mode. Add/Done saves each entry;
 delete offers Undo. Existing takes retain their dictionary; later takes use the saved revision.
 The WebGPU track stopped at
@@ -417,7 +417,7 @@ do not establish adoption or real keyboard usability.
 ## Known gaps
 
 Answered calls, longer battery-only model survival and a clean full FP32 export
-remain unverified. The Settings dictionary editor awaits the owner's smoke test; arbitrary
+remain unverified. The owner accepted the Settings dictionary editor's smoke test; arbitrary
 new entries are not accuracy-validated. Unlisted-name recall is unmeasured. #11/#28 delivery is ready for final review in
 PR #29. Issues #23–27 remain separate; #31 tracks dictionary editing.
 The owner accepts A's disclosed accuracy/Stop-wait trade-off and current observed

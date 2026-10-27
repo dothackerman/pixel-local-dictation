@@ -1,6 +1,6 @@
 # ADR-027 — Editable dictionary revisions beside the accepted baseline
 
-2026-10-27 · Implementation for #31; owner smoke test pending.
+2026-10-27 · Implementation for #31; owner accepted the smoke test.
 
 Settings owns dictionary management. Each completed add/edit/delete saves independently;
 there is no whole-page draft or recording-panel dictionary control. The accepted prototype
