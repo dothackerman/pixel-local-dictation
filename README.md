@@ -25,8 +25,10 @@ one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 Local implementation and screening for #11 completed on 2026-10-26 on
 `codex/issue-11-dictionary`. The versioned
 scorer reproduces the historical totals, and the Python greedy decoder matches
-the stock wheel on all 210 public clips. Eight greedy dictionary boosts failed
-the reviewed screen; the native greedy dictionary patch is not implemented.
+the stock wheel on all 210 public clips. Greedy dictionary boosting
+failed the reviewed screen (#16) and its rerun with every emitted token path and strict
+gates (#22): no alpha passes in either language, so candidate B is stopped and the native
+greedy dictionary patch is not implemented ([ADR-026](adrs/026-dictionary-first.md#greedy-boosting-rerun-result--2026-10-27)).
 FP32 beam-8 with dictionary score 1.5 reduced primary-feed German/English errors
 from 36/22 to 31/15, with gains on all three feeds and zero dictionary-word false
 accepts on the public guards. Its held-script check added 1/0/2 German errors at

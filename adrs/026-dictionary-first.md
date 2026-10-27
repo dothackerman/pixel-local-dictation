@@ -73,6 +73,36 @@ This records the measured rejection under existing authorization, not a new owne
 adoption decision. Revisit Candidate A only with evidence addressing its Stop wait and held-script
 harm; do not relax the completed experiment's gate retrospectively.
 
+## Greedy boosting rerun result — 2026-10-27
+
+This section concerns candidate B only. Candidate A's status is recorded above and is under separate
+deliberation; nothing here changes it.
+
+The #16 screen tested a tree with canonical token paths only; its miss log showed 26 distinct listed-term
+paths the model emits that the tree could not boost, and its guard gate was absolute although the stock
+output already inserts the listed function word "and" once. #22 reran the screen with all 26 emitted
+paths added (0 misses after), generic words removed from the listed set, and a gate on false accepts
+introduced against the zero-bonus control. Zero-bonus output stayed byte-equal to stock; alpha-0 totals
+equal #16's. Alphas 0, 0.5, 0.75, 1, 1.5, 2; 3 skipped because 2 introduced 12 false accepts.
+
+| alpha | EN listed Δ (640/512/800) | DE listed Δ | DE non-listed Δ | Introduced guard false accepts |
+|---|---|---|---|---|
+| 0.75 | 0 / −2 / 0 | −2 / −3 / −4 | 0 | 0 |
+| 1 | −2 / −2 / −3 | −2 / −3 / −4 | +2 / +2 / +2 | 1 |
+| 1.5 | −5 / −6 / −5 | −3 / −5 / −2 | +2 / +2 / +3 | 6 |
+| 2 | −5 / −7 / −5 | 0 / −3 / −2 | +3 / +3 / +3 | 12 |
+
+No alpha passes in either language. English reaches the error thresholds only at strengths that insert
+real dictionary names into public speech; German gains below the harm threshold stay under 3 errors on
+at least one feed. **Greedy dictionary boosting on the shipped INT8 engine is stopped for #11.** The
+sherpa-onnx patch (#18), its phone visit (#19) and the upstream pull request (#20) cannot start.
+Carrying decoder state across chunks was rejected in #16 (English errors rose from 18 to about 135 even
+without a bonus) and is not revisited.
+
+Evidence: `corpus/lab/issue11/greedy-screen-rerun/` (manifest, dictionary, per-alpha rows, outcomes,
+verdict); tools on `codex/issue-11-dictionary` from commit 94600aa. Scorer revision unchanged
+(dictionary-words-v2); strict listed counts are reported beside the as-scored ones.
+
 ## Startup observations — 2026-10-27
 
 The owner reported completing ten short takes; nine complete startup traces were captured
