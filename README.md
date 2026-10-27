@@ -228,11 +228,14 @@ Answered calls, longer battery-only model survival and a clean full FP32 export
 remain unverified. Dictionary entry and editing ship only with an adopt verdict
 ([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
 work: spec #11 and its tickets. Startup instrumentation and paired/live comparison
-tools are implemented; Candidate A's phone timing rejects it. Ten real startup
-takes remain pending, so startup behavior has not been changed on the basis of
-unmeasured causes. No candidate advances to supervised live validation or adoption.
-The benchmark build remains installed for the owner's final startup takes;
-approved restoration is pending, so #15 remains open.
+tools are implemented; Candidate A's phone timing rejects it. The owner completed
+ten short startup takes on October 27; nine complete traces were captured. Warm
+app-request-to-panel draw had median 47 ms and recording start 27 ms. External
+microphone-key timing and live Stop timestamps are absent; #14 remains partial
+and #17 has no established end-to-end cause to fix. No candidate advances to
+supervised live validation or adoption. The original app, test APK and data were
+restored and independently verified byte-identical to the pre-visit snapshot;
+#15 is complete with a reject verdict.
 
 ## Evidence and history
 
@@ -249,7 +252,8 @@ The #11 evidence is in `corpus/lab/issue11/`: final scorer and held-script repor
 decoder parity, reviewed greedy-screen results, final APK/check receipts, and
 the validated 120-run phone comparison. `visit-20261026-resume/` records device,
 snapshot and installation identities; `visit-a-s15/` preserves the frozen plan
-and every measurement. Restoration has not yet been verified.
+and every measurement. `startup-20261027/` contains nine real startup traces,
+their timing table, the restoration receipt and independent recovery verification.
 
 Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
 source. The file hash identifies the current reference. Historical identities

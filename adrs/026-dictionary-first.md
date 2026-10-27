@@ -66,10 +66,42 @@ fix #17 remain open.
 
 Private evidence: `corpus/lab/issue11/visit-a-s15/plan.json`,
 `report-c8612eb71eb64c7188431bf00a825308.json` and matching CSV, plus `raw/` and `receipts/`.
-Snapshot `issue11-20261026-resume` is verified. Install and restore were approved; restoration is
-pending the owner's final startup takes. The benchmark build remains installed with no live
-candidate selected. #15 stays open until recovery is verified; #11 is incomplete.
+Snapshot `issue11-20261026-resume` was verified. Install and restore were approved; restoration
+initially waited for the owner's final startup takes. Recovery is recorded below. #11 is incomplete.
 
 This records the measured rejection under existing authorization, not a new owner-approved
 adoption decision. Revisit Candidate A only with evidence addressing its Stop wait and held-script
 harm; do not relax the completed experiment's gate retrospectively.
+
+## Startup observations — 2026-10-27
+
+The owner reported completing ten short takes; nine complete startup traces were captured
+(one cold, eight warm). Do not infer a tenth measurement. One process survived across all nine
+service instances. These timings start at the app's panel request, not the FUTO microphone tap;
+panel draw is a callback, not physical display timing.
+
+| App panel request → | Cold (ms) | Warm median (ms) |
+|---|---:|---:|
+| Panel draw | 125.156 | 47.179 |
+| Recording started | 98.726 | 27.246 |
+| First audio | 291.021 | 230.089 |
+
+The cold model became ready 2561.693 ms after the request, after recording and panel draw.
+Warm panel draw ranged 32.213–54.471 ms; recording start 18.942–31.179 ms. The measured model
+load did not hold recording or drawing until completion. Time before the app callback remains
+unknown; no end-to-end startup cause or speculative #17 fix follows from this evidence.
+
+The startup file and retained app logs contain no explicit Stop/commit boundaries. Live Stop
+wait cannot be recovered; the assistant's earlier assurance that these takes would measure it
+was incorrect. Decode duration and take end are not substitutes. #14 remains partial: nine
+app-side rows and process continuity are known; a tenth row and external key timing are absent.
+
+Private raw timing file, app logs, per-take CSV and analysis:
+`corpus/lab/issue11/startup-20261027/`. These startup receipts contain no speech or transcript.
+
+Restoration completed after collection. Independent snapshot `issue11-20261027-restored` has
+byte-identical app APK, test APK and complete data archive to `issue11-20261026-resume`; grants
+and observed IME state also match. Evidence: `startup-20261027/recovery-verification.json` and
+the original restore receipt. The benchmark visit is over; #15 is complete with a reject verdict.
+#14 remains partial, #17 awaits a measured cause, and #18/#19 remain blocked by the negative
+greedy screen. No speculative startup fix or dictionary adoption follows.
