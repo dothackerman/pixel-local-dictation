@@ -332,7 +332,7 @@ object Engine {
         baseline = if (selected == null) ProvisionalBaseline.load(File(app.filesDir, "lab"),
             org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })) else null
         val normal = baseline
-        return if (normal != null) {
+        val created = if (normal != null) {
             Pipeline.runtime(normal.variant, ModelFiles.dir(normal.modelDirectory), null,
                 ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, normal.dictionary.absolutePath,
                 verify = { normal.verify(File(app.applicationInfo.sourceDir)) })
@@ -342,7 +342,9 @@ object Engine {
             Pipeline.runtime(selected.variant, ModelFiles.dir(selected.modelDirectory), null,
                 ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, selected.dictionary.absolutePath,
                 verify = { selected.verify(File(app.applicationInfo.sourceDir)) })
-        }.also { runtime = it }
+        }
+        runtime = created
+        return created
     }
 
     @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt() else null

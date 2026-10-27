@@ -26,6 +26,24 @@ class NormalBaselineTest {
             ArtifactFiles.inventoryHash(mapOf("lib/arm64-v8a/runtime.so" to "abc")))
     }
 
+    @Test fun normalRuntimeSurvivesWarmUpAndRepeatedPanelRequests() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        require(!File(context.filesDir, "lab/live.json").exists()) { "normal-path check forbids benchmark override" }
+        val first = Engine.runtime(context)
+        assertSame("repeated panels must retain the runtime", first, Engine.runtime(context))
+        Engine.warmUp(context).get(10, TimeUnit.MINUTES)
+        val verified = requireNotNull(Engine.liveReceipt())
+        assertEquals("candidate-a-provisional", verified.getString("baseline"))
+        assertTrue(verified.getBoolean("verified"))
+        assertFalse(verified.isNull("build_sha256"))
+        repeat(2) {
+            assertSame("warm-up and panel requests must share the runtime", first, Engine.runtime(context))
+            val receipt = requireNotNull(Engine.liveReceipt())
+            assertTrue("panel request must retain verified identity", receipt.getBoolean("verified"))
+            assertEquals(verified.getString("build_sha256"), receipt.getString("build_sha256"))
+        }
+    }
+
     @Test fun normalPathMatchesRetainedCandidateAOutputs() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lab = File(context.filesDir, "lab")
