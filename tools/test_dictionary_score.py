@@ -46,6 +46,36 @@ class DictionaryScoringTests(unittest.TestCase):
                                               'Go bluegreen Aster', 'en', ['Aster'])
         self.assertEqual(result['strict_introduced_dictionary_false_accepts'], 0)
 
+    def test_decimal_values_attached_to_units_are_spacing_variants(self):
+        for language, reference, hypothesis in [
+            ('de', 'Der Weg ist 1,5km lang.', 'Der Weg ist 1,5 km lang.'),
+            ('en', 'It holds 4.8GB.', 'It holds 4.8 GB.'),
+            ('de', 'Die Änderung beträgt -1,5km.', 'Die Änderung beträgt -1,5 km.'),
+            ('en', 'The change is +4.8GB.', 'The change is +4.8 GB.'),
+        ]:
+            with self.subTest(language=language):
+                self.assertEqual(dictionary_score.score_text(reference, hypothesis, language)['errors'], 0)
+
+    def test_decimal_unit_spacing_does_not_hide_different_numeric_values(self):
+        for language, reference, hypothesis in [
+            ('de', '1,5km', '1,6 km'),
+            ('en', '4.8GB', '48 GB'),
+            ('en', '-4.8GB', '-4.9 GB'),
+        ]:
+            with self.subTest(reference=reference, hypothesis=hypothesis):
+                result = dictionary_score.score_text(reference, hypothesis, language)
+                self.assertEqual(result['errors'], 1)
+                self.assertEqual(result['number_format_errors'], 1)
+
+    def test_decimal_unit_boundary_keeps_ordinals_and_attached_clock_times(self):
+        for language, reference, hypothesis in [
+            ('en', 'On the 12th day', 'On the twelfth day'),
+            ('en', 'Meet at 9.20am', 'Meet at nine twenty am'),
+            ('de', 'Um 14.35Uhr', 'Um vierzehn Uhr fünfunddreissig'),
+        ]:
+            with self.subTest(reference=reference):
+                self.assertEqual(dictionary_score.score_text(reference, hypothesis, language)['errors'], 0)
+
     def test_distinct_spoken_numbers_are_not_spacing_variants(self):
         for lang, reference, hypothesis in [('en', 'two three', 'twenty three'),
                                             ('de', 'zwei drei', 'dreiundzwanzig')]:

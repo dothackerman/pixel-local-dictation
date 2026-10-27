@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import score as historical
 
-REVISION = 'dictionary-words-v2'
+REVISION = 'dictionary-words-v3'
 
 # Generic words that enter the listed set only through multi-word entries
 # ("Frau Keller", "Tensor chip", "Fern & Footpath"). The strict counts (#22)
@@ -34,6 +34,9 @@ def normalise(text, language):
     # Product/unit boundaries are formatting, unlike separate numeric values.
     text = re.sub(r'(?<=[^\W\d_])(?=\d)', ' ', text)
     text = re.sub(r'(?<=\d)[\u2019\x27](?=\d)', '', text)
+    # Decimal-unit spacing must be split before the decimal's trailing boundary.
+    # Leave integer ordinals intact for the historical normalizer (12th -> 12).
+    text = re.sub(r'(\b\d+[.,]\d+)(?=[^\W\d_])', r'\1 ', text)
     text = re.sub(r'\b\d+[.,]\d+\b', decimal, text)
     text = re.sub(r'([£€])\s*(zzdecimalz*q)', lambda m: m[2] + ' ' + historical.CURRENCY[m[1]], text)
     words = [protected.get(word, word) for word in historical.normalise(text, language)]
