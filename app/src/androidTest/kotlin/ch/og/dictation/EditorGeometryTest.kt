@@ -13,10 +13,15 @@ import org.junit.runner.RunWith
 /** Collection check only. Owner handoffs and their interpretation require the protocol. */
 @RunWith(AndroidJUnit4::class)
 class EditorGeometryTest {
-    @Test fun collectManualKeyboardHandoffs() {
+    @Test fun collectManualKeyboardHandoffs() = collect(false)
+
+    @Test fun collectManualKeyboardHandoffsWithAnimationCallback() = collect(true)
+
+    private fun collect(animationCallback: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val intent = Intent(instrumentation.targetContext, EditorProbeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (animationCallback) intent.putExtra(EditorProbeActivity.EXTRA_ANIMATION_CALLBACK, true)
         val activity = instrumentation.startActivitySync(intent) as EditorProbeActivity
         try {
             val receipt = activity.receipt.get(100, TimeUnit.SECONDS)
@@ -28,6 +33,19 @@ class EditorGeometryTest {
                 .readLines().map { JSONObject(it) }
             val start = rows.last { it.getString("phase") == "start" }.getLong("runStartNs")
             val run = rows.filter { it.getLong("runStartNs") == start }
+            assertTrue("every row must identify the selected experimental mode", run.all {
+                it.getString("mode") == if (animationCallback) "animationCallback" else "plain"
+            })
+            assertTrue("combined geometry/callback budget exceeded", run.size <= 4098)
+            val animations = run.filter { it.getString("phase").startsWith("animation") }
+            if (animationCallback) {
+                assertTrue("no IME animation observed; callback collection insufficient", animations.isNotEmpty())
+                assertTrue("no IME animation progress observed", animations.any {
+                    it.getString("phase") == "animationProgress"
+                })
+            } else {
+                assertTrue("plain host must not collect animation callbacks", animations.isEmpty())
+            }
             assertEquals("start", run.first().getString("phase"))
             assertEquals("end", run.last().getString("phase"))
             assertTrue("receipt file exceeds byte budget", File(instrumentation.targetContext.filesDir,

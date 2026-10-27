@@ -184,8 +184,8 @@ and returns to FUTO.
 - Benchmark-only [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt)
   is a non-exported, test-owned plain editor for observing the host side of the handoff.
   No production manifest/permission change. It requests the current keyboard normally;
-  it never selects an IME or reads another app. No animation callback, inset listener,
-  inset consumption, custom transform or animation is installed.
+  it never selects an IME or reads another app. Default `plain` mode installs no animation
+  callback, inset listener, inset consumption, custom transform or animation.
   After building the benchmark APK pair, immediately run the protected `phone check`
   with both APK paths, then install using the usual approved phone workflow. Run:
 
@@ -206,12 +206,40 @@ and returns to FUTO.
   Pull only `files/lab/editor-geometry.jsonl` into a private `corpus/` visit directory,
   alongside individual IME geometry/startup receipts. Choreographer polls the host's
   `rootWindowInsets(Type.ime())` and decor/root/editor `getLocationOnScreen` bounds.
-  Only changed geometry is written, plus start/end rows: at most 4096 geometry rows
-  per run, 90 seconds, 2 MiB total append-only file, asynchronous writes. Full file,
-  destruction or missing keyboard makes collection fail; existing evidence is preserved.
+  Only changed polled geometry is written, plus start/end rows: at most 4096 combined
+  geometry/callback rows per run, 90 seconds, 2 MiB total append-only file, asynchronous
+  writes. Full file, destruction or missing keyboard makes collection fail; existing
+  evidence is preserved.
   Rows contain `editor-geometry-v1`, `CLOCK_MONOTONIC` `ns`, grouping `runStartNs`,
-  `phase`, and `values`: IME visibility/left/top/right/bottom insets and physical-pixel
+  `mode` (`plain` or `animationCallback`), `phase`, and `values`:
+  IME visibility/left/top/right/bottom insets and physical-pixel
   `x`, `y`, `width`, `height` for decor/root/editor. No text, audio or editor identity.
+
+  For the single-variable callback experiment, use the same build, editor and manual
+  protocol, but run this separate instrumentation method:
+
+  ```sh
+  /home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run ch.og.dictation.EditorGeometryTest#collectManualKeyboardHandoffsWithAnimationCallback
+  ```
+
+  Only this method passes explicit boolean extra
+  `ch.og.dictation.editorAnimationCallback=true`. It installs a passive
+  `WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE)` on the same root;
+  `onStart` returns the original bounds and `onProgress` returns the original insets.
+  No view movement, layout change or consumption is added. IME-only callbacks append
+  `animationPrepare`, `animationStart`, `animationProgress`, `animationEnd` rows, sharing
+  the polling clock, file and combined row budget. Numeric values include a per-run
+  animation sequence number, type mask, duration in milliseconds, raw/interpolated
+  fraction, lower/upper inset bounds at start, and IME insets during progress.
+  Callback mode additionally requires some IME progress to validate collection;
+  it does not require or verify two handoffs. An end-of-run `observationRows` counts
+  the combined geometry/callback observations.
+
+  Callback presence itself changes Android animation routing. Compare modes as two
+  controlled hosts; this callback experiment is not neutral observation of plain mode.
+  A prior-height plateau only with the callback would implicate a callback-dependent
+  framework/host path, not prove a particular Android field or a production fix.
+  Missing callback events makes that observation incomplete. Preserve both runs.
 
   Correlate the host IME inset plateau/correction with our unchanged exported IME
   geometry using monotonic timestamps. Reproduction here shows original-editor custom

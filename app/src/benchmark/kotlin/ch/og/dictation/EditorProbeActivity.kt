@@ -8,6 +8,8 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowInsetsAnimation
+import android.graphics.Insets
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -18,8 +20,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
-/** Passive host observation. No animation callbacks, inset listeners or editor-content reads. */
+/** Host observation; optional animation callback is a controlled, behavior-affecting variant. */
 class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
+    companion object {
+        const val EXTRA_ANIMATION_CALLBACK = "ch.og.dictation.editorAnimationCallback"
+    }
+
     data class Receipt(val geometryRows: Int, val sawIme: Boolean, val reason: String, val failure: String?)
 
     val receipt = CompletableFuture<Receipt>()
@@ -34,6 +40,11 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
     private lateinit var editor: EditText
     private var lastGeometry: String? = null
     private var geometryRows = 0
+    private var observationRows = 0
+    private var animationCallback = false
+    private val mode get() = if (animationCallback) "animationCallback" else "plain"
+    private val animations = mutableMapOf<WindowInsetsAnimation, Int>()
+    private var nextAnimation = 0
     private var sawIme = false
     private var finished = false
     private var requestedKeyboard = false
@@ -41,7 +52,9 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        animationCallback = intent.getBooleanExtra(EXTRA_ANIMATION_CALLBACK, false)
         root = FrameLayout(this)
+        if (animationCallback) installAnimationCallback()
         val instructions = TextView(this).apply {
             text = "Geometry probe · 90 seconds\nTap keyboard mic, then Cancel. Do this twice total.\nNo typing needed. Keep this editor open."
             setPadding(dp(16), dp(48), dp(16), dp(16))
@@ -94,14 +107,53 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
             if (geometry != lastGeometry) {
                 lastGeometry = geometry
                 geometryRows++
-                enqueue("geometry", JSONObject(geometry))
-                if (geometryRows >= maxRows) {
-                    stop("rows")
-                    return
-                }
+                record("geometry", JSONObject(geometry))
+                if (finished) return
             }
         }
         Choreographer.getInstance().postFrameCallback(this)
+    }
+
+    private fun installAnimationCallback() {
+        root.setWindowInsetsAnimationCallback(object : WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+            override fun onPrepare(animation: WindowInsetsAnimation) {
+                animationRow("animationPrepare", animation)
+            }
+
+            override fun onStart(animation: WindowInsetsAnimation, bounds: WindowInsetsAnimation.Bounds): WindowInsetsAnimation.Bounds {
+                animationRow("animationStart", animation, JSONObject()
+                    .put("lower", insetValues(bounds.lowerBound)).put("upper", insetValues(bounds.upperBound)))
+                return bounds
+            }
+
+            override fun onProgress(insets: WindowInsets, runningAnimations: MutableList<WindowInsetsAnimation>): WindowInsets {
+                for (animation in runningAnimations) animationRow("animationProgress", animation,
+                    JSONObject().put("ime", insetValues(insets.getInsets(WindowInsets.Type.ime()))))
+                return insets
+            }
+
+            override fun onEnd(animation: WindowInsetsAnimation) {
+                animationRow("animationEnd", animation)
+                animations.remove(animation)
+            }
+        })
+    }
+
+    private fun insetValues(insets: Insets) = JSONObject().put("left", insets.left)
+        .put("top", insets.top).put("right", insets.right).put("bottom", insets.bottom)
+
+    private fun animationRow(phase: String, animation: WindowInsetsAnimation, values: JSONObject = JSONObject()) {
+        if (finished || animation.typeMask and WindowInsets.Type.ime() == 0) return
+        val number = animations.getOrPut(animation) { ++nextAnimation }
+        record(phase, values.put("animation", number).put("typeMask", animation.typeMask)
+            .put("durationMs", animation.durationMillis).put("fraction", animation.fraction)
+            .put("interpolatedFraction", animation.interpolatedFraction))
+    }
+
+    private fun record(phase: String, values: JSONObject) {
+        observationRows++
+        enqueue(phase, values)
+        if (observationRows >= maxRows) stop("rows")
     }
 
     private fun bounds(view: View): JSONObject {
@@ -114,7 +166,7 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
     private fun enqueue(phase: String, values: JSONObject) {
         val line = JSONObject().put("protocol", "editor-geometry-v1")
             .put("clock", "CLOCK_MONOTONIC").put("runStartNs", startNs)
-            .put("ns", System.nanoTime()).put("phase", phase).put("values", values)
+            .put("ns", System.nanoTime()).put("mode", mode).put("phase", phase).put("values", values)
             .toString() + "\n"
         writer.execute {
             if (writeFailure.get() == null) runCatching {
@@ -133,7 +185,8 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
         finished = true
         handler.removeCallbacks(deadline)
         Choreographer.getInstance().removeFrameCallback(this)
-        enqueue("end", JSONObject().put("reason", reason).put("geometryRows", geometryRows).put("sawIme", sawIme))
+        enqueue("end", JSONObject().put("reason", reason).put("geometryRows", geometryRows)
+            .put("observationRows", observationRows).put("sawIme", sawIme))
         val rows = geometryRows
         val visible = sawIme
         writer.execute { receipt.complete(Receipt(rows, visible, reason, writeFailure.get())) }
