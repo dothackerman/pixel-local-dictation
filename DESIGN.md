@@ -77,12 +77,14 @@ Native Material3 task UI: familiar controls, readable terms, quiet feedback. Sys
 
 This records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.
 
+Verification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.
+
 **Key Characteristics:**
 - Native Android Material3 controls.
 - Dynamic color with light/dark green fallbacks.
 - One-field editing and immediate per-entry saving.
 
-Provenance: `PRODUCT.md`; `app/src/main/res/values/settings_theme.xml`; both `values/settings_colors.xml` and `values-night/settings_colors.xml`; `layout/settings.xml`, `layout/dictionary.xml`, `layout/dictionary_editor.xml`, `layout/dictionary_row.xml`; `DictionaryActivity.kt`, `SettingsActivity.kt`; `AndroidManifest.xml` and `xml/method.xml`. Resource paths are under `app/src/main/res/`; activities under `app/src/main/kotlin/ch/og/dictation/`. Type values were also checked against the merged benchmark resources for Material 1.14.0. No phone screenshot was verified in this documentation pass.
+Provenance: `PRODUCT.md`; `app/src/main/res/values/settings_theme.xml`; both `values/settings_colors.xml` and `values-night/settings_colors.xml`; `layout/settings.xml`, `layout/dictionary.xml`, `layout/dictionary_editor.xml`, `layout/dictionary_row.xml`; `DictionaryActivity.kt`, `SettingsActivity.kt`; `AndroidManifest.xml` and `xml/method.xml`. Resource paths are under `app/src/main/res/`; activities under `app/src/main/kotlin/ch/og/dictation/`. Type values were also checked against the merged benchmark resources for Material 1.14.0. Native on-phone evidence supplied by the implementation run: eight app-owned-window captures under `corpus/lab/dictionary-settings-final-review/files/lab/dictionary-settings/`: `phone-list.png`, `phone-add.png`, `phone-duplicate.png`, `phone-empty.png`, and corresponding `phone-large-light-{list,add,duplicate,empty}.png`. Captures combine native activity and dialog windows; keyboard and OS surfaces are excluded by the phone boundary. Captures stay in corpus; no personal term contents are reproduced here.
 
 Frontmatter dimensions deliberately retain Android dp/sp. They are native tokens, not CSS pixels. Native XML and resolved runtime theme remain authoritative; HTML sidecar previews only illustrate structure and the static light fallback.
 
@@ -139,7 +141,7 @@ Filled rounded search with a magnifying start icon and clear action. Hint sits i
 
 Extended Add FAB opens a native bottom sheet. Sheet contains a title, close action, one outlined Word or phrase field, helper text, quiet feedback and Add/Done button (minimum width 96dp). Field is single-line, maximum 200 characters, without suggestions, autofill or personalized learning. Keyboard opens with focus in the field.
 
-Add saves one entry, clears the field and retains editor focus for repeated additions. Done saves an edit and closes the sheet. Keyboard Done invokes the same valid save action. Close dismisses the unsaved draft. Invalid, unchanged or busy entries disable commit; validation belongs to the field. Busy state disables mutation controls and reports preparation. Failure retains the previous dictionary and allows retry.
+Add saves one entry, clears the field and retains editor focus for repeated additions. Done saves an edit and closes the sheet. Keyboard Done invokes the same valid save action. Close dismisses the unsaved draft. Invalid, unchanged or busy entries disable commit; validation belongs to the field. Busy state disables mutation controls and reports preparation. Cold Settings saves validated text without starting ASR; if a runtime is already loaded, edits reuse its model while preparing the replacement dictionary configuration. Failure retains the previous dictionary and allows retry.
 
 ### Feedback and recovery
 
@@ -164,4 +166,4 @@ One dictionary serves German and English. Changes apply to subsequent recordings
 - **Don't** add a global Save step to the per-entry editor.
 - **Don't** promise measured accuracy gains for arbitrary new terms.
 
-Not canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Phone rendering, font scaling, keyboard occlusion and resolved dynamic colors await unlocked-device visual verification. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.
+Not canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.

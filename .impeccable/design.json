@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-27T15:08:15.300053+00:00",
+  "generatedAt": "2026-10-27T15:20:57.251995+00:00",
   "title": "Design System: Pixel Local Dictation",
   "extensions": {
     "colorMeta": {
@@ -143,7 +143,7 @@
   ],
   "narrative": {
     "northStar": "Native Material3 task UI",
-    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.",
+    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.\n\nVerification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.\n\nNot canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.",
     "keyCharacteristics": [
       "Native Android Material3 controls.",
       "Dynamic color with light/dark green fallbacks.",
