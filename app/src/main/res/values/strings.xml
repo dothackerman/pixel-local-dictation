@@ -47,6 +47,11 @@
     <string name="dictionary_saving">Saving…</string>
     <string name="dictionary_saving_explanation">Preparing dictation… Your previous dictionary stays active until this finishes.</string>
     <string name="dictionary_save_failed">Couldn’t save. Your previous dictionary is still available. Try again.</string>
+    <string name="dictionary_conflict">Your dictionary changed elsewhere. The latest terms are loaded; your draft is still here. Try again.</string>
+    <string name="dictionary_refresh_failed">Couldn’t load the latest dictionary. Your draft is still here. Close this editor and tap Retry.</string>
+    <string name="dictionary_model_unavailable">The dictionary needs the speech model installed. Set up the model, then try again.</string>
+    <string name="dictionary_add_as_new">Add as new term</string>
+    <string name="dictionary_original_missing">The original term changed or was deleted. You can add your draft as a new term.</string>
     <string name="dictionary_load_failed">Couldn’t open your dictionary. Tap here to retry.</string>
     <string name="dictionary_no_matches">No matching terms.</string>
     <string name="dictionary_empty">No terms yet. Add a name or phrase you want dictation to recognise.</string>

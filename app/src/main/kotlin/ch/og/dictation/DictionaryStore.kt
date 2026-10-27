@@ -8,6 +8,9 @@ import java.text.Normalizer
 import java.util.Locale
 import org.json.JSONObject
 
+class DictionaryRevisionConflict : IllegalArgumentException("dictionary changed; refresh before retry")
+class DictionaryModelUnavailable : IllegalStateException("dictionary speech model is not installed")
+
 /** Immutable native input. Saved user revisions never overwrite the accepted experiment's files. */
 data class DictionarySnapshot(val file: File, val sha256: String, val entries: List<String>, val edited: Boolean) {
     fun verify() {
@@ -47,7 +50,7 @@ class DictionaryStore(private val root: File, private val provisioned: File) {
 
     /** Only after native preparation succeeds. Conflict/failure leaves the former pointer intact. */
     fun commit(snapshot: DictionarySnapshot, expected: DictionarySnapshot) {
-        require(read().sha256 == expected.sha256) { "dictionary changed; reopen and retry" }
+        if (read().sha256 != expected.sha256) throw DictionaryRevisionConflict()
         snapshot.verify()
         writeAtomic(current, JSONObject().put("schema", 1).put("sha256", snapshot.sha256).toString().toByteArray(Charsets.UTF_8))
     }

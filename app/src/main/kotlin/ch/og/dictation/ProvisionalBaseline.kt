@@ -55,6 +55,11 @@ class ProvisionalBaseline private constructor(private val root: File, private va
         verified = true
     }
 
+    /** Cheap save preflight; full identity verification still happens before recognition. */
+    fun requireAvailable() {
+        if (!artifacts.keys.all { file(it).isFile && file(it).length() > 0 }) throw DictionaryModelUnavailable()
+    }
+
     /** The same already-loaded model/native library retains its verification across dictionary leases. */
     fun verifyWithLoadedModel(source: ProvisionalBaseline) {
         require(source.verified && root == source.root && artifacts == source.artifacts && variant == source.variant &&

@@ -386,6 +386,10 @@ object Engine {
                 // Editing Settings alone must not load ASR. Its normal first-use checks still
                 // run when dictation starts; there is no cached runtime to refresh here.
                 if (runtime == null) {
+                    val manifest = app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use {
+                        org.json.JSONObject(it.readText())
+                    }
+                    requireNotNull(ProvisionalBaseline.load(File(app.filesDir, "lab"), manifest, staged)).requireAvailable()
                     store.commit(staged, expected)
                     return@supplyAsync staged
                 }

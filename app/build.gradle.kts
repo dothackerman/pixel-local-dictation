@@ -58,6 +58,7 @@ android {
         }
     }
     testBuildType = "benchmark"
+    testOptions.unitTests.isIncludeAndroidResources = true
     // Model files are read through AssetManager and must stay uncompressed in the APK.
     androidResources { noCompress += listOf("onnx", "txt", "tflite") }
     providers.gradleProperty("encoderProbeDir").orNull?.let {
@@ -83,6 +84,11 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
+tasks.withType<Test>().configureEach {
+    // Android 16's FileDescriptor bridge in Robolectric needs this JDK 21 export.
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+}
+
 // Release and benchmark builds fail without the key instead of falling back to debug signing.
 val checkReleaseSigning by tasks.registering {
     val problem = signingProblem
@@ -100,6 +106,7 @@ dependencies {
     // Recognizer runtime (ADR-003). tools/fetch-assets.sh provides the AAR and the model assets.
     implementation(files(providers.gradleProperty("nativeRoleProfilerAar").orElse("libs/sherpa-onnx-1.13.8.aar").get()))
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
     // Real org.json for laptop unit tests of Variant.parse (the Android stub throws "not mocked").
     testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.7.0")

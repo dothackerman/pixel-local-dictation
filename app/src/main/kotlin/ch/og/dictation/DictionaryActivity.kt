@@ -41,7 +41,6 @@ open class DictionaryActivity : AppCompatActivity() {
     private var commit: MaterialButton? = null
     private var feedback: TextView? = null
     private var editing: String? = null
-    private var handled = 0
     private var snackbar: Snackbar? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,20 +62,23 @@ open class DictionaryActivity : AppCompatActivity() {
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             insets
         }
-        handled = savedInstanceState?.getInt("handled") ?: 0
         model = ViewModelProvider(this)[DictionaryModel::class.java]
         add.setOnClickListener { showEditor(null) }
         search.watch { render() }
         status.setOnClickListener { if (model.state.value?.snapshot == null) model.reload() }
         model.state.observe(this) { state ->
             render()
-            if (!state.busy && state.event > handled) {
-                handled = state.event
+            if (model.consumeCompletion() != null) {
                 if (state.error) {
-                    feedback?.setText(R.string.dictionary_save_failed)
+                    val message = when (state.problem) {
+                        DictionaryModel.Problem.CONFLICT -> if (state.snapshot == null) R.string.dictionary_refresh_failed else R.string.dictionary_conflict
+                        DictionaryModel.Problem.MODEL_UNAVAILABLE -> R.string.dictionary_model_unavailable
+                        null -> R.string.dictionary_save_failed
+                    }
+                    feedback?.setText(message)
                     entry?.isEnabled = true
                     validate()
-                    showMessage(R.string.dictionary_save_failed)
+                    showMessage(message)
                 } else when (state.action) {
                     "add" -> {
                         entry?.isEnabled = true
@@ -93,7 +95,7 @@ open class DictionaryActivity : AppCompatActivity() {
                 }
             }
             entry?.isEnabled = !state.busy
-            commit?.setText(if (state.busy) R.string.dictionary_saving else if (editing == null) R.string.dictionary_add_action else R.string.dictionary_done)
+            updateCommitLabel()
             if (state.busy) feedback?.setText(R.string.dictionary_saving_explanation)
             validate()
         }
@@ -167,14 +169,29 @@ open class DictionaryActivity : AppCompatActivity() {
         val all = model.state.value?.snapshot?.entries.orEmpty().filter { it != editing }
         val result = runCatching { DictionaryStore.normalise(text).also { DictionaryStore.validate(all + it) } }
         entryLayout?.error = if (text.isEmpty()) null else result.exceptionOrNull()?.message
-        commit?.isEnabled = model.state.value?.busy == false && result.isSuccess && result.getOrNull() != editing
+        val state = model.state.value
+        commit?.isEnabled = state?.busy == false && state.snapshot != null && result.isSuccess && (missingEditTarget() || result.getOrNull() != editing)
+        updateCommitLabel()
         return result.getOrNull()
+    }
+
+    private fun missingEditTarget() = editing != null && model.state.value?.snapshot?.entries?.contains(editing) == false
+
+    private fun updateCommitLabel() {
+        commit?.setText(when {
+            model.state.value?.busy == true -> R.string.dictionary_saving
+            missingEditTarget() -> R.string.dictionary_add_as_new
+            editing == null -> R.string.dictionary_add_action
+            else -> R.string.dictionary_done
+        })
+        if (missingEditTarget() && model.state.value?.busy == false) feedback?.setText(R.string.dictionary_original_missing)
     }
 
     private fun saveEntry() {
         val term = validate() ?: return
         val all = model.state.value?.snapshot?.entries ?: return
         snackbar?.dismiss()
+        if (missingEditTarget()) editing = null // Explicit "Add as new term" click preserves the draft.
         model.save(if (editing == null) all + term else all.map { if (it == editing) term else it }, if (editing == null) "add" else "edit")
     }
 
@@ -190,7 +207,6 @@ open class DictionaryActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putInt("handled", handled)
         outState.putBoolean("editor", sheet != null)
         outState.putString("editing", editing)
         outState.putString("draft", entry?.text?.toString())
