@@ -163,3 +163,33 @@ implementations. The completed negative experiments #16/#22 remain closed as com
 Future comparisons must name their actual control. Preserve the old INT8 baseline and all
 frozen results under their original identities; do not silently relabel them as Candidate A.
 Review this provisional choice when daily-use evidence or a new candidate changes the trade-off.
+
+
+## Provisional baseline integration — 2026-10-27
+
+#28 implements the normal Candidate A path using the packaged acceptance record
+`app/src/main/res/raw/candidate_a.json`. The record binds the exact #15 plan,
+configuration, dictionary, model/VAD artifacts and native runtime. The owner acceptance
+covers the historical Stop-wait limit only. Frozen #15 plans/reports retain their reject
+verdict; no meaning, lifecycle, thermal or other safety gate is relaxed.
+
+Normal release selection uses provisioned files independently of benchmark live selection.
+Missing or blank dictionary returns the complete historical INT8 pipeline from APK assets;
+a nonempty changed dictionary or model/runtime fails closed. This preserves #11's empty
+no-change behavior against the formerly shipped default. Capture, pause cuts, Stop, waiting
+and cancellation remain on their existing shared runtime. The tested A silent-chunk filter
+remains enabled; it is disabled in the historical control as before.
+
+This is an implementation record, not installed acceptance. Meaning review and the supervised
+normal-path phone check remain separate required evidence. The earlier held-script German
+harm +1/0/+2 remains disclosed. The installed identity and recovery evidence must be recorded
+after an approved installation; until then the restored INT8 installation remains current.
+UI/UX, dictionary editing and the unresolved #14/#17 startup work remain deferred.
+
+The retained-output meaning review found material meaning errors in A, including errors the
+phone INT8 control transcribes correctly. A matching no-dictionary FP32 host control already
+contains one repeated error, so attribution to dictionary boosting alone is unsupported.
+Quantity/unit regressions versus the phone control also remain. The broad meaning criterion
+has not passed; accepting Stop wait does not accept these harms. Private examples and review
+limits remain only in `corpus/lab/issue11/promotion-a28/meaning-review.md`. Do not claim an
+approved installed baseline or advance semantic acceptance from the implementation alone.

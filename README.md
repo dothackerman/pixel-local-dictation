@@ -42,8 +42,11 @@ Candidate A: median Stop wait 3.154 s exceeds the ticket's 2.5 s limit, despite
 the same accuracy gain. All 30 default/default pairs matched text; observed
 timing variability was 206 ms. The owner subsequently chose A despite that original
 timing-gate result; the frozen measurements remain unchanged. A is selected, with
-normal-app integration and supervised live acceptance still outstanding. See the
+normal-app implementation now present; installation and supervised live acceptance remain outstanding. See the
 decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-candidate-a-as-the-provisional-baseline--2026-10-27).
+The retained-output review found material meaning errors and quantity/unit regressions versus
+phone INT8. The broad meaning criterion has not passed; the owner's wait acceptance does
+not waive it. Private review: `corpus/lab/issue11/promotion-a28/meaning-review.md`.
 Private evidence is indexed by `corpus/lab/issue11/HANDOFF.md`.
 
 Read the results and their limits before selecting the next question:
@@ -104,10 +107,17 @@ and returns to FUTO.
   [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) decode closed chunks
   while recording continues. Stop queues the remaining audio. Each chunk is decoded
   independently, without encoder state from earlier chunks.
-- [Variant](app/src/main/kotlin/ch/og/dictation/Variant.kt) selects the default:
-  Parakeet v3 with a selective MatMul INT8 encoder and FP32 decoder/joiner.
-  It runs on the CPU through sherpa-onnx. This choice is provisional:
-  [ADR-003](adrs/003-working-engine.md).
+- [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt) selects
+  the packaged Candidate A configuration: Parakeet v3 FP32, CPU, four threads,
+  beam 8, dictionary score 1.5, including the tested silent-chunk filter.
+  Its [acceptance record](app/src/main/res/raw/candidate_a.json) binds the frozen
+  replay, model, dictionary, VAD, configuration and native runtime identities.
+  Normal release selection ignores `files/lab/live.json` and `variant.json`.
+  Provisioned model/dictionary files stay in private app storage under `files/lab`;
+  nonempty altered files fail verification. Missing/blank dictionary selects the
+  unchanged `Variant.HISTORICAL_INT8` pipeline from APK assets (ADR-003), including
+  its original greedy decoder and postprocessing. Restart after changing provisioned files.
+  Historical parsing defaults and frozen plans remain unchanged.
 - Lab alternatives use the same schema semantics in Python and Kotlin.
   Cohere uses one recognizer, sets the language for each stream and loads models
   from filesystem paths. Canary retains two recognizers:
@@ -115,7 +125,12 @@ and returns to FUTO.
 - Benchmark builds can explicitly select the frozen Candidate A for a supervised
   live check through [BenchmarkLiveConfig](app/src/main/kotlin/ch/og/dictation/BenchmarkLiveConfig.kt).
   APK, model, dictionary and VAD identities are verified on the decode executor.
-  Release builds ignore this selection. Benchmark startup/live receipts contain
+  Release builds ignore this override. Benchmark builds without it exercise the same
+  normal baseline path; `NormalBaselineTest` checks retained DE/EN output hashes.
+  `tools/promote_baseline.py --root ORIGINAL_CHECKOUT CORPUS_STAGE APK` stages
+  only frozen candidate artifacts and focused parity inputs inside the original
+  private corpus for the protected phone wrapper. It does not authorize installation
+  or waive meaning/safety checks. Benchmark startup/live receipts contain
   timing and identity metadata, not audio or recognized text; they are independent
   of saved-take recording. Panel draw is not physical display timing, and the app
   cannot observe FUTO's microphone-key touch.

@@ -308,12 +308,14 @@ object Pipeline {
 /** Process-wide: the model is loaded once and reused for every take while the process lives. */
 object Engine {
     /** What the daily app runs (ADR-003); the laboratory overrides it per pushed variant. */
-    val variant: Variant = Variant.DEFAULT
+    val historicalControl: Variant = Variant.HISTORICAL_INT8
 
     /** Serial: model load first, then segments in order. */
     private val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
     private var runtime: DictationRuntime? = null
     private var live: BenchmarkLiveConfig? = null
+    private var baseline: ProvisionalBaseline? = null
+    private var benchmarkReceipts = false
     @Volatile var modelReadyNs: Long? = null
         private set
 
@@ -326,8 +328,16 @@ object Engine {
             return it
         }
         live = selected
-        return if (selected == null) {
-            ModelFiles.asset(app, ASSET_MODEL).let { files -> Pipeline.runtime(variant, files, null, files, decodeQueue) }
+        benchmarkReceipts = app.resources.getBoolean(R.bool.benchmark_live_variant)
+        baseline = if (selected == null) ProvisionalBaseline.load(File(app.filesDir, "lab"),
+            org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })) else null
+        val normal = baseline
+        return if (normal != null) {
+            Pipeline.runtime(normal.variant, ModelFiles.dir(normal.modelDirectory), null,
+                ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, normal.dictionary.absolutePath,
+                verify = { normal.verify(File(app.applicationInfo.sourceDir)) })
+        } else if (selected == null) {
+            ModelFiles.asset(app, ASSET_MODEL).let { files -> Pipeline.runtime(historicalControl, files, null, files, decodeQueue) }
         } else {
             Pipeline.runtime(selected.variant, ModelFiles.dir(selected.modelDirectory), null,
                 ModelFiles.dir(File(app.filesDir, "lab")), decodeQueue, selected.dictionary.absolutePath,
@@ -335,7 +345,7 @@ object Engine {
         }.also { runtime = it }
     }
 
-    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt()
+    @Synchronized fun liveReceipt(): org.json.JSONObject? = live?.receipt() ?: if (benchmarkReceipts) baseline?.receipt() else null
 
     /** Starts loading the model in the background; safe to call repeatedly. */
     fun warmUp(context: Context): java.util.concurrent.CompletableFuture<Unit> {

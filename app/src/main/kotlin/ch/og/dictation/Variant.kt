@@ -5,7 +5,8 @@ import kotlin.math.ceil
 
 /**
  * Kotlin twin of tools/variant.py (schema 4): one decode pipeline, fully described. The daily
- * app runs [DEFAULT]; the laboratory test (LabTest) runs whatever variant.json was pushed.
+ * app selects its packaged provisional baseline; DEFAULT remains the historical parsing control.
+ * The laboratory test (LabTest) runs whatever variant.json was pushed.
  * Unknown keys are rejected so that laptop and phone can never silently run different pipelines.
  */
 data class Variant(
@@ -55,7 +56,9 @@ data class Variant(
 
     companion object {
         const val SCHEMA = 4
-        val DEFAULT = Variant()
+        val HISTORICAL_INT8 = Variant()
+        // Parsing defaults remain frozen: historical plans must retain their meaning.
+        val DEFAULT = HISTORICAL_INT8
         val FAMILIES = setOf("parakeet", "whisper", "canary", "qwen3", "cohere")
         private val KEYS = mapOf(
             "" to setOf("schema", "name", "description", "family", "model", "threads", "runtime", "decoding", "whisper", "qwen3", "cohere", "lid", "hotwords", "cutting", "post"),
