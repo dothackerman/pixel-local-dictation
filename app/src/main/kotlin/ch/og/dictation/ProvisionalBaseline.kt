@@ -1,8 +1,6 @@
 package ch.og.dictation
 
 import java.io.File
-import java.io.InputStream
-import java.security.MessageDigest
 import java.util.zip.ZipFile
 import org.json.JSONObject
 
@@ -15,20 +13,11 @@ class ProvisionalBaseline private constructor(private val root: File, private va
             if (!selected.dictionary.exists() || selected.dictionary.readText().isBlank()) return null
             return selected
         }
-        private fun hash(source: InputStream): String = source.use {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val buffer = ByteArray(1024 * 1024)
-            while (true) { val n = it.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
-            digest.digest().joinToString("") { b -> "%02x".format(b) }
-        }
-        private fun hash(file: File) = hash(file.inputStream())
     }
 
     val variant = Variant.parse(manifest.getJSONObject("variant"))
-    private fun file(relative: String): File {
-        require(relative.isNotEmpty() && !File(relative).isAbsolute && relative.split('/').none { it == ".." })
-        return File(root, relative).canonicalFile.also { require(it.toPath().startsWith(root.toPath())) }
-    }
+    private val files = ArtifactFiles(root)
+    private fun file(relative: String) = files.resolve(relative)
     val modelDirectory = file(manifest.getString("modelDirectory"))
     val dictionary = file(variant.hotwords.file)
     private val artifacts = manifest.getJSONObject("artifacts").let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
@@ -49,7 +38,7 @@ class ProvisionalBaseline private constructor(private val root: File, private va
     /** Decode executor only. A nonempty altered dictionary/model/runtime fails closed. */
     fun verify(apk: File? = null) {
         verified = false
-        for ((relative, digest) in artifacts) require(file(relative).isFile && hash(file(relative)) == digest) {
+        for ((relative, digest) in artifacts) require(file(relative).isFile && ArtifactFiles.hash(file(relative)) == digest) {
             "provisional baseline artifact changed: $relative"
         }
         val models = modelDirectory.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).invariantSeparatorsPath }.toSet()
@@ -57,11 +46,10 @@ class ProvisionalBaseline private constructor(private val root: File, private va
         requireNotNull(apk) { "APK identity required" }
         ZipFile(apk).use { zip ->
             val natives = zip.entries().asSequence().filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
-                .associate { it.name to hash(zip.getInputStream(it)) }.toSortedMap()
-            val canonical = natives.entries.joinToString(",", "{", "}") { JSONObject.quote(it.key) + ":" + JSONObject.quote(it.value) }
-            require(hash(canonical.byteInputStream()) == manifest.getString("runtime_sha256")) { "runtime differs from tested A" }
+                .associate { it.name to ArtifactFiles.hash(zip.getInputStream(it)) }.toSortedMap()
+            require(ArtifactFiles.inventoryHash(natives) == manifest.getString("runtime_sha256")) { "runtime differs from tested A" }
         }
-        buildHash = hash(apk)
+        buildHash = ArtifactFiles.hash(apk)
         verified = true
     }
 

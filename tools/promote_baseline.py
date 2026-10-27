@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import zipfile
 import hashlib
+import shutil
 
 import measurement_identity as identity
 from dictionary_visit import read_receipt
@@ -72,7 +73,7 @@ def stage(root, folder, apk, record_path=RECORD):
     for relative, source in sources.items():
         target = folder / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.symlink_to(source.resolve())
+        shutil.copyfile(source, target)
     (folder / 'baseline-parity.json').write_text(json.dumps(cases, indent=2)+'\n')
     (folder / 'provisioning.json').write_text(json.dumps(dict(
         protocol='candidate-a-provisioning-v1', decision=record['decision'],
