@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.roundToInt
 
 /** Inflates only our panel: no microphone, keyboard handoff, settings changes or stored audio. */
 @RunWith(AndroidJUnit4::class)
@@ -35,13 +36,14 @@ class RecordingPanelTest {
                 panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
                 val mic = panel.findViewById<ImageButton>(R.id.microphone)
                 val back = panel.findViewById<ImageButton>(R.id.back)
-                assertEquals((56 * density).toInt(), mic.width)
-                assertEquals((48 * density).toInt(), back.width)
+                assertEquals((56 * density).roundToInt(), mic.width)
+                assertEquals((48 * density).roundToInt(), back.width)
                 assertTrue(preview.textSize > status.textSize)
                 assertTrue("status clipped at fontScale=$fontScale",
                     status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                // The gap after the last visible line is not clipped text.
                 assertTrue("preview clipped at fontScale=$fontScale",
-                    preview.height >= preview.layout.getLineBottom(2) + preview.compoundPaddingTop + preview.compoundPaddingBottom)
+                    preview.height >= preview.layout.getLineBottom(2, false) + preview.compoundPaddingTop + preview.compoundPaddingBottom)
                 val stage = mic.parent as ViewGroup
                 assertTrue(mic.left >= 0 && mic.right <= stage.width && mic.bottom <= stage.height)
                 assertEquals(2, actions(panel))
