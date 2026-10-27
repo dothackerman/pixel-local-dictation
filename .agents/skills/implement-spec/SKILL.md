@@ -12,6 +12,8 @@ The goal is the entire spec implemented on a single **integration branch**, with
 
 The tickets are not a list of steps. They are a **task graph** with blocking relationships between them. This means there is always a **frontier** of tickets which are ready to be grabbed.
 
+An experiment completes when its required work and evidence support a recorded verdict, including rejection of every candidate. Check each successor's required **outcome**, not just whether its blocking issue is closed. If no ticket can proceed, report the stop and unresolved dependents; the whole spec remains incomplete.
+
 Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, research notes, and previous commits. Don't duplicate information already available via pointers.
 
 **Implementer subagents** should be run in the background where possible for maximum concurrency.
@@ -27,6 +29,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `tdd` to build the ticket;
+   - before full inference after changing scoring or sample exclusions, runs the fast evaluator regressions and obtains a focused spec review of those rules; reuses that review while the rules are unchanged;
    - merges the integration branch tip into its own branch before reporting done
 
 5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**.

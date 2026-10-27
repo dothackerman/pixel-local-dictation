@@ -1,0 +1,79 @@
+{
+  "configuration_sha256": "b0fe65b5b968c4efae5f5f11518f86ff7e890768a8c0b57425e6485d750cbc12",
+  "model_sha256": "bdae7dbc6a196a146a85e9faa5e436a8327cb1868b0655f9f6e642285b41e4fd",
+  "dictionary_sha256": "079095f93d7a5a60046f432237a43314788b16d5af762505273e374fde537251",
+  "runtime_sha256": "cfe152d57386afe441a76b689327626ce2e5e1948a24506fff7565c80258785e",
+  "schema": 1,
+  "decision": "owner-accepted-stop-wait-issue-28",
+  "plan_sha256": "a6bd089abb0771615d296f3e125403109d68021697da530116f8a7a086ed4ba6",
+  "historical_build_sha256": "4ca9d4b9098d6441496d4e6db5b08ba104046c384ee51b101034e2916d139b38",
+  "modelDirectory": "models/parakeet-v3-fp32",
+  "variant": {
+    "schema": 4,
+    "runtime": {
+      "model_arena": true,
+      "model_pattern": true,
+      "lid_arena": true,
+      "lid_pattern": true,
+      "profile": false
+    },
+    "name": "candidate-a-score-1.5",
+    "description": "Encoder precision isolation: same settings as dict-beam8-s20 with the fp32 encoder; decoder/joiner hashes identical",
+    "family": "parakeet",
+    "model": "parakeet-v3-fp32",
+    "threads": 4,
+    "decoding": {
+      "method": "modified_beam_search",
+      "max_active_paths": 8,
+      "blank_penalty": 0.0
+    },
+    "whisper": {
+      "language": "",
+      "tail_paddings": -1
+    },
+    "qwen3": {
+      "max_total_len": 1024,
+      "max_new_tokens": 256
+    },
+    "cohere": {
+      "language": "",
+      "use_punct": true,
+      "use_itn": true
+    },
+    "lid": {
+      "model": "",
+      "probe_seconds": 0.0,
+      "fallback": "en"
+    },
+    "hotwords": {
+      "file": "issue11-dictionary.txt",
+      "score": 1.5
+    },
+    "cutting": {
+      "min_chunk_s": 20.0,
+      "pad_s": 0.4,
+      "min_silence_s": 0.8,
+      "min_speech_s": 0.25,
+      "vad_max_speech_s": 20.0,
+      "max_chunk_s": 0.0
+    },
+    "post": {
+      "swiss_ss": true,
+      "seam_capitalize": false,
+      "skip_silent_chunks": true
+    }
+  },
+  "artifacts": {
+    "models/parakeet-v3-fp32/encoder.weights": "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36",
+    "models/parakeet-v3-fp32/tokens.txt": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+    "models/parakeet-v3-fp32/encoder.onnx": "2144d185b85e7c75077a19afbd8b77f0cb8daf814844c79f213e68e8fbf5a725",
+    "models/parakeet-v3-fp32/decoder.onnx": "0ddb1f1bc4ea627a362a9bbe94340ea11538b6aafa9050de42738afe407a8124",
+    "models/parakeet-v3-fp32/bpe.vocab": "41d5e71b3591642eff088151efd7acd4e750124cc0054c8ba9fa3245187a4804",
+    "models/parakeet-v3-fp32/joiner.onnx": "7ec8e5f5e3d45f05e828c14567ffec252f50b659537d976d72a6318e047b9fb1",
+    "silero_vad.onnx": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+    "issue11-dictionary.txt": "079095f93d7a5a60046f432237a43314788b16d5af762505273e374fde537251"
+  },
+  "accepted_on": "2026-10-27",
+  "acceptance_scope": "Historical Stop-wait limit only; meaning, lifecycle safety and supervised live checks remain required",
+  "issue": "https://github.com/dothackerman/pixel-local-dictation/issues/28"
+}

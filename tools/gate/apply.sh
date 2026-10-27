@@ -21,11 +21,19 @@ install -m 0755 "$gate/phone_guard.py"  .codex/hooks/phone_guard.py
 install -m 0755 "$gate/phone-guard.sh"  .codex/hooks/phone-guard.sh
 install -m 0644 "$gate/hooks.json"      .codex/hooks.json
 install -m 0644 "$gate/settings.json"   .claude/settings.json
-install -m 0644 "$gate/config.toml"     .codex/config.toml
-install -m 0644 "$gate/AGENTS.md"       AGENTS.md
+config=$(mktemp)
+trap 'rm -f "$config"' EXIT
+python3 "$gate/check_installation.py" --render-codex > "$config"
+install -m 0644 "$config" .codex/config.toml
+for instructions in AGENTS.md CLAUDE.md; do
+  # Protected symlinks prevent Codex's Linux sandbox from starting.
+  rm -f "$instructions"
+  install -m 0644 "$gate/AGENTS.md" "$instructions"
+done
 rm -f .codex/rules/phone.rules
 rmdir .codex/rules 2>/dev/null || true
 chmod 0755 tools/phone
-[ -L CLAUDE.md ] || { rm -f CLAUDE.md && ln -s AGENTS.md CLAUDE.md; }
+python3 "$gate/check_installation.py"
 git add -A .claude/hooks .claude/settings.json .codex AGENTS.md CLAUDE.md tools/phone
 echo "installed $(sha256sum "$store/phone" | cut -c1-12)… to $store/phone; harness files staged. Commit when ready."
+echo "Next: in a fresh agent session, run python3 tools/gate/check_installation.py and python3 tools/quality.py without escalation."

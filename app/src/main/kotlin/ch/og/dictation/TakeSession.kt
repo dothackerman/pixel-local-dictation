@@ -57,7 +57,7 @@ class TakeSession internal constructor(
 
     private fun mark(phase: String) {
         val now = clock()
-        events[phase] = now
+        synchronized(events) { events[phase] = now }
         timeline?.emit(TimelineEvent(phase, ns = now))
     }
 
@@ -68,13 +68,18 @@ class TakeSession internal constructor(
         try {
             take = transcribe(deliver, timeline) { text ->
                 if (active) {
-                    if ("previewReady" !in events) mark("previewReady")
+                    synchronized(events) { if ("previewReady" !in events) mark("previewReady") }
                     output.preview(text)
                 }
             }
             mark("captureStart")
             capture.start { samples ->
-                if (state == State.RECORDING || state == State.DRAINING) take?.feed(samples)
+                if (state == State.RECORDING || state == State.DRAINING) {
+                    if (timeline != null && samples.isNotEmpty()) synchronized(events) {
+                        if ("firstAudio" !in events) mark("firstAudio")
+                    }
+                    take?.feed(samples)
+                }
             }
         } catch (failure: Throwable) {
             cancelCapture()
@@ -168,7 +173,7 @@ class TakeSession internal constructor(
             cleaned = true
             mark("takeEnded")
             try {
-                output.finished(requireNotNull(terminal).copy(eventsNs = events.toMap()), pcm)
+                output.finished(requireNotNull(terminal).copy(eventsNs = synchronized(events) { events.toMap() }), pcm)
             } finally {
                 pcm.fill(0)
                 pcm = ByteArray(0)
