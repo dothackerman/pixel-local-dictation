@@ -2,6 +2,7 @@ package ch.og.dictation
 
 import android.content.Context
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import java.util.UUID
@@ -57,20 +58,32 @@ class StartupTrace(private val context: Context) {
         }
     }
 
-    fun event(phase: String, takeId: String? = null, ns: Long = System.nanoTime(), modelReady: Boolean? = null) {
+    /** Historical ns events have no uptime pair unless their caller captured one. */
+    fun event(phase: String, takeId: String? = null, ns: Long? = null,
+              modelReady: Boolean? = null, uptimeMs: Long? = null) {
+        val eventNs = ns ?: System.nanoTime()
+        val eventUptimeMs = uptimeMs ?: if (ns == null) SystemClock.uptimeMillis() else null
         val pid = Process.myPid()
+        val requestedUptimeMs = if (phase == "serviceCreate") Process.getStartRequestedUptimeMillis() else null
+        val startedUptimeMs = if (phase == "serviceCreate") Process.getStartUptimeMillis() else null
         writer.execute {
             runCatching {
                 val row = JSONObject().put("protocol", "ime-startup-v1")
                     .put("clock", "CLOCK_MONOTONIC").put("processId", processId).put("pid", pid)
-                    .put("serviceId", serviceId).put("phase", phase).put("ns", ns)
+                    .put("serviceId", serviceId).put("phase", phase).put("ns", eventNs)
+                eventUptimeMs?.let { row.put("uptimeMs", it) }
+                requestedUptimeMs?.let { row.put("processStartRequestedUptimeMs", it) }
+                startedUptimeMs?.let { row.put("processStartUptimeMs", it) }
                 takeId?.let { row.put("takeId", it) }
                 modelReady?.let { row.put("modelReadyAtPanelRequest", it) }
+                val line = row.toString() + "\n"
                 val file = File(context.filesDir, "lab/startup.jsonl")
                 file.parentFile?.mkdirs()
                 // Never silently overwrite visit evidence. Stop collecting when the bounded file is full.
-                check(file.length() < 2 * 1024 * 1024) { "startup receipt file full; pull and archive it" }
-                file.appendText(row.toString() + "\n")
+                check(file.length() + line.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
+                    "startup receipt file full; pull and archive it"
+                }
+                file.appendText(line)
             }.onFailure { Log.e("StartupTrace", "startup receipt unavailable", it) }
         }
     }

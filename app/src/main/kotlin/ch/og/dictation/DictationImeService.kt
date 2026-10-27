@@ -65,20 +65,31 @@ class DictationImeService : InputMethodService() {
 
     override fun onCreate() {
         val createdNs = System.nanoTime()
+        val createdUptimeMs = SystemClock.uptimeMillis()
         super.onCreate()
+        val superReturnedNs = System.nanoTime()
+        val superReturnedUptimeMs = SystemClock.uptimeMillis()
         if (resources.getBoolean(R.bool.startup_timing)) {
-            startup = StartupTrace(applicationContext).also { it.event("serviceCreate", ns = createdNs) }
+            startup = StartupTrace(applicationContext).also {
+                it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
+                it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
+            }
             observeGeometry()
         }
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
-        Engine.warmUp(this).whenComplete { _, failure ->
+        val ready = Engine.warmUp(this)
+        startup?.event("warmUpReturned")
+        ready.whenComplete { _, failure ->
             startup?.event(if (failure == null) "modelReady" else "modelFailed",
                 ns = Engine.modelReadyNs ?: System.nanoTime())
         }
+        startup?.event("serviceCreateEnd")
     }
 
     override fun onCreateInputView(): View {
+        startup?.event("inputViewCreateBegin")
         val v = layoutInflater.inflate(R.layout.ime, null)
+        startup?.event("inputViewInflated")
         panel = v
         observeGeometry(startupTake)
         if (startup != null) {
@@ -103,6 +114,7 @@ class DictationImeService : InputMethodService() {
         stopBtn = v.findViewById<Button>(R.id.stop).apply { setOnClickListener { stopAndInsert() } }
         v.findViewById<Button>(R.id.cancel).setOnClickListener { cancelAndReturn() }
         v.findViewById<Button>(R.id.back).setOnClickListener { cancelAndReturn() }
+        startup?.event("inputViewCreateEnd")
         return v
     }
 

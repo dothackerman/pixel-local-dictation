@@ -155,6 +155,33 @@ and returns to FUTO.
   timing and identity metadata, not audio or recognized text; they are independent
   of saved-take recording. Panel draw is not physical display timing, and the app
   cannot observe FUTO's microphone-key touch.
+  Benchmark `files/lab/startup.jsonl` retains `ime-startup-v1` and adds raw
+  `uptimeMs` samples beside callback-local `ns`. At `serviceCreate` (entry before
+  `super.onCreate`) it also records our public
+  [process start-request uptime](https://developer.android.com/reference/android/os/Process#getStartRequestedUptimeMillis())
+  and [process start uptime](https://developer.android.com/reference/android/os/Process#getStartUptimeMillis())
+  as `processStartRequestedUptimeMs` and `processStartUptimeMs`. The former starts
+  before zygote fork/specialization; the latter precedes application code. Neither
+  is the microphone touch. Nonpositive process counters are unavailable evidence.
+  `serviceCreateSuperReturned`, `warmUpReturned` and `serviceCreateEnd` separate
+  framework creation, synchronous warm-up setup and callback completion. Warm-up
+  return is not model readiness. `inputViewCreateBegin` → `inputViewInflated`
+  brackets layout inflation; `inputViewCreateEnd` includes listeners/button setup.
+  `panelRequested` and `panelDraw` retain their existing meanings.
+  All timestamps are captured before queueing writes. Use raw uptime differences
+  for process-request → process-start → service-entry → draw; this distinguishes
+  earlier startup from the service's own callback work. Uptime has millisecond
+  precision and [excludes deep sleep](https://developer.android.com/reference/android/os/SystemClock#uptimeMillis());
+  nanosecond samples are adjacent clock reads, not simultaneous or millisecond
+  accuracy upgrades. Do not directly subtract these different units/clock APIs.
+  Historical `ns` events (such as `modelReady` and forwarded audio events) omit
+  `uptimeMs` unless captured at their actual event; a later observer is not a pair.
+  Collection keeps the existing 2 MiB bound, without overwrite.
+  `StartupTraceTest` checks actual asynchronous receipt persistence; lifecycle
+  placement and visual blank still need a supervised real cold/warm handoff.
+  For true cold, our app process must be absent before the normal FUTO microphone
+  tap in Signal; launching our editor probe or instrumentation beforehand prewarms
+  it. Pull receipts afterward. No app callback identifies physical blank onset.
   Benchmark `files/lab/geometry.jsonl` adds `ime-geometry-v1` receipts from the
   real IME `onComputeInsets` (after unchanged `super`) and pre-draw callbacks.
   No layout requests or animation callbacks are added. Collection covers the first
