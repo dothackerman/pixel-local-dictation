@@ -20,6 +20,12 @@ import org.junit.runner.RunWith
 class NormalBaselineTest {
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
+    @Test fun runtimeInventoryMatchesFrozenPythonIdentityOnAndroid() {
+        // Android org.json escapes slashes differently from the laptop implementation.
+        assertEquals("99d4d9ed446a0c93f7a8752e1d0727511fed0bc4071629a2144adbc677b48a6c",
+            ArtifactFiles.inventoryHash(mapOf("lib/arm64-v8a/runtime.so" to "abc")))
+    }
+
     @Test fun normalPathMatchesRetainedCandidateAOutputs() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lab = File(context.filesDir, "lab")

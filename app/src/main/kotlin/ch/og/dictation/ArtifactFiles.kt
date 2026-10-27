@@ -3,7 +3,6 @@ package ch.og.dictation
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
-import org.json.JSONObject
 
 /** Byte/path primitives only. Selection and acceptance policies remain with their callers. */
 class ArtifactFiles(root: File) {
@@ -23,8 +22,24 @@ class ArtifactFiles(root: File) {
             while (true) { val n = it.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
             digest.digest().joinToString("") { b -> "%02x".format(b) }
         }
+        // Frozen Python json.dumps defaults: ASCII escapes, unescaped slash, sorted keys.
+        // org.json.quote is platform-dependent (Android escapes every slash).
+        private fun quote(value: String) = buildString {
+            append('"')
+            for (c in value) when (c) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\b' -> append("\\b")
+                '\u000c' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (c < ' ' || c > '~') append("\\u").append(c.code.toString(16).padStart(4, '0')) else append(c)
+            }
+            append('"')
+        }
         fun inventoryHash(artifacts: Map<String, String>): String {
-            val canonical = artifacts.toSortedMap().entries.joinToString(",", "{", "}") { JSONObject.quote(it.key) + ":" + JSONObject.quote(it.value) }
+            val canonical = artifacts.toSortedMap().entries.joinToString(",", "{", "}") { quote(it.key) + ":" + quote(it.value) }
             return hash(canonical.toByteArray(Charsets.UTF_8))
         }
     }
