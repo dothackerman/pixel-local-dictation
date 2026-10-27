@@ -21,7 +21,70 @@ class BoostTest(unittest.TestCase):
         self.assertAlmostEqual(score, 2 + math.log(2))
         score, suffix = tree.step(complete, 3)
         self.assertAlmostEqual(score, 2 + math.log(2))
-        self.assertTrue(tree.nodes[suffix]['terminal'])
+        self.assertEqual(tree.step(suffix, 7)[0], 0)
+
+    def consume(self, tree, tokens):
+        state, bonuses = 0, []
+        for token in tokens:
+            bonuses.append(float(tree.scores(state, 10)[token]))
+            score, state = tree.step(state, token)
+            self.assertAlmostEqual(bonuses[-1], score, places=6)
+        return bonuses
+
+    def test_completed_prefix_survives_failed_extension(self):
+        bonuses = self.consume(PhraseTree([[1], [1, 2, 3]]), [1, 2, 9])
+        np.testing.assert_allclose(bonuses, [1, 2.69314718, -2.69314718], atol=1e-6)
+        self.assertAlmostEqual(sum(bonuses), 1, places=6)
+
+    def test_nested_completed_prefix_keeps_latest_completion(self):
+        tree = PhraseTree([[1], [1, 2], [1, 2, 3, 4]])
+        bonuses = self.consume(tree, [1, 2, 3, 9])
+        np.testing.assert_allclose(bonuses, [1, 2.69314718, 3.09861229, -3.09861229], atol=1e-6)
+        self.assertAlmostEqual(sum(bonuses), 3.69314718, places=6)
+        completed = self.consume(tree, [1, 2, 3, 4, 9])
+        self.assertAlmostEqual(sum(completed), 10.17805383, places=6)
+        self.assertEqual(completed[-1], 0)
+
+    def test_failure_suffix_refunds_only_unfinished_credit(self):
+        tree = PhraseTree([[1], [1, 2, 3], [2, 4, 5]])
+        bonuses = self.consume(tree, [1, 2, 4, 9])
+        np.testing.assert_allclose(bonuses, [1, 2.69314718, 0, -2.69314718], atol=1e-6)
+        self.assertAlmostEqual(sum(bonuses), 1, places=6)
+
+    def test_completed_failure_suffix_keeps_its_credit(self):
+        tree = PhraseTree([[1, 2, 3], [2], [2, 4, 5]])
+        failed = self.consume(tree, [1, 2, 9])
+        np.testing.assert_allclose(failed, [1, 2.69314718, -2.69314718], atol=1e-6)
+        extended = self.consume(tree, [1, 2, 4, 9])
+        np.testing.assert_allclose(extended, [1, 2.69314718, 0, -2.69314718], atol=1e-6)
+        self.assertAlmostEqual(sum(extended), 1, places=6)
+
+    def test_overlap_keeps_shared_token_credit_without_double_award(self):
+        tree = PhraseTree([[1, 2], [2, 3, 4]])
+        failed = self.consume(tree, [1, 2, 3, 9])
+        np.testing.assert_allclose(failed, [1, 2.69314718, 2.69314718, -2.69314718], atol=1e-6)
+        self.assertAlmostEqual(sum(failed), 3.69314718, places=6)
+        completed = self.consume(tree, [1, 2, 3, 4, 9])
+        np.testing.assert_allclose(completed, [1, 2.69314718, 2.69314718, 3.09861229, 0], atol=1e-6)
+        self.assertEqual(self.consume(tree, [1, 2, 9])[-1], 0)
+
+    def test_duplicate_phrases_and_repeated_matches_do_not_multiply_credit(self):
+        tree = PhraseTree([[1], [1], [1, 2, 3], [1, 2, 3]])
+        bonuses = self.consume(tree, [1, 2, 9] * 100)
+        np.testing.assert_allclose(bonuses, [1, 2.69314718, -2.69314718] * 100, atol=1e-6)
+        self.assertAlmostEqual(sum(bonuses), 100, places=5)
+
+    def test_zero_alpha_dictionary_is_exact_for_decoder_results(self):
+        def run(tree):
+            logits = iter([[0, 4, 1, 0, 0, 8], [0, 0, 5, 0, 0, 8], [1, 0, 0, 9, 0, 8]])
+            return decode_logits(np.zeros((3, 3)), 4,
+                                 lambda token, state: (token, state),
+                                 lambda frame, pred: np.array(next(logits), np.float32),
+                                 None, tree=tree, alpha=0)
+        plain = run(None)
+        self.assertEqual(plain, run(PhraseTree([[1], [1, 2, 0]])))
+        self.assertEqual(plain.tokens, [1, 2])
+        self.assertEqual(plain.durations, [1, 1])
 
     def test_boost_never_changes_unboosted_blank_or_duration(self):
         tree = PhraseTree([[1]])

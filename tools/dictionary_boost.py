@@ -1,7 +1,8 @@
 """NeMo nonuniform phrase-tree scores for greedy TDT (Speech d32dd550).
 
-A completed phrase keeps its accumulated bonus on failure; an unfinished prefix
-refunds its potential. Blank gating and duration remain the decoder's decisions.
+Credit committed at a visited terminal state survives failure; an unfinished
+prefix refunds only its uncommitted potential. Blank gating and duration remain
+the decoder's decisions.
 """
 from collections import deque
 import math
@@ -10,7 +11,8 @@ import numpy as np
 
 class PhraseTree:
     def __init__(self, phrases):
-        self.nodes = [dict(arcs={}, fail=0, potential=0., terminal=False)]
+        self.nodes = [dict(arcs={}, fail=0, potential=0., depth=0, terminal=False)]
+        self.potentials = [0.]
         self.alphabet = set()
         self._scores = {}
         for phrase in phrases:
@@ -23,7 +25,9 @@ class PhraseTree:
                     target = len(self.nodes)
                     self.nodes[state]['arcs'][token] = target
                     potential = self.nodes[state]['potential'] + (1 if depth == 0 else 2 + math.log(depth + 1))
-                    self.nodes.append(dict(arcs={}, fail=0, potential=potential, terminal=False))
+                    self.nodes.append(dict(arcs={}, fail=0, potential=potential, depth=depth + 1, terminal=False))
+                    if len(self.potentials) <= depth + 1:
+                        self.potentials.append(potential)
                 state = self.nodes[state]['arcs'][token]
             if phrase:
                 self.nodes[state]['terminal'] = True
@@ -38,17 +42,29 @@ class PhraseTree:
                 queue.append(target)
 
     def step(self, state, token):
+        """Advance an opaque state, refunding only uncommitted prefix credit.
+
+        A failure suffix can inherit credit already committed by an overlapping
+        phrase. State carries the depth whose credit is already committed. Potentials
+        depend only on depth, so this discrete marker bounds the score cache
+        and avoids accumulating floating-point credit. Root is zero.
+        """
+        state, committed = state if state else (0, 0)
         score = 0.
         while token not in self.nodes[state]['arcs']:
             if state == 0:
                 return score, 0
             node = self.nodes[state]
             fail = node['fail']
-            if not node['terminal']:
-                score += self.nodes[fail]['potential'] - node['potential']
+            score -= node['potential'] - max(self.nodes[fail]['potential'], self.potentials[committed])
+            committed = (self.nodes[fail]['depth'] if self.nodes[fail]['terminal']
+                         else min(committed, self.nodes[fail]['depth']))
             state = fail
         target = self.nodes[state]['arcs'][token]
-        return score + self.nodes[target]['potential'] - self.nodes[state]['potential'], target
+        bonus = self.nodes[target]['potential'] - self.nodes[state]['potential']
+        if self.nodes[target]['terminal']:
+            committed = self.nodes[target]['depth']
+        return score + bonus, (target, committed)
 
     def scores(self, state, size):
         key = state, size
