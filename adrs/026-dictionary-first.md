@@ -134,4 +134,28 @@ byte-identical app APK, test APK and complete data archive to `issue11-20261026-
 and observed IME state also match. Evidence: `startup-20261027/recovery-verification.json` and
 the original restore receipt. The benchmark visit is over; #15 is complete with a reject verdict.
 #14 remains partial, #17 awaits a measured cause, and #18/#19 remain blocked by the negative
-greedy screen. No speculative startup fix or dictionary adoption follows.
+greedy screen. These startup observations alone establish no startup fix or dictionary adoption.
+
+## Owner selects Candidate A as the provisional baseline — 2026-10-27
+
+After reviewing the accuracy and Stop-wait trade-off and #22's final stop for Candidate B,
+the owner selected Candidate A as the current winner and directed that it become the app's
+new baseline for now. The selected configuration is Parakeet v3 FP32, beam 8, dictionary
+score 1.5. The owner accepts the measured median Stop wait of 3153.69 ms and observed maximum
+5456.04 ms for the known-script gain (German errors 36 → 31; English 22 → 15).
+
+This owner decision supersedes rejection of A solely for exceeding the earlier 2500 ms
+criterion. The frozen comparison, original gate and report remain historical evidence;
+no measurement is changed to a pass. German held-script harm +1/0/+2, unreviewed phone
+meaning-changing errors and the absence of a supervised exact-candidate live check remain
+explicit limits. Selection does not assert those checks passed.
+
+The selected baseline and the installed baseline are currently different: the phone was
+restored to INT8 after the visit, and release still follows that path. Promotion is tracked
+in #28. UI/UX, including dictionary editing, is deferred to later work at the owner's request.
+Existing safety behavior and no-network constraints remain. #14/#17 retain their unresolved
+startup evidence; selecting A does not complete them. Candidate B's stop after #22 is unchanged.
+
+Future comparisons must name their actual control. Preserve the old INT8 baseline and all
+frozen results under their original identities; do not silently relabel them as Candidate A.
+Review this provisional choice when daily-use evidence or a new candidate changes the trade-off.

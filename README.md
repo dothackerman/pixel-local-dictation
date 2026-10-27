@@ -17,8 +17,11 @@ The `ready-for-agent` label marks a prepared spec; it does not authorize a phone
 
 The app records, recognizes speech locally and inserts text through FUTO's
 microphone workflow. Tags `m1` and `m2` record the prototype gates. The default
-engine is Parakeet v3 with a selective INT8 encoder on the CPU
-([ADR-003](adrs/003-working-engine.md)), provisional. The WebGPU track stopped at
+engine currently installed is Parakeet v3 with a selective INT8 encoder on the CPU
+([ADR-003](adrs/003-working-engine.md)). On October 27 the owner selected Candidate A
+(FP32 beam 8, dictionary score 1.5) as the new provisional baseline, accepting its
+measured Stop wait. Promotion to the normal app path is [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28);
+UI/UX and dictionary editing are deferred. The WebGPU track stopped at
 one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
 2026-10-25: [ADR-026](adrs/026-dictionary-first.md); open spec #11.
 
@@ -36,8 +39,10 @@ feeds 640/512/800 against the matching no-dictionary control, so it is not a cle
 screening pass. The 120-run frozen phone comparison subsequently rejected
 Candidate A: median Stop wait 3.154 s exceeds the ticket's 2.5 s limit, despite
 the same accuracy gain. All 30 default/default pairs matched text; observed
-timing variability was 206 ms. No candidate was adopted; see the measured
-result and limits in [ADR-026](adrs/026-dictionary-first.md#candidate-a-phone-result--2026-10-26).
+timing variability was 206 ms. The owner subsequently chose A despite that original
+timing-gate result; the frozen measurements remain unchanged. A is selected, with
+normal-app integration and supervised live acceptance still outstanding. See the
+decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-candidate-a-as-the-provisional-baseline--2026-10-27).
 Private evidence is indexed by `corpus/lab/issue11/HANDOFF.md`.
 
 Read the results and their limits before selecting the next question:
@@ -230,14 +235,17 @@ Answered calls, longer battery-only model survival and a clean full FP32 export
 remain unverified. Dictionary entry and editing ship only with an adopt verdict
 ([ADR-005](adrs/005-dictionary.md)). Unlisted-name recall is unmeasured. Planned
 work: spec #11 and its tickets. Startup instrumentation and paired/live comparison
-tools are implemented; Candidate A's phone timing rejects it. The owner completed
+tools are implemented; the owner accepts Candidate A's measured wait and selects it
+as the provisional baseline. Normal-app promotion is #28; dictionary editing and
+UI/UX are deferred. The owner completed
 ten short startup takes on October 27; nine complete traces were captured. Warm
 app-request-to-panel draw had median 47 ms and recording start 27 ms. External
 microphone-key timing and live Stop timestamps are absent; #14 remains partial
-and #17 has no established end-to-end cause to fix. No candidate advances to
-supervised live validation or adoption. The original app, test APK and data were
+and #17 has no established end-to-end cause to fix. Candidate A still needs its
+meaning-preservation review and supervised live check. The original app, test APK and data were
 restored and independently verified byte-identical to the pre-visit snapshot;
-#15 is complete with a reject verdict.
+#15's comparison is complete; its original gate rejection is preserved alongside
+the owner's subsequent acceptance. Baseline promotion has not yet changed the installed app.
 
 ## Evidence and history
 
