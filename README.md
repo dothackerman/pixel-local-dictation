@@ -3,7 +3,7 @@
 Local English and German dictation on the GrapheneOS Pixel 10 Pro XL.
 Open it with FUTO Keyboard's existing microphone key. The goal is fewer wrong
 words than the shipped default, at a Stop wait the user accepts; speed against
-FUTO was won on 2026-10-10 ([ADR-026](adrs/026-dictionary-first.md)). Source and issue tracking use a private GitHub repository.
+FUTO was won on 2026-10-10 ([ADR-026](adrs/026-dictionary-first.md)). Source and issue tracking are public on GitHub. Personal recordings, transcripts, dictionaries and signing credentials remain private and outside Git.
 
 This README defines the requirements, current design, operation and acceptance
 gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
