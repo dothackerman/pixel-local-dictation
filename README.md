@@ -461,3 +461,7 @@ Completed orchestration and runbooks remain in pinned Git history.
 [ADR-008](adrs/008-three-stage-loop.md) explains source recovery and offline
 analysis. Active tools retain scoring, matched evidence checks, measurement
 adapters and the daily app. New comparisons use the lab interface above.
+
+## License
+
+Project code is licensed under the [MIT License](LICENSE). Third-party components and model assets retain their respective licenses.
