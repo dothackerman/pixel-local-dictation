@@ -327,6 +327,10 @@ source, test and build inputs first so the checkout matches the index; a path-li
 `git commit PATH` with other changes pending therefore fails.
 The gate rejects index changes during the run.
 
+Code map ([ADR-028](adrs/028-codemap.md)): `python3 tools/codemap.py` writes the graph
+(`--check` lists policy violations; informational, not in the gate); then open
+http://127.0.0.1:8765/codemap/ via the launch config.
+
 ## Daily use and rollback
 
 Recording requires an explicit take. The app releases the microphone afterwards.

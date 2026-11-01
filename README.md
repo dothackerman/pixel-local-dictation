@@ -46,6 +46,8 @@ Personal recordings, transcripts, dictionaries, signing credentials and evaluati
 
 Read [AGENTS.md](AGENTS.md) before agent-assisted work. The [development reference](DEVELOPMENT.md) preserves requirements, architecture, phone procedures and evaluation limits; [ADRs](adrs/) explain the decisions behind them.
 
+Explore the code with the [code map](explainers/codemap/index.html) ([ADR-028](adrs/028-codemap.md)).
+
 Run host checks with:
 
 ```sh

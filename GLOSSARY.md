@@ -67,3 +67,21 @@ A word that belongs to a dictionary entry.
 **Boost**:
 The score bonus a token gets while it continues a dictionary entry.
 _Avoid_: bias score, hotword score
+
+## Code map
+
+**Code map**:
+The generated graph of files, types, functions and their static relations.
+_Avoid_: architecture diagram, UML model
+
+**Component (code map)**:
+A group of files declared by path in the policy file, with a layer; not inferred from code.
+
+**Policy**:
+The file naming components, layers and forbidden imports; interpretation, not fact.
+
+**Trace overlay**:
+Observed calls from an explicit JSON file, shown as a sequence; never read from `corpus/` automatically.
+
+**Health (code map)**:
+ok / watch / unknown from complexity and test references; unknown is missing evidence.

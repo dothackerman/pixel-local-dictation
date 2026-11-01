@@ -1,0 +1,150 @@
+{
+  "components": [
+    {
+      "id": "app-runtime",
+      "name": "App runtime",
+      "layer": 1,
+      "paths": [
+        "app/src/main/kotlin/ch/og/dictation/ArtifactFiles.kt",
+        "app/src/main/kotlin/ch/og/dictation/BenchmarkLiveConfig.kt",
+        "app/src/main/kotlin/ch/og/dictation/BenchmarkStore.kt",
+        "app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt",
+        "app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt",
+        "app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt",
+        "app/src/main/kotlin/ch/og/dictation/Engine.kt",
+        "app/src/main/kotlin/ch/og/dictation/NativeRoleProfiler.kt",
+        "app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt",
+        "app/src/main/kotlin/ch/og/dictation/Recognizer.kt",
+        "app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt",
+        "app/src/main/kotlin/ch/og/dictation/StartupTrace.kt",
+        "app/src/main/kotlin/ch/og/dictation/TakeSession.kt",
+        "app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt",
+        "app/src/main/kotlin/ch/og/dictation/Variant.kt"
+      ],
+      "description": "Recognition, takes, baseline, dictionary revisions and storage; no UI. Engine.kt also holds the model-file and sherpa glue; Recognizer.kt also holds PauseChunker."
+    },
+    {
+      "id": "app-ime",
+      "name": "IME and recording",
+      "layer": 2,
+      "paths": [
+        "app/src/main/kotlin/ch/og/dictation/DictationImeService.kt",
+        "app/src/main/kotlin/ch/og/dictation/InputSession.kt",
+        "app/src/main/kotlin/ch/og/dictation/MicrophoneCapture.kt",
+        "app/src/main/kotlin/ch/og/dictation/PermissionActivity.kt",
+        "app/src/main/kotlin/ch/og/dictation/Recorder.kt",
+        "app/src/main/kotlin/ch/og/dictation/RecordingFeedback.kt",
+        "app/src/main/kotlin/ch/og/dictation/RecordingRingView.kt"
+      ],
+      "description": "Voice input method: panel, microphone capture, editor input, recording feedback and microphone permission."
+    },
+    {
+      "id": "app-settings",
+      "name": "Settings and dictionary UI",
+      "layer": 2,
+      "paths": [
+        "app/src/main/kotlin/ch/og/dictation/DictionaryActivity.kt",
+        "app/src/main/kotlin/ch/og/dictation/DictionaryModel.kt",
+        "app/src/main/kotlin/ch/og/dictation/SettingsActivity.kt"
+      ],
+      "description": "Settings screen, benchmark storage controls and the dictionary editor (ADR-027)."
+    },
+    {
+      "id": "app-benchmark",
+      "name": "Benchmark variant",
+      "layer": 3,
+      "paths": [
+        "app/src/benchmark/*"
+      ],
+      "description": "Probe activities compiled only into the benchmark build type."
+    },
+    {
+      "id": "app-unit-tests",
+      "name": "App unit tests",
+      "layer": 3,
+      "paths": [
+        "app/src/test/*"
+      ],
+      "description": "Host JVM tests of the app sources."
+    },
+    {
+      "id": "app-device-tests",
+      "name": "App device tests",
+      "layer": 3,
+      "paths": [
+        "app/src/androidTest/*"
+      ],
+      "description": "Instrumentation tests and replay helpers; compiled by the gate, run on the phone only."
+    },
+    {
+      "id": "phone-gate",
+      "name": "Phone wrapper and gate",
+      "layer": 1,
+      "paths": [
+        "tools/phone",
+        "tools/gate/*"
+      ],
+      "description": "App-scoped phone wrapper and its sandbox/hook configuration (ADR-024); protected, changed through apply.sh."
+    },
+    {
+      "id": "host-tests",
+      "name": "Host tests",
+      "layer": 2,
+      "paths": [
+        "tools/test_*.py"
+      ],
+      "description": "Python unittest suites run by tools/quality.py."
+    },
+    {
+      "id": "host-tools",
+      "name": "Host tools",
+      "layer": 1,
+      "paths": [
+        "tools/*.py"
+      ],
+      "description": "Laptop-side evaluation, measurement, dictionary and quality scripts."
+    }
+  ],
+  "rules": [
+    {
+      "id": "no-network",
+      "kind": "forbid-import",
+      "name": "No network",
+      "components": [
+        "app-runtime",
+        "app-ime",
+        "app-settings",
+        "app-benchmark"
+      ],
+      "patterns": [
+        "java.net.",
+        "android.net.",
+        "okhttp3.",
+        "retrofit2.",
+        "java.nio.channels.Socket"
+      ],
+      "description": "R3: the app has no network permission or networking code."
+    },
+    {
+      "id": "no-test-deps-in-app",
+      "kind": "forbid-import",
+      "name": "No test dependencies in app code",
+      "components": [
+        "app-runtime",
+        "app-ime",
+        "app-settings"
+      ],
+      "patterns": [
+        "androidx.test.",
+        "org.junit."
+      ],
+      "description": "Shipped sources must not import test libraries."
+    },
+    {
+      "id": "layer-order",
+      "kind": "layer-order",
+      "name": "Layer order",
+      "description": "A component may depend on the same or a lower layer, never a higher one."
+    }
+  ]
+}
