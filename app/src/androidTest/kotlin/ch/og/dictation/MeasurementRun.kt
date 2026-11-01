@@ -18,9 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Official ORT 1.31.0 arm64 core (tools/ort131-sherpa/build.py). */
-private const val ORT131_CORE_SHA256 = "8005a741e57117b4d7b476417706c0e9af13cf1b89db47e60f0cbc56e1af91e0"
-
 /** Separate diagnostic protocol. LabTest's historical full-run procedure remains available. */
 class MeasurementRun(private val context: Context, private val lab: File) {
     /** Preflight only: keep hashing outside the historical load/timing sequence. */
@@ -111,8 +108,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         val variant = Variant.parse(rawVariant)
         val expectedProvenance = manifest.getJSONObject("provenance")
         val buildSha = sha(File(context.applicationInfo.sourceDir))
-        // The ORT core the app actually loads; a WebGPU encoder needs the patched 1.31 runtime,
-        // whose JNI rejects unknown providers (the stock 1.28 JNI would silently run CPU).
+        // The ORT core the app actually loads.
         val runtimeCore = java.util.zip.ZipFile(context.applicationInfo.sourceDir).use { apk ->
             apk.getInputStream(apk.getEntry("lib/arm64-v8a/libonnxruntime.so")).use { stream ->
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
@@ -122,9 +118,8 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             }
         }
         require(!variant.runtime.placementLog) { "placement_log is diagnostic only; timed runs stay unlogged" }
-        require(variant.runtime.encoderProvider != "webgpu" || runtimeCore == ORT131_CORE_SHA256) {
-            "WebGPU encoder requires the ORT 1.31 runtime build"
-        }
+        // The patched ORT 1.31 WebGPU build is retired (ADR-022); the stock JNI would silently run CPU.
+        require(variant.runtime.encoderProvider != "webgpu") { "WebGPU encoder runs are retired (archive/encoder-campaign-2026-10)" }
         val testBuildSha = instrumentationSha()
         require(buildSha == expectedProvenance.getString("build_sha256"))
         require(testBuildSha == expectedProvenance.getString("test_build_sha256"))
