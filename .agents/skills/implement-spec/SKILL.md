@@ -14,6 +14,8 @@ The tickets are not a list of steps. They are a **task graph** with blocking rel
 
 An experiment completes when its required work and evidence support a recorded verdict, including rejection of every candidate. Check each successor's required **outcome**, not just whether its blocking issue is closed. If no ticket can proceed, report the stop and unresolved dependents; the whole spec remains incomplete.
 
+Start every subagent with a fresh context window.
+
 Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, research notes, and previous commits. Don't duplicate information already available via pointers.
 
 **Implementer subagents** should be run in the background where possible for maximum concurrency.
