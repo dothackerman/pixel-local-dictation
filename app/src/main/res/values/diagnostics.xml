@@ -1,4 +1,4 @@
 <resources>
-    <bool name="startup_timing">false</bool>
-    <bool name="benchmark_live_variant">false</bool>
+    <!-- Benchmark builds write timing, geometry and identity receipts under files/lab. -->
+    <bool name="benchmark_receipts">false</bool>
 </resources>

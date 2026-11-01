@@ -169,11 +169,10 @@ and returns to FUTO.
   Cohere uses one recognizer, sets the language for each stream and loads models
   from filesystem paths. Canary retains two recognizers:
   [ADR-007](adrs/007-fp32-cohere.md).
-- Benchmark builds can explicitly select the frozen Candidate A for a supervised
-  live check through [BenchmarkLiveConfig](app/src/main/kotlin/ch/og/dictation/BenchmarkLiveConfig.kt).
-  APK, model, dictionary and VAD identities are verified on the decode executor.
-  Release builds ignore this override. Benchmark builds without it exercise the same
-  normal baseline path; `NormalBaselineTest` checks retained DE/EN output hashes.
+- Benchmark builds run the same normal baseline path as release builds and add
+  identity receipts; `NormalBaselineTest` checks retained DE/EN output hashes.
+  The pushed `files/lab/live.json` override used for Candidate A's supervised live
+  check is retired; a future candidate is live-checked by packaging its acceptance record.
   `tools/promote_baseline.py --root ORIGINAL_CHECKOUT CORPUS_STAGE APK` stages
   only frozen candidate artifacts and focused parity inputs inside the original
   private corpus for the protected phone wrapper. It does not authorize installation
@@ -402,16 +401,14 @@ comparison before an adoption-deciding phone run ([ADR-017](adrs/017-shared-take
 amendment); laptop screening needs no freeze. Deployment is a separate decision.
 
 Dictionary experiments use `tools/dictionary_score.py` for versioned word scoring;
-historical scorers retain their original rules. `tools/tdt_decoder.py` reproduces
-the pinned greedy decoder through the wheel's own runtime, built with
-`tools/tdt-runtime/build.py`; its requirements file pins host dependencies.
-`tools/dictionary_screen.py` runs the fast scorer and held-script exclusion
-regressions before creating evidence or loading models, then records results in
-a new private run directory. Changed evaluation rules also need focused spec
+historical scorers retain their original rules. Changed evaluation rules also need focused spec
 review before full inference; passing regressions alone cannot establish their correctness.
-`tools/dictionary_visit.py` prepares and validates
-paired replay and explicit benchmark-only live checks; it never executes phone
-commands. Each tool's `--help` describes its interface. Replay and local screens
+Completed one-off tools are retired from the tree: the greedy-boosting screen
+(`dictionary_screen.py`, `dictionary_boost.py`, `tdt_decoder.py`, `tdt-runtime/`;
+candidate B stopped, evidence names commit 94600aa) and the Candidate A paired
+visit (`dictionary_visit.py`, whose frozen plan binds its source revision).
+Reproduce their reports from those revisions.
+Each tool's `--help` describes its interface. Replay and local screens
 do not establish adoption or real keyboard usability.
 
 ## Known gaps

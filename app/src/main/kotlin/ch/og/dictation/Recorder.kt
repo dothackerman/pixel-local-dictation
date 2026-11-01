@@ -12,7 +12,6 @@ import java.io.ByteArrayOutputStream
  */
 class Recorder {
     companion object {
-        const val SAMPLE_RATE = 16_000
         private const val CHANNEL = AudioFormat.CHANNEL_IN_MONO
         private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
     }

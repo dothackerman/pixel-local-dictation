@@ -9,13 +9,13 @@ class RuntimeRetirementTest {
         val jobs = ArrayDeque<Runnable>()
         val queue = Executor { jobs.add(it) }
         var released = 0
-        val rec = object : Recognizer { override fun transcribe(samples: FloatArray) = "synthetic" }
+        val rec = Recognizer { "synthetic" }
         val segmenter = object : Segmenter {
             override fun accept(samples: FloatArray) = emptyList<Chunk>()
             override fun flush() = emptyList<Chunk>()
             override fun reset() {}
         }
-        val runtime = DictationRuntime(Variant.DEFAULT, queue, { rec }, { segmenter }, { released++ })
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { rec }, { segmenter }, { released++ })
         runtime.warmUp(); jobs.removeFirst().run()
         val capture = object : TakeCapture {
             override fun start(accept: (FloatArray) -> Unit) {}

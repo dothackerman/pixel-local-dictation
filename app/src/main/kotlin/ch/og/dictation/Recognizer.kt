@@ -1,7 +1,7 @@
 package ch.og.dictation
 
 /** Speech to text for one piece of audio: 16 kHz mono samples in [-1, 1]. */
-interface Recognizer {
+fun interface Recognizer {
     fun transcribe(samples: FloatArray): String
 
     /**
@@ -23,11 +23,6 @@ interface Segmenter {
     fun flush(): List<Chunk>
     /** Forgets all state before a new take. */
     fun reset()
-}
-
-/** Stand-in for tests and for exercising the panel without a model. */
-class FakeRecognizer(private val text: (FloatArray) -> String = { "[%.1f s]".format(it.size / 16_000.0) }) : Recognizer {
-    override fun transcribe(samples: FloatArray): String = text(samples)
 }
 
 /** Swiss spelling (R7): the recognizer writes Standard German "ß", the app uses "ss". */

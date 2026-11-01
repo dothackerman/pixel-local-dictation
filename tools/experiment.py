@@ -25,8 +25,6 @@ IDENTITIES = set(evidence.IDENTITY) | DIFFERENCES | {"dictionary_sha256"}
 # (conversion-parity, gpu-wait, runtime-parity, webgpu-parity) are retired; their source is at
 # Git tag archive/encoder-campaign-2026-10.
 ENCODERS = {"stop-wait": ("onnx-cpu", "onnx-cpu")}
-# The APK's ORT core: legacy 1.28.2 (stock Sherpa).
-RUNTIME_CORES = ("33847ad43bffe204699fd4a27f7f3603452a8cdaf2f9a44983a0bc31ffcf2da1",)
 ROOT = Path(__file__).resolve().parents[1]
 
 
