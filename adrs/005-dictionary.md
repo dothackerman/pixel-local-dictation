@@ -1,6 +1,7 @@
 # ADR-005 — Dictionary mechanism and recording trigger
 
 2026-10-11 · Mechanism approved; dictionary UX undecided.
+2026-10-27 · Dictionary UX decided in [ADR-027](027-editable-dictionary.md). Status unverified (2026-11-01): whether the recording trigger below still binds after ADR-026 is not recorded.
 
 Test vocabulary through decoder hotwords, not lexical rewriting.
 The 43-name script dictionary tests mechanism, not unseen-name recognition.

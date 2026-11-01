@@ -14,7 +14,7 @@ tools/set-signing-password.sh
 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease
 ```
 
-[assets.lock](assets.lock) pins downloaded assets. The selected FP32 baseline requires additional local model and dictionary provisioning; building the APK alone does not reproduce the installed baseline. See [build details](DEVELOPMENT.md#build-and-host-checks) and [baseline configuration](DEVELOPMENT.md#current-design). A clean full FP32 export remains unverified.
+[assets.lock](assets.lock) pins downloaded assets. The selected FP32 baseline requires additional local model and dictionary provisioning; building the APK alone does not reproduce the installed baseline. See [build details](DEVELOPMENT.md#build-and-host-checks) and [baseline configuration](DEVELOPMENT.md#current-design).
 
 ## Use
 

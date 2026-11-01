@@ -2,6 +2,7 @@
 
 2026-10-21 · Accepted by the user. Revises the strict-fallback clause of
 [ADR-020](020-onnx-webgpu-investigation.md). No phone run authorized by this ADR.
+2026-11-01 · `tools/ort131-sherpa` and the encoder probe are retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)); the "Not pursued" route below would start from Git history.
 
 ## Context
 

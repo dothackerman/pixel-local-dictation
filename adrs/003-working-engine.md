@@ -1,6 +1,7 @@
 # ADR-003 — Selective INT8 working engine
 
 2026-10-10 · Approved “for now”; retained default.
+2026-10-27 · Default replaced by Candidate A ([ADR-026](026-dictionary-first.md)); remains the fallback and historical control ([ADR-027](027-editable-dictionary.md)).
 
 Use Parakeet v3/sherpa-onnx 1.13.8: selective MatMul INT8 encoder, FP32 decoder/joiner, four CPU threads.
 Published INT8 lost up to six WER points; selective INT8 matched FP32 greedy laptop WER.
