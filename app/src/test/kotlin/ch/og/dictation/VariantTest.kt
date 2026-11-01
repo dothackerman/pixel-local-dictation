@@ -6,8 +6,8 @@ import org.junit.Test
 
 class VariantTest {
     @Test fun emptyObjectIsTheShippedPipeline() {
-        assertEquals(Variant.DEFAULT, Variant.parse("{}"))
-        assertEquals(Variant.DEFAULT, Variant.parse("""{"schema": 1, "name": "baseline", "family": "parakeet", "threads": 4}"""))
+        assertEquals(Variant.HISTORICAL_INT8, Variant.parse("{}"))
+        assertEquals(Variant.HISTORICAL_INT8, Variant.parse("""{"schema": 1, "name": "baseline", "family": "parakeet", "threads": 4}"""))
     }
 
     @Test fun valuesOverrideDefaultsSectionBySection() {
@@ -42,7 +42,7 @@ class VariantTest {
         val v = Variant.parse("""{"hotwords": {"file": "dictionary.txt", "score": 2.0}, "decoding": {"method": "modified_beam_search"}, "post": {"skip_silent_chunks": true}}""")
         assertEquals(true, v.isDictionary)
         assertEquals(true, v.post.skipSilentChunks)
-        assertEquals(Variant.DEFAULT, Variant.parse("""{"schema": 1}"""))
+        assertEquals(Variant.HISTORICAL_INT8, Variant.parse("""{"schema": 1}"""))
     }
 
     @Test fun oldQwenVariantsGetBoundedAudioAndGenerationHeadroom() {
@@ -69,7 +69,7 @@ class VariantTest {
             "qwen3":{"max_total_len":2048,"max_new_tokens":512}}""")
         assertEquals(2048, v.qwen3.maxTotalLen)
         assertEquals(512, v.qwen3.maxNewTokens)
-        for (schema in listOf(1, 2, 3)) assertEquals(Variant.DEFAULT, Variant.parse("""{"schema":$schema}"""))
+        for (schema in listOf(1, 2, 3)) assertEquals(Variant.HISTORICAL_INT8, Variant.parse("""{"schema":$schema}"""))
     }
     @org.junit.Test fun allocationSettingsAreExplicitAndStrict() {
         val v = Variant.parse("""{"schema":4,"runtime":{"model_arena":false,"lid_pattern":false}}""")
@@ -81,7 +81,7 @@ class VariantTest {
         }
     }
     @org.junit.Test fun encoderProviderIsCpuByDefaultAndWebgpuParakeetOnly() {
-        assertEquals("cpu", Variant.DEFAULT.runtime.encoderProvider)
+        assertEquals("cpu", Variant.HISTORICAL_INT8.runtime.encoderProvider)
         assertEquals("webgpu", Variant.parse("""{"runtime":{"encoder_provider":"webgpu"}}""").runtime.encoderProvider)
         for (bad in listOf("""{"runtime":{"encoder_provider":"gpu"}}""", """{"runtime":{"encoder_provider":true}}""",
                 """{"family":"whisper","cutting":{"max_chunk_s":28},"runtime":{"encoder_provider":"webgpu"}}""")) {
@@ -89,7 +89,7 @@ class VariantTest {
         }
     }
     @org.junit.Test fun placementLogIsOffByDefaultAndOnlyForAWebgpuEncoder() {
-        assertEquals(false, Variant.DEFAULT.runtime.placementLog)
+        assertEquals(false, Variant.HISTORICAL_INT8.runtime.placementLog)
         assertEquals(true, Variant.parse("""{"runtime":{"encoder_provider":"webgpu","placement_log":true}}""").runtime.placementLog)
         for (bad in listOf("""{"runtime":{"placement_log":true}}""", """{"runtime":{"encoder_provider":"webgpu","placement_log":1}}""")) {
             assertThrows(IllegalArgumentException::class.java) { Variant.parse(bad) }

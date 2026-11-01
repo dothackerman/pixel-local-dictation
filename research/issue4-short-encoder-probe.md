@@ -1,5 +1,9 @@
 # Issue #4 short encoder probe: protocol `short-encoder-v1`
 
+**Historical (2026-11-01):** `tools/encoder_probe.py`, `tools/ort131-sherpa` and the probe
+sources are retired ([ADR-017](../adrs/017-shared-take-experiments.md#retirements-and-preservation)).
+The commands below no longer run on `main`; keep this note for its frozen identities and protocol.
+
 Preparation and comparison only; not permission to run. Outcome and receipts:
 [ADR-022](../adrs/022-webgpu-encoder-placement-stop.md); recovery incident:
 [ADR-021](../adrs/021-encoder-probe-recovery-blocker.md). Staging, execution and

@@ -75,7 +75,7 @@ class DictationImeService : InputMethodService() {
         super.onCreate()
         val superReturnedNs = System.nanoTime()
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
-        if (resources.getBoolean(R.bool.startup_timing)) {
+        if (resources.getBoolean(R.bool.benchmark_receipts)) {
             startup = StartupTrace(applicationContext).also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
                 it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
@@ -132,10 +132,8 @@ class DictationImeService : InputMethodService() {
         observeGeometry()
         Log.i(tag, "input start: restarting=$restarting take=$takeActive " +
             "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
-        // Observed 2026-10-10: a browser reports a move between two fields of one page as a
-        // restart with identical field attributes, so a restart cannot be trusted to be the
-        // same field. Any input start during a take ends that take's session.
-        session.start(restarting = false)
+        // Any input start during a take ends that take's session (InputSession.start).
+        session.start()
         if (takeActive) discardAndReturn("input restarted")
     }
 
@@ -266,13 +264,7 @@ class DictationImeService : InputMethodService() {
                 override fun finished(result: TakeResult, pcm: ByteArray) {
                     identity()?.let { startup?.liveResult(liveTakeId, it, result) }
                     if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
-                        val stopped = result.eventsNs["stopRequested"]
-                        val final = result.eventsNs["finalReady"]
-                        val wait = if (stopped != null && final != null) (final - stopped) / 1_000_000 else 0
-                        val started = result.eventsNs["captureStart"]
-                        val recordingMs = if (started != null && stopped != null) (stopped - started) / 1_000_000 else 0
-                        saveBenchmarkTake(pcm, result.text, pcm.size / 2.0 / Recorder.SAMPLE_RATE,
-                            recordingMs, wait, result)
+                        saveBenchmarkTake(pcm, result)
                     }
                     recordingToken = null
                     startupTake = null
@@ -359,21 +351,26 @@ class DictationImeService : InputMethodService() {
         return ic.commitText(lead + text, 1)
     }
 
-    private fun saveBenchmarkTake(pcm: ByteArray, text: String?, audioSeconds: Double, recordingMs: Long, stopToFinalMs: Long, result: TakeResult) {
+    private fun saveBenchmarkTake(pcm: ByteArray, result: TakeResult) {
+        fun ms(from: String, to: String): Long {
+            val start = result.eventsNs[from]
+            val end = result.eventsNs[to]
+            return if (start != null && end != null) (end - start) / 1_000_000 else 0
+        }
         try {
             val json = JSONObject()
                 .put("app", packageManager.getPackageInfo(packageName, 0).versionName)
                 .put("recognizer", "parakeet-v3-matmul8 sherpa-onnx-1.13.8")
-                .put("text", text ?: JSONObject.NULL)
-                .put("audioSeconds", audioSeconds)
-                .put("recordingMs", recordingMs)
-                .put("stopToFinalMs", stopToFinalMs)
+                .put("text", result.text ?: JSONObject.NULL)
+                .put("audioSeconds", pcm.size / 2.0 / SAMPLE_RATE)
+                .put("recordingMs", ms("captureStart", "stopRequested"))
+                .put("stopToFinalMs", ms("stopRequested", "finalReady"))
                 .put("timingProtocol", "dictation-session-v1")
                 .put("eventsNs", JSONObject(result.eventsNs))
                 .put("outcome", result.outcome.name)
                 .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
                 .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
-            val name = BenchmarkStore.of(this).save(pcm, Recorder.SAMPLE_RATE, json.toString(2))
+            val name = BenchmarkStore.of(this).save(pcm, SAMPLE_RATE, json.toString(2))
             Log.i(tag, "benchmark take saved: $name")
         } catch (e: Exception) {
             Log.e(tag, "benchmark save failed", e)

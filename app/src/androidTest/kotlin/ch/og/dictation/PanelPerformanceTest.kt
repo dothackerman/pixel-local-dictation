@@ -15,7 +15,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
@@ -34,8 +33,6 @@ class PanelPerformanceTest {
     private val main = Handler(Looper.getMainLooper())
     private val delivery = Executor { main.post(it) }
 
-    private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
-        .joinToString("") { "%02x".format(it) }
 
     @Test fun matchedReplayWithInstalledPanel() {
         val arguments = InstrumentationRegistry.getArguments()
@@ -54,7 +51,6 @@ class PanelPerformanceTest {
             reportFile = outputFile
             report.put("phase", "setup")
             outputFile.writeText(report.toString(2))
-            require(!File(lab, "live.json").exists()) { "normal baseline only" }
             val cases = JSONObject(File(lab, "baseline-parity.json").readText())
             val width = context.resources.displayMetrics.widthPixels
             val inflateTimes = JSONArray()
@@ -74,7 +70,7 @@ class PanelPerformanceTest {
             val runtime = Engine.runtime(context)
             runtime.warmUp().get(10, TimeUnit.MINUTES)
             val identity = requireNotNull(Engine.liveReceipt())
-            assertEquals("candidate-a-provisional", identity.getString("baseline"))
+            assertEquals("candidate-a-stream-dictionary", identity.getString("baseline"))
             assertTrue(identity.getBoolean("verified"))
             report.put("identity", identity)
             var warmed = false
@@ -87,7 +83,7 @@ class PanelPerformanceTest {
                 val file = File(lab, item.getString("path")).canonicalFile
                 require(file.toPath().startsWith(lab.canonicalFile.toPath()))
                 val bytes = file.readBytes()
-                require(hash(bytes) == item.getString("sha256"))
+                require(ArtifactFiles.hash(bytes) == item.getString("sha256"))
                 val pcm = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).apply { position(44) }
                 val samples = FloatArray(pcm.remaining() / 2) { pcm.short / 32768f }
                 if (!warmed) {
@@ -214,7 +210,7 @@ class PanelPerformanceTest {
             return JSONObject().put("thermalBefore", thermalBefore).put("thermalAfter", power.currentThermalStatus)
                 .put("audioSeconds", samples.size.toDouble() / SAMPLE_RATE)
                 .put("outcome", result.outcome.name).put("commitAccepted", result.commitAccepted ?: false)
-                .put("output_sha256", result.text?.let { hash(it.toByteArray()) } ?: JSONObject.NULL)
+                .put("output_sha256", result.text?.let { ArtifactFiles.hash(it.toByteArray()) } ?: JSONObject.NULL)
                 .put("stopCommitMs", result.eventsNs["commitAccepted"]?.let { end ->
                     result.eventsNs["stopRequested"]?.let { start -> (end - start) / 1e6 }
                 } ?: JSONObject.NULL)

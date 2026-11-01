@@ -2,6 +2,7 @@
 
 2026-10-20 · Prioritized proposals; no inference or deployment authorized.
 2026-10-25 · "Next decisions" 1–3 superseded by [ADR-026](026-dictionary-first.md). Body unchanged.
+2026-10-27 · The opening rule (keep the working engine until a path wins against FUTO) no longer holds: ADR-026 dropped the FUTO comparison and the owner selected Candidate A. "Closed or deferred" items remain parked hypotheses.
 
 Keep the working engine until a complete automatic phone path wins both languages against FUTO.
 The strongest measured lead is FP32 dictionary decoding’s development quality gain (ADR-007), at excessive cost.

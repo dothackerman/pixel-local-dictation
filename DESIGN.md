@@ -75,20 +75,9 @@ components:
 
 Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.
 
-This records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.
+Scope: the Settings/dictionary surface only. The recording panel (#30) is not covered here.
 
-Verification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.
-
-Final contrast correction (`c23d2f1`): search hint explicitly uses `colorOnSurfaceVariant`; measured hint contrast is 4.94:1 in light and 6.56:1 in dark. Four list/empty contrast recaptures under `corpus/lab/dictionary-settings-contrast-review/files/lab/dictionary-settings/` (`phone-list.png`, `phone-empty.png`, `phone-large-light-list.png`, `phone-large-light-empty.png`) supersede the corresponding earlier captures for contrast only. Add/duplicate evidence remains in the final-review directory. Both dark and app-local light/1.3-scale UI tests passed again on the final APK, including keyboard and touch-target checks.
-
-**Key Characteristics:**
-- Native Android Material3 controls.
-- Dynamic color with light/dark green fallbacks.
-- One-field editing and immediate per-entry saving.
-
-Provenance: `PRODUCT.md`; `app/src/main/res/values/settings_theme.xml`; both `values/settings_colors.xml` and `values-night/settings_colors.xml`; `layout/settings.xml`, `layout/dictionary.xml`, `layout/dictionary_editor.xml`, `layout/dictionary_row.xml`; `DictionaryActivity.kt`, `SettingsActivity.kt`; `AndroidManifest.xml` and `xml/method.xml`. Resource paths are under `app/src/main/res/`; activities under `app/src/main/kotlin/ch/og/dictation/`. Type values were also checked against the merged benchmark resources for Material 1.14.0. Native on-phone evidence supplied by the implementation run: eight app-owned-window captures under `corpus/lab/dictionary-settings-final-review/files/lab/dictionary-settings/`: `phone-list.png`, `phone-add.png`, `phone-duplicate.png`, `phone-empty.png`, and corresponding `phone-large-light-{list,add,duplicate,empty}.png`. Captures combine native activity and dialog windows; keyboard and OS surfaces are excluded by the phone boundary. Captures stay in corpus; no personal term contents are reproduced here.
-
-Frontmatter dimensions deliberately retain Android dp/sp. They are native tokens, not CSS pixels. Native XML and resolved runtime theme remain authoritative; HTML sidecar previews only illustrate structure and the static light fallback.
+Source of truth: native XML and the resolved runtime theme (`app/src/main/res/values{,-night}/settings_*.xml`, `layout/{settings,dictionary,dictionary_editor,dictionary_row}.xml`, `DictionaryActivity.kt`, `SettingsActivity.kt`). Frontmatter keeps Android dp/sp, not CSS pixels. Verification: `DictionarySettingsTest` (dark, and app-local light at fontScale 1.3); search hint contrast 4.94:1 light / 6.56:1 dark (`c23d2f1`). Private captures: `corpus/lab/dictionary-settings-final-review/` and, for contrast, `corpus/lab/dictionary-settings-contrast-review/`. A successful UI Add is code-reviewed, not automated.
 
 ## Colors
 
@@ -149,9 +138,7 @@ Add saves one entry, clears the field and retains editor focus for repeated addi
 
 Counts/language labels and editor feedback use the subdued text role. Status and inline feedback use polite accessibility live regions. Empty, no-match, loading and failed-load states occupy the inline status area; failed load can be tapped to retry. Successful add stays inline. Edit/restore feedback uses anchored native Snackbar. Delete has no confirmation dialog: successful deletion shows an Undo Snackbar for 8000ms, anchored above the FAB.
 
-### Dictionary semantics
-
-One dictionary serves German and English. Changes apply to subsequent recordings. An empty dictionary means no vocabulary assistance with the same ASR model/configuration; UI must not suggest a different recognizer. Do not imply validated gains for arbitrary entries.
+Dictionary semantics the UI must respect: [PRODUCT.md](PRODUCT.md).
 
 ## Do's and Don'ts
 
@@ -168,4 +155,4 @@ One dictionary serves German and English. Changes apply to subsequent recordings
 - **Don't** add a global Save step to the per-entry editor.
 - **Don't** promise measured accuracy gains for arbitrary new terms.
 
-Not canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable custom component system. Native dark and app-local light/1.3-scale phone verification is recorded above. Tablet/landscape, arbitrary font extremes and a live owner smoke test remain unverified. No unsupported numeric Material defaults or web interaction rules are promoted into native guidance.
+Not canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable component system. Tablet/landscape and font extremes beyond 1.3 are unverified. The owner smoke test was accepted later ([ADR-027](adrs/027-editable-dictionary.md)).

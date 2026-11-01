@@ -1,114 +1,40 @@
-# Development and evaluation reference
+# Development reference
 
-Local English and German dictation on the GrapheneOS Pixel 10 Pro XL.
-Open it with FUTO Keyboard's existing microphone key. The goal is fewer wrong
-words than the shipped default, at a Stop wait the user accepts; speed against
-FUTO was won on 2026-10-10 ([ADR-026](adrs/026-dictionary-first.md)). Source and issue tracking are public on GitHub. Personal recordings, transcripts, dictionaries and signing credentials remain private and outside Git.
-
-This reference defines the requirements, current design, operation and acceptance
-gaps. [AGENTS.md](AGENTS.md) defines agent conduct, phone access and private-data
-rules. The [ADRs](adrs/) record decisions and past experiment conclusions.
-Planned work lives only in GitHub Issues, as specs and tickets; a plan, gate,
-schedule or checklist in a tracked file is a defect. The delivery spec is
-[#11](https://github.com/dothackerman/pixel-local-dictation/issues/11).
-The `ready-for-agent` label marks a prepared spec; it does not authorize a phone run.
+For anyone changing, building, measuring or operating the app. [README](README.md)
+covers use; [AGENTS.md](AGENTS.md) covers agent conduct and phone access;
+[ADRs](adrs/) record decisions and their evidence; [GLOSSARY](GLOSSARY.md) fixes terms.
+Planned work lives only in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues);
+a plan, gate, schedule or checklist in a tracked file is a defect. The `ready-for-agent`
+label marks a prepared spec; it does not authorize a phone run.
 
 ## Current status
 
-The app records, recognizes speech locally and inserts text through FUTO's
-microphone workflow. Tags `m1` and `m2` record the prototype gates. The default
-adopted recognition configuration is Candidate A: Parakeet v3 FP32 on the CPU, beam 8,
-dictionary score 1.5. On October 27 the owner selected and installed A as the
-provisional baseline for its error/Stop-wait trade-off. The historical INT8 pipeline
-([ADR-003](adrs/003-working-engine.md)) remains the legacy fallback for missing/blank
-provisioning when no user dictionary has been saved. A deliberately empty saved dictionary
-keeps the FP32 model and decoding configuration, without vocabulary assistance ([ADR-027](adrs/027-editable-dictionary.md)).
-Normal-app promotion [#28](https://github.com/dothackerman/pixel-local-dictation/issues/28) is complete;
-#31 adds a Settings dictionary editor on `codex/dictionary-settings`; the owner accepted
-the installed smoke build. Open the launcher entry or Android's keyboard settings, then Dictionary;
-both reach the same Settings alongside benchmark mode. Add/Done saves each entry;
-delete offers Undo. Existing takes retain their dictionary; later takes use the saved revision.
-The WebGPU track stopped at
-one case ([ADR-025](adrs/025-issue4-one-case-finding.md)). Direction since
-2026-10-25: [ADR-026](adrs/026-dictionary-first.md). Delivery of #11/#28 is in
-[PR #29](https://github.com/dothackerman/pixel-local-dictation/pull/29), ready for final
-review; issues #23–27 remain separate follow-ups.
+As of 2026-11-01 (from merged PRs and closed issues):
 
-Before the #31 smoke build, installation restored the retained `0efa5b2` APK pair after rollback
-`1b2a04d` (identical tracked tree), preserving exact normal A configuration.
-[Current APK identities and installation receipt](adrs/026-dictionary-first.md#current-delivery-and-accepted-startup-limits--2026-10-27)
-identify that pre-editor build; installation hashes mentioned below are historical stages.
-The owner accepts the observed roughly **1.3 s cold / 0.25 s warm** handoff for now.
-#14's original ten-take/key-timing protocol remains partial; #17 is deferred and
-nonblocking. No immediate-panel or startup-fix claim follows. The benchmark first-draw
-warm-up candidate `70df5d7` showed no visual gain and was reverted by `1b2a04d`;
-eager warm-up is restored. Signal 8.32.3's observed cached-height jump is separate,
-with no adopted workaround or panel redesign. Benchmark geometry/editor/startup
-diagnostics remain available; personal evidence stays in gitignored `corpus/`.
+- Installed baseline: **Candidate A** (Parakeet v3 FP32, CPU, beam 8, dictionary score 1.5).
+  The owner selected it on 2026-10-27 for its error/Stop-wait trade-off although the frozen
+  #15 comparison rejected it on the 2.5 s median gate; the rejection stays on record
+  ([ADR-026](adrs/026-dictionary-first.md)).
+- Fallback: the historical INT8 pipeline ([ADR-003](adrs/003-working-engine.md)) when
+  provisioning is missing or blank and no dictionary was saved. A deliberately empty saved
+  dictionary keeps FP32 without vocabulary help ([ADR-027](adrs/027-editable-dictionary.md)).
+- Settings dictionary editor (#31, PR #33) merged; the owner accepted its smoke test (ADR-027).
+- Recording-panel ring (#30, PR #32) merged; the owner approved the panel on video. Status
+  unverified: [research/issue30](research/issue30-panel-performance.md) left the live Cancel
+  path as the remaining manual acceptance item, and no later record closes it.
+- Startup: the owner accepts roughly 1.3 s cold / 0.25 s warm handoff for now; #14 partial,
+  #17 deferred (ADR-026).
+- Status unverified: the installed APK identity after the #31 smoke build is not recorded in
+  a tracked file. ADR-026's `0efa5b2` pair and issue30's final UI APK both predate it.
 
-Local implementation and screening for #11 completed on 2026-10-26 on
-`codex/issue-11-dictionary`. The versioned
-scorer reproduces the historical totals, and the Python greedy decoder matches
-the stock wheel on all 210 public clips. Greedy dictionary boosting
-failed the reviewed screen (#16) and its rerun with every emitted token path and strict
-gates (#22): no alpha passes in either language, so candidate B is stopped and the native
-greedy dictionary patch is not implemented ([ADR-026](adrs/026-dictionary-first.md#greedy-boosting-rerun-result--2026-10-27)).
-B-only follow-ups #18–20 are closed as not planned; A's promotion completed in #28.
-FP32 beam-8 with dictionary score 1.5 reduced primary-feed German/English errors
-from 36/22 to 31/15, with gains on all three feeds and zero dictionary-word false
-accepts on the public guards. Its held-script check added 1/0/2 German errors at
-feeds 640/512/800 against the matching no-dictionary control, so it is not a clean
-screening pass. The 120-run frozen phone comparison subsequently rejected
-Candidate A: median Stop wait 3.154 s exceeds the ticket's 2.5 s limit, despite
-the same accuracy gain. All 30 default/default pairs matched text; observed
-timing variability was 206 ms. The owner subsequently chose A despite that original
-timing-gate result; the frozen measurements remain unchanged. A is selected, with
-normal-app implementation installed and the corrected normal-path replay check passed:
-one retained take per language matched A exactly, with one simulated insertion each.
-The owner confirmed two Stop takes inserted correctly, Cancel inserted nothing, and all
-three returned to the normal keyboard. Measured live Stop waits were 6.083 s and 8.281 s;
-these fresh takes used the defective normal-app integration described below. They do not
-represent the intended A runtime with reuse. The historical 3.154 s replay median is
-not an estimate of typical live Stop wait.
-See the
-decision and evidence in [ADR-026](adrs/026-dictionary-first.md#owner-selects-candidate-a-as-the-provisional-baseline--2026-10-27).
-A runtime retention defect introduced by `f81a8eb` recreated Candidate A's runtime on
-each panel request, repeating verification and model loading. Process-wide readiness
-could still report true. Fix `a9a4b3e` retains the runtime across warm-up and takes;
-the corrected APK was installed and all three normal-path phone checks passed, including
-runtime reuse and retained DE/EN output parity. Two corrected-build live Stop waits were
-2.253 s and 1.758 s, with verified A identity and accepted insertion/keyboard return.
-These different recordings support the runtime reload diagnosis; they do not establish a
-controlled speedup or typical live wait. The earlier live measurements
-remain unchanged. See [the correction](adrs/026-dictionary-first.md#candidate-a-runtime-retention-correction--2026-10-27).
-The retained-output review found no observed false acceptance of specific listed names/content
-terms for exact A. It also found negation and quantity/unit transcription regressions versus
-phone INT8; the matching FP32 host control already contains some errors, so dictionary-only
-causation is unsupported. This specific listed-term review does not certify perfect meaning
-preservation. These errors remain limits of the owner-selected provisional baseline, not a
-claim that the owner waived every safety requirement. Private review:
-`corpus/lab/issue11/promotion-a28/meaning-review.md`.
-Private evidence is indexed by `corpus/lab/issue11/HANDOFF.md`.
-
-Read the results and their limits before selecting the next question:
-
-| Completed work | Result |
-|---|---|
-| [Milestones 1–2](adrs/010-ime-lifecycle.md) | Integration and local recognition demonstrated. On October 10, six matched-live scripts gave FUTO Stop waits of 79.9–99.7 s and app waits of 0.01–1.04 s. The takes differed; some comparisons used laptop replays. |
-| [Experiment nights 1–3](adrs/004-closed-loop.md) | Findings and failures retained; no deployment winner. |
-| [Allocation and measurement](adrs/012-allocation-outcome.md) | 66 measurements completed October 19; no production change. Quality and resource tradeoffs remain subject to the recorded comparison limits. |
-| [Moonshine Small](adrs/014-moonshine-screen.md) | Did not advance. |
-| [CPU profiling](adrs/015-cpu-profiling.md) | Eight phone runs on October 20 found substantial encoder work, but failed timing comparability checks. |
-| [GPU/TPU access](adrs/016-accelerator-access.md) | Physical access proven. GPU FP32 passed the numerical smoke checks; TPU failed one check. Speech acceleration remains unimplemented. |
-| [FP32 encoder on WebGPU](adrs/019-encoder-conversion.md), [ADR-020](adrs/020-onnx-webgpu-investigation.md)–[025](adrs/025-issue4-one-case-finding.md) | LiteRT conversion route unsupported; ONNX WebGPU chosen; strict fallback replaced by a placement check; CPU upgrade parity passed; WebGPU accurate but slower (one case). |
-
-Campaigns are closed ([ADR-013](adrs/013-future-investigations.md)); the
-current decision is [ADR-026](adrs/026-dictionary-first.md).
+Closed campaigns (allocation, Moonshine, profiling, accelerators, WebGPU encoder) and
+their outcomes: ADR-004 to ADR-025. [ADR-013](adrs/013-future-investigations.md) lists
+parked hypotheses.
 
 ## Requirements
 
-Confirmed October 9, 2026; R7 added October 10; R4 revised and R8 added
-October 25 ([ADR-026](adrs/026-dictionary-first.md)). These requirements apply to every engine.
+Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)).
+They apply to every engine.
 
 | ID | Requirement |
 |---|---|
@@ -121,347 +47,183 @@ October 25 ([ADR-026](adrs/026-dictionary-first.md)). These requirements apply t
 | R7 | Use Swiss spelling: replace ß with ss. The scorer treats both forms equally. |
 | R8 | The panel and recording start at once; model loading never delays them. |
 
-A take is one recording session, from panel open to Stop or cancellation.
-An engine that supports only one language is acceptable if routing is automatic.
-Mixed-language conversation and diarization are outside scope.
-Dialect support, Stop behavior preferences and battery/heat limits remain undecided.
-Stop-wait and accuracy targets: [ADR-026](adrs/026-dictionary-first.md).
+A single-language engine is acceptable if routing is automatic. Mixed-language
+conversation and diarization are out of scope. Dialect support, Stop behavior
+preferences and battery/heat limits are undecided. Stop-wait and scoring targets:
+ADR-026 decisions 2 and 4.
+
+Status unverified (2026-11-01): R4's "shipped default" was the INT8 pipeline when written;
+Candidate A is now installed. ADR-026 only requires future comparisons to name their
+actual control. Which control R4 now means is undecided.
 
 ## Current design
 
-FUTO microphone → voice input method editor (IME) → capture → consecutive chunks
-split at pauses → serial local decoding → panel preview → Stop inserts text once
-and returns to FUTO.
+FUTO microphone → voice IME → capture → chunks cut at pauses → serial local decoding →
+panel preview → Stop inserts text once and returns to FUTO. Each chunk is decoded
+alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 
-- [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt)
-  starts recording when the panel opens. Cancel, Keyboard, input restart, hide or lock
-  discard the take. Text stays in the panel until Stop.
-  [ADR-010](adrs/010-ime-lifecycle.md) explains this behavior and FUTO discovery.
-  [method.xml](app/src/main/res/xml/method.xml) declares a voice subtype without a
-  locale and overrides implicit subtype selection. Even an input restart with
-  identical attributes discards the take.
-- [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt) owns
-  each take, including capture drain, cancellation and editor acceptance.
-  The IME and phone replay construct it through the same runtime factory.
-  [ADR-017](adrs/017-shared-take-experiments.md) defines the seam and timing receipts.
-  Its internal [TakeTranscriber](app/src/main/kotlin/ch/og/dictation/TakeTranscriber.kt) and
-  [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) decode closed chunks
-  while recording continues. Stop queues the remaining audio. Each chunk is decoded
-  independently, without encoder state from earlier chunks.
-- [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt) selects
-  the packaged Candidate A configuration: Parakeet v3 FP32, CPU, four threads,
-  beam 8, dictionary score 1.5, including the tested silent-chunk filter.
-  Its [acceptance record](app/src/main/res/raw/candidate_a.json) binds the frozen
-  replay, model, dictionary, VAD, configuration and native runtime identities.
-  Normal release selection ignores `files/lab/live.json` and `variant.json`.
-  Provisioned model/dictionary files stay in private app storage under `files/lab`;
-  nonempty altered files fail verification. Missing/blank dictionary selects the
-  unchanged `Variant.HISTORICAL_INT8` pipeline from APK assets (ADR-003), including
-  its original greedy decoder and postprocessing. Restart after changing provisioned files.
-  User edits instead live as private content-addressed revisions under `files/dictionary`.
-  [DictionaryStore](app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt) atomically publishes
-  a revision after runtime preparation succeeds. [DictionaryModels](app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt)
-  retains the verified model and supplies a dictionary per recognition stream; edits, including
-  emptying the dictionary, do not reload it. Old takes hold leases until their queued work ends.
-  Per-stream and edited receipts have distinct configuration identities; the frozen acceptance
-  record and original files remain intact. Historical parsing defaults and plans are unchanged.
-- Lab alternatives use the same schema semantics in Python and Kotlin.
-  Cohere uses one recognizer, sets the language for each stream and loads models
-  from filesystem paths. Canary retains two recognizers:
-  [ADR-007](adrs/007-fp32-cohere.md).
-- Benchmark builds can explicitly select the frozen Candidate A for a supervised
-  live check through [BenchmarkLiveConfig](app/src/main/kotlin/ch/og/dictation/BenchmarkLiveConfig.kt).
-  APK, model, dictionary and VAD identities are verified on the decode executor.
-  Release builds ignore this override. Benchmark builds without it exercise the same
-  normal baseline path; `NormalBaselineTest` checks retained DE/EN output hashes.
-  `tools/promote_baseline.py --root ORIGINAL_CHECKOUT CORPUS_STAGE APK` stages
-  only frozen candidate artifacts and focused parity inputs inside the original
-  private corpus for the protected phone wrapper. It does not authorize installation
-  or waive meaning/safety checks. Benchmark startup/live receipts contain
-  timing and identity metadata, not audio or recognized text; they are independent
-  of saved-take recording. Panel draw is not physical display timing, and the app
-  cannot observe FUTO's microphone-key touch.
-  Benchmark `files/lab/startup.jsonl` retains `ime-startup-v1` and adds raw
-  `uptimeMs` samples beside callback-local `ns`. At `serviceCreate` (entry before
-  `super.onCreate`) it also records our public
-  [process start-request uptime](https://developer.android.com/reference/android/os/Process#getStartRequestedUptimeMillis())
-  and [process start uptime](https://developer.android.com/reference/android/os/Process#getStartUptimeMillis())
-  as `processStartRequestedUptimeMs` and `processStartUptimeMs`. The former starts
-  before zygote fork/specialization; the latter precedes application code. Neither
-  is the microphone touch. Nonpositive process counters are unavailable evidence.
-  `serviceCreateSuperReturned`, `warmUpReturned` and `serviceCreateEnd` separate
-  framework creation, synchronous warm-up setup and callback completion. Warm-up
-  return is not model readiness. `inputViewCreateBegin` → `inputViewInflated`
-  brackets layout inflation; `inputViewCreateEnd` includes listeners/button setup.
-  `panelRequested` and `panelDraw` retain their existing meanings.
-  All timestamps are captured before queueing writes. Use raw uptime differences
-  for process-request → process-start → service-entry → draw; this distinguishes
-  earlier startup from the service's own callback work. Uptime has millisecond
-  precision and [excludes deep sleep](https://developer.android.com/reference/android/os/SystemClock#uptimeMillis());
-  nanosecond samples are adjacent clock reads, not simultaneous or millisecond
-  accuracy upgrades. Do not directly subtract these different units/clock APIs.
-  Historical `ns` events (such as `modelReady` and forwarded audio events) omit
-  `uptimeMs` unless captured at their actual event; a later observer is not a pair.
-  Collection keeps the existing 2 MiB bound, without overwrite.
-  `StartupTraceTest` checks actual asynchronous receipt persistence; lifecycle
-  placement and visual blank still need a supervised real cold/warm handoff.
-  For true cold, our app process must be absent before the normal FUTO microphone
-  tap in Signal; launching our editor probe or instrumentation beforehand prewarms
-  it. Pull receipts afterward. No app callback identifies physical blank onset.
-  Benchmark `files/lab/geometry.jsonl` adds `ime-geometry-v1` receipts from the
-  real IME `onComputeInsets` (after unchanged `super`) and pre-draw callbacks.
-  No layout requests or animation callbacks are added. Collection covers the first
-  two seconds after service/view creation, input start and each panel request; ends at input
-  finish, deduplicates per callback, and caps each observation at 256 rows and the
-  file at 2 MiB without overwriting. Release collection is disabled.
-  `processId`/`serviceId`/`takeId` join startup receipts; `takeId` is null before
-  the first panel request. `ns` uses the same `CLOCK_MONOTONIC` clock.
-  Every geometry distance is physical pixels: `panelMeasuredHeightPx` is measured
-  size; `panelHeightPx`/`panelWidthPx` are laid-out size; `panelTopWindowPx` is
-  relative to the IME window; `panelTopScreenPx`/`decorTopScreenPx` use Android
-  screen coordinates; `decorHeightPx` is laid-out decor height.
-  `contentTopInsetsPx`/`visibleTopInsetsPx` are the framework's editor-facing top
-  insets relative to the IME window top; `touchableInsets` is Android's mode enum.
-  Pre-draw retains the most recent computed insets, or null before one is observed
-  in that panel request. Missing panel geometry is null. `bannerVisible` is only a
-  visibility boolean. No editor identity, text or audio is collected.
-  Compare size/window-top changes against exported inset changes, then align with
-  startup events and the supervised video. Stable size and exported insets through
-  visible reversal rule out a panel-height explanation; screen coordinates alone
-  do not measure compositor motion or another app's editor animation.
-  Geometry regression requires Android's real visible IME callback seam: record
-  a supervised keyboard handoff in warm and loading states; verify initial and
-  changed geometry receipts, unchanged returned insets and stable final dimensions.
-  Host unit tests cannot exercise this cross-window behavior. A synthetic view or
-  formula test would not establish the observed handoff's cause.
-- Benchmark-only [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt)
-  is a non-exported, test-owned plain editor for observing the host side of the handoff.
-  No production manifest/permission change. It requests the current keyboard normally;
-  it never selects an IME or reads another app. Default `plain` mode installs no animation
-  callback, inset listener, inset consumption, custom transform or animation.
-  After building the benchmark APK pair, immediately run the protected `phone check`
-  with both APK paths, then install using the usual approved phone workflow. Run:
+| Concern | Where | Decision |
+|---|---|---|
+| IME lifecycle: record on open; Cancel, Keyboard, any input restart, hide or lock discard | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md) |
+| Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](adrs/017-shared-take-experiments.md) |
+| Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
+| Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
+| Dictionary revisions and one leased loaded model | [DictionaryStore](app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt), [DictionaryModels](app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt) | ADR-027 |
+| Lab engines (Cohere one recognizer, Canary two) | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt), [pipeline.py](tools/pipeline.py) | [ADR-007](adrs/007-fp32-cohere.md) |
+| Allocation settings for recognizer and LID | [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt), [runtime_config.py](tools/runtime_config.py) | [ADR-012](adrs/012-allocation-outcome.md) |
 
-  ```sh
-  /home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run ch.og.dictation.EditorGeometryTest#collectManualKeyboardHandoffs
-  ```
+Not visible in the code:
 
-  Keep the phone awake/unlocked and this editor visible. Within the 90-second window,
-  manually tap the current FUTO keyboard microphone, wait for our panel, then Cancel;
-  do this twice total, leaving a few seconds between attempts. Do not type or press Stop.
-  The field is near the top so it remains usable with a keyboard covering the bottom.
-  The runner waits the full window and closes the Activity. It verifies collection,
-  visible IME observation, real laid-out editor bounds, ordered timestamps and receipt
-  budgets. **A passed test does not establish either handoff occurred or passed.**
-  Missing owner handoff confirmation or matching two IME panel requests leaves the
-  experiment incomplete; never infer a handoff count from IME visibility/geometry.
+- Provisioned model and dictionary live in private `files/lab`; nonempty altered files
+  fail verification. Restart after changing them. Selection ignores `variant.json`;
+  the benchmark-only `files/lab/live.json` override is retired. A future candidate is
+  live-checked by packaging its acceptance record.
+- An input restart with identical attributes still discards the take (ADR-010).
+- Old takes keep their dictionary lease until queued work ends; later takes use the
+  saved revision. Edited receipts carry their own configuration hash; the frozen
+  acceptance record stays intact (ADR-027).
+- `NormalBaselineTest` checks retained DE/EN output hashes, runtime fingerprint and reuse.
+- `tools/promote_baseline.py` stages only frozen candidate artifacts into the private
+  corpus for the phone wrapper; it authorizes no installation.
 
-  Pull only `files/lab/editor-geometry.jsonl` into a private `corpus/` visit directory,
-  alongside individual IME geometry/startup receipts. Choreographer polls the host's
-  `rootWindowInsets(Type.ime())` and decor/root/editor `getLocationOnScreen` bounds.
-  Only changed polled geometry is written, plus start/end rows: at most 4096 combined
-  geometry/callback rows per run, 90 seconds, 2 MiB total append-only file, asynchronous
-  writes. Full file, destruction or missing keyboard makes collection fail; existing
-  evidence is preserved.
-  Rows contain `editor-geometry-v1`, `CLOCK_MONOTONIC` `ns`, grouping `runStartNs`,
-  `mode` (`plain` or `animationCallback`), `phase`, and `values`:
-  IME visibility/left/top/right/bottom insets and physical-pixel
-  `x`, `y`, `width`, `height` for decor/root/editor. No text, audio or editor identity.
+## Benchmark diagnostics
 
-  For the single-variable callback experiment, use the same build, editor and manual
-  protocol, but run this separate instrumentation method:
+Benchmark builds append timing and geometry receipts under `files/lab/`; release
+collection is off. Receipts hold timing, identity and geometry only, never audio,
+text or editor identity. Each file is append-only, capped at 2 MiB, never overwritten.
 
-  ```sh
-  /home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run ch.og.dictation.EditorGeometryTest#collectManualKeyboardHandoffsWithAnimationCallback
-  ```
+| File | Protocol | Schema source |
+|---|---|---|
+| `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/StartupTrace.kt), DictationImeService |
+| `geometry.jsonl` | `ime-geometry-v1` | StartupTrace `geometry` |
+| `live-results.jsonl` | `ime-candidate-live-v1` | StartupTrace `liveResult` |
+| `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt) |
 
-  Only this method passes explicit boolean extra
-  `ch.og.dictation.editorAnimationCallback=true`. It installs a passive
-  `WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE)` on the same root;
-  `onStart` returns the original bounds and `onProgress` returns the original insets.
-  No view movement, layout change or consumption is added. IME-only callbacks append
-  `animationPrepare`, `animationStart`, `animationProgress`, `animationEnd` rows, sharing
-  the polling clock, file and combined row budget. Numeric values include a per-run
-  animation sequence number, type mask, duration in milliseconds, raw/interpolated
-  fraction, lower/upper inset bounds at start, and IME insets during progress.
-  Callback mode additionally requires some IME progress to validate collection;
-  it does not require or verify two handoffs. An end-of-run `observationRows` counts
-  the combined geometry/callback observations.
+Reading rules (frozen meanings):
 
-  Callback presence itself changes Android animation routing. Compare modes as two
-  controlled hosts; this callback experiment is not neutral observation of plain mode.
-  A prior-height plateau only with the callback would implicate a callback-dependent
-  framework/host path, not prove a particular Android field or a production fix.
-  Missing callback events makes that observation incomplete. Preserve both runs.
+- Join rows on `processId`/`serviceId`/`takeId`; `takeId` is null before the first panel request.
+- `ns` is `CLOCK_MONOTONIC` nanoseconds. `uptimeMs` is millisecond
+  [uptime](https://developer.android.com/reference/android/os/SystemClock#uptimeMillis())
+  that excludes deep sleep. Never subtract across the two clocks; adjacent `ns` and
+  `uptimeMs` reads are not simultaneous. Historical `ns` events (e.g. `modelReady`) carry
+  `uptimeMs` only when captured at the event.
+- `serviceCreate` adds `processStartRequestedUptimeMs` (before zygote fork) and
+  `processStartUptimeMs` (before app code) from
+  [Process](https://developer.android.com/reference/android/os/Process#getStartRequestedUptimeMillis()).
+  Neither is the microphone touch; nonpositive values are unavailable. Use uptime differences for
+  process request → process start → service entry → draw.
+- `serviceCreateSuperReturned`, `warmUpReturned`, `serviceCreateEnd` split framework
+  creation, warm-up setup and callback completion; warm-up return is not model readiness.
+  `inputViewCreateBegin` → `inputViewInflated` is layout inflation; `inputViewCreateEnd`
+  adds listener setup. `panelDraw` is a callback, not physical display; the app cannot see
+  FUTO's key touch.
+- Geometry distances are physical pixels; `*WindowPx` is relative to the IME window,
+  `*ScreenPx` to Android screen coordinates; insets are the framework's editor-facing values.
+  Geometry covers two seconds after service/view creation, input start and each panel
+  request, at most 256 rows per observation.
+- True cold needs our process absent before the FUTO tap; launching the editor probe or
+  instrumentation first prewarms it.
 
-  Correlate the host IME inset plateau/correction with our unchanged exported IME
-  geometry using monotonic timestamps. Reproduction here shows original-editor custom
-  animation is unnecessary. No reproduction does not prove Android is correct.
-  Target 36 enforces edge-to-edge: `adjustResize` does not guarantee root/editor
-  movement, and the top-anchored field may remain stationary. The inset series remains
-  the host observation; fixed editor coordinates are not proof that no inset transition
-  occurred. Polling observes framework geometry, not physical display/compositor motion.
-  This controlled host differs from the original editor and cannot alone establish
-  its behavior, a framework cause, or a production fix.
-- [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt) and
-  [runtime_config.py](tools/runtime_config.py) configure memory allocation for
-  the recognizer and language identification (LID) independently. Stock settings
-  remain the product default. Bounded counters for native processing roles and
-  offline profile analysis support diagnosis:
-  [ADR-012](adrs/012-allocation-outcome.md), [ADR-015](adrs/015-cpu-profiling.md).
+Editor handoff probe: after building and `phone check`, run
+`phone run ch.og.dictation.EditorGeometryTest#collectManualKeyboardHandoffs` (or
+`…WithAnimationCallback`). Keep the phone awake with the probe editor visible; within the
+90 s window tap FUTO's microphone, wait for our panel, Cancel; twice. Then pull
+`files/lab/editor-geometry.jsonl` and the IME receipts into a `corpus/` visit directory.
+A passed test only validates collection: the owner's handoff confirmation and two matching
+panel requests are required, never inferred from geometry. The callback variant changes
+Android's animation routing, so compare the two modes as separate hosts. Polling observes
+framework geometry, not compositor motion; the probe is not the original editor and cannot
+alone establish a framework cause or a fix. Host unit tests cannot exercise this
+cross-window behavior.
 
 ## Build and host checks
 
-1. Fetch pinned assets with `tools/fetch-assets.sh`. See [assets.lock](assets.lock).
-   The shipped selective encoder uses `tools/export-fp32.sh` and
-   `tools/quant_variant.py`. A clean full FP32 export remains unverified.
-2. Configure signing with `tools/set-signing-password.sh`.
-   [app/build.gradle.kts](app/build.gradle.kts) defines signing configuration
-   and failure behavior. Keep signing credentials out of Git.
-3. Build with `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
+1. `tools/fetch-assets.sh` fetches pinned assets ([assets.lock](assets.lock)). The
+   shipped selective encoder comes from `tools/export-fp32.sh` and `tools/quant_variant.py`;
+   a clean full FP32 export is unverified.
+2. `tools/set-signing-password.sh` configures signing ([app/build.gradle.kts](app/build.gradle.kts)).
+   The host gate's Gradle step also needs it, so a fresh worktree cannot commit until signing is set.
+3. `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
 
-`python3 tools/quality.py` runs Python regression tests, Kotlin benchmark unit
-tests, instrumentation compilation and Android lint offline. It runs no device tests.
-The local pre-commit gate runs it with `--staged`. Stage tracked edits and new
-source, test and build inputs first so the checkout matches the index; a path-limited
-`git commit PATH` with other changes pending therefore fails.
-The gate rejects index changes during the run.
+`python3 tools/quality.py` is the host gate (no device tests). The pre-commit hook runs it
+with `--staged`: tracked edits and new source, test and build inputs must be staged, so
+`git commit PATH` with other changes pending fails, and index changes during the run fail it.
 
 ## Daily use and rollback
 
-Recording requires an explicit take. The app releases the microphone afterwards.
-Production audio stays in memory and is then discarded. Benchmark storage is
-opt-in, visibly marked and deletable: [ADR-010](adrs/010-ime-lifecycle.md).
-Models are provisioned locally; downloads are separate from inference.
-
-The user enables the IME, grants microphone permission and enables FUTO’s
-“Disable built-in voice input” toggle. For rollback, disable that toggle before
-removing the app. The first take loads the model. Retention across a USB-powered
-gap longer than 11 minutes is unverified. Release and benchmark builds share
-signing; the benchmark build is debuggable. Lock files and build files define versions and hashes.
+Enable the IME, grant microphone permission, enable FUTO’s “Disable built-in voice input”.
+Roll back by disabling that toggle before removing the app. Production audio stays in
+memory and is discarded; benchmark storage is opt-in, visibly marked and deletable
+(ADR-010). The first take loads the model. Release and benchmark builds share signing;
+the benchmark build is debuggable.
 
 ## Phone lab operations
 
-Reach the phone only through the shim `.claude/hooks/phone <verb> …` (absolute
-path in [AGENTS.md](AGENTS.md)), called alone on its command line; the result is
-also in `corpus/lab/last.json`, which every call (even `status`) overwrites: save
-it first when later work depends on it. `phone help` lists the verbs and exit codes;
-[ADR-024](adrs/024-phone-access-rewrite.md) is the contract (scope, gating, what
-`restore` cannot bring back).
+[AGENTS.md](AGENTS.md) gives the shim path and approval rules; `phone help` lists verbs;
+[ADR-024](adrs/024-phone-access-rewrite.md) is the contract.
 
-Typical run: `snapshot NAME` → `check APP.apk TEST.apk` right after building →
-`install` → `push DIR` → `run CLASS k=v` → `pull files/lab/result.json …` (single
-files; `files/lab` holds the 2.4 GB model) → `restore NAME`. Each mutating verb
-and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the installed
-APK and lab hashes; experiments bind receipts to that. Pulled files stay in
-gitignored `corpus/`.
-
-To change the wrapper, edit `tools/phone` and `tools/test_phone.py` on the branch;
-the user installs it with `bash tools/gate/apply.sh`. `python3 tools/test_phone.py`
-and `python3 tools/test_agent_guard.py` run without a phone.
-
-After applying a gate change, start a fresh agent session and run
-`python3 tools/gate/check_installation.py`, then `python3 tools/quality.py`,
-without escalation. The installer generates regular `AGENTS.md` and `CLAUDE.md`
-files from one source; protected symlinks can prevent Codex sandbox startup.
-The installation check verifies files only; an escalated pass is not a sandbox check.
-Codex's six checkout protections are rendered for that checkout alone, so auxiliary
-visualization folders do not inherit nonexistent repository paths. A copied config
-does not protect another worktree: the owner must apply the gate there before agent
-work starts. The installation check rejects a config copied from another checkout.
-Both harnesses permit writes to `~/.gradle` for the host quality gate.
+- Every call, even `status`, overwrites `corpus/lab/last.json`; save it if later work needs it.
+- Typical visit: `snapshot NAME` → `check APP.apk TEST.apk` → `install` → `push DIR` →
+  `run CLASS k=v` → `pull files/lab/<file>` → `restore NAME`.
+- `push DIR` makes `files/lab` equal DIR: it deletes device files missing from DIR,
+  including receipts. Pull receipts before pushing.
+- Mutating verbs and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the
+  installed APK and lab hashes; experiments bind their receipts to it.
+- Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
+  `bash tools/gate/apply.sh`. Then, in a fresh unescalated agent session, run
+  `python3 tools/gate/check_installation.py` and `python3 tools/quality.py`. The installer
+  generates regular `AGENTS.md`/`CLAUDE.md` from `tools/gate/AGENTS.md`; each checkout or
+  worktree needs its own installation before agent work (ADR-024).
 
 ## Evaluation
 
-For new work, use [the shared take and comparison interface](adrs/017-shared-take-experiments.md).
-`python3 tools/lab.py --help` lists preparation, frozen comparisons and private
-evidence commands. The tool never executes experiments. A preparation snapshot
-with present artifacts still needs correctness checks. Old lab execution commands
-are retired.
+Rules: [ADR-004](adrs/004-closed-loop.md), [ADR-005](adrs/005-dictionary.md),
+[ADR-006](adrs/006-adapter-evaluator.md), [ADR-011](adrs/011-measurement-contract.md),
+[ADR-017](adrs/017-shared-take-experiments.md) as amended by ADR-026.
 
-Keep identified variants and matching laptop controls, then collect matched
-phone measurements. Laptop screening requires no freeze; adoption-deciding phone
-comparisons do ([ADR-017](adrs/017-shared-take-experiments.md), amended by ADR-026).
-Report quality, resource use and evidence completeness
-separately. The method is defined in [ADR-004](adrs/004-closed-loop.md),
-[ADR-005](adrs/005-dictionary.md), [ADR-006](adrs/006-adapter-evaluator.md) and
-[ADR-011](adrs/011-measurement-contract.md).
+- Laptop screening needs no freeze; an adoption-deciding phone comparison needs a frozen
+  plan in `corpus/lab/<id>/`. Deployment is a separate decision.
+- Report quality, resource use and evidence completeness separately. Phone accuracy needs
+  phone controls; dictionary benefit needs a matching no-dictionary run.
+- Ten development takes cover eight scripts, four per language. The three feeds test
+  chunk-boundary sensitivity; they are not independent samples. Repeatedly inspected
+  public guard clips are development evidence. Laptop guard and silence results do not
+  measure phone hallucinations. WER does not replace meaning, correction-effort and formatting checks.
+- Changed evaluation rules need spec review before full inference; passing regressions
+  alone do not establish correctness.
 
-Ten development takes cover eight scripts, four per language. Three feeds test
-sensitivity to chunk boundaries; they are not independent speech samples.
-Public guard clips that have been inspected repeatedly are development evidence.
-Phone accuracy requires phone controls. Dictionary benefit requires a matching
-run without the dictionary. Laptop guard and silence results do not measure
-phone hallucinations. Word error rate (WER) does not replace checks of correction
-effort, meaning or formatting.
+Tools (`--help` gives each interface; none runs phone commands):
 
-Private comparison plans and evidence stay in `corpus/lab/`. Record source,
-runtime, APK, model and input identities; exact commands; controls; repeats and
-endpoints; decision thresholds; failure rules; and restoration steps. Freeze the
-comparison before an adoption-deciding phone run ([ADR-017](adrs/017-shared-take-experiments.md)
-amendment); laptop screening needs no freeze. Deployment is a separate decision.
+| Tool | Purpose |
+|---|---|
+| `tools/lab.py` | prepare, check, freeze, reserve, record, compare one frozen comparison |
+| `tools/dictionary_score.py` | versioned word scoring; historical scorers keep their rules |
 
-Dictionary experiments use `tools/dictionary_score.py` for versioned word scoring;
-historical scorers retain their original rules. `tools/tdt_decoder.py` reproduces
-the pinned greedy decoder through the wheel's own runtime, built with
-`tools/tdt-runtime/build.py`; its requirements file pins host dependencies.
-`tools/dictionary_screen.py` runs the fast scorer and held-script exclusion
-regressions before creating evidence or loading models, then records results in
-a new private run directory. Changed evaluation rules also need focused spec
-review before full inference; passing regressions alone cannot establish their correctness.
-`tools/dictionary_visit.py` prepares and validates
-paired replay and explicit benchmark-only live checks; it never executes phone
-commands. Each tool's `--help` describes its interface. Replay and local screens
-do not establish adoption or real keyboard usability.
+Completed one-off tools are retired from the tree: the greedy-boosting screen
+(`dictionary_screen.py`, `dictionary_boost.py`, `tdt_decoder.py`, `tdt-runtime/`;
+candidate B stopped, evidence names commit 94600aa) and the Candidate A paired visit
+(`dictionary_visit.py`, whose frozen plan binds its source revision). Reproduce their
+reports from those revisions.
 
 ## Known gaps
 
-Answered calls, longer battery-only model survival and a clean full FP32 export
-remain unverified. The owner accepted the Settings dictionary editor's smoke test; arbitrary
-new entries are not accuracy-validated. Unlisted-name recall is unmeasured. #11/#28 delivery is ready for final review in
-PR #29. Issues #23–27 remain separate; #31 tracks dictionary editing.
-The owner accepts A's disclosed accuracy/Stop-wait trade-off and current observed
-startup of roughly 1.3 s cold / 0.25 s warm. The original October 27 #14 collection
-contains nine complete app-side traces after ten reported takes; original external
-key timing and explicit live Stop boundaries are absent. #14 remains partial and
-#17 is deferred, nonblocking under that owner acceptance. Later process/video
-probes and the rejected first-draw warm-up experiment do not establish a startup
-fix. Signal 8.32.3's cached-height jump remains a separate deferred UI issue.
+- Answered calls, model survival across long battery-only or >11 min USB-powered gaps,
+  and a clean full FP32 export are unverified.
+- Arbitrary new dictionary entries are not accuracy-validated; unlisted-name recall is unmeasured.
+- Candidate A shows negation and quantity/unit regressions versus phone INT8, and +1/0/+2
+  German held-script harm; typical live Stop wait is unmeasured (ADR-026).
+- #14's ten-take/key-timing protocol is partial; no startup fix is claimed. Signal 8.32.3's
+  cached-height jump is a separate deferred issue.
 
-The normal-path runtime reuse correction passed phone validation and fresh live
-insertion checks, with the evidence limits above. The earlier #15 visit restored
-its app, test APK and data byte-for-byte; its original gate rejection is preserved
-alongside the owner's subsequent A selection. A remains installed with the exact
-normal configuration; the current APK identities are recorded in ADR-026.
-Recovery snapshot `issue11-20261027-before-a28` preserves the pre-promotion installation.
+## Evidence
 
-## Evidence and history
+Dated decisions go in ADRs with status, context, decision, evidence, limits and a
+revisit condition. Link private evidence; never copy it. Personal recordings, transcripts
+and signing credentials stay out of Git; copying out of gitignored `corpus/` needs the
+owner's agreement.
 
-Keep dated decisions in ADRs, with approval status, context, decision, evidence,
-limits and a condition for review. Link private evidence instead of copying it.
-Keep personal recordings, transcripts and signing credentials out of Git.
-Recordings stay in gitignored `corpus/`; copying them needs the user's agreement.
-
-Private evidence is in `corpus/retained/`. Its `evidence.json` indexes selected
-reports, original identities and pruning limits for ADR-003 to ADR-016. Retain evidence that changes a
-decision, calibration/evaluation inputs and recovery state needed for operation.
-Closed campaign directory trees are not documentation.
-The #11 evidence is in `corpus/lab/issue11/`: final scorer and held-script reports,
-decoder parity, reviewed greedy-screen results, final APK/check receipts, and
-the validated 120-run phone comparison. `visit-20261026-resume/` records device,
-snapshot and installation identities; `visit-a-s15/` preserves the frozen plan
-and every measurement. `startup-20261027/` contains nine real startup traces,
-their timing table, the restoration receipt and independent recovery verification.
-
-Scoring uses `corpus/references/baseline-v1.json`, with provenance pinned to Git
-source. The file hash identifies the current reference. Historical identities
-and verdicts stay unchanged.
-
-Completed orchestration and runbooks remain in pinned Git history.
-[ADR-008](adrs/008-three-stage-loop.md) explains source recovery and offline
-analysis. Active tools retain scoring, matched evidence checks, measurement
-adapters and the daily app. New comparisons use the lab interface above.
-
-## License
-
-Project code is licensed under the [MIT License](LICENSE). Third-party components and model assets retain their respective licenses.
+- `corpus/retained/evidence.json` indexes selected reports for ADR-003 to ADR-016.
+- `corpus/lab/issue11/` holds #11 evidence; `HANDOFF.md` indexes it.
+- `corpus/references/baseline-v1.json` is the scoring reference; its hash identifies it.
+- Retired orchestration and runbooks are in Git history; [ADR-008](adrs/008-three-stage-loop.md)
+  explains source recovery.

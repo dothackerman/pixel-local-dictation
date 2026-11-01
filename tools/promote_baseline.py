@@ -12,10 +12,27 @@ import hashlib
 import shutil
 
 import measurement_identity as identity
-from dictionary_visit import read_receipt
 
 ROOT = Path(__file__).resolve().parents[1]
 RECORD = ROOT / 'app/src/main/res/raw/candidate_a.json'
+
+
+def read_receipt(receipt, plan, root):
+    """A retained visit receipt; refused when it or its original pulled files changed."""
+    value = json.loads(receipt.read_text())
+    if value['plan_sha256'] != plan['sha256']:
+        raise ValueError('receipt belongs to another frozen plan')
+    for prefix in ('measurement', 'phone_meta', 'wrapper'):
+        original = Path(value[prefix + '_path']).resolve()
+        if not original.is_relative_to(Path(root).resolve() / 'corpus'):
+            raise ValueError('visit files must remain in corpus')
+        if identity.sha(original) != value[prefix + '_sha256']:
+            raise ValueError('original receipt changed')
+    if (value['measurement'] != json.loads(Path(value['measurement_path']).read_text()) or
+            value['phone'] != json.loads(Path(value['phone_meta_path']).read_text()) or
+            value['wrapper'] != json.loads(Path(value['wrapper_path']).read_text())):
+        raise ValueError('copied receipt changed')
+    return value
 
 
 def accepted_configuration(plan, record):

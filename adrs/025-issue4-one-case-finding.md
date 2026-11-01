@@ -1,6 +1,7 @@
 # ADR-025 — Issue #4 one-case run: WebGPU keeps exact text but is ~5× slower at Stop
 
 2026-10-21 · #4 one-case finding, completed in the evening session; phone recovered and verified.
+2026-10-25 · #1, #5 and #8 closed; WebGPU parked by [ADR-026](026-dictionary-first.md). The re-plan in Limits is not scheduled.
 
 ## Scope
 

@@ -64,3 +64,10 @@ Decided since: the manifest-hash check of the old wrapper is dropped on purpose;
 Open:
 - Agents still cannot `git commit` inside the sandbox: Claude Code 2.1.304 mounts the whole `.git` read-only although its docs protect only `.git/hooks` and `.git/config` (verified via `/proc/self/mountinfo`, 21 Oct evening, with no `.git` entry in our `denyWrite`). User requirement 21 Oct: all git operations must work for Claude Code and Codex. Interim: `git *` in Claude `excludedCommands` (runs outside the sandbox), compensated by the guard refusing `git -c/-C/--exec-path/--git-dir/--work-tree/--config-env` and `GIT_*` environment; Codex `config.toml` no longer marks `.git` read-only. Verified for Claude Code on 21 Oct evening (bare `git commit`/`git reset` from an agent session succeed; `cd … && git …` stays sandboxed and fails, so git must be the whole command line). Codex still to verify; report the Claude sandbox defect upstream.
 - Lesson from the first session not encoded anywhere: state the recommended default together with a question, instead of idling on it (45 min lost).
+
+## Status (2026-11-01)
+
+- "`CLAUDE.md` symlinked" above is superseded: the installer writes regular `AGENTS.md`/`CLAUDE.md` copies (Harness, 26 October).
+- Operating guidance lives in `AGENTS.md`, [DEVELOPMENT.md](../DEVELOPMENT.md#phone-lab-operations) and `phone help`; README no longer has a phone section.
+- `tools/encoder_probe.py`, named above as an example host tool, is retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)).
+- Status unverified: the git interim (`git *` unsandboxed) is still the operating rule in `AGENTS.md`; Codex verification and the upstream report are not recorded.

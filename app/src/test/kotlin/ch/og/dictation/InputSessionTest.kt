@@ -12,30 +12,22 @@ class InputSessionTest {
         assertFalse(s.matches(null))
     }
 
-    @Test fun restartKeepsSession() {
+    @Test fun everyInputStartIsNewSession() {
         val s = InputSession()
-        s.start(restarting = false)
+        s.start()
         val t = s.token()
-        s.start(restarting = true)
-        assertTrue(s.matches(t))
-    }
-
-    @Test fun newInputIsNewSession() {
-        val s = InputSession()
-        s.start(restarting = false)
-        val t = s.token()
-        s.start(restarting = false)
+        s.start()
         assertFalse(s.matches(t))
     }
 
     @Test fun finishInvalidatesEvenIfSameFieldReturns() {
         val s = InputSession()
-        s.start(restarting = false)
+        s.start()
         val t = s.token()
         s.invalidate()
         assertFalse(s.matches(t))
         assertNull(s.token())
-        s.start(restarting = true)
+        s.start()
         assertFalse(s.matches(t))
         s.invalidate()
         s.resume()
@@ -45,7 +37,7 @@ class InputSessionTest {
 
     @Test fun resumeKeepsLiveSession() {
         val s = InputSession()
-        s.start(restarting = false)
+        s.start()
         val t = s.token()
         s.resume()
         assertTrue(s.matches(t))
