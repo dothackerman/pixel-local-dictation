@@ -6,7 +6,7 @@ Add `tools/codemap.py`, a stdlib-only dev tool that builds an explorable map of 
 
 Four parts:
 
-- **Code graph.** Kotlin (`app/src/**/*.kt`) and Python (`tools/`) extraction yields one graph of files, types, functions, imports, calls, supertypes and test references, written to gitignored `explainers/codemap/graph.json`.
+- **Code graph.** Kotlin (`app/src/**/*.kt`) and Python (`tools/*.py`, `tools/gate/*.py` and `tools/phone`, read as text only) extraction yields one graph of files, types, functions, imports, calls, supertypes and test references, written to gitignored `explainers/codemap/graph.json`.
 - **Policy.** [`tools/codemap_policy.json`](../tools/codemap_policy.json) declares components by path, their layers, and rules (no network, no test libraries in app code, layer order). `--check` lists violations and exits 1; it is informational and not part of the gate.
 - **Trace overlay.** Optional `--trace FILE` adds observed calls from an explicit JSON file, shown as a sequence. Nothing is read from `corpus/` automatically.
 - **Viewer.** [`explainers/codemap/index.html`](../explainers/codemap/index.html) drills down from system to components, flow, functions and source.

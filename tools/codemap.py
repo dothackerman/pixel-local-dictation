@@ -7,8 +7,10 @@ python3 tools/codemap.py [--root DIR] [--policy tools/codemap_policy.json]
 Scans app/src/**/*.kt, tools/*.py, tools/phone and tools/gate/*.py and writes graph.json
 (schema codemap/1). No LLM, no network, no timestamps: the same tree gives the same bytes.
 Kotlin is read by a small tokenizer plus declaration scanner, Python by `ast`.
-Calls resolve by simple name: same type, then same file, then same package (Python: same
-directory), then the whole corpus when unique; the rest count as metrics.unresolved_calls.
+Unqualified calls resolve by simple name: same type, then same file, then same package
+(Python: same directory), then the whole corpus when unique. Dotted calls need evidence of
+the receiver: a known type name, a declared type in scope, a Kotlin extension function or a
+Python local-module alias (see Resolver). The rest count as metrics.unresolved_calls.
 Unknown capitalised names (constructors), Python builtins and calls on imported external
 modules are not counted. metrics.tests_referencing counts test files whose text contains the
 function's simple name as a whole word: a reference count, not coverage. `tests` edges are
@@ -558,18 +560,18 @@ def extract_python(src, path, fid, external):
     def module_imports(body):
         for st in body:
             if isinstance(st, ast.Import):
-                imports.extend((a.name, (a.asname or a.name).split('.')[0], 0) for a in st.names)
+                imports.extend((a.name, a.asname or a.name.split('.')[0], 0, False) for a in st.names)
             elif isinstance(st, ast.ImportFrom):
                 mod = st.module or ''
                 imports.extend((f'{mod}.{a.name}' if mod else a.name, a.asname or a.name,
-                                st.level) for a in st.names)
+                                st.level, True) for a in st.names)
             elif isinstance(st, (ast.If, ast.Try, ast.With)):
                 for field in ('body', 'orelse', 'finalbody'):
                     module_imports(getattr(st, field, []))
                 for h in getattr(st, 'handlers', []):
                     module_imports(h.body)
     module_imports(tree.body)
-    ext_names = {bound for mod, bound, level in imports if not level and external(mod)}
+    ext_names = {bound for mod, bound, level, _ in imports if not level and external(mod)}
 
     def body_facts(fn, node):
         for child in ast.iter_child_nodes(node):
@@ -732,9 +734,14 @@ def scan_files(root, paths, comps):
             local = py_local.get(Path(path).parent.as_posix(), {})
             imps, ts, fs, node['_binds'] = extract_python(
                 text, path, fid, lambda m: m.split('.')[0] not in local)
-            listed = set()
-            for mod, _bound, level in imps:
-                target = local.get(mod.split('.')[0]) or (local.get(mod.split('.')[-1]) if level else None)
+            listed, node['_mods'] = set(), {}
+            for mod, bound, level, is_from in imps:
+                head, last = mod.split('.')[0], mod.split('.')[-1]
+                target = local.get(head) or (local.get(last) if level or is_from else None)
+                # Names bound to a local module: `import x`, `import x as y`, `from tools import x`.
+                module = local.get(last) if is_from or bound != head else local.get(head)
+                if module and (not is_from or head not in local or level):
+                    node['_mods'][bound] = module
                 if target is None:
                     listed.add(mod)
                 elif target != path:
@@ -767,7 +774,8 @@ class Resolver:
     """Call targets. Unqualified and `this.` calls: pick() precedence. `Recv.x()` with a known
     type and `recv.x()` whose type is declared in scope (function, enclosing types, file)
     resolve to that type's members (companions and corpus supertypes included). Any other
-    dotted call may only reach a corpus-unique top-level function."""
+    dotted call reaches only a corpus-unique Kotlin extension function, or in Python a
+    module-level function of the local module the receiver name is bound to."""
 
     def __init__(self, files, types, fns):
         self.files, self.fn_index, self.type_index = files, by_name(fns), by_name(types)
@@ -811,8 +819,11 @@ class Resolver:
         hit = self.member(t['id'], name) if t else None
         if hit:
             return hit
-        tops = [c for c in cands if c['_top']]
-        tops = [c for c in tops if c is pick([c], f, ())]
+        if f['lang'] == 'python':   # module.x(): only via a name bound to a local module
+            module = self.files[f['_file']].get('_mods', {}).get(recv)
+            hits = [c for c in cands if c['_top'] and module and c['_file'] == f'file:{module}']
+            return min(hits, key=lambda c: c['line']) if hits else None
+        tops = [c for c in cands if c['_top'] and c.get('receiver') and c is pick([c], f, ())]
         return tops[0] if len(tops) == 1 else None
 
 

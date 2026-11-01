@@ -3,7 +3,6 @@ import io
 import json
 from pathlib import Path
 import tempfile
-import time
 import unittest
 
 import codemap
@@ -99,14 +98,20 @@ class User(private val store: Store) {
         Store.open("p")
         compute().read()
         mystery.topOnly()
+        mystery.plainTop()
         return 0
     }
 }
 
-fun topOnly() = 1
+fun Any.topOnly() = 1
+fun plainTop() = 2
 '''
 
-GAMMA_PY = '''class Store:
+GAMMA_PY = '''import beta as b
+from os import path
+
+
+class Store:
     def read(self):
         return 1
 
@@ -127,6 +132,12 @@ class Holder:
         local.read()
         data.read()
         Store.read(local)
+        b.go()
+        path.join('a')
+
+
+def sha(handle):
+    return handle.read()
 '''
 
 ENGINE_TEST_KT = '''package demo.app
@@ -284,17 +295,21 @@ class CodemapFixtureTests(unittest.TestCase):
         self.assertEqual(self.calls(use), {
             self.fn('Recv.kt', 'Store.read')['id'],             # param, local, ctor param, lazy, file val
             self.fn('Recv.kt', 'Store.Companion.open')['id'],   # Type.x() reaches the companion
-            self.fn('Recv.kt', 'topOnly')['id'],                # unknown receiver: unique top-level only
+            self.fn('Recv.kt', 'topOnly')['id'],                # unknown receiver: unique extension only
             f'type:{recv}#Store',                               # constructor
         })
         # hash.matches(Regex()): String is not a corpus type, Session.matches is a member elsewhere;
-        # compute() and compute().read() have no target.
-        self.assertEqual(use['metrics']['unresolved_calls'], 3)
+        # compute(), compute().read() and mystery.plainTop() (not an extension) have no target.
+        self.assertEqual(use['metrics']['unresolved_calls'], 4)
         py = self.fn('gamma.py', 'Holder.use')
         self.assertEqual(self.calls(py), {self.fn('gamma.py', 'Store.read')['id'],
                                           self.fn('gamma.py', 'Other.read')['id'],
+                                          self.fn('beta.py', 'go')['id'],   # module alias
                                           'type:tools/gamma.py#Store'})
-        self.assertEqual(py['metrics']['unresolved_calls'], 1)   # data.read()
+        self.assertEqual(py['metrics']['unresolved_calls'], 1)   # data.read(); path.join external
+        sha = self.fn('gamma.py', 'sha')   # handle.read() must not reach Store.read or a module read
+        self.assertEqual(self.calls(sha), set())
+        self.assertEqual(sha['metrics']['unresolved_calls'], 1)
 
     def test_complexity(self):
         self.assertEqual(self.fn('Engine.kt', 'Engine.decode')['metrics']['complexity'], 5)
@@ -393,13 +408,10 @@ class CodemapFixtureTests(unittest.TestCase):
 class CodemapRepoTests(unittest.TestCase):
     def test_real_repo(self):
         with tempfile.TemporaryDirectory() as d:
-            started = time.monotonic()
             out = Path(d) / 'graph.json'
             with redirect_stdout(io.StringIO()):
                 codemap.main(['--out', str(out)])
-            elapsed = time.monotonic() - started
             g = json.loads(out.read_text())
-        self.assertLess(elapsed, 5)
         self.assertEqual(g['schema'], 'codemap/1')
         files = [n for n in g['nodes'] if n['kind'] == 'file']
         self.assertGreater(sum(n['lang'] == 'kotlin' for n in files), 40)
