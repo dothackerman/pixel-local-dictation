@@ -4,7 +4,7 @@ import java.io.File
 import java.util.zip.ZipFile
 import org.json.JSONObject
 
-/** Owner-selected A. The packaged record is immutable; files/lab/live.json is irrelevant. */
+/** Owner-selected A. The packaged record is immutable; pushed lab selections are irrelevant. */
 class ProvisionalBaseline private constructor(private val root: File, private val manifest: JSONObject,
     private val userDictionary: DictionarySnapshot? = null) {
     companion object {
@@ -20,7 +20,7 @@ class ProvisionalBaseline private constructor(private val root: File, private va
     private val files = ArtifactFiles(root)
     private fun file(relative: String) = files.resolve(relative)
     val modelDirectory = file(manifest.getString("modelDirectory"))
-    val dictionary = userDictionary?.file ?: file(variant.hotwords.file)
+    private val dictionary = userDictionary?.file ?: file(variant.hotwords.file)
     private val artifacts = manifest.getJSONObject("artifacts").let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
     @Volatile private var verified = false
     private var buildHash: String? = null
@@ -37,7 +37,7 @@ class ProvisionalBaseline private constructor(private val root: File, private va
     }
 
     /** Decode executor only. A nonempty altered dictionary/model/runtime fails closed. */
-    fun verify(apk: File? = null) {
+    fun verify(apk: File) {
         verified = false
         for ((relative, digest) in artifacts) require(file(relative).isFile && ArtifactFiles.hash(file(relative)) == digest) {
             "provisional baseline artifact changed: $relative"
@@ -45,7 +45,6 @@ class ProvisionalBaseline private constructor(private val root: File, private va
         userDictionary?.verify()
         val models = modelDirectory.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).invariantSeparatorsPath }.toSet()
         require(models == artifacts.keys.filter { it.startsWith(manifest.getString("modelDirectory") + "/") }.toSet()) { "unfrozen model files" }
-        requireNotNull(apk) { "APK identity required" }
         ZipFile(apk).use { zip ->
             val natives = zip.entries().asSequence().filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
                 .associate { it.name to ArtifactFiles.hash(zip.getInputStream(it)) }.toSortedMap()
@@ -69,8 +68,11 @@ class ProvisionalBaseline private constructor(private val root: File, private va
         verified = true
     }
 
-    /** No recognized text/audio. A fresh APK hash is deliberately separate from historical replay. */
-    fun receipt(perStream: Boolean = false) = JSONObject().also { result ->
+    /**
+     * No recognized text/audio. A fresh APK hash is deliberately separate from historical replay.
+     * The runtime always binds dictionaries per stream (ADR-027), so every receipt says so.
+     */
+    fun receipt() = JSONObject().also { result ->
         for (key in listOf("plan_sha256", "configuration_sha256", "model_sha256", "dictionary_sha256", "runtime_sha256", "historical_build_sha256", "decision"))
             result.put(key, manifest.getString(key))
         result.put("baseline", "candidate-a-provisional").put("build_sha256", buildHash ?: JSONObject.NULL)
@@ -84,12 +86,10 @@ class ProvisionalBaseline private constructor(private val root: File, private va
                     "accepted_configuration" to manifest.getString("configuration_sha256"), "user_dictionary" to it.sha256)))
                 .put("accuracy_validated", false)
         }
-        if (perStream) {
-            if (userDictionary == null) result.put("baseline", "candidate-a-stream-dictionary")
-            result.put("dictionary_binding", "per-stream-v1")
-                .put("tested_configuration_sha256", manifest.getString("configuration_sha256"))
-                .put("configuration_sha256", ArtifactFiles.inventoryHash(mapOf(
-                    "dictionary_configuration" to result.getString("configuration_sha256"), "dictionary_binding" to "per-stream-v1")))
-        }
+        if (userDictionary == null) result.put("baseline", "candidate-a-stream-dictionary")
+        result.put("dictionary_binding", "per-stream-v1")
+            .put("tested_configuration_sha256", manifest.getString("configuration_sha256"))
+            .put("configuration_sha256", ArtifactFiles.inventoryHash(mapOf(
+                "dictionary_configuration" to result.getString("configuration_sha256"), "dictionary_binding" to "per-stream-v1")))
     }
 }

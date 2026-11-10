@@ -4,6 +4,7 @@ Subsequent route proposal: [ADR-020](020-onnx-webgpu-investigation.md). The conv
 outcome and evidence recorded below remain unchanged.
 
 2026-10-20 · Issue #3; synthetic host work only. No phone execution.
+2026-11-01 · `tools/encoder_conversion.py` and its requirements file are retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)); the commands below are historical, recoverable from Git.
 
 Use `tools/encoder_conversion.py` with the exact environment in
 `tools/encoder-conversion-requirements.txt` (Python 3.12). The commands are:

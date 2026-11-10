@@ -20,7 +20,7 @@ FUTO's microphone key opens a take. Stop inserts the result once; Cancel inserts
 
 ## Capabilities and Constraints
 
-No network permission or account. Personal dictionary entries, recordings, transcripts and signing credentials stay out of Git. One bilingual dictionary supports words and multi-word terms without language selection. Existing takes retain their original dictionary; changes apply to subsequent takes. Historical experiment identities remain immutable.
+No network permission or account. Personal dictionary entries, recordings, transcripts and signing credentials stay out of Git. One bilingual dictionary supports words and multi-word terms without language selection. Existing takes retain their original dictionary; changes apply to subsequent takes. An empty dictionary means no vocabulary help with the same recognizer; the UI must not suggest otherwise. Historical experiment identities remain immutable.
 
 ## Product Principles
 

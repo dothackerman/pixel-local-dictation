@@ -24,7 +24,11 @@ class ProvisionalBaselineTest {
             assertTrue(selected.variant.post.skipSilentChunks)
             assertEquals(Variant.HISTORICAL_INT8.cutting, selected.variant.cutting)
             // Nonempty altered dictionaries fail closed, never silently run unmeasured A.
-            assertThrows(IllegalArgumentException::class.java) { selected.verify() }
+            assertThrows(IllegalArgumentException::class.java) { selected.verify(File(lab, "absent.apk")) }
+            val unedited = selected.receipt()
+            assertEquals("candidate-a-stream-dictionary", unedited.getString("baseline"))
+            assertEquals(ArtifactFiles.inventoryHash(mapOf("dictionary_configuration" to manifest().getString("configuration_sha256"),
+                "dictionary_binding" to "per-stream-v1")), unedited.getString("configuration_sha256"))
         } finally { lab.deleteRecursively() }
     }
     @Test fun absentEmptyAndWhitespaceDictionaryUseTheUnchangedHistoricalControl() {

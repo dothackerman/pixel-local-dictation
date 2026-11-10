@@ -8,10 +8,11 @@ class InputSession {
     private var current = 0L
     private var live = false
 
-    /** onStartInput: a restart is the same session (the app changed its text), anything else is a new one. */
-    fun start(restarting: Boolean) {
-        if (!restarting || !live) open()
-    }
+    /**
+     * onStartInput, restart or not: a browser reports a move between two fields of one page as
+     * a restart with identical attributes (2026-10-10), so every input start is a new session.
+     */
+    fun start() = open()
 
     /** onStartInputView: the panel may reappear without a new onStartInput after it was hidden. */
     fun resume() {

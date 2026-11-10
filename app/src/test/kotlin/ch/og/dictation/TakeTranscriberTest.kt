@@ -16,7 +16,7 @@ class TakeTranscriberTest {
         val queue = Executors.newSingleThreadExecutor()
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val done = CountDownLatch(1)
         val events = Collections.synchronizedList(ArrayList<TimelineEvent>())
-        val rec = FakeRecognizer {
+        val rec = Recognizer {
             if (it[0] == 1f) { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
             "word"
         }
@@ -81,7 +81,7 @@ class TakeTranscriberTest {
 
     private val direct = Executor { it.run() }
     private fun seg(id: Int) = FloatArray(1) { id.toFloat() }
-    private val bySample = FakeRecognizer { mapOf(1f to "eins", 2f to " zwei ", 3f to "", 4f to "vier")[it[0]]!! }
+    private val bySample = Recognizer { mapOf(1f to "eins", 2f to " zwei ", 3f to "", 4f to "vier")[it[0]]!! }
 
     @Test fun joinsSegmentsInOrderWithSingleSpacesAndSkipsEmptyOnes() {
         val queue = Queue(); val previews = ArrayList<String>(); var done: Result<String>? = null
@@ -113,7 +113,7 @@ class TakeTranscriberTest {
 
     @Test fun recognizerFailureIsReportedOnce() {
         val queue = Queue(); var done: Result<String>? = null
-        val failing = FakeRecognizer { throw IllegalStateException("no model") }
+        val failing = Recognizer { throw IllegalStateException("no model") }
         val take = TakeTranscriber({ failing }, ChunkSegmenter(), queue, direct) {}
         take.feed(seg(1)); take.feed(seg(2)); take.finish { done = it }
         queue.runAll()
@@ -134,7 +134,7 @@ class TakeTranscriberTest {
     }
 
     @Test fun swissSpellingReplacesEszett() {
-        val r = SwissSpelling(FakeRecognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
+        val r = SwissSpelling(Recognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
         assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))
     }
 

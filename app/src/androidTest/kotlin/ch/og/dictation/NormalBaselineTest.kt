@@ -5,7 +5,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -18,8 +17,6 @@ import org.junit.runner.RunWith
 /** Focused normal Engine replay. Stores identities/hashes only; never audio or recognized text. */
 @RunWith(AndroidJUnit4::class)
 class NormalBaselineTest {
-    private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-
     @Test fun runtimeInventoryMatchesFrozenPythonIdentityOnAndroid() {
         // Android org.json escapes slashes differently from the laptop implementation.
         assertEquals("99d4d9ed446a0c93f7a8752e1d0727511fed0bc4071629a2144adbc677b48a6c",
@@ -28,7 +25,6 @@ class NormalBaselineTest {
 
     @Test fun normalRuntimeSurvivesWarmUpAndRepeatedPanelRequests() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        require(!File(context.filesDir, "lab/live.json").exists()) { "normal-path check forbids benchmark override" }
         val first = Engine.runtime(context)
         assertSame("repeated panels must retain the runtime", first, Engine.runtime(context))
         Engine.warmUp(context).get(10, TimeUnit.MINUTES)
@@ -50,7 +46,6 @@ class NormalBaselineTest {
     fun checkRetainedOutputs(expectedBaseline: String, resultFile: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val lab = File(context.filesDir, "lab")
-        require(!File(lab, "live.json").exists()) { "normal-path check forbids benchmark override" }
         val cases = JSONObject(File(lab, "baseline-parity.json").readText())
         require(cases.length() == 2) { "one retained take per language required" }
         val runtime = Engine.runtime(context)
@@ -66,7 +61,7 @@ class NormalBaselineTest {
                 val file = File(lab, item.getString("path")).canonicalFile
                 require(file.toPath().startsWith(lab.canonicalFile.toPath()))
                 val bytes = file.readBytes()
-                require(hash(bytes) == item.getString("sha256"))
+                require(ArtifactFiles.hash(bytes) == item.getString("sha256"))
                 val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).apply { position(44) }
                 val samples = FloatArray(buffer.remaining() / 2) { buffer.short / 32768f }
                 val finished = CompletableFuture<TakeResult>()
@@ -89,7 +84,7 @@ class NormalBaselineTest {
                 val result = finished.get(10, TimeUnit.MINUTES)
                 assertEquals(TakeOutcome.COMPLETED, result.outcome)
                 assertEquals(1, commits)
-                val outputHash = hash(requireNotNull(result.text).toByteArray())
+                val outputHash = ArtifactFiles.hash(requireNotNull(result.text).toByteArray())
                 assertEquals("normal output differs: $id", item.getString("output_sha256"), outputHash)
                 rows.put(JSONObject().put("id", id).put("output_sha256", outputHash).put("commits", commits))
             }

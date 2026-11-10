@@ -36,13 +36,19 @@ class EditedBaselineTest {
             assertEquals("candidate-a-user-dictionary", receipt.getString("baseline"))
             assertEquals(changed.sha256, receipt.getString("dictionary_sha256"))
             assertEquals(manifest.getString("dictionary_sha256"), receipt.getString("tested_dictionary_sha256"))
-            assertNotEquals(manifest.getString("configuration_sha256"), receipt.getString("configuration_sha256"))
+            val edited = ArtifactFiles.inventoryHash(mapOf(
+                "accepted_configuration" to manifest.getString("configuration_sha256"), "user_dictionary" to changed.sha256))
+            assertEquals("per-stream-v1", receipt.getString("dictionary_binding"))
+            assertEquals(manifest.getString("configuration_sha256"), receipt.getString("tested_configuration_sha256"))
+            assertEquals(ArtifactFiles.inventoryHash(mapOf("dictionary_configuration" to edited, "dictionary_binding" to "per-stream-v1")),
+                receipt.getString("configuration_sha256"))
             assertFalse(receipt.toString().contains("Bärlauch"))
             File(root, "issue11-dictionary.txt").appendText("tampered")
             assertThrows(IllegalArgumentException::class.java) { selected.verify(apk) }
-            val empty = ProvisionalBaseline.load(root, manifest, store.prepare(emptyList()))!!
+            val emptied = store.prepare(emptyList())
+            val empty = ProvisionalBaseline.load(root, manifest, emptied)!!
             assertEquals(selected.variant, empty.variant)
-            assertTrue(empty.dictionary.readText().isEmpty())
+            assertEquals(ArtifactFiles.hash(byteArrayOf()), empty.receipt().getString("dictionary_sha256"))
         } finally { root.deleteRecursively() }
     }
 }

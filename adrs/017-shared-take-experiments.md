@@ -87,6 +87,8 @@ phone validation.
 Revisit only when a second real protocol requires more orchestration. A general
 campaign controller is not part of this change.
 
+2026-11-01: retired at Git tag `archive/encoder-campaign-2026-10` (closed by ADR-012/014/016/019/022/025/026): the encoder probe and pipeline-placement diagnostics, the LiteRT accelerator probe and its dependencies, the encoder-conversion, Moonshine-streaming, measurement, quality-measurement, historical-wrap and allocation-report tools, `tools/ort131-sherpa/`, the encoder comparison kinds (`conversion-parity`, `gpu-wait`, `runtime-parity`, `webgpu-parity`; replaced by the CPU-only `stop-wait` kind), the unread `tools/frozen*.sha256` pins, 22 unreferenced variants, the WebGPU placement explainer and the shipped recording-panel prototype.
+
 ## Amendment 2026-10-22: re-freeze before any reservation
 
 Accepted by the user. When the evaluator changed after a freeze and no attempt of that plan

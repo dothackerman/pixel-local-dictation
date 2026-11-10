@@ -1,4 +1,3 @@
 <resources>
-    <bool name="startup_timing">true</bool>
-    <bool name="benchmark_live_variant">true</bool>
+    <bool name="benchmark_receipts">true</bool>
 </resources>

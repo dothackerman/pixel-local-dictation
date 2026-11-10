@@ -1,9 +1,0 @@
-# Historical evaluator freeze; verified by tools/lab.py check.
-# Regenerate only in a setup session: sha256sum <files> > tools/frozen.sha256
-c2fbcff240dcf06d536ad51590f64d8aa186d8d75ceeadb4de20048b914ef54a  tools/score.py
-1b6433c269de5d00511e7dd9d41001227f728d9e2e695ff336193614c9277ea4  tools/evaluate.py
-2f0a1a84edee1420ecfc2e9fe4934a42c7988c84f847c1179b242f26862c05ea  tools/pipeline.py
-792202bc0a00280484f1b0e7537cd89f49d9115c896077b74c0c361dfcc29cdb  tools/variant.py
-c57d16605a8bad86d7fbcab476d0dd3bdc0509f01e48367cef75a795115fef00  tools/lab.py
-64e6bff8f57e6914b4cc067dc2f23f86f6aa6ca78d7707c5eedf9262a963b7e5  corpus/takes.json
-08522f9152a1c60691627776fdb5e1bf8570e895f097a8570c9fa0fe73aefbb4  models/guard/refs.tsv

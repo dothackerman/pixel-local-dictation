@@ -23,15 +23,23 @@ How many audio samples the laptop replay hands to the chunker at once; three siz
 One connected phone lab period with a snapshot before any change and a restore after.
 _Avoid_: phone session, lab session
 
-
 ## Recognition models
 
 **Encoder**:
 The model stage that turns sound features into a description of the speech; the largest share of recognition work.
 
+**Candidate A**:
+Parakeet v3 FP32 on CPU, beam 8, dictionary score 1.5; the owner-selected provisional baseline since 2026-10-27.
+
+**Historical control**:
+The selective INT8 Parakeet pipeline with greedy decoding that the app shipped before Candidate A.
+_Avoid_: old default, INT8 baseline
+
 **Runtime session**:
 One model file loaded and prepared by the runtime with fixed options, created once and reused by many takes.
 _Avoid_: session (bare), model session, inference session
+
+## Encoder placement (closed WebGPU campaign, ADR-020 to ADR-025)
 
 **Execution provider**:
 The runtime component that owns one kind of chip and executes the steps assigned to it, such as the CPU or WebGPU provider.
@@ -52,6 +60,7 @@ _Avoid_: heavy math, compute nodes
 **Placement check**:
 Our own acceptance test of a placement: tensor math only on the intended provider; anything elsewhere is shape work.
 _Avoid_: strict mode, CPU fallback check
+
 ## Dictionary
 
 **Dictionary**:

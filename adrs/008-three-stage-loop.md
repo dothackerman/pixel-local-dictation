@@ -1,6 +1,7 @@
 # ADR-008 — One allocation loop, three stages
 
 2026-10-14 · Organization approved; completed October 19.
+2026-11-01 · `allocation_report.py` retired too ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)); recover it from Git history.
 
 Combine measurement characterization, FP32 allocation and Cohere allocation in one bounded loop.
 The completed campaign retained its stage gates and cumulative attempt counts.

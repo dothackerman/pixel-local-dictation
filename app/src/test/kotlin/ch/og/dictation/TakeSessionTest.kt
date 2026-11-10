@@ -45,7 +45,7 @@ class TakeSessionTest {
     }
 
     @Test fun startupReceiptsDistinguishCaptureRequestFromFirstAudio() {
-        val runtime = DictationRuntime(Variant.DEFAULT, direct, { FakeRecognizer { "word" } }, segments)
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
         val output = Output()
         var now = 10L
@@ -64,7 +64,7 @@ class TakeSessionTest {
 
     @Test fun stopWaitsForCaptureDrainAndInsertsOnce() {
         val queue = Queue()
-        val runtime = DictationRuntime(Variant.DEFAULT, queue, { FakeRecognizer { "word" } }, segments)
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
         val capture = Capture()
         val output = Output()
         val session = runtime.open(capture, output, direct)
@@ -88,7 +88,7 @@ class TakeSessionTest {
     @Test fun invalidationDuringDrainDiscardsLateAudioAndAllowsAFollowingTake() {
         val queue = Queue()
         var releases = 0
-        val runtime = DictationRuntime(Variant.DEFAULT, queue, { FakeRecognizer { "word" } }, segments) { releases++ }
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments) { releases++ }
         val oldCapture = Capture()
         val oldOutput = Output()
         val old = runtime.open(oldCapture, oldOutput, direct)
@@ -122,7 +122,7 @@ class TakeSessionTest {
     }
 
     @Test fun rejectedCommitDoesNotReturnToKeyboardOrRetryInsertion() {
-        val runtime = DictationRuntime(Variant.DEFAULT, direct, { FakeRecognizer { "word" } }, segments)
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
         val output = Output().also { it.accepts = false }
         val session = runtime.open(capture, output, direct)
@@ -139,7 +139,7 @@ class TakeSessionTest {
     @Test fun cancelledFinalWaitingForDeliveryCannotCommit() {
         val queue = Queue()
         val delivery = Queue()
-        val runtime = DictationRuntime(Variant.DEFAULT, queue, { FakeRecognizer { "word" } }, segments)
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
         val capture = Capture()
         val output = Output()
         val session = runtime.open(capture, output, delivery)
@@ -156,7 +156,7 @@ class TakeSessionTest {
     }
 
     @Test fun abandonedUnstartedSessionReleasesItsRuntimeLease() {
-        val runtime = DictationRuntime(Variant.DEFAULT, direct, { FakeRecognizer { "word" } }, segments)
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val output = Output()
         runtime.open(Capture(), output, direct).cancel()
         assertEquals(TakeOutcome.CANCELLED, output.results.single().outcome)
