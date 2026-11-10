@@ -29,7 +29,6 @@ class DictationImeService : InputMethodService() {
     private val tag = "DictationIme"
     private var status: TextView? = null
     private var preview: TextView? = null
-    private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
     private val recordingPanel = RecordingPanel()
@@ -37,8 +36,6 @@ class DictationImeService : InputMethodService() {
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
-    private var microphoneEnabled = false
-    private var microphoneLabel = R.string.status_opening
     private var banner: View? = null
     /** Only saving audio needs a banner; experiment receipts remain out of the normal panel. */
     private var saveTake = false
@@ -121,10 +118,9 @@ class DictationImeService : InputMethodService() {
         showStatus(statusText)
         banner = v.findViewById(R.id.benchmark_banner)
         ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
-        microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
+        v.findViewById<ImageButton>(R.id.microphone).apply {
             setOnClickListener { if (takeActive) stopAndInsert() else startRecording() }
         }
-        setMicrophone(microphoneEnabled, microphoneLabel)
         recordingPanel.bind(v)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
         startup?.event("inputViewCreateEnd")
@@ -277,7 +273,7 @@ class DictationImeService : InputMethodService() {
                     if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
                         saveBenchmarkTake(pcm, result)
                     }
-                    if (feedback !== currentFeedback || !recordingPanel.completeTake(panelId)) return
+                    if (feedback !== currentFeedback || !recordingPanel.acceptsCompletion(panelId)) return
                     recordingToken = null
                     startupTake = null
                     showIdle()
@@ -432,15 +428,7 @@ class DictationImeService : InputMethodService() {
         status?.setText(label)
     }
 
-    private fun setMicrophone(enabled: Boolean, label: Int) {
-        microphoneEnabled = enabled
-        microphoneLabel = label
-        microphone?.apply {
-            isEnabled = enabled
-            alpha = if (enabled) 1f else 0.55f
-            contentDescription = getString(label)
-        }
-    }
+    private fun setMicrophone(enabled: Boolean, label: Int) = recordingPanel.setMicrophone(enabled, label)
 
     /** The end of the text so far; the view is a few lines high. */
     private fun showPreview(text: String) {

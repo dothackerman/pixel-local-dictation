@@ -10,6 +10,8 @@ class RecordingPanel(view: View? = null) {
     private var view = view
     private var state: State? = null
     private var generation = 0L
+    private var idleEnabled = false
+    private var idleLabel = R.string.status_opening
 
     fun bind(view: View) { this.view = view; render() }
     fun beginTake(): Long { generation++; state = State.OPENING; render(); return generation }
@@ -26,8 +28,22 @@ class RecordingPanel(view: View? = null) {
             state = State.FINISHING; render()
         }
     }
-    fun completeTake(take: Long): Boolean = take == generation && state != null
+    fun acceptsCompletion(take: Long): Boolean = take == generation && state != null
     fun cancelTake() { generation++; state = null; setFinishing(false) }
+
+    fun setMicrophone(enabled: Boolean, label: Int) {
+        idleEnabled = enabled
+        idleLabel = label
+        applyMicrophone(enabled, label)
+    }
+
+    private fun applyMicrophone(enabled: Boolean, label: Int) {
+        view?.findViewById<ImageButton>(R.id.microphone)?.apply {
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.55f
+            contentDescription = context.getString(label)
+        }
+    }
 
     private fun setFinishing(finishing: Boolean) {
         view?.findViewById<View>(R.id.microphone)?.visibility = if (finishing) View.GONE else View.VISIBLE
@@ -36,26 +52,20 @@ class RecordingPanel(view: View? = null) {
     }
 
     private fun render() {
-        val state = state ?: return
         val view = view ?: return
-        val status = when (state) {
-            State.OPENING -> R.string.status_opening
-            State.RECORDING -> R.string.status_recording
-            State.INTERRUPTED -> R.string.status_capture_ended
-            State.FINISHING -> R.string.status_finishing
+        val state = state
+        if (state == null) {
+            applyMicrophone(idleEnabled, idleLabel)
+            return
         }
-        val label = when (state) {
-            State.OPENING -> R.string.status_opening
-            State.RECORDING -> R.string.stop_recording
-            State.INTERRUPTED -> R.string.finish_transcription
-            State.FINISHING -> R.string.status_finishing
+        val (status, label) = when (state) {
+            State.OPENING -> R.string.status_opening to R.string.status_opening
+            State.RECORDING -> R.string.status_recording to R.string.stop_recording
+            State.INTERRUPTED -> R.string.status_capture_ended to R.string.finish_transcription
+            State.FINISHING -> R.string.status_finishing to R.string.status_finishing
         }
         view.findViewById<TextView>(R.id.status).setText(status)
-        view.findViewById<ImageButton>(R.id.microphone).apply {
-            isEnabled = state == State.RECORDING || state == State.INTERRUPTED
-            alpha = if (isEnabled) 1f else 0.55f
-            contentDescription = context.getString(label)
-        }
+        applyMicrophone(state == State.RECORDING || state == State.INTERRUPTED, label)
         setFinishing(state == State.FINISHING)
     }
 }

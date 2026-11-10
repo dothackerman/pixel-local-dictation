@@ -66,7 +66,7 @@ class RecordingPanelStateTest {
         panel.captureStarted(old)
         val current = panel.beginTake()
         panel.captureStarted(current)
-        assertFalse(panel.completeTake(old))
+        assertFalse(panel.acceptsCompletion(old))
         val recreated = LayoutInflater.from(context).inflate(R.layout.ime, null)
         panel.bind(recreated)
         assertEquals("Recording…", recreated.findViewById<TextView>(R.id.status).text.toString())
