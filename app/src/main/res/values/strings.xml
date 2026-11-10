@@ -5,7 +5,8 @@
     <string name="status_opening">Opening microphone…</string>
     <string name="status_capture_ended">Microphone stopped · tap to finish</string>
     <string name="status_recording">Recording…</string>
-    <string name="status_finishing">Finishing…</string>
+    <string name="status_finishing">Recording stopped · Finishing transcription…</string>
+    <string name="preparing_text">Preparing text…</string>
     <string name="status_failed">Recognition failed</string>
     <string name="status_no_permission">Microphone permission missing</string>
     <string name="discard_recording">Discard recording and return to keyboard</string>

@@ -72,6 +72,19 @@ class RecordingPanelTest {
                 val stage = mic.parent as ViewGroup
                 assertTrue(mic.left >= 0 && mic.right <= stage.width && mic.bottom <= stage.height)
                 assertEquals(2, actions(panel))
+                val presentation = RecordingPanel(panel)
+                presentation.finishTake(presentation.beginTake())
+                panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+                assertEquals(View.GONE, mic.visibility)
+                val processing = panel.findViewById<View>(R.id.processing)
+                assertEquals(View.VISIBLE, processing.visibility)
+                assertFalse(processing.isClickable)
+                assertTrue(processing.left >= 0 && processing.right <= stage.width && processing.bottom <= stage.height)
+                assertTrue("finishing status clipped at fontScale=$fontScale",
+                    status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                assertTrue(back.isEnabled)
             }
             val metrics = app.resources.displayMetrics
             instrumentation.sendStatus(0, Bundle().apply {

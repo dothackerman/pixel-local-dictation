@@ -16,6 +16,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.TextView
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -31,6 +32,8 @@ class DictationImeService : InputMethodService() {
     private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
+    private val recordingPanel = RecordingPanel()
+    private var panelTake: Long? = null
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
@@ -122,6 +125,7 @@ class DictationImeService : InputMethodService() {
             setOnClickListener { if (takeActive) stopAndInsert() else startRecording() }
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
+        recordingPanel.bind(v)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
         startup?.event("inputViewCreateEnd")
         return v
@@ -250,9 +254,16 @@ class DictationImeService : InputMethodService() {
             val token = session.token()
             recordingToken = token
             val save = saveTake
+            val panelId = recordingPanel.beginTake()
+            panelTake = panelId
+            val currentFeedback = RecordingFeedback()
+            feedback?.stop()
+            feedback = currentFeedback
             var identity: () -> org.json.JSONObject? = { null }
             val output = object : TakeOutput {
-                override fun preview(text: String) = showPreview(text)
+                override fun preview(text: String) {
+                    if (feedback === currentFeedback) showPreview(text)
+                }
                 override fun commit(text: String) = commitForSession(token, text)
                 override fun returnToKeyboard(): Boolean {
                     // Switching the IME can synchronously invalidate input. The result has
@@ -266,6 +277,7 @@ class DictationImeService : InputMethodService() {
                     if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
                         saveBenchmarkTake(pcm, result)
                     }
+                    if (feedback !== currentFeedback || !recordingPanel.completeTake(panelId)) return
                     recordingToken = null
                     startupTake = null
                     showIdle()
@@ -280,27 +292,24 @@ class DictationImeService : InputMethodService() {
             showPreview("")
             finishing = false
             setMicrophone(false, R.string.status_opening)
-            val currentFeedback = RecordingFeedback()
-            feedback?.stop()
-            feedback = currentFeedback
             ring?.follow(currentFeedback)
             val trace = startup
             val traceTake = startupTake
+            val captureEnded = AtomicBoolean(false)
             val capture = MicrophoneCapture(onStarted = {
                 trace?.event("recordingStarted", traceTake)
                 mainHandler.post {
-                    if (feedback === currentFeedback && takeActive && !finishing) {
-                        showStatus(R.string.status_recording)
-                        setMicrophone(true, R.string.stop_recording)
+                    if (feedback === currentFeedback && takeActive && !finishing && !captureEnded.get()) {
+                        recordingPanel.captureStarted(panelId)
                         ring?.invalidate()
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
+                captureEnded.set(true)
                 mainHandler.post {
                     if (feedback === currentFeedback && takeActive && !finishing) {
                         // Preserve the existing ability to finish the audio captured before interruption.
-                        showStatus(R.string.status_capture_ended)
-                        setMicrophone(true, R.string.finish_transcription)
+                        recordingPanel.captureEnded(panelId)
                         ring?.follow(null)
                     }
                 }
@@ -329,8 +338,7 @@ class DictationImeService : InputMethodService() {
     private fun stopAndInsert() {
         if (!takeActive || finishing) return
         finishing = true
-        showStatus(R.string.status_finishing)
-        setMicrophone(false, R.string.status_finishing)
+        panelTake?.let { recordingPanel.finishTake(it) }
         feedback?.stop()
         ring?.follow(null)
         take?.stop()
@@ -412,6 +420,8 @@ class DictationImeService : InputMethodService() {
         feedback = null
         ring?.follow(null)
         finishing = false
+        recordingPanel.cancelTake()
+        panelTake = null
         showStatus(R.string.status_idle)
         showPreview("")
         setMicrophone(true, R.string.start_recording)
