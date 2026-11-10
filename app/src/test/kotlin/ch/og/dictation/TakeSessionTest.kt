@@ -85,6 +85,29 @@ class TakeSessionTest {
         assertFalse(session.active)
     }
 
+    @Test fun cancelWhileRecordingDiscardsAndIgnoresLaterCaptureCallbacks() {
+        val queue = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+
+        session.cancel()
+        capture.feed(floatArrayOf(2f))
+        capture.released!!()
+        queue.drain()
+
+        assertTrue(output.inserted.isEmpty())
+        assertEquals(TakeOutcome.CANCELLED, output.results.single().outcome)
+        assertEquals(0, output.returns)
+        assertFalse(session.active)
+        val closed = runtime.close()
+        queue.drain()
+        closed.join()
+    }
+
     @Test fun invalidationDuringDrainDiscardsLateAudioAndAllowsAFollowingTake() {
         val queue = Queue()
         var releases = 0
@@ -153,6 +176,32 @@ class TakeSessionTest {
         delivery.drain()
         assertTrue(output.inserted.isEmpty())
         assertEquals(1, output.results.size)
+    }
+
+    @Test fun cancelWhileFinishingDiscardsAndIgnoresQueuedDecode() {
+        val decode = Queue()
+        val delivery = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, decode, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, delivery)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        capture.drained(Result.success(byteArrayOf(1)))
+        delivery.drain() // Capture has stopped; final decode is queued.
+
+        session.cancel()
+        decode.drain()
+        delivery.drain()
+
+        assertTrue(output.inserted.isEmpty())
+        assertEquals(TakeOutcome.CANCELLED, output.results.single().outcome)
+        assertEquals(0, output.returns)
+        assertFalse(session.active)
+        val closed = runtime.close()
+        decode.drain()
+        closed.join()
     }
 
     @Test fun abandonedUnstartedSessionReleasesItsRuntimeLease() {
