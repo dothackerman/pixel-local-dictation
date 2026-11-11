@@ -12,7 +12,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.view.inputmethod.InputMethodManager
 
 /**
- * FUTO <-> our panel plumbing shared by the #56 probe and the #52 demo. Touches only our own
+ * FUTO <-> our panel plumbing shared by the #56 probe and the #52/#53 demos. Touches only our own
  * panel and prompt controls, plus FUTO's voice key once per take. Every wait is bounded.
  *
  * Pixel run 20261111T124640 showed why this exists: our keyboard was still selected, showing it
@@ -59,6 +59,13 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         val name = context.resources.getResourceName(id)
         return windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }
             .flatMap { nodes(it) }.firstOrNull { it.viewIdResourceName == name && it.isVisibleToUser }
+    }
+
+    /** A visible, clickable button of ours by its label (our prompt is attached to our panel's window). */
+    fun ourButton(label: Int): AccessibilityNodeInfo? {
+        val text = context.getString(label)
+        return windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }
+            .flatMap { nodes(it) }.firstOrNull { it.isClickable && it.isVisibleToUser && it.text?.toString().equals(text, ignoreCase = true) }
     }
 
     /** Our recording/finishing prompt's Discard button, if that prompt is up. */

@@ -39,6 +39,8 @@ class DictationImeService : InputMethodService() {
         internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
         /** Asks Android to show this input method's own panel on the current input session. */
         internal var requestPanel: (InputMethodService) -> Unit = { it.requestShowSelf(0) }
+        /** Where takes are kept; device demos point it at an isolated root, never the owner's History. */
+        internal var historyRootFor: (android.content.Context) -> java.io.File = ::historyRoot
     }
     private val tag = "DictationIme"
     private var status: TextView? = null
@@ -823,7 +825,7 @@ class DictationImeService : InputMethodService() {
             val startedTake = Engine.openTake(this) { runtime, receipt ->
                 identity = receipt
                 runtime.open(capture, HistoryTakeOutput(output,
-                    { HistoryIo.store(java.io.File(noBackupFilesDir, "history")) }, HistoryIo.executor,
+                    { HistoryIo.store(historyRootFor(this)) }, HistoryIo.executor,
                     { recordHistoryNotice(HistoryNotice.SAVE) }, delivery = mainExecutor,
                     onDeleteFailure = { recordHistoryNotice(HistoryNotice.DELETE) },
                     onReceiptFailure = { recordHistoryNotice(HistoryNotice.RECEIPT) },

@@ -94,8 +94,19 @@ before and after the rotation inserted once, FUTO restored, both modes. Gap 3 s 
 History save acknowledgement, after the accepted commit, Stop on Android's reset
 panel, the gap without a returning panel, a real hide after the settled panel, each
 choice open (shown again; Continue, Finish, Discard, Keep, Discard), the unattachable
-fallback, and lock over a moved choice. Pending on the Pixel:
-`RotationFinishingDemoTest` (seven cases).
+fallback, and lock over a moved choice. Pixel (`RotationFinishingDemoTest`, seven
+cases, one run, synthetic speech; History-eligible cases write to an isolated test
+History root): all completed with one take, one recorder start, exactly one
+insertion into the field the panel returned to (recreated editor: the new field),
+FUTO restored. Rotation before the final decode: panel back as Finishing (last
+shown +151–253 ms), inserted when the decode ended (+1.8–1.9 s). Decoded with the
+History save held: inserted +1.17 s, 1.0 s after the panel's last show (settle).
+After the accepted commit: no further event. Recording choice: shown again, not
+made; Continue kept the take. Finishing choice (before decode and after the save):
+shown again, nothing dispatched under it, inserted once after Keep finishing. The
+#56 probe's Stop-wait cases (room audio, empty result) now end completed instead of
+in History. The unattachable-prompt fallback and lock over a moved choice are
+host-only.
 Limits: a hide or focus change within the settle time after a rotation cannot be
 told apart from the editor reacting to it (held, then History at the gap); the
 display callback can still report the old rotation (#56), so a 180° turn without a

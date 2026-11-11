@@ -61,6 +61,12 @@ class HistoryUndoDeleteTest {
             (body.parent as View).findViewById<View>(R.id.history_row_delete).performClick()
         }
     }
+    /**
+     * The row's file is gone. Not store.get: this test thread reads outside HistoryIo's serial
+     * executor; a read racing the delete fails its length check (Pixel run 20261111T133751).
+     */
+    private fun gone(id: String) = !File(root, "$id.history").exists()
+
     private fun waitFor(condition: () -> Boolean) {
         repeat(100) { if (condition()) return; Thread.sleep(50) }
         error("Condition not met")
@@ -76,7 +82,7 @@ class HistoryUndoDeleteTest {
             scenario.await(context.getString(R.string.dictionary_undo))
             assertNotNull("not removed before the window ends", store.get(id))
             scenario.await("Synthetic row to keep")
-            waitFor { store.get(id) == null }
+            waitFor { gone(id) }
             assertNotNull(store.get(other))
             scenario.await("Synthetic row to delete", shown = false)
         } finally { scenario.close() }
@@ -108,7 +114,7 @@ class HistoryUndoDeleteTest {
             scenario.await("Synthetic row to keep")
             scenario.onActivity { assertNull(it.findViewById<View>(R.id.history_detail_text)) }
             assertNotNull(store.get(id))
-            waitFor { store.get(id) == null }
+            waitFor { gone(id) }
         } finally { scenario.close() }
     }
 
@@ -120,7 +126,7 @@ class HistoryUndoDeleteTest {
             scenario.await("Synthetic row to delete", shown = false)
             assertNotNull(store.get(id))
         } finally { scenario.close() }
-        waitFor { store.get(id) == null }
+        waitFor { gone(id) }
         assertNotNull(store.get(other))
     }
 

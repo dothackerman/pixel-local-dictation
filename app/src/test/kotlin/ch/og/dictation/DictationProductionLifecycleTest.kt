@@ -134,6 +134,7 @@ class DictationProductionLifecycleTest {
             engineRuntime.set(Engine, originalRuntime)
             modelReady.set(Engine, originalModelReady)
             DictationImeService.recorderFactory = ::Recorder
+            DictationImeService.historyRootFor = ::historyRoot
             MicrophoneOwner.acceptExplicitStart()
         }
     }
@@ -267,6 +268,24 @@ class DictationProductionLifecycleTest {
         await { decode.drain(); settleHistory(); rows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
 
     private fun advance(ms: Long) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms)) }
+
+    /** Device demos keep synthetic takes out of the owner's History (same isolation as the History UI tests). */
+    @Test fun testHistoryRootKeepsTheTakeOutOfTheRealHistory() {
+        val isolated = File(RuntimeEnvironment.getApplication().noBackupFilesDir, "history-ui-test-hook")
+        DictationImeService.historyRootFor = { isolated }
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertTrue(rows().isEmpty())
+        val kept = HistoryIo.executor.submit<List<HistoryEntry>> { HistoryIo.store(isolated).list() }.get(2, TimeUnit.SECONDS)
+        assertEquals(HistoryDelivery.ACCEPTED, kept.single().delivery)
+        assertEquals(listOf("old speech"), firstField.getValue(service).inserted)
+    }
 
     @Test fun rotationWithHiddenKeyboardKeepsTheTakeAndStopInsertsIntoTheReturnedField() {
         val panelRequests = AtomicInteger()
