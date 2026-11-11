@@ -599,7 +599,6 @@ class DictationImeService : InputMethodService() {
 
     /** System interruption revokes insertion before requesting capture release. */
     private fun interruptTake() {
-        dismissRecordingPrompt()
         val old = take ?: return
         MicrophoneOwner.requireExplicitStart()
         previewAllowed = false
@@ -626,6 +625,7 @@ class DictationImeService : InputMethodService() {
                 setMicrophone(true, R.string.start_recording)
             }
         }
+        dismissRecordingPrompt()
     }
 
     private fun discardTake(reason: String) {
@@ -655,8 +655,8 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && takeActive && !finishing) {
-            showRecordingPrompt()
+        if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
+            if (finishing) showFinishingPrompt() else showRecordingPrompt()
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -703,8 +703,47 @@ class DictationImeService : InputMethodService() {
         }
     }
 
+    private fun showFinishingPrompt() {
+        if (recordingPrompt?.isShowing == true || !takeActive) return
+        val current = take ?: return
+        val token = panel?.windowToken ?: return
+        if (!current.holdDelivery()) return
+        val generation = takeGeneration
+        var discarded = false
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.discard_transcript_title)
+            .setNegativeButton(R.string.keep_finishing) { _, _ -> }
+            .setPositiveButton(R.string.discard_take) { _, _ ->
+                if (generation == takeGeneration && take === current) {
+                    discarded = true
+                    val editor = recordingToken
+                    current.cancel(onDiscarded = { deleted ->
+                        if (generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
+                    })
+                    showIdle()
+                }
+            }.create()
+        recordingPrompt = dialog
+        dialog.setOnDismissListener {
+            if (recordingPrompt === dialog) recordingPrompt = null
+            if (!discarded) current.resumeDelivery()
+        }
+        dialog.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+            attributes = attributes.apply { this.token = token }
+            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+        try {
+            dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus()
+        } catch (_: WindowManager.BadTokenException) {
+            recordingPrompt = null
+            interruptTake()
+        }
+    }
+
     private fun cancelAndReturn() {
-        if (takeActive && !finishing) { showRecordingPrompt(); return }
+        if (takeActive) { if (finishing) showFinishingPrompt() else showRecordingPrompt(); return }
         val token = recordingToken
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }

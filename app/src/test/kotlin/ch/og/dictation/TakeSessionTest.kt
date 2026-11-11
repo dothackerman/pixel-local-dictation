@@ -353,4 +353,21 @@ class TakeSessionTest {
         assertTrue(result!!.interruptedSaved)
     }
 
+    @Test fun finishingChoiceHoldsDeliveryUntilKept() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val take = runtime.open(capture, output, direct)
+        take.start()
+        capture.feed(floatArrayOf(1f))
+        take.stop()
+        assertTrue(take.holdDelivery())
+        capture.drained(Result.success(byteArrayOf()))
+        assertTrue(output.inserted.isEmpty())
+        take.resumeDelivery()
+        assertEquals(listOf("word"), output.inserted)
+        take.resumeDelivery()
+        assertEquals(1, output.returns)
+    }
+
 }

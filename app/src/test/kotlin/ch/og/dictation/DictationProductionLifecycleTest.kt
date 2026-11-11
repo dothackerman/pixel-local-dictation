@@ -276,6 +276,41 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
+    @Test fun finishingPromptHoldsDecodedTextUntilKept() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertTrue(dialog.isShowing)
+        assertTrue(dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).isFocusable)
+        decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        settleHistory()
+        assertEquals(1, commits)
+    }
+
+    @Test fun finishingPromptDiscardSuppressesLateOutput() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        settleHistory()
+        assertEquals(0, commits)
+        assertTrue(rows().isEmpty())
+    }
+
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
         val gate = CountDownLatch(1)
         val original = Input(failedReleases = 1, releaseGate = gate)

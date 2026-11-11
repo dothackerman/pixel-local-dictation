@@ -70,9 +70,12 @@ class TakeSession internal constructor(
     private var captureReleased = true
     private var cleaned = false
     private var terminal: TakeResult? = null
+    private var deliveryHeld = false
+    private var pendingDelivery: String? = null
     private var dispatching = false
     private var invalidatedDuringDispatch = false
     private var deliberatelyCancelledDuringDispatch = false
+    private var deferredDiscard: ((Boolean) -> Unit)? = null
     private val audioLock = Any()
     private var interrupted = false
     private var releaseNotice: (() -> Unit)? = null
@@ -163,12 +166,25 @@ class TakeSession internal constructor(
         }
     }
 
+    /** Hold only before dispatch; once a commit starts it cannot be retracted. */
+    fun holdDelivery(): Boolean {
+        if ((dispatching && output.commitAttempted()) || interrupted || state !in setOf(State.DRAINING, State.FINISHING, State.COMPLETING)) return false
+        deliveryHeld = true
+        return true
+    }
+
+    fun resumeDelivery() {
+        deliveryHeld = false
+        pendingDelivery?.also { pendingDelivery = null; complete(it) }
+    }
+
     /** Revoke audio acceptance before stopping capture; retain accepted audio for History only. */
     fun interrupt(onCaptureReleased: () -> Unit = {}) {
         if (state == State.NEW || state == State.ENDED || interrupted) return
         synchronized(audioLock) { interrupted = true }
         if (captureReleased) onCaptureReleased() else releaseNotice = onCaptureReleased
         if (dispatching) { invalidatedDuringDispatch = true; return }
+        resumeDelivery()
         if (state == State.RECORDING) stop()
     }
 
@@ -176,7 +192,7 @@ class TakeSession internal constructor(
         if (state == State.ENDED) return
         if (dispatching) {
             invalidatedDuringDispatch = true
-            if (!inputChanged) deliberatelyCancelledDuringDispatch = true
+            if (!inputChanged) { deliberatelyCancelledDuringDispatch = true; deferredDiscard = onDiscarded }
             return
         }
         var cancellationApplied = false
@@ -216,17 +232,19 @@ class TakeSession internal constructor(
     }
 
     private fun complete(text: String) {
+        if (deliveryHeld && !interrupted) { pendingDelivery = text; return }
         if (interrupted) { saveInterrupted(text); return }
         var accepted: Boolean? = null
         try {
             dispatching = true
-            accepted = try { if (text.isEmpty()) null else output.commit(text) { !invalidatedDuringDispatch && state == State.COMPLETING } }
+            accepted = try { if (text.isEmpty()) null else output.commit(text) { !deliveryHeld && !invalidatedDuringDispatch && state == State.COMPLETING } }
                 finally { dispatching = false }
             if (deliberatelyCancelledDuringDispatch && accepted == false && !output.commitAttempted()) {
-                output.discardStaged()
+                output.discardStaged { deferredDiscard?.invoke(it); deferredDiscard = null }
                 finish(TakeOutcome.CANCELLED)
                 return
             }
+            if (deliveryHeld && !interrupted && accepted == false && !output.commitAttempted()) { pendingDelivery = text; return }
             if (accepted != null) output.receipt(if (accepted) HistoryDelivery.ACCEPTED else
                 if (output.commitAttempted()) HistoryDelivery.REJECTED else HistoryDelivery.NOT_ATTEMPTED)
             if (invalidatedDuringDispatch) {
