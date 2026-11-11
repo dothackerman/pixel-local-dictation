@@ -254,7 +254,9 @@ class SettingsHistoryScreenshotTest {
             val canvas = Canvas(bitmap)
             underlay?.let {
                 it.draw(canvas)
-                val amount = (view.layoutParams as? WindowManager.LayoutParams)?.dimAmount ?: 0f
+                // Only windows that dim what is behind them (dialogs, sheets); a menu popup does not.
+                val params = view.layoutParams as? WindowManager.LayoutParams
+                val amount = if (params != null && params.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0) params.dimAmount else 0f
                 canvas.drawColor(Color.argb((255 * amount).toInt(), 0, 0, 0))
                 val dialogOrigin = IntArray(2).also(view::getLocationOnScreen)
                 val pageOrigin = IntArray(2).also(it::getLocationOnScreen)

@@ -200,6 +200,9 @@ class DictionaryEditorRecoveryTest {
             val feedback = editor.findViewById<TextView>(R.id.dictionary_editor_feedback)
             fun left(view: android.view.View): Int { val at = IntArray(2); view.getLocationInWindow(at); return at[0] + view.paddingLeft }
             assertEquals("helper and feedback share one inset", left(helper), left(feedback))
+            // The header never scrolls away: the commit is outside the field's scroller (device capture, landscape 2×).
+            var parent = editor.findViewById<android.view.View>(R.id.dictionary_commit).parent
+            while (parent is android.view.View) { assertFalse("commit scrolls with the field", parent is androidx.core.widget.NestedScrollView); parent = parent.parent }
         } finally { controller.pause().stop().destroy() }
     }
 

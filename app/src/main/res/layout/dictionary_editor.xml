@@ -1,28 +1,31 @@
-<!-- Add/edit term sheet (#36): the commit button sits in the header next to Close, so it stays
-     reachable above the keyboard in landscape and at font scale 2; the rest scrolls. The feedback
+<!-- Add/edit term sheet (#36): the title, the commit button and Close form a fixed header over a
+     2dp rule; only the field and its feedback scroll beneath it (weight 1, so the scroller shrinks
+     first), so the commit stays whole above the keyboard in landscape at font scale 2. The feedback
      line shares the helper text's inset (24dp + the field's 16dp text inset). -->
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent" android:layout_height="wrap_content" android:fillViewport="true">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="8dp" android:paddingBottom="24dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
-            android:paddingStart="24dp" android:paddingEnd="8dp" android:gravity="center_vertical">
-            <TextView android:id="@+id/dictionary_editor_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceTitleLarge" android:textColor="?attr/colorOnSurface" android:accessibilityHeading="true" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/dictionary_commit" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginStart="12dp" android:minWidth="96dp" android:enabled="false" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/dictionary_editor_close" style="@style/Widget.Dictation.Button.Icon"
-                android:layout_width="48dp" android:layout_height="48dp" android:layout_marginStart="4dp" android:contentDescription="@string/dictionary_close"
-                app:icon="@drawable/ic_close" app:iconTint="?attr/colorOnSurface" />
-        </LinearLayout>
-        <View android:layout_width="match_parent" android:layout_height="2dp" android:background="?attr/colorOnSurface" />
-        <com.google.android.material.textfield.TextInputLayout android:id="@+id/dictionary_entry_layout"
-            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="24dp" android:layout_marginTop="16dp"
-            android:hint="@string/dictionary_entry_hint" app:helperText="@string/dictionary_spelling" app:errorEnabled="true">
-            <com.google.android.material.textfield.TextInputEditText android:id="@+id/dictionary_entry" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:inputType="textCapSentences|textNoSuggestions" android:imeOptions="actionDone|flagNoPersonalizedLearning|flagNoExtractUi" android:singleLine="true" android:maxLength="200" android:importantForAutofill="no" />
-        </com.google.android.material.textfield.TextInputLayout>
-        <TextView android:id="@+id/dictionary_editor_feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginStart="40dp" android:layout_marginEnd="24dp" android:layout_marginTop="4dp"
-            android:text="@string/dictionary_private" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" android:accessibilityLiveRegion="polite" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="8dp">
+    <LinearLayout android:id="@+id/dictionary_editor_header" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
+        android:paddingStart="24dp" android:paddingEnd="8dp" android:gravity="center_vertical">
+        <TextView android:id="@+id/dictionary_editor_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceTitleLarge" android:textColor="?attr/colorOnSurface" android:accessibilityHeading="true" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/dictionary_commit" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="12dp" android:minWidth="96dp" android:enabled="false" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/dictionary_editor_close" style="@style/Widget.Dictation.Button.Icon"
+            android:layout_width="48dp" android:layout_height="48dp" android:layout_marginStart="4dp" android:contentDescription="@string/dictionary_close"
+            app:icon="@drawable/ic_close" app:iconTint="?attr/colorOnSurface" />
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+    <View android:layout_width="match_parent" android:layout_height="2dp" android:background="?attr/colorOnSurface" />
+    <androidx.core.widget.NestedScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_weight="1">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="24dp">
+            <com.google.android.material.textfield.TextInputLayout android:id="@+id/dictionary_entry_layout"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="24dp" android:layout_marginTop="16dp"
+                android:hint="@string/dictionary_entry_hint" app:helperText="@string/dictionary_spelling" app:errorEnabled="true">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/dictionary_entry" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="textCapSentences|textNoSuggestions" android:imeOptions="actionDone|flagNoPersonalizedLearning|flagNoExtractUi" android:singleLine="true" android:maxLength="200" android:importantForAutofill="no" />
+            </com.google.android.material.textfield.TextInputLayout>
+            <TextView android:id="@+id/dictionary_editor_feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginStart="40dp" android:layout_marginEnd="24dp" android:layout_marginTop="4dp"
+                android:text="@string/dictionary_private" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" android:accessibilityLiveRegion="polite" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

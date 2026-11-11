@@ -199,8 +199,10 @@
         <item name="android:textAppearance">@style/TextAppearance.Dictation.TitleLarge</item>
     </style>
 
-    <!-- Menus sit on the screen ground, not the panel's container. -->
-    <style name="ThemeOverlay.Dictation.Popup" parent="ThemeOverlay.Material3.Light">
+    <!-- Menus sit on the screen ground, not the panel's container. No Material parent: a
+         ThemeOverlay.Material3.Light parent reset every colour role to the Material baseline, so
+         the overflow menu drew on Material's lilac-white instead of kraft. -->
+    <style name="ThemeOverlay.Dictation.Popup" parent="">
         <item name="colorSurfaceContainer">@color/b2_surface</item>
         <item name="popupMenuStyle">@style/Widget.Dictation.PopupMenu</item>
         <item name="textAppearanceLargePopupMenu">@style/TextAppearance.Dictation.BodyLarge</item>

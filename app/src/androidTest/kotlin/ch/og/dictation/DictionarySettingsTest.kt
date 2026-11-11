@@ -92,6 +92,9 @@ class DictionarySettingsTest {
                 assertTrue("editor must open the keyboard", keyboard > 0)
                 val position = IntArray(2).also { button.getLocationInWindow(it) }
                 assertTrue("commit must stay above the keyboard", position[1] + button.height <= dialogRoot.height - keyboard)
+                assertTrue("commit must not scroll off the top", position[1] >= 0)
+                val shown = android.graphics.Rect()
+                assertTrue("commit must be wholly visible", button.getGlobalVisibleRect(shown) && shown.height() == button.height && shown.width() == button.width)
                 capture(dialogRoot, File(out, "$prefix-add.png"), activity.window.decorView, keyboard)
                 dialogRoot.findViewById<View>(R.id.dictionary_editor_close).performClick()
                 androidx.lifecycle.ViewModelProvider(activity)[DictionaryModel::class.java].state.value =

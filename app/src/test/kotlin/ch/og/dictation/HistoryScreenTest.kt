@@ -206,6 +206,17 @@ class HistoryScreenTest {
         assertEquals("start bar", role(body, com.google.android.material.R.attr.colorOnSurface), Integer.toHexString(drawn.getPixel((2 * dp).toInt(), body.height / 2)))
     }
 
+    /** The overflow menu draws on the kraft surface, not Material's baseline (device capture, #36). */
+    @Test fun overflowMenuUsesTheAppSurface() {
+        val page = open()
+        val toolbar = toolbar(page)
+        val popup = android.view.ContextThemeWrapper(toolbar.context, toolbar.popupTheme)
+        assertEquals(role(toolbar, com.google.android.material.R.attr.colorSurface),
+            Integer.toHexString(com.google.android.material.color.MaterialColors.getColor(popup, com.google.android.material.R.attr.colorSurface, 0)))
+        assertEquals(role(toolbar, com.google.android.material.R.attr.colorOnSurface),
+            Integer.toHexString(com.google.android.material.color.MaterialColors.getColor(popup, com.google.android.material.R.attr.colorOnSurface, 0)))
+    }
+
     /** #36 critique: the Clear confirmation is on the surface; Clear is error-coloured, Cancel stays neutral. */
     @Test @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
     fun clearDialogMarksOnlyTheDestructiveButton() {
