@@ -327,12 +327,32 @@ class HistoryDeliveryTest {
             val obstruction = h.root.resolve("${entry.id}.bak")
             assertTrue(obstruction.mkdir())
             obstruction.resolve("child").writeText("x")
-            h.take.cancel(); h.io.drain(); h.delivery.drain()
+            var discarded: Boolean? = null
+            h.take.cancel(onDiscarded = { discarded = it })
+            assertNull(discarded)
+            h.io.drain(); h.delivery.drain()
+            assertEquals(false, discarded)
             assertTrue(h.warnings > 0); assertEquals(0, h.inserts)
             assertEquals(entry, h.entries().single())
             obstruction.deleteRecursively()
             HistoryStore(h.root).delete(entry.id)
             assertTrue(h.entries().isEmpty())
+        } finally { h.close() }
+    }
+    @Test fun discardAcknowledgesOnlyAfterDurableDeletion() {
+        val h = Harness()
+        try {
+            h.take.start(); h.feed!!(floatArrayOf(1f)); h.io.drain()
+            assertEquals(1, h.entries().size)
+            var discarded: Boolean? = null
+            h.take.cancel(onDiscarded = { discarded = it })
+            assertNull(discarded)
+            assertEquals(1, h.entries().size)
+            h.io.drain()
+            assertTrue(h.entries().isEmpty())
+            assertNull(discarded)
+            h.delivery.drain()
+            assertEquals(true, discarded)
         } finally { h.close() }
     }
     @Test fun excludedTakeBypassesStore() {
