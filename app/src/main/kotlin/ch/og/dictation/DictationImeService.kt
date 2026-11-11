@@ -449,6 +449,8 @@ class DictationImeService : InputMethodService() {
             EditorDecision.REVOKE_AUTHORITY -> {
                 if (authority != null) authorityMoves = true
                 revokeAuthority()
+                // A rebound editor's retention applies now, not only if the panel returns.
+                if (event == EditorEvent.INPUT_START) tightenRetentionForReboundEditor()
                 hold(event)
             }
             EditorDecision.INTERRUPT -> interruptTake()
@@ -550,12 +552,7 @@ class DictationImeService : InputMethodService() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
         if (authorityMoves && finishing && !interruptedView) authority = recordingToken
-        // Retention stays latched from the starting editor and only tightens for a rebound one.
-        if (!editorRetentionEligible && takeRetentionEligible == true) {
-            takeRetentionEligible = false
-            take?.excludeFromHistory()
-            showPanelDisclosure(R.string.retention_field_off)
-        }
+        tightenRetentionForReboundEditor()
         if (holding) {
             holding = false
             if (!interruptedView) {
@@ -565,6 +562,18 @@ class DictationImeService : InputMethodService() {
             }
         }
         settleAfterRotation()
+    }
+
+    /**
+     * Retention stays latched from the starting editor and only tightens: an excluded editor the
+     * take rebinds to (password, no-learning, unclassifiable) excludes the take and removes what
+     * was saved, whatever ends the take afterwards.
+     */
+    private fun tightenRetentionForReboundEditor() {
+        if (editorRetentionEligible || takeRetentionEligible != true) return
+        takeRetentionEligible = false
+        take?.excludeFromHistory()
+        showPanelDisclosure(R.string.retention_field_off)
     }
 
     private fun settleAfterRotation() {

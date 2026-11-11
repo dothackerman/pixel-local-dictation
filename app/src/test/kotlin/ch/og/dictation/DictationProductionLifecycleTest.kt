@@ -526,6 +526,58 @@ class DictationProductionLifecycleTest {
         assertTrue(rows().isEmpty())
     }
 
+    /** How a rotation hold whose rebound editor is private ends. */
+    private enum class HoldExit { GAP, SCREEN_OFF, MICROPHONE_LOSS, SILENCED, HIDE_IN_HOLD, HIDE_AFTER_PANEL }
+
+    /**
+     * A rotation rebinds the take to a private editor and the hold ends without the take
+     * continuing: the take is excluded from the moment the private editor starts input, so
+     * neither the saved checkpoint nor the interrupted result is kept, whatever ends the hold.
+     */
+    private fun reboundPrivateEditorKeepsNothing(exit: HoldExit, stopFirst: Boolean = false) {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size) // Checkpointed while the starting editor allowed it.
+        if (exit == HoldExit.SILENCED) reportSilenced(false)
+        if (stopFirst) { button(view).performClick(); await { input.releases.get() == 1 } }
+        rotateHidden(service, android.view.Surface.ROTATION_90, editor(privateField = true))
+        settleHistory()
+        assertTrue("excluded as soon as the private editor starts input", rows().isEmpty())
+        when (exit) {
+            HoldExit.GAP -> advance(ROTATION_HOLD_GAP_MS)
+            HoldExit.SCREEN_OFF -> screenOff()
+            HoldExit.MICROPHONE_LOSS -> input.endUnexpectedly()
+            HoldExit.SILENCED -> reportSilenced(true)
+            HoldExit.HIDE_IN_HOLD -> { service.onFinishInputView(true); advance(ROTATION_HOLD_GAP_MS) }
+            HoldExit.HIDE_AFTER_PANEL -> {
+                showPanel(service, editor(privateField = true))
+                advance(ROTATION_SETTLE_MS)
+                service.onFinishInputView(true)
+            }
+        }
+        await { input.releases.get() == 1 }
+        // The final decode ran; the interrupted save (if any) follows on main and History I/O.
+        await { decode.drain(); settleHistory(); flushes.get() == 1 }
+        repeat(3) { decode.drain(); settleHistory() }
+        assertTrue(rows().isEmpty())
+        assertEquals(0, commits)
+    }
+
+    @Test fun reboundPrivateEditorThenGapKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.GAP)
+    @Test fun reboundPrivateEditorThenLockKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.SCREEN_OFF)
+    @Test fun reboundPrivateEditorThenMicrophoneLossKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.MICROPHONE_LOSS)
+    @Test fun reboundPrivateEditorThenSilencingKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.SILENCED)
+    @Test fun reboundPrivateEditorThenHideInTheHoldKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_IN_HOLD)
+    @Test fun reboundPrivateEditorThenRealHideKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_AFTER_PANEL)
+    @Test fun stopWaitReboundPrivateEditorThenGapKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.GAP, stopFirst = true)
+    @Test fun stopWaitReboundPrivateEditorThenLockKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.SCREEN_OFF, stopFirst = true)
+    @Test fun stopWaitReboundPrivateEditorThenHideInTheHoldKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_IN_HOLD, stopFirst = true)
+    @Test fun stopWaitReboundPrivateEditorThenRealHideKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_AFTER_PANEL, stopFirst = true)
+
     @Test fun privateStartingEditorStaysExcludedAfterReboundToOrdinaryField() {
         DictationImeService.requestPanel = {}
         val input = Input()
