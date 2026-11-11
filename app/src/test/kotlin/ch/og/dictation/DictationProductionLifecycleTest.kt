@@ -294,6 +294,55 @@ class DictationProductionLifecycleTest {
         assertEquals(1, commits)
     }
 
+    @Test
+    @Config(qualifiers = "w320dp-h320dp-land")
+    fun attachedPromptsKeepSafeFocusAtLargeTextInLandscape() {
+        val app = RuntimeEnvironment.getApplication()
+        val config = android.content.res.Configuration(app.resources.configuration)
+        config.fontScale = 2f
+        app.resources.updateConfiguration(config, app.resources.displayMetrics)
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val recording = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, recording.window!!.attributes.type)
+        val root = recording.window!!.decorView
+        val width = (320 * app.resources.displayMetrics.density).toInt()
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        root.layout(0, 0, width, root.measuredHeight)
+        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
+        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_NEUTRAL, android.app.AlertDialog.BUTTON_POSITIVE)) {
+            val action = recording.getButton(which)
+            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
+        }
+        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).text.isNotEmpty())
+        recording.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val finishing = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, finishing.window!!.attributes.type)
+        val finishRoot = finishing.window!!.decorView
+        finishRoot.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        finishRoot.layout(0, 0, width, finishRoot.measuredHeight)
+        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
+        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_POSITIVE)) {
+            val action = finishing.getButton(which)
+            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
+        }
+        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_POSITIVE).text.isNotEmpty())
+        val safe = finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
+        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+        // Robolectric does not synthesize Button clicks from Enter; ensure it did not discard,
+        // then exercise the focused safe action explicitly.
+        assertEquals(0, commits)
+        if (finishing.isShowing) safe.performClick()
+        decode.drain(); settleHistory()
+        assertEquals(1, commits)
+    }
+
     @Test fun finishingPromptDiscardSuppressesLateOutput() {
         val input = Input()
         devices.add(input)

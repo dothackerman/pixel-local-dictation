@@ -696,7 +696,7 @@ class DictationImeService : InputMethodService() {
         }
         try {
             dialog.show()
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
         } catch (_: WindowManager.BadTokenException) {
             recordingPrompt = null
             interruptTake()
@@ -735,7 +735,7 @@ class DictationImeService : InputMethodService() {
         }
         try {
             dialog.show()
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
         } catch (_: WindowManager.BadTokenException) {
             recordingPrompt = null
             interruptTake()
