@@ -152,12 +152,14 @@ History is a sibling of Dictionary, not a variant. Source: `layout/{history,hist
 
 The recording panel's design is otherwise outside this document (#30); only its landscape form is recorded here. Source: `layout-land/ime.xml`, `RecordingRingView.kt`, `PanelPreview.kt`.
 
-- **Same panel, side by side.** Same views, ids, colors and copy as portrait; no extra controls. Start side: Back (48dp) and status, the private-field line, then the three-line preview, both indented to the status text. End side: a 232×148dp stage with the 70dp microphone and ring, under the right thumb.
+- **Same panel, side by side.** Same views, ids, colors and copy as portrait; no extra controls. Start side: Back (48dp) and status, the private-field line, then the three-line preview, both indented to the status text. End side: a 232×148dp stage with the 70dp microphone and ring, under the right thumb; in a window narrower than 600dp the stage is 148dp square so the status and preview keep room (`panel_stage_width_land`).
 - **Compact.** The editor stays visible above: on the Pixel 10 Pro XL the panel is 156dp tall at default font and 196dp at 2× with the private-field line (of 443dp). The input method never uses fullscreen extract mode.
 - **Ring.** The resting ring keeps its portrait size; loudness motion scales to the shorter stage so the loudest ring is never clipped.
 - **Preview.** In both orientations the preview shows the newest line when the text needs more lines than it shows.
 - **Rotation.** Rotating rebuilds the panel for the new orientation from the current take; it never starts, stops or interrupts recording.
-- Verification: `RecordingPanelTest` on the Pixel (landscape controls, 48dp targets, height, unclipped text and ring at fontScale 1 and 2); private captures in `corpus/lab/issue36/56-panel-*/` (light and dark, default and large font). The panel keeps its fixed light palette in dark mode (not yet themed).
+- **Finishing after a rotation.** The returned panel shows the same Finishing state: status "Finishing…", microphone disabled and dimmed, ring at its resting dimmed ink. It reads as finishing in a still frame (animations off); nothing moves to say so.
+- **A Cancel choice through a rotation.** An open choice is closed while the panel is away and shown again on the returned panel once it has stayed visible (`ROTATION_SETTLE_MS`), with the safe action focused. Rotation never chooses. If the choice cannot be attached there, its safe action applies (Continue recording, Keep finishing). Lock, hide and focus change override it (History).
+- Verification: `RecordingPanelTest` on the Pixel (landscape controls, 48dp targets, height, unclipped text and ring at fontScale 1 and 2); private captures in `corpus/lab/issue36/56-panel-*/` (light and dark, default and large font). The panel keeps its fixed light palette in dark mode (not yet themed); the Cancel choices follow the system theme. Host: `DictationProductionLifecycleTest` (returned finishing panel light/dark at fontScale 2, narrow 320dp landscape, prompts at 320dp light/dark). Device captures of the rotation states: pending (#53).
 
 Dictionary semantics the UI must respect: [PRODUCT.md](PRODUCT.md).
 

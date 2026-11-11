@@ -22,7 +22,9 @@ enum class RotationEvent {
     /** Written by the automated probe: it requested a new orientation for its own editor. */
     PROBE_ROTATE_REQUESTED,
     /** Written by the automated probe: our active recording's silenced state (flag) changed. */
-    PROBE_RECORDING_STATE
+    PROBE_RECORDING_STATE,
+    /** The take's final text is decoded (before History staging and dispatch); no text is traced. */
+    FINAL_READY,
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */

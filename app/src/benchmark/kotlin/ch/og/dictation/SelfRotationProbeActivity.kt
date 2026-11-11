@@ -33,6 +33,11 @@ open class SelfRotationProbeActivity : Activity() {
 
     companion object {
         @Volatile var current: SelfRotationProbeActivity? = null
+        /**
+         * Intent extra: an ordinary field whose takes are kept in History, so a test can reach the
+         * History save acknowledgement. The test removes the rows it created (synthetic speech only).
+         */
+        const val HISTORY_ELIGIBLE = "historyEligible"
     }
 
     lateinit var editor: EditText
@@ -54,8 +59,10 @@ open class SelfRotationProbeActivity : Activity() {
         editor = EditText(this).apply {
             id = R.id.probe_no_learning
             inputType = InputType.TYPE_CLASS_TEXT
-            imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or EditorInfo.IME_FLAG_NO_FULLSCREEN
-            hint = "Probe field (not kept)"
+            val kept = intent.getBooleanExtra(HISTORY_ELIGIBLE, false)
+            imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_FULLSCREEN or
+                if (kept) 0 else EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            hint = if (kept) "Probe field (kept in History until the probe removes it)" else "Probe field (not kept)"
         }
         column.addView(editor)
         setContentView(column)

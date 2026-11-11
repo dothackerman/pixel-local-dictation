@@ -43,8 +43,24 @@ class EditorEventPolicyTest {
         assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.SCREEN_OFF, take().copy(rotation = true)))
     }
 
-    /** Stop wait and an interrupted take have no capture to keep; rotation there is #53. */
-    @Test fun rotationWithoutCaptureStillInterrupts() {
+    /** Stop wait: the result Stop authorised is held and its authority moves with the panel (#53). */
+    @Test fun identifiedRotationDuringTheStopWaitRevokesAuthorityButKeepsFinishing() {
+        val stopWait = take(sameSession = false).copy(rotation = true, capturing = false, finishing = true)
+        for (event in ending - EditorEvent.SCREEN_OFF) {
+            assertEquals(event.name, EditorDecision.REVOKE_AUTHORITY, EditorEventPolicy.decide(event, stopWait))
+        }
+        assertEquals(NOTHING, EditorEventPolicy.decide(EditorEvent.INPUT_VIEW_START, stopWait))
+        assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.SCREEN_OFF, stopWait))
+    }
+
+    @Test fun stopWaitWithoutRotationStillInterrupts() {
+        val stopWait = take().copy(capturing = false, finishing = true)
+        for (event in ending) assertEquals(event.name, INTERRUPT, EditorEventPolicy.decide(event, stopWait))
+        assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.INPUT_VIEW_START, stopWait.copy(sameSession = false)))
+    }
+
+    /** An interrupted take already goes to History; a rotation cannot bring insertion back. */
+    @Test fun rotationAfterAnInterruptionStillInterrupts() {
         for (event in ending) {
             assertEquals(event.name, INTERRUPT, EditorEventPolicy.decide(event, take().copy(rotation = true, capturing = false)))
         }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phone held sideways (Pixel 10 Pro XL: about 990dp): the wide stage under the right thumb. -->
+    <dimen name="panel_stage_width_land">232dp</dimen>
+</resources>

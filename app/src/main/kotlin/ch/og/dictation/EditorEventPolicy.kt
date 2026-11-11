@@ -18,6 +18,8 @@ data class TakeFacts(
     val sameSession: Boolean,
     /** The microphone is still recording this take (not the Stop wait, not interrupted). */
     val capturing: Boolean = active,
+    /** Stop was pressed and the take waits for its result (not interrupted). */
+    val finishing: Boolean = false,
     /**
      * The app itself observed a display-rotation change since the panel was last visible, at or
      * before this event. Never inferred from package, field ID or editor attributes.
@@ -46,8 +48,9 @@ object EditorEventPolicy {
         if (event == EditorEvent.SCREEN_OFF) return EditorDecision.INTERRUPT
         // Switching back to the keyboard can synchronously end input; that is not an interruption.
         if (take.returning) return EditorDecision.NOTHING
-        // Rotation hold: the editor reacts to a rotation the app saw; keep capture, never insert.
-        val hold = take.rotation && take.capturing
+        // Rotation hold: the editor reacts to a rotation the app saw; keep capture or the Stop
+        // wait, never insert until the panel is back.
+        val hold = take.rotation && (take.capturing || take.finishing)
         return when (event) {
             // The view can be restarted without a new input start; keep that take. After a rotation
             // the panel returning on a live session ends the hold with the take continuing.

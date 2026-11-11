@@ -59,9 +59,23 @@ is shown on a live session, or in History when `ROTATION_HOLD_GAP_MS` (3 s, star
 value, never extended, one per rotation) ends, the screen turns off, the
 microphone ends or capture is reported silenced. No hold without an identified
 rotation; no timer after a plain hide. **Authority:** Stop grants it to the session
-the visible panel is attached to; any session change after the press revokes it
-(rotation after the press: #53, until then History). Commit guards unchanged.
+the visible panel is attached to; any session change after the press revokes it,
+except an identified rotation (#53, below). Commit guards unchanged.
 Retention stays latched from the starting editor and only tightens on rebind.
+
+**Stop wait (#53):** the hold also covers the Stop wait. An identified rotation
+after the press revokes Stop's authority and holds the result before dispatch; the
+authority moves to the session the panel returns to, and the held result is
+released only once the panel has stayed visible there for `ROTATION_SETTLE_MS`
+(Android's own reset panel can be hidden again ~95 ms later). It is inserted there
+once and FUTO returns. A panel that does not return within the same gap, or any
+other session change, sends the result to History only. A commit already
+dispatched or accepted is never held, undone or repeated. **Cancel choices:** a
+rotation hold closes an open choice without choosing and shows it again on the
+settled panel; if it cannot be attached there, its safe action applies (Continue
+recording, Keep finishing), never an interruption. The finishing choice keeps the
+result held throughout. Lock, hide and focus change still override any choice
+(History).
 
 Evidence: host lifecycle tests for both editor modes, the Pixel callback order,
 gap expiry, real hide after rotation, repeated rotation, lock, focus change,
@@ -74,9 +88,14 @@ visible again +38–45 ms (kept editor) and, for the recreated editor, hidden at
 +119–147 ms and back by our request at +160–178 ms (hidden ≤ 46 ms); drawn ≤ 183 ms.
 Capture was never reported silenced (longest hidden interval 46 ms, so silencing
 of a long-hidden client stays untested). Demo: one take, one capture, speech
-before and after the rotation inserted once, FUTO restored, both modes. Rotation
-during the Stop wait still ends in History (#53). Gap 3 s and settle 1 s kept:
+before and after the rotation inserted once, FUTO restored, both modes. Gap 3 s and settle 1 s kept:
 ≥ 16× and ≥ 9× the measured times; one probe editor, one device.
+#53 evidence: host lifecycle tests for rotation before the final decode, before the
+History save acknowledgement, after the accepted commit, Stop on Android's reset
+panel, the gap without a returning panel, a real hide after the settled panel, each
+choice open (shown again; Continue, Finish, Discard, Keep, Discard), the unattachable
+fallback, and lock over a moved choice. Pending on the Pixel:
+`RotationFinishingDemoTest` (seven cases).
 Limits: a hide or focus change within the settle time after a rotation cannot be
 told apart from the editor reacting to it (held, then History at the gap); the
 display callback can still report the old rotation (#56), so a 180° turn without a

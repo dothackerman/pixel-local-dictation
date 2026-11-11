@@ -13,7 +13,7 @@ The time from pressing Stop until the text is inserted.
 _Avoid_: latency, finalization time
 
 **Rotation hold**:
-The short time after an identified rotation in which the panel is gone but the take keeps recording, nothing is inserted, and the panel is expected back.
+The short time after an identified rotation in which the panel is gone but the take keeps recording (or, in the Stop wait, keeps finishing with its result held), nothing is inserted, and the panel is expected back.
 _Avoid_: grace period, decision window
 
 **Chunk**:

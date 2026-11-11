@@ -97,6 +97,16 @@ class DictationImeService : InputMethodService() {
     private var holding = false
     /** From the first hold of a rotation until the panel has settled; one gap for all of it. */
     private var rotationEpisode = false
+    /** Stop granted authority and a rotation hold revoked it: it moves to the session the panel returns to. */
+    private var authorityMoves = false
+    /** A Stop-wait rotation hold holds the result before dispatch until the panel has settled. */
+    private var deliveryHeldForRotation = false
+    /** A Cancel choice that was open when the rotation hold began; shown again once the panel settles. */
+    private var pendingPrompt: Prompt? = null
+    private enum class Prompt { RECORDING, FINISHING }
+    private var openPrompt: Prompt? = null
+    /** A prompt closed for a rotation: its dismissal decides nothing. */
+    private var movedPrompt: AlertDialog? = null
     private val gapExpired = Runnable {
         if (!rotationEpisode) return@Runnable
         if (holding) { Log.i(tag, "rotation hold: panel did not return"); interruptTake() }
@@ -105,7 +115,7 @@ class DictationImeService : InputMethodService() {
     /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
     private val recordingCallback = object : android.media.AudioManager.AudioRecordingCallback() {
         override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
-            if (holding && configs.orEmpty().any { it.isClientSilenced }) silencedDuringHold()
+            if (holding && !finishing && configs.orEmpty().any { it.isClientSilenced }) silencedDuringHold()
         }
     }
     private val panelSettled = Runnable {
@@ -430,10 +440,15 @@ class DictationImeService : InputMethodService() {
         val decision = EditorEventPolicy.decide(event, TakeFacts(
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
             capturing = takeActive && !finishing && !interruptedView,
+            finishing = takeActive && finishing && !interruptedView,
             rotation = rotationChanges > rotationsWhenVisible))
         when (decision) {
             EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
-            EditorDecision.REVOKE_AUTHORITY -> { revokeAuthority(); hold(event) }
+            EditorDecision.REVOKE_AUTHORITY -> {
+                if (authority != null) authorityMoves = true
+                revokeAuthority()
+                hold(event)
+            }
             EditorDecision.INTERRUPT -> interruptTake()
         }
         return decision
@@ -445,21 +460,55 @@ class DictationImeService : InputMethodService() {
         if (!holding) {
             holding = true
             Log.i(tag, "rotation hold")
-            dismissRecordingPrompt() // Safe default: Continue recording.
             ring?.follow(null)
         }
+        // The prompt's window belongs to the panel that is going away; the choice stays open.
+        movePromptAside()
+        // Stop wait: hold the result before dispatch; an accepted commit is never undone.
+        if (finishing && !deliveryHeldForRotation && take?.holdDelivery() == true) deliveryHeldForRotation = true
         if (!rotationEpisode) {
             rotationEpisode = true
             mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
         }
+        if (finishing) { requestPanelAfter(event); return } // The microphone is already off.
         val silenced = runCatching {
             getSystemService(android.media.AudioManager::class.java)?.activeRecordingConfigurations.orEmpty().any { it.isClientSilenced }
         }.getOrDefault(false)
         if (silenced) { silencedDuringHold(); return }
-        // A new editor took input without showing the keyboard: ask for our own panel.
+        requestPanelAfter(event)
+    }
+
+    /** A new editor took input without showing the keyboard: ask for our own panel. */
+    private fun requestPanelAfter(event: EditorEvent) {
         if (event == EditorEvent.INPUT_START) mainHandler.post {
             if (holding && !inputViewVisible && !destroyed) requestPanel(this)
         }
+    }
+
+    /** Closes an open Cancel choice without choosing; it is shown again when the panel settles. */
+    private fun movePromptAside() {
+        val dialog = recordingPrompt ?: return
+        if (!dialog.isShowing) return
+        pendingPrompt = openPrompt
+        movedPrompt = dialog
+        dismissRecordingPrompt()
+    }
+
+    /**
+     * The panel settled after a rotation: show a moved choice again, or apply its safe default
+     * (Continue recording, Keep finishing) when it cannot be shown; then release a held result.
+     */
+    private fun restoreAfterRotation() {
+        val prompt = pendingPrompt
+        pendingPrompt = null
+        val heldForRotation = deliveryHeldForRotation
+        deliveryHeldForRotation = false
+        if (!takeActive || interruptedView) return
+        when {
+            prompt == Prompt.RECORDING && !finishing -> showRecordingPrompt(reopen = true)
+            prompt == Prompt.FINISHING && finishing -> showFinishingPrompt(reopen = true)
+        }
+        if ((heldForRotation || prompt == Prompt.FINISHING) && openPrompt != Prompt.FINISHING) take?.resumeDelivery()
     }
 
     private fun silencedDuringHold() {
@@ -479,6 +528,15 @@ class DictationImeService : InputMethodService() {
     private fun rotationSettled() {
         endHold()
         rotationsWhenVisible = rotationChanges
+        authorityMoves = false
+        restoreAfterRotation()
+    }
+
+    /** The take ended or was interrupted: nothing of a rotation may decide for it any more. */
+    private fun forgetRotationChoice() {
+        authorityMoves = false
+        deliveryHeldForRotation = false
+        pendingPrompt = null
     }
 
     /**
@@ -488,6 +546,8 @@ class DictationImeService : InputMethodService() {
      */
     private fun panelVisible() {
         recordingToken = session.token()
+        // Stop's authority moves with the identified rotation to the session the panel returned to.
+        if (authorityMoves && finishing && !interruptedView) authority = recordingToken
         // Retention stays latched from the starting editor and only tightens for a rebound one.
         if (!editorRetentionEligible && takeRetentionEligible == true) {
             takeRetentionEligible = false
@@ -499,7 +559,7 @@ class DictationImeService : InputMethodService() {
             if (!interruptedView) {
                 previewAllowed = true
                 showPreview(latestPreview)
-                ring?.follow(feedback)
+                if (!finishing) ring?.follow(feedback)
             }
         }
         settleAfterRotation()
@@ -649,6 +709,7 @@ class DictationImeService : InputMethodService() {
                     startupTake = null
                     latestPreview = ""
                     endHold()
+                    forgetRotationChoice()
                     if (result.interrupted) {
                         take = null
                         finishing = false
@@ -677,6 +738,7 @@ class DictationImeService : InputMethodService() {
             observeRotation()
             rotationsWhenVisible = rotationChanges
             endHold()
+            forgetRotationChoice()
             finishing = false
             setMicrophone(false, R.string.status_opening)
             val currentFeedback = RecordingFeedback()
@@ -742,6 +804,7 @@ class DictationImeService : InputMethodService() {
                 val rotationEvent = when (event.phase) {
                     "stopRequested" -> RotationEvent.STOP_REQUESTED
                     "captureStopped" -> RotationEvent.CAPTURE_STOPPED
+                    "finalReady" -> RotationEvent.FINAL_READY
                     "takeEnded" -> RotationEvent.TAKE_ENDED
                     else -> null
                 }
@@ -790,6 +853,7 @@ class DictationImeService : InputMethodService() {
         if (!takeActive || finishing) return
         // Stop grants authority to the input session the visible panel is attached to.
         authority = recordingToken?.takeIf { session.matches(it) }
+        authorityMoves = false
         finishing = true
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
@@ -843,6 +907,8 @@ class DictationImeService : InputMethodService() {
     private fun interruptTake() {
         val old = take ?: return
         endHold()
+        // A system interruption overrides any open or moved choice; the take goes to History.
+        forgetRotationChoice()
         MicrophoneOwner.requireExplicitStart()
         revokeAuthority()
         if (interruptedView) return
@@ -895,6 +961,7 @@ class DictationImeService : InputMethodService() {
     private fun dismissRecordingPrompt() {
         recordingPrompt?.dismiss()
         recordingPrompt = null
+        openPrompt = null
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -905,7 +972,11 @@ class DictationImeService : InputMethodService() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun showRecordingPrompt() {
+    /**
+     * [reopen]: shown again on the panel that returned after a rotation. If it cannot be attached
+     * there, the safe default applies (Continue recording), never an interruption.
+     */
+    private fun showRecordingPrompt(reopen: Boolean = false) {
         if (recordingPrompt?.isShowing == true || !takeActive || finishing) return
         if (captureEnded()) { interruptTake(); return }
         val token = panel?.windowToken ?: return
@@ -930,23 +1001,35 @@ class DictationImeService : InputMethodService() {
                 }
             }
             .create()
+        dialog.setOnDismissListener { if (recordingPrompt === dialog) { recordingPrompt = null; openPrompt = null } }
+        if (!attachPrompt(dialog, token, Prompt.RECORDING) && !reopen) interruptTake()
+    }
+
+    /** Shows [dialog] attached to the panel's window; false if that window is gone. */
+    private fun attachPrompt(dialog: AlertDialog, token: android.os.IBinder, kind: Prompt): Boolean {
         recordingPrompt = dialog
-        dialog.setOnDismissListener { if (recordingPrompt === dialog) recordingPrompt = null }
+        openPrompt = kind
         dialog.window?.apply {
             setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
             attributes = attributes.apply { this.token = token }
             addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
         }
-        try {
+        return try {
             dialog.show()
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
+            true
         } catch (_: WindowManager.BadTokenException) {
             recordingPrompt = null
-            interruptTake()
+            openPrompt = null
+            false
         }
     }
 
-    private fun showFinishingPrompt() {
+    /**
+     * Holds the result before dispatch while open. [reopen]: shown again after a rotation; if it
+     * cannot be attached, the safe default applies (Keep finishing), never an interruption.
+     */
+    private fun showFinishingPrompt(reopen: Boolean = false) {
         if (recordingPrompt?.isShowing == true || !takeActive) return
         val current = take ?: return
         val token = panel?.windowToken ?: return
@@ -966,23 +1049,14 @@ class DictationImeService : InputMethodService() {
                     showIdle()
                 }
             }.create()
-        recordingPrompt = dialog
         dialog.setOnDismissListener {
-            if (recordingPrompt === dialog) recordingPrompt = null
-            if (!discarded) current.resumeDelivery()
+            if (recordingPrompt === dialog) { recordingPrompt = null; openPrompt = null }
+            // Closed for a rotation, or the rotation still holds the result: nothing is released.
+            val moved = movedPrompt === dialog
+            if (moved) movedPrompt = null
+            if (!discarded && !moved && !(take === current && deliveryHeldForRotation)) current.resumeDelivery()
         }
-        dialog.window?.apply {
-            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
-            attributes = attributes.apply { this.token = token }
-            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
-        }
-        try {
-            dialog.show()
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
-        } catch (_: WindowManager.BadTokenException) {
-            recordingPrompt = null
-            interruptTake()
-        }
+        if (!attachPrompt(dialog, token, Prompt.FINISHING) && !reopen) interruptTake()
     }
 
     private fun cancelAndReturn() {

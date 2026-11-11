@@ -30,6 +30,9 @@ class TakeTranscriberTest {
             val stopped = events.single { it.phase == "producerStop" }
             assertEquals(true, stopped.active); assertEquals(1, stopped.queued)
             release.countDown(); assertTrue(done.await(5, TimeUnit.SECONDS))
+            // The final callback runs inside the finish work; its WorkerEnd event is still being
+            // added on the queue thread. Read the events only after that thread has stopped.
+            queue.shutdown(); assertTrue(queue.awaitTermination(5, TimeUnit.SECONDS))
             val phases = events.map { it.phase }
             assertTrue(phases.indexOf("firstUsablePreview") > phases.indexOf("producerStop"))
             assertTrue(phases.indexOf("finishDrain") > phases.lastIndexOf("chunkWorkerEnd"))
