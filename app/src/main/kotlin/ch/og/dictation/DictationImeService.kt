@@ -36,6 +36,8 @@ class DictationImeService : InputMethodService() {
     companion object {
         internal var recorderFactory: () -> Recorder = ::Recorder
         internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
+        /** Asks Android to show this input method's own panel on the current input session. */
+        internal var requestPanel: (InputMethodService) -> Unit = { it.requestShowSelf(0) }
     }
     private val tag = "DictationIme"
     private var status: TextView? = null
@@ -82,6 +84,28 @@ class DictationImeService : InputMethodService() {
     /** Last observed display rotation and the number of rotation changes this service saw. */
     private var displayRotation: Int? = null
     private var rotationChanges = 0L
+    /** Orientation of the last configuration this service saw; a change counts as a rotation. */
+    private var configurationOrientation: Int? = null
+    private var rotationsAtConfiguration = 0L
+    /**
+     * rotationChanges when the panel was last visible (settled, see ROTATION_SETTLE_MS); a higher
+     * count identifies a rotation since.
+     */
+    private var rotationsWhenVisible = 0L
+    /** Rotation hold: authority revoked, preview hidden, capture continues until the panel returns. */
+    private var holding = false
+    /** From the first hold of a rotation until the panel has settled; one gap for all of it. */
+    private var rotationEpisode = false
+    private val gapExpired = Runnable {
+        if (!rotationEpisode) return@Runnable
+        if (holding) { Log.i(tag, "rotation hold: panel did not return"); interruptTake() }
+        else rotationSettled()
+    }
+    private val panelSettled = Runnable {
+        if (!holding && inputViewVisible && session.matches(recordingToken)) rotationSettled()
+    }
+    /** Newest preview of the current take, shown again when the panel returns from a hold. */
+    private var latestPreview = ""
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
@@ -127,6 +151,9 @@ class DictationImeService : InputMethodService() {
             }
             observeGeometry()
         }
+        listenToDisplay()
+        observeRotation()
+        configurationOrientation = resources.configuration.orientation
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         MicrophoneOwner.observe(microphoneOwnerListener)
         val ready = Engine.warmUp(this)
@@ -342,6 +369,11 @@ class DictationImeService : InputMethodService() {
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         observeRotation()
+        // Own configuration counts too, unless the display already reported a rotation since the last one.
+        if (rotationChanges == rotationsAtConfiguration && configurationOrientation != null &&
+            configurationOrientation != newConfig.orientation) rotationChanges++
+        configurationOrientation = newConfig.orientation
+        rotationsAtConfiguration = rotationChanges
         rotationEvent(RotationEvent.CONFIGURATION)
         super.onConfigurationChanged(newConfig)
         val layoutChanged = panelConfiguration?.let {
@@ -352,6 +384,8 @@ class DictationImeService : InputMethodService() {
             ring?.follow(null)
             setInputView(onCreateInputView())
         }
+        // An editor that keeps focus sends no event; the visible panel settles the rotation.
+        settleAfterRotation()
         rotationEvent(RotationEvent.CONFIGURATION_DONE)
     }
 
@@ -374,14 +408,75 @@ class DictationImeService : InputMethodService() {
 
     /** The six editor-event callbacks decide the take's fate here and nowhere else. */
     private fun editorEvent(event: EditorEvent): EditorDecision {
-        val decision = EditorEventPolicy.decide(event,
-            TakeFacts(active = takeActive, returning = returning, sameSession = session.matches(recordingToken)))
+        // Identification uses only what this app observed, at or before this event.
+        observeRotation()
+        val decision = EditorEventPolicy.decide(event, TakeFacts(
+            active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
+            capturing = takeActive && !finishing && !interruptedView,
+            rotation = rotationChanges > rotationsWhenVisible))
         when (decision) {
-            EditorDecision.NOTHING -> Unit
-            EditorDecision.REVOKE_AUTHORITY -> revokeAuthority()
+            EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
+            EditorDecision.REVOKE_AUTHORITY -> { revokeAuthority(); hold(event) }
             EditorDecision.INTERRUPT -> interruptTake()
         }
         return decision
+    }
+
+    /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
+    private fun hold(event: EditorEvent) {
+        mainHandler.removeCallbacks(panelSettled)
+        if (!holding) {
+            holding = true
+            Log.i(tag, "rotation hold")
+            dismissRecordingPrompt() // Safe default: Continue recording.
+            ring?.follow(null)
+        }
+        if (!rotationEpisode) {
+            rotationEpisode = true
+            mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
+        }
+        // A new editor took input without showing the keyboard: ask for our own panel.
+        if (event == EditorEvent.INPUT_START) mainHandler.post {
+            if (holding && !inputViewVisible && !destroyed) requestPanel(this)
+        }
+    }
+
+    /** Ends hold, gap and settling without deciding anything about the take. */
+    private fun endHold() {
+        holding = false
+        rotationEpisode = false
+        mainHandler.removeCallbacks(gapExpired)
+        mainHandler.removeCallbacks(panelSettled)
+    }
+
+    /** The panel stayed visible after the rotation: later editor events are judged without it. */
+    private fun rotationSettled() {
+        endHold()
+        rotationsWhenVisible = rotationChanges
+    }
+
+    /**
+     * The panel is visible on the live session for this take; a held take continues there. The
+     * rotation stays identified until the panel has stayed visible for ROTATION_SETTLE_MS, because
+     * a recreated editor can still hide it right after Android showed it (#56 trace).
+     */
+    private fun panelVisible() {
+        recordingToken = session.token()
+        if (holding) {
+            holding = false
+            if (!interruptedView) {
+                previewAllowed = true
+                showPreview(latestPreview)
+                ring?.follow(feedback)
+            }
+        }
+        settleAfterRotation()
+    }
+
+    private fun settleAfterRotation() {
+        if (!takeActive || holding || !inputViewVisible || rotationChanges <= rotationsWhenVisible) return
+        mainHandler.removeCallbacks(panelSettled)
+        mainHandler.postDelayed(panelSettled, ROTATION_SETTLE_MS)
     }
 
     /** No text may be written for this take until Stop grants authority again; capture is untouched. */
@@ -412,10 +507,14 @@ class DictationImeService : InputMethodService() {
         return current
     }
 
-    /** Trace only: shows whether the display reports rotation before the editor's events. */
+    /** Counts display rotations as soon as Android reports them, before the editor reacts. */
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId == Display.DEFAULT_DISPLAY) rotationEvent(RotationEvent.DISPLAY_CHANGED)
+            if (displayId != Display.DEFAULT_DISPLAY) return
+            // The value can still be the old one here (#56 trace); configuration and editor events read it again.
+            observeRotation()
+            settleAfterRotation()
+            rotationEvent(RotationEvent.DISPLAY_CHANGED)
         }
         override fun onDisplayAdded(displayId: Int) {}
         override fun onDisplayRemoved(displayId: Int) {}
@@ -423,7 +522,7 @@ class DictationImeService : InputMethodService() {
     private var displayListening = false
 
     private fun listenToDisplay() {
-        if (displayListening || rotationTrace == null) return
+        if (displayListening) return
         displayListening = true
         getSystemService(DisplayManager::class.java)?.registerDisplayListener(displayListener, mainHandler)
     }
@@ -432,6 +531,7 @@ class DictationImeService : InputMethodService() {
         rotationEvent(RotationEvent.SERVICE_DESTROY)
         if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
         destroyed = true
+        endHold()
         MicrophoneOwner.remove(microphoneOwnerListener)
         unregisterReceiver(screenOff)
         session.invalidate()
@@ -510,6 +610,8 @@ class DictationImeService : InputMethodService() {
                     recordingToken = null
                     authority = null
                     startupTake = null
+                    latestPreview = ""
+                    endHold()
                     if (result.interrupted) {
                         take = null
                         finishing = false
@@ -533,6 +635,11 @@ class DictationImeService : InputMethodService() {
             }
             showStatus(R.string.status_opening)
             showPreview("")
+            latestPreview = ""
+            // The panel is visible now; only rotations after this point count for this take.
+            observeRotation()
+            rotationsWhenVisible = rotationChanges
+            endHold()
             finishing = false
             setMicrophone(false, R.string.status_opening)
             val currentFeedback = RecordingFeedback()
@@ -698,6 +805,7 @@ class DictationImeService : InputMethodService() {
     /** System interruption: revokes authority to insert, then stops capture. */
     private fun interruptTake() {
         val old = take ?: return
+        endHold()
         MicrophoneOwner.requireExplicitStart()
         revokeAuthority()
         if (interruptedView) return
@@ -920,7 +1028,9 @@ class DictationImeService : InputMethodService() {
 
     /** The end of the text so far; the view is a few lines high. */
     private fun publishPreview(generation: Long, text: String) {
-        if (generation == takeGeneration && previewAllowed && !interruptedView) showPreview(text)
+        if (generation != takeGeneration || interruptedView) return
+        latestPreview = text
+        if (previewAllowed) showPreview(text)
     }
 
     private fun showPreview(text: String) {

@@ -28,6 +28,30 @@ class EditorEventPolicyTest {
         }
     }
 
+    @Test fun identifiedRotationDuringCaptureRevokesAuthorityButKeepsCapture() {
+        for (event in ending - EditorEvent.SCREEN_OFF) {
+            assertEquals(event.name, EditorDecision.REVOKE_AUTHORITY,
+                EditorEventPolicy.decide(event, take(sameSession = false).copy(rotation = true)))
+        }
+    }
+
+    @Test fun panelReturningOnANewSessionAfterARotationKeepsTheTake() {
+        assertEquals(NOTHING, EditorEventPolicy.decide(EditorEvent.INPUT_VIEW_START, take(sameSession = false).copy(rotation = true)))
+    }
+
+    @Test fun screenOffInterruptsEvenDuringARotation() {
+        assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.SCREEN_OFF, take().copy(rotation = true)))
+    }
+
+    /** Stop wait and an interrupted take have no capture to keep; rotation there is #53. */
+    @Test fun rotationWithoutCaptureStillInterrupts() {
+        for (event in ending) {
+            assertEquals(event.name, INTERRUPT, EditorEventPolicy.decide(event, take().copy(rotation = true, capturing = false)))
+        }
+        assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.INPUT_VIEW_START,
+            take(sameSession = false).copy(rotation = true, capturing = false)))
+    }
+
     @Test fun withoutATakeNothingHappens() {
         for (event in EditorEvent.entries) {
             assertEquals(event.name, NOTHING, EditorEventPolicy.decide(event, TakeFacts(active = false, returning = false, sameSession = false)))

@@ -117,6 +117,7 @@ class DictationProductionLifecycleTest {
 
     @After fun tearDown() {
         DictationImeService.postCaptureEnd = { handler, callback -> handler.post(callback) }
+        DictationImeService.requestPanel = { it.requestShowSelf(0) }
         try {
             opened.asReversed().forEach { runCatching { it.destroy() } }
             await {
@@ -151,17 +152,23 @@ class DictationProductionLifecycleTest {
     private fun editor(privateField: Boolean = false) = EditorInfo().apply {
         inputType = InputType.TYPE_CLASS_TEXT or if (privateField) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL
     }
+    /** One editor field; counts what reaches it. */
+    private inner class Field(service: DictationImeService) : BaseInputConnection(View(service), false) {
+        var inserted = mutableListOf<String>()
+        override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+            commits++
+            inserted.add(text.toString())
+            onCommit?.also { onCommit = null; it() }
+            return true
+        }
+    }
+    private val firstField = mutableMapOf<DictationImeService, Field>()
     private fun service(info: EditorInfo): Pair<DictationImeService, View> {
         val controller = Robolectric.buildService(DictationImeService::class.java).create()
         opened.add(controller)
         val service = controller.get()
-        val connection = object : BaseInputConnection(View(service), false) {
-            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                commits++
-                onCommit?.also { onCommit = null; it() }
-                return true
-            }
-        }
+        val connection = Field(service)
+        firstField[service] = connection
         val inputMethod = service.onCreateInputMethodInterface()
         inputMethod.bindInput(InputBinding(connection, Binder(), 1000, 1000))
         inputMethod.startInput(connection, info)
@@ -206,6 +213,302 @@ class DictationProductionLifecycleTest {
         val parser = RuntimeEnvironment.getApplication().resources.getXml(R.xml.method)
         while (parser.next() != org.xmlpull.v1.XmlPullParser.START_TAG || parser.name != "input-method") Unit
         return parser.getAttributeIntValue("http://schemas.android.com/apk/res/android", "configChanges", 0)
+    }
+
+    private fun setDisplayRotation(rotation: Int) {
+        val display = RuntimeEnvironment.getApplication().getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        shadowOf(display).setRotation(rotation)
+    }
+
+    /** The display turns and the input method's own configuration follows (Android's order). */
+    private fun turn(service: DictationImeService, rotation: Int): View {
+        setDisplayRotation(rotation)
+        val odd = rotation == android.view.Surface.ROTATION_90 || rotation == android.view.Surface.ROTATION_270
+        return rotate(service, if (odd) "+land" else "+port")
+    }
+
+    /**
+     * Signal-like editor: its activity is recreated in the new orientation and does not show the
+     * keyboard again. The new field starts input; the panel stays hidden unless someone shows it.
+     */
+    private fun rotateHidden(service: DictationImeService, rotation: Int, info: EditorInfo = editor()): Field {
+        turn(service, rotation)
+        service.onFinishInputView(true)
+        service.onWindowHidden()
+        service.onFinishInput()
+        val next = Field(service)
+        service.onCreateInputMethodInterface().startInput(next, info)
+        pump()
+        return next
+    }
+
+    /** The framework shows our panel on the live session (after the app or editor asked). */
+    private fun showPanel(service: DictationImeService, info: EditorInfo = editor()): View? {
+        service.onStartInputView(info, false)
+        service.onWindowShown()
+        pump()
+        return service.window.findViewById<View?>(R.id.panel)
+    }
+
+    /**
+     * Pixel order (#56 trace, recreated editor): inside the configuration change Android still
+     * restarts input and shows a recreated panel; the old editor hides it ~95 ms later.
+     */
+    private fun platformResetOnRotation(service: DictationImeService, rotation: Int, info: EditorInfo = editor()): View? {
+        turn(service, rotation) // Recreates the panel for the new orientation.
+        service.onStartInput(info, true)
+        return showPanel(service, info)
+    }
+
+    private fun advance(ms: Long) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms)) }
+
+    @Test fun rotationWithHiddenKeyboardKeepsTheTakeAndStopInsertsIntoTheReturnedField() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        val first = firstField.getValue(service)
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+
+        val next = rotateHidden(service, android.view.Surface.ROTATION_90)
+        // Rotation hold: capture continues, nothing written, the app asks for its own panel.
+        assertEquals(0, input.releases.get())
+        assertTrue(MicrophoneOwner.state().occupied)
+        assertTrue(panelRequests.get() >= 1)
+        feed(input, 20000, 2)
+        decode.drain(); pump()
+        assertEquals(0, commits)
+        assertEquals("", preview(service.window.findViewById(R.id.panel)))
+
+        val returned = showPanel(service)!!
+        assertEquals(service.getString(R.string.status_recording), status(returned))
+        assertEquals("old speech private speech", preview(returned))
+        assertTrue(button(returned).isEnabled)
+        assertEquals(service.getString(R.string.stop_recording), button(returned).contentDescription.toString())
+        advance(ROTATION_HOLD_GAP_MS * 2) // The hold ended; no timer may stop this take now.
+        assertEquals(0, input.releases.get())
+        feed(input, 1000, 3)
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech old speech"), next.inserted)
+        assertTrue(first.inserted.isEmpty())
+        assertEquals(1, input.starts.get())
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+    }
+
+    @Test fun rotationWherePanelNeverReturnsEndsInHistoryWithinTheGap() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        advance(ROTATION_HOLD_GAP_MS - 100)
+        assertEquals(0, input.releases.get())
+        advance(100)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals("old speech", rows().single().text)
+        assertEquals(0, commits)
+        // A late panel cannot revive the take or start another microphone.
+        showPanel(service)
+        assertEquals(1, input.starts.get())
+        assertEquals(0, commits)
+    }
+
+    @Test fun realHideAfterTheReturnedPanelStopsAtOnce() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        showPanel(service)
+        advance(ROTATION_SETTLE_MS)
+        service.onFinishInputView(true)
+        await { input.releases.get() == 1 } // No further clock advance: no hold after a plain hide.
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
+    }
+
+    @Test fun realHideAfterAKeptRotationStopsAtOnce() {
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        turn(service, android.view.Surface.ROTATION_90) // Editor keeps focus; panel stays visible.
+        advance(ROTATION_SETTLE_MS)
+        service.onFinishInputView(true)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
+    }
+
+    @Test fun pixelOrderRecreatedEditorKeepsTheTakeThroughThePlatformResetAndLateHide() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90)
+        advance(95)
+        service.onFinishInputView(false)
+        service.onWindowHidden()
+        service.onFinishInput()
+        val next = Field(service)
+        service.onCreateInputMethodInterface().startInput(next, editor())
+        pump()
+        assertEquals(0, input.releases.get())
+        assertEquals(1, panelRequests.get())
+        val returned = showPanel(service)!!
+        assertEquals(service.getString(R.string.status_recording), status(returned))
+        advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(0, input.releases.get())
+        feed(input, 20000, 2)
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech"), next.inserted)
+        assertEquals(1, input.starts.get())
+    }
+
+    @Test fun pixelOrderKeptEditorKeepsTheTakeAfterThePlatformReset() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        val first = firstField.getValue(service)
+        feed(input, 1000, 1)
+        val panel = platformResetOnRotation(service, android.view.Surface.ROTATION_90)!!
+        advance(ROTATION_HOLD_GAP_MS * 2) // Panel stays visible: no gap applies.
+        assertEquals(0, input.releases.get())
+        assertEquals(service.getString(R.string.status_recording), status(panel))
+        feed(input, 20000, 2)
+        decode.drain(); pump()
+        assertEquals("old speech private speech", preview(panel))
+        button(panel).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        assertEquals(listOf("old speech private speech"), first.inserted)
+    }
+
+    @Test fun hideRightAfterARotationIsHeldOnlyUntilTheGapEnds() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        turn(service, android.view.Surface.ROTATION_90)
+        advance(ROTATION_SETTLE_MS / 2)
+        service.onFinishInputView(true) // Cannot be told apart from the editor reacting to rotation.
+        advance(ROTATION_HOLD_GAP_MS)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
+    }
+
+    @Test fun repeatedRotationsAndRotatingBackKeepOneTakeWithAllSpeech() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        showPanel(service)
+        feed(input, 20000, 2)
+        // There and back before the editor reacts: the display ends where it started.
+        turn(service, android.view.Surface.ROTATION_0)
+        turn(service, android.view.Surface.ROTATION_90)
+        turn(service, android.view.Surface.ROTATION_0)
+        service.onFinishInputView(true)
+        service.onWindowHidden()
+        service.onFinishInput()
+        val last = Field(service)
+        service.onCreateInputMethodInterface().startInput(last, editor())
+        pump()
+        assertEquals(0, input.releases.get())
+        val returned = showPanel(service)!!
+        feed(input, 1000, 3)
+        decode.drain(); pump()
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech old speech"), last.inserted)
+        assertEquals(1, commits)
+        assertEquals(1, input.starts.get())
+        assertEquals(1, rows().size)
+    }
+
+    @Test fun screenOffDuringRotationHoldStopsAtOnce() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        screenOff()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
+    }
+
+    @Test fun microphoneLossDuringRotationHoldEndsInHistory() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        input.endUnexpectedly()
+        await { input.releases.get() == 1 }
+        await { flushes.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        showPanel(service)
+        assertEquals(0, commits)
+        assertEquals(1, input.starts.get())
+    }
+
+    @Test fun focusChangeToAnotherFieldWithoutRotationStopsAtOnce() {
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        service.onFinishInputView(false)
+        val other = Field(service)
+        service.onCreateInputMethodInterface().startInput(other, editor())
+        showPanel(service)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertTrue(other.inserted.isEmpty())
+        assertEquals(0, commits)
+        assertEquals(1, input.starts.get())
+    }
+
+    @Test fun sameFieldRestartWithoutRotationStopsAtOnce() {
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        service.onStartInput(editor(), true)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
     }
 
     @Test fun inputMethodDeclaresRotationAndResizeAsHandled() {
