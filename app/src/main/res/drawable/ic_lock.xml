@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols Sharp "lock", wght 400, opsz 24. Apache License 2.0 (licenses/Apache-2.0-MaterialSymbols.txt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp" android:height="16dp"
+    android:viewportWidth="960" android:viewportHeight="960"
+    android:tint="?attr/colorOnSurfaceVariant">
+    <group android:translateY="960">
+        <path android:fillColor="@android:color/white" android:pathData="M160-80v-560h120v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h120v560H160Zm80-80h480v-400H240v400Zm240-120q33 0 56.5-23.5T560-360q0-33-23.5-56.5T480-440q-33 0-56.5 23.5T400-360q0 33 23.5 56.5T480-280ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80ZM240-160v-400 400Z" />
+    </group>
+</vector>

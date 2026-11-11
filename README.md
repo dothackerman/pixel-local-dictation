@@ -60,3 +60,8 @@ This runs Python regression tests, Kotlin benchmark unit tests, instrumentation 
 ## License
 
 Copyright 2026 dothackerman. [MIT License](LICENSE). Third-party components and model assets retain their respective licenses.
+
+Bundled with the app (`app/src/main/res`), each under its own licence in [licenses/](licenses/):
+
+- [Big Shoulders Display](https://github.com/xotypeco/big_shoulders) (weights 700, 800) and [Public Sans](https://github.com/uswds/public-sans) (weights 400, 600): SIL Open Font License 1.1 ([OFL-BigShouldersDisplay.txt](licenses/OFL-BigShouldersDisplay.txt), [OFL-PublicSans.txt](licenses/OFL-PublicSans.txt)). Static instances of the [google/fonts](https://github.com/google/fonts) variable fonts, subset to Latin; the font names are unchanged (no Reserved Font Name applies).
+- [Material Symbols](https://github.com/google/material-design-icons) (Sharp, as `drawable/ic_*.xml`): Apache License 2.0 ([Apache-2.0-MaterialSymbols.txt](licenses/Apache-2.0-MaterialSymbols.txt)). `ic_marker_cut_short` and `ic_marker_uncertain` are drawn for this app.
