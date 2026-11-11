@@ -517,6 +517,13 @@ class DictationImeService : InputMethodService() {
                 if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
                     trace?.event(event.phase, traceTake, event.ns)
                 }
+                if (event.phase in setOf("scenario", "captureStart", "captureSampleAnchor", "captureStopAnchor", "chunkReady", "chunkEnqueue",
+                        "chunkWorkerStart", "chunkWorkerEnd", "checkpointQueued", "checkpointDurable",
+                        "stopRequested", "producerStop", "captureStopped", "finishCall", "finishEnqueue",
+                        "finishWorkerStart", "finishWorkerEnd", "finalReady", "commitAccepted", "commitRejected",
+                        "returnRequested", "takeEnded")) {
+                    startup?.timing(startupTake, event)
+                }
             }
             val startedTake = Engine.openTake(this) { runtime, receipt ->
                 identity = receipt
@@ -525,7 +532,8 @@ class DictationImeService : InputMethodService() {
                     { recordHistoryNotice(HistoryNotice.SAVE) }, delivery = mainExecutor,
                     onDeleteFailure = { recordHistoryNotice(HistoryNotice.DELETE) },
                     onReceiptFailure = { recordHistoryNotice(HistoryNotice.RECEIPT) },
-                    onTakeFailure = { hasPrefix -> if (hasPrefix) recordHistoryNotice(HistoryNotice.INCOMPLETE) }), mainExecutor, observer,
+                    onTakeFailure = { hasPrefix -> if (hasPrefix) recordHistoryNotice(HistoryNotice.INCOMPLETE) },
+                    timeline = observer), mainExecutor, observer,
                     retentionEligible = retentionEligible).also { it.start() }
             }
             take = startedTake

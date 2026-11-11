@@ -15,6 +15,7 @@ class HistoryTakeOutput(
     private val onDeleteFailure: () -> Unit = onSaveFailure,
     private val onReceiptFailure: () -> Unit = onSaveFailure,
     private val onTakeFailure: (hasDurablePrefix: Boolean) -> Unit = {},
+    private val timeline: TimelineObserver? = null,
 ) : TakeOutput by delegate {
     private var eligible = false
     private var saved = false // Serial I/O executor only.
@@ -24,6 +25,7 @@ class HistoryTakeOutput(
         val ready: (() -> Unit)?,
         val revision: Long = 0,
         val interruptedReady: ((Boolean) -> Unit)? = null,
+        val sourceEndSample: Long? = null,
     )
     private var pending: Pending? = null
     private var pendingAfterTerminal: Pending? = null
@@ -51,8 +53,15 @@ class HistoryTakeOutput(
         delegate.preview(text)
         if (eligible && text.isNotEmpty()) enqueue(Pending(text, null))
     }
+    override fun preview(text: String, sourceEndSample: Long?) {
+        delegate.preview(text)
+        if (eligible && text.isNotEmpty()) {
+            enqueue(Pending(text, null, sourceEndSample = sourceEndSample))
+        }
+    }
     private fun enqueue(next: Pending) {
         var rejected = false
+        var queuedWork: Pending? = null
         val submit = synchronized(lock) {
             val terminal = next.ready != null || next.interruptedReady != null
             if (suppressed || (finalQueued && !terminal)) {
@@ -63,11 +72,16 @@ class HistoryTakeOutput(
                     finalQueued = true
                     val queuedTerminal = pending?.let { it.ready != null || it.interruptedReady != null } == true
                     if (next.interruptedReady != null && queuedTerminal && pendingAfterTerminal == null) {
-                        pendingAfterTerminal = next.copy(revision = ++revision)
+                        queuedWork = next.copy(revision = ++revision)
+                        pendingAfterTerminal = queuedWork
                     } else if (!terminal || !queuedTerminal) {
-                        pending = next.copy(revision = ++revision)
+                        queuedWork = next.copy(revision = ++revision)
+                        pending = queuedWork
                     } else rejected = true
-                } else pending = next.copy(revision = ++revision)
+                } else {
+                    queuedWork = next.copy(revision = ++revision)
+                    pending = queuedWork
+                }
                 if (rejected) false else if (scheduled) false else { scheduled = true; true }
             }
         }
@@ -75,6 +89,9 @@ class HistoryTakeOutput(
             next.ready?.let { delivery.execute(it) }
             next.interruptedReady?.let { callback -> delivery.execute { callback(false) } }
             return
+        }
+        queuedWork?.takeIf { it.sourceEndSample != null }?.let {
+            timeline?.emit(TimelineEvent("checkpointQueued", sampleEnd = it.sourceEndSample, revision = it.revision))
         }
         if (submit) io.execute {
             while (true) {
@@ -104,22 +121,33 @@ class HistoryTakeOutput(
                         val durable = history.checkpoint(HistoryEntry(id, timestamp, work.text, HistoryDelivery.UNKNOWN, completion, work.revision))
                         val committed = history.get(id)
                         if (durable && committed != null) durablePrefix = true
+                        if (durable && committed?.text == work.text && committed.revision >= work.revision) {
+                            timeline?.emit(TimelineEvent("checkpointDurable", sampleEnd = work.sourceEndSample, revision = work.revision))
+                        } else if (work.sourceEndSample != null) timeline?.emit(TimelineEvent(
+                            "checkpointFailed", sampleEnd = work.sourceEndSample, revision = work.revision))
                         if (work.ready != null) saved = durable && committed?.let {
                             it.text == work.text && it.completion == HistoryCompletion.COMPLETE && it.revision >= work.revision
                         } == true
                     }
                     if (interruptedSaved) durablePrefix = true
-                } catch (_: Exception) { onSaveFailure() }
+                } catch (_: Exception) {
+                    if (work.sourceEndSample != null) timeline?.emit(TimelineEvent(
+                        "checkpointFailed", sampleEnd = work.sourceEndSample, revision = work.revision))
+                    onSaveFailure()
+                }
                 work.ready?.let { callback -> delivery.execute { callback() } }
                 work.interruptedReady?.let { callback -> delivery.execute { callback(interruptedSaved) } }
             }
         }
     }
     override fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) {
+        stage(text, retentionEligible, null, ready)
+    }
+    override fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: () -> Unit) {
         if (!retentionEligible) { eligible = false; ready(); return }
         eligible = true
         if (text.isEmpty()) { ready(); return }
-        enqueue(Pending(text, ready))
+        enqueue(Pending(text, ready, sourceEndSample = sourceEndSample))
     }
     override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) {
         if (!retentionEligible) { eligible = false; done(false); return }

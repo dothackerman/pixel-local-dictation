@@ -57,6 +57,18 @@ class TakeTranscriberTest {
         assertEquals(1, events.single { it.phase == "firstUsablePreview" }.chunkId)
     }
 
+    @Test fun timingMetadataTracksTheAudioFrontierWithoutRetainingText() {
+        val events = ArrayList<TimelineEvent>()
+        val previews = ArrayList<Pair<String, Long?>>()
+        val take = TakeTranscriber({ bySample }, ChunkSegmenter(pending = seg(4)), direct, direct,
+            timeline = TimelineObserver { events.add(it) }, onPreview = {},
+            onTimedPreview = { text, sampleEnd -> previews.add(text to sampleEnd) })
+        take.feed(seg(1)); take.feed(seg(2)); take.finish { it.getOrThrow() }
+        assertEquals(listOf(1L, 2L, 3L), events.filter { it.phase == "chunkReady" }.map { it.sampleEnd })
+        assertEquals(listOf(1L, 2L, 3L), previews.map { it.second })
+        assertTrue(events.filter { it.phase == "chunkReady" }.all { it.sampleStart != null && it.samples == 1 })
+    }
+
     @Test fun diagnosticFailureDoesNotChangeRecognitionOrDelivery() {
         var result: String? = null
         val take = TakeTranscriber({ bySample }, ChunkSegmenter(), direct, direct,
@@ -153,10 +165,14 @@ class TakeTranscriberTest {
         c.append(FloatArray(8) { it.toFloat() })                 // positions 0..7
         assertNull("too short: pause after 6 samples", c.onSpeechEnd(6))
         c.append(FloatArray(8) { 8f + it })                      // positions 8..15
-        assertArrayEquals(FloatArray(14) { it.toFloat() }, c.onSpeechEnd(12)!!.samples, 0f)   // 12 + pad
+        val first = c.onSpeechEnd(12)!!
+        assertArrayEquals(FloatArray(14) { it.toFloat() }, first.samples, 0f)   // 12 + pad
+        assertEquals(0L, first.startSample); assertEquals(14L, first.endSample)
         c.append(FloatArray(4) { 16f + it })                     // positions 16..19
         assertNull(c.onSpeechEnd(18))
-        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), c.rest()!!.samples, 0f)
+        val tail = c.rest()!!
+        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), tail.samples, 0f)
+        assertEquals(14L, tail.startSample); assertEquals(20L, tail.endSample)
         assertNull(c.rest())
     }
 

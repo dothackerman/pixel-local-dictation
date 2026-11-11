@@ -16,6 +16,7 @@ class CaptureReleaseUnconfirmed : Exception()
 /** Called on the delivery executor. commit must check the live editor immediately before writing. */
 interface TakeOutput {
     fun preview(text: String)
+    fun preview(text: String, sourceEndSample: Long?) = preview(text)
     fun captureReleaseFailed() {}
     fun startHistory(eligible: Boolean) {}
     fun finishingHistory() {}
@@ -24,6 +25,8 @@ interface TakeOutput {
     /** False if commit was skipped because the originating editor was unavailable. */
     fun commitAttempted(): Boolean = true
     fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) = ready()
+    fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: () -> Unit) =
+        stage(text, retentionEligible, ready)
     fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) = done(false)
     fun receipt(status: HistoryDelivery) {}
     fun discardStaged(done: (Boolean) -> Unit = {}) { done(true) }
@@ -57,7 +60,7 @@ class TakeSession internal constructor(
     private val capture: TakeCapture,
     private val output: TakeOutput,
     private val deliver: Executor,
-    private val transcribe: (Executor, TimelineObserver?, (String) -> Unit) -> TakeTranscriber,
+    private val transcribe: (Executor, TimelineObserver?, (String, Long?) -> Unit) -> TakeTranscriber,
     private val timeline: TimelineObserver?,
     private val clock: () -> Long,
     private val retentionEligible: Boolean,
@@ -83,6 +86,8 @@ class TakeSession internal constructor(
     private var interruptionFailure: Throwable? = null
     private var staged = false
     private val events = linkedMapOf<String, Long>()
+    private var capturedSamples = 0L
+    private var lastSampleAnchor = -SAMPLE_RATE.toLong()
     /** Remains active while cancellation drains capture, so a new microphone take must wait. */
     val active: Boolean get() = state != State.NEW && (state != State.ENDED || !captureReleased)
 
@@ -98,15 +103,22 @@ class TakeSession internal constructor(
         output.startHistory(retentionEligible)
         captureReleased = false
         try {
-            take = transcribe(deliver, timeline) { text ->
+            take = transcribe(deliver, timeline) { text, sampleEnd ->
                 if (active) {
                     synchronized(events) { if ("previewReady" !in events) mark("previewReady") }
-                    output.preview(text)
+                    output.preview(text, sampleEnd)
                 }
             }
             mark("captureStart")
             capture.start { samples ->
                 synchronized(audioLock) { if (!interrupted && (state == State.RECORDING || state == State.DRAINING)) {
+                    val startSample = capturedSamples
+                    capturedSamples += samples.size
+                    if (capturedSamples - lastSampleAnchor >= SAMPLE_RATE) {
+                        lastSampleAnchor = capturedSamples
+                        timeline?.emit(TimelineEvent("captureSampleAnchor", samples = samples.size,
+                            sampleStart = startSample, sampleEnd = capturedSamples))
+                    }
                     if (timeline != null && samples.isNotEmpty()) synchronized(events) {
                         if ("firstAudio" !in events) mark("firstAudio")
                     }
@@ -145,6 +157,7 @@ class TakeSession internal constructor(
                         releaseNotice?.also { releaseNotice = null; it() }
                         result.fold({ audio ->
                             pcm = audio
+                            timeline?.emit(TimelineEvent("captureStopAnchor", sampleEnd = synchronized(audioLock) { capturedSamples }))
                             mark("captureStopped")
                             state = State.FINISHING
                             try { take!!.finish(::decoded) }
@@ -217,7 +230,7 @@ class TakeSession internal constructor(
         if (interrupted) { saveInterrupted(text); return }
         if (text.isEmpty()) { complete(text); return }
         staged = true
-        output.stage(text, retentionEligible) {
+        output.stage(text, retentionEligible, synchronized(audioLock) { capturedSamples }) {
             if (state == State.COMPLETING) complete(text)
         }
     }

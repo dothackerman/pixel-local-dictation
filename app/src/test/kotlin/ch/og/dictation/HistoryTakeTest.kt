@@ -6,6 +6,58 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryTakeTest {
+    @Test fun timingReceiptsPairOnlyDurableCheckpointSampleFrontiers() {
+        val dir = Files.createTempDirectory("history-timing").toFile()
+        try {
+            val events = ArrayList<TimelineEvent>()
+            val direct = Executor { it.run() }
+            val editor = object : TakeOutput {
+                override fun preview(text: String) {}
+                override fun commit(text: String) = true
+                override fun returnToKeyboard() = true
+                override fun finished(result: TakeResult, pcm: ByteArray) {}
+            }
+            val output = HistoryTakeOutput(editor, { HistoryStore(dir) }, direct, { fail("save failed") },
+                timeline = TimelineObserver { events.add(it) })
+            output.startHistory(true)
+            output.preview("private synthetic words", 48_000L)
+            val queued = events.single { it.phase == "checkpointQueued" }
+            val durable = events.single { it.phase == "checkpointDurable" }
+            assertEquals(48_000L, queued.sampleEnd)
+            assertEquals(queued.sampleEnd, durable.sampleEnd)
+            assertTrue(durable.ns >= queued.ns)
+            assertEquals("private synthetic words", HistoryStore(dir).list().single().text)
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun aLaterSaveFailureLeavesTheLastDurablePrefixAndReportsNoContent() {
+        val dir = Files.createTempDirectory("history-late-failure").toFile()
+        try {
+            var opens = 0
+            var failed = false
+            val events = ArrayList<TimelineEvent>()
+            val delegate = object : TakeOutput {
+                override fun preview(text: String) {}
+                override fun commit(text: String) = true
+                override fun returnToKeyboard() = true
+                override fun finished(result: TakeResult, pcm: ByteArray) {}
+            }
+            val output = HistoryTakeOutput(delegate, {
+                if (++opens > 1) error("synthetic later write failure")
+                HistoryStore(dir)
+            }, Executor { it.run() }, { failed = true }, timeline = TimelineObserver { events.add(it) })
+            output.startHistory(true)
+            output.preview("private first prefix", 16_000)
+            output.preview("private later words", 32_000)
+            assertTrue(failed)
+            assertEquals("private first prefix", HistoryStore(dir).list().single().text)
+            assertEquals(listOf("checkpointQueued", "checkpointDurable", "checkpointQueued", "checkpointFailed"),
+                events.map { it.phase })
+            assertEquals(listOf(16_000L, 16_000L, 32_000L, 32_000L),
+                events.filter { it.phase.startsWith("checkpoint") }.map { it.sampleEnd })
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun successfulStopIsSavedBeforeEditorReceivesText() {
         val dir = Files.createTempDirectory("history-staged").toFile()
         try {
