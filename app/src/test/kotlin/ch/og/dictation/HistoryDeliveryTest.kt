@@ -246,6 +246,26 @@ class HistoryDeliveryTest {
             assertEquals(1, h.inserts)
         } finally { h.close() }
     }
+    @Test fun deliberateCancelBeforeThrowingCommitAcknowledgesStagedDeletionOnce() {
+        for (broken in listOf(false, true)) {
+            val h = Harness(broken = broken)
+            val acknowledgements = mutableListOf<Boolean>()
+            try {
+                h.attempted = false
+                h.guardedCommit = { _, _ ->
+                    h.take.cancel { acknowledgements += it }
+                    throw IllegalStateException("editor failed before commit")
+                }
+                h.stop(); h.io.one(); h.delivery.one(); h.io.drain(); h.delivery.drain(); h.io.drain(); h.delivery.drain()
+
+                assertEquals(0, h.inserts)
+                assertEquals(0, h.returns)
+                assertEquals(TakeOutcome.CANCELLED, h.result!!.outcome)
+                assertEquals(listOf(!broken), acknowledgements)
+                if (!broken) assertTrue(h.entries().isEmpty())
+            } finally { h.close() }
+        }
+    }
     @Test fun inputInvalidationWhileReadingCursorSkipsDispatchAndKeyboardReturn() {
         val h = Harness()
         try {
