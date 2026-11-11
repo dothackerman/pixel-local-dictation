@@ -687,9 +687,20 @@ class DictationProductionLifecycleTest {
             assertEquals(1L, row(RotationEvent.CONFIGURATION).getLong("rotations"))
             assertEquals(1L, row(RotationEvent.SERVICE_DESTROY).getLong("rotations"))
             val allowed = setOf("protocol", "process", "service", "sequence", "ns", "event", "case", "run",
-                "active", "authority", "flag", "view", "take", "rotation", "rotations")
+                "active", "authority", "flag", "view", "take", "rotation", "rotations", "configDiff", "handledConfig")
             assertTrue(rows.all { allowed.containsAll(it.keys().asSequence().toSet()) })
         } finally { RotationTrace.abortProbe() }
+    }
+
+    /** Device trace 2026-11-11: after a take ended, the idle panel's Back left our IME selected. */
+    @Test fun idleBackWithoutTakeHandsBackToKeyboard() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)
+        val (_, view) = service(editor())
+        org.robolectric.shadows.ShadowLog.clear()
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        pump()
+        // Robolectric has no previous IME, so the hand-back attempt falls through to hiding.
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
     }
 
     @Test fun recordingCancelOffersContinueWithoutStoppingTheTake() {

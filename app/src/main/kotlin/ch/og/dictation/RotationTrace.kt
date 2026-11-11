@@ -140,7 +140,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
     @Synchronized fun event(event: RotationEvent, active: Boolean? = null,
                             authority: Boolean? = null, flag: Boolean? = null,
                             view: Long? = null, take: Long? = null,
-                            rotation: Int? = null, rotations: Long? = null) {
+                            rotation: Int? = null, rotations: Long? = null,
+                            configDiff: Int? = null, handledConfig: Int? = null) {
         if (closed || (probeScoped && !probeActive())) return
         observe(service, event, take, active)
         val row = JSONObject().put("protocol", "ime-rotation-v1").put("process", process)
@@ -157,6 +158,9 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         // Display rotation (Surface.ROTATION_*) and how many rotation changes the service has seen.
         rotation?.let { row.put("rotation", it) }
         rotations?.let { row.put("rotations", it) }
+        // CONFIGURATION only: ActivityInfo.CONFIG_* bitmasks (integers, no device data).
+        configDiff?.let { row.put("configDiff", it) }
+        handledConfig?.let { row.put("handledConfig", it) }
         val line = row.toString() + "\n"
         writer.execute {
             if (!failed) try {
