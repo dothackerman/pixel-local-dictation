@@ -21,7 +21,7 @@ class PanelChoiceLayout @JvmOverloads constructor(context: Context, attrs: Attri
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val available = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
         val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        var needed = dp(GAP_DP)
+        var needed = dp(ROW_GAP_DP)
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             if (child.visibility == View.GONE || child.id == R.id.choice_gap) continue
@@ -30,25 +30,29 @@ class PanelChoiceLayout @JvmOverloads constructor(context: Context, attrs: Attri
         }
         val row = MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && needed <= available
         orientation = if (row) HORIZONTAL else VERTICAL
+        val rtl = layoutDirection == View.LAYOUT_DIRECTION_RTL
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             val params = child.layoutParams as LayoutParams
             if (child.id == R.id.choice_gap) {
-                params.width = if (row) 0 else ViewGroup.LayoutParams.MATCH_PARENT
+                // Discard stays apart from the other actions, but in the same group.
+                params.width = if (row) dp(ROW_GAP_DP) else ViewGroup.LayoutParams.MATCH_PARENT
                 params.height = dp(GAP_DP)
-                params.weight = if (row) 1f else 0f
             } else {
                 params.width = if (row) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT
-                params.weight = 0f
-                val first = i == 0
-                params.marginStart = if (row && !first && getChildAt(i - 1).id != R.id.choice_gap) dp(8) else 0
-                params.topMargin = if (!row && !first && getChildAt(i - 1).id != R.id.choice_gap) dp(8) else 0
+                val after = i > 0 && getChildAt(i - 1).id != R.id.choice_gap
+                val start = if (row && after) dp(8) else 0
+                params.marginStart = start
+                params.leftMargin = if (rtl) 0 else start
+                params.rightMargin = if (rtl) start else 0
+                params.topMargin = if (!row && after) dp(8) else 0
             }
+            params.weight = 0f
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
-    private companion object { const val GAP_DP = 16 }
+    private companion object { const val GAP_DP = 16; const val ROW_GAP_DP = 32 }
 }
 
 /** The inline Cancel choice a take can have open. RECORDING: the take is paused. FINISHING: delivery held. */

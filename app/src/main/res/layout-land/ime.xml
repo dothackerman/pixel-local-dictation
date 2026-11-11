@@ -58,24 +58,26 @@
                     android:textSize="14sp"
                     android:accessibilityLiveRegion="polite"
                     android:text="@string/status_opening" />
-                <!-- After a take ended without insertion: one clear way back (#61). -->
-                <Button
-                    android:id="@+id/back_to_keyboard"
-                    style="?android:attr/borderlessButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="16dp"
-                    android:background="@drawable/choice_outlined"
-                    android:stateListAnimator="@null"
-                    android:fontFamily="sans-serif-medium"
-                    android:textAllCaps="false"
-                    android:textColor="@color/panel_on_surface"
-                    android:textSize="14sp"
-                    android:text="@string/back_to_keyboard"
-                    android:visibility="gone" />
             </LinearLayout>
+            <!-- After a take ended without insertion: one clear way back (#61), under the status. -->
+            <Button
+                android:id="@+id/back_to_keyboard"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="56dp"
+                android:layout_marginBottom="8dp"
+                android:minHeight="48dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:background="@drawable/choice_primary"
+                android:stateListAnimator="@null"
+                android:fontFamily="sans-serif-medium"
+                android:textAllCaps="false"
+                android:textColor="@color/panel_on_container"
+                android:textSize="14sp"
+                android:text="@string/back_to_keyboard"
+                android:visibility="gone" />
             <TextView
                 android:id="@+id/retention_notice"
                 android:layout_width="match_parent"
