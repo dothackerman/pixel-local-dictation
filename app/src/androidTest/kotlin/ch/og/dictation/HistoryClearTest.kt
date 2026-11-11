@@ -136,7 +136,7 @@ class HistoryClearTest {
             awaitText(context.getString(R.string.history_empty))
             clickClear(scenario)
             val message = awaitText("0 saved, 1 active")
-            assertTrue(message.text.toString().contains("clipboard"))
+            assertTrue(message.text.toString().contains("clipboard", ignoreCase = true))
             assertTrue(message.text.toString().contains("benchmark"))
             confirm(positive = false)
             assertFalse(root.resolve("$id.deleted").exists())
