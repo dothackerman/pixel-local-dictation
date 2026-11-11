@@ -25,8 +25,8 @@ no recovered text is inserted automatically. Capture release precedes continued
 decode and storage. A view reattachment does not start another take; the person
 must explicitly start again. Service destruction is best-effort; process death
 preserves only durable checkpoints. Screen-off and unexpected microphone end use
-the same recovery path. Destination safety remains unchanged; no rotation
-continuity exception is enabled. An app-controlled Cancel requires confirmation. While the choice is open, recording
+the same recovery path. Destination safety remains unchanged except for one
+rotation continuity exception (below). An app-controlled Cancel requires confirmation. While the choice is open, recording
 continues or a finishing take holds its result before insertion. A system
 interruption overrides the choice and uses History recovery. A confirmed discard
 revokes insertion and removes the take's checkpoints.
@@ -39,3 +39,39 @@ Evidence: take/output, recorder and production-service host regressions cover
 interruption, release failure/retry, retained prefixes and delivery races. Synthetic
 phone UI/process tests and sanitized rotation probes compile but have not been run
 on the Pixel for this handoff. No continuous-rotation or recovery-window claim.
+
+## Amendment — rotation continuity (#52)
+
+2026-11-11 · Branch implementation for #36; host-tested, Pixel evidence partial.
+
+One editor-event policy decides input start, input view start/finish, input finish,
+window hidden and screen off: nothing, revoke authority, or interrupt (revoke and
+stop capture). **Identification:** a rotation is identified only when the service
+itself counted a display or configuration rotation since the panel was last
+visible, at or before the event decided; rotating there and back counts. Package,
+field ID and editor attributes are never used. "Visible" means visible on the
+take's live session for `ROTATION_SETTLE_MS` (1 s): Android can show the panel
+inside the configuration change and the editor hide it ~95 ms later.
+**Rotation hold:** during capture, an identified rotation revokes authority, hides
+the preview and keeps capture; the app requests its own panel when a new editor
+starts input without showing it. It ends with the take continuing when the panel
+is shown on a live session, or in History when `ROTATION_HOLD_GAP_MS` (3 s, start
+value, never extended, one per rotation) ends, the screen turns off, the
+microphone ends or capture is reported silenced. No hold without an identified
+rotation; no timer after a plain hide. **Authority:** Stop grants it to the session
+the visible panel is attached to; any session change after the press revokes it
+(rotation after the press: #53, until then History). Commit guards unchanged.
+Retention stays latched from the starting editor and only tightens on rebind.
+
+Evidence: host lifecycle tests for both editor modes, the Pixel callback order,
+gap expiry, real hide after rotation, repeated rotation, lock, focus change,
+same-field restart, microphone loss and silencing. Pixel: one #56 trace
+(recreated editor, Stop wait): rotation counted before the first interrupting
+event; Android still restarted input inside the configuration change despite the
+declared `configChanges`; service not destroyed; panel did not return by itself.
+Pending on the Pixel: the other three #56 cases, hidden-client silencing, the
+rotation-to-panel time that sets the gap, and the `RotationContinuityDemoTest` demo.
+Limits: a hide or focus change within the settle time after a rotation cannot be
+told apart from the editor reacting to it (held, then History at the gap); the
+display callback can still report the old rotation (#56), so a 180° turn without a
+configuration change is counted only at the next editor event.
