@@ -13,7 +13,13 @@ fun interface Recognizer {
 }
 
 /** A piece of a take, and whether the voice detector found speech in it (no-speech gate). */
-class Chunk(val samples: FloatArray, val speech: Boolean)
+class Chunk(
+    val samples: FloatArray,
+    val speech: Boolean,
+    /** Audio sample positions from take start; null for test/custom segmenters without offsets. */
+    val startSample: Long? = null,
+    val endSample: Long? = startSample?.plus(samples.size),
+)
 
 /** Cuts a live stream into pieces that can be decoded while recording continues. */
 interface Segmenter {
@@ -84,11 +90,12 @@ class PauseChunker(private val minSamples: Int, private val padSamples: Int, pri
     fun rest(speechNow: Boolean = false): Chunk? = if (size == 0) null else take(size, speechNow)
 
     private fun take(n: Int, speechNow: Boolean): Chunk {
+        val start = cutAt
         val chunk = pending.copyOfRange(0, n)
         pending.copyInto(pending, 0, n, size)
         size -= n; cutAt += n
         val speech = speechSeen || speechNow
         speechSeen = false
-        return Chunk(chunk, speech)
+        return Chunk(chunk, speech, start, start + n)
     }
 }

@@ -46,7 +46,8 @@ class DictationRuntime(
         lateinit var session: TakeSession
         session = TakeSession(capture, output, deliver, { delivery, observer, preview ->
             check(!closed) { "runtime closed" }
-            TakeTranscriber(::recognizer, segmenter, decode, delivery, variant.post, observer, preview)
+            TakeTranscriber(::recognizer, segmenter, decode, delivery, variant.post, observer,
+                onTimedPreview = preview, onPreview = {})
         }, timeline, clock, retentionEligible, {
             try { segmenter.reset() } finally { synchronized(sessions) {
                 sessions.remove(session)
