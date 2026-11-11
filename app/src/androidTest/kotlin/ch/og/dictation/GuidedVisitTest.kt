@@ -26,12 +26,15 @@ class GuidedVisitTest {
             instrumentation.startActivitySync(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return RotationProbeActivity.done.await(minutes, TimeUnit.MINUTES)
         }
-        if (!show(Intent(context, RotationProbeActivity::class.java).putExtra("welcome", true), 60) || RotationProbeActivity.result != "start") return
-        var index = RotationProbeActivity.selected
+        val extended = InstrumentationRegistry.getArguments().getString("extended") == "true"
+        val cases = if (extended) RotationProbeActivity.cases else listOf("signal-capture-rotation")
+        if (extended && (!show(Intent(context, RotationProbeActivity::class.java).putExtra("welcome", true), 30) ||
+                RotationProbeActivity.result != "start")) return
+        var index = if (extended) RotationProbeActivity.selected else 0
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
-        while (index < RotationProbeActivity.cases.size) {
-            val name = RotationProbeActivity.cases[index]
+        while (index < cases.size) {
+            val name = cases[index]
             val run = UUID.randomUUID().toString()
             val traced = name in RotationTrace.allowedCases
             HistoryIo.executor.submit {}.get()
@@ -43,7 +46,8 @@ class GuidedVisitTest {
             try {
                 if (traced) RotationTrace.beginProbe(name, run)
                 RotationProbeActivity.selected = index
-                val finished = show(Intent(context, RotationProbeActivity::class.java).putExtra("case", name).putExtra("guided", true), 30)
+                val finished = show(Intent(context, RotationProbeActivity::class.java).putExtra("case", name).putExtra("guided", true)
+                    .putExtra("stepCount", cases.size), 30)
                 if (traced && finished && RotationProbeActivity.result !in setOf("skipped", "retry", "interrupted")) traceComplete = RotationTrace.finishProbe(10_000)
                 HistoryIo.executor.submit {}.get()
                 val afterHistory = inventory(history)
@@ -58,7 +62,7 @@ class GuidedVisitTest {
                         .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null))
                 }
                 output.appendText(row.toString() + "\n")
-                if (!finished) return
+                if (!finished || RotationProbeActivity.result.substringBefore(':') == "end") return
                 if (!RotationProbeActivity.result.startsWith("retry")) index++
             } catch (e: Exception) {
                 output.appendText(JSONObject().put("visit", visit).put("run", run).put("case", name)

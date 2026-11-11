@@ -47,6 +47,7 @@ class RotationProbeActivity : Activity() {
         }
         val caseName = requireNotNull(intent.getStringExtra("case"))
         val guided = intent.getBooleanExtra("guided", false)
+        val stepCount = intent.getIntExtra("stepCount", cases.size)
         require(caseName in RotationTrace.allowedCases || caseName in cases)
         val instruction = when (caseName) {
             "signal-capture-rotation" -> "In Signal, start dictation and rotate during capture. Return here and tap Done."
@@ -77,10 +78,10 @@ class RotationProbeActivity : Activity() {
                 "Speak a phrase, tap Stop, and immediately rotate while Finishing is visible. Did finishing continue? If the text was already inserted before rotation, choose Uncertain."
             else -> instruction
         }
-        val host = if (caseName.startsWith("signal-")) "Use an unsent Signal draft. Return here through Recents.\n" else ""
+        val host = if (caseName.startsWith("signal-")) "Do this in an unsent Signal draft. Use Recents to return here afterward.\n" else ""
         val title = caseName.replace("-", " ").replaceFirstChar { it.uppercase() }
         column.addView(TextView(this).apply {
-            text = (if (guided) "${selected + 1}/${cases.size}  " else "") + title + "\n" + host + cue +
+            text = (if (guided) "Step ${selected + 1} of $stepCount  " else "") + title + "\n" + host + cue +
                 "\nHide the keyboard before recording your observation."
         })
         val ordinaryCount = when {
@@ -138,9 +139,11 @@ class RotationProbeActivity : Activity() {
                 "history-copy-delete" -> listOf("Copied synthetic row", "Deleted same synthetic row")
                 else -> emptyList()
             }.map { label -> CheckBox(this).apply { text = label; column.addView(this) } }
-            val choices = if (caseName.endsWith("rotation")) listOf("Same take continued" to "continued", "Take stopped" to "stopped", "Uncertain" to "uncertain", "Skip" to "skipped", "Retry" to "retry")
+            val choices = if (caseName.endsWith("rotation")) listOf("It kept going" to "continued", "It stopped" to "stopped", "Uncertain" to "uncertain", "Skip" to "skipped", "Retry" to "retry")
                 else listOf("Done" to "observed", "Issue / missing observation" to "issue", "Skip" to "skipped", "Retry" to "retry")
-            choices.forEach { (label, value) ->
+            column.addView(TextView(this).apply { text = "Report what happened" })
+            val actions = if (stepCount > 1) choices + ("End visit now" to "end") else choices
+            actions.forEach { (label, value) ->
                 column.addView(Button(this).apply { text = label; setOnClickListener {
                     result = if (checks.isEmpty()) value else value + ":" + checks.joinToString("") { if (it.isChecked) "1" else "0" }
                     finish()
