@@ -578,6 +578,99 @@ class DictationProductionLifecycleTest {
     @Test fun stopWaitReboundPrivateEditorThenHideInTheHoldKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_IN_HOLD, stopFirst = true)
     @Test fun stopWaitReboundPrivateEditorThenRealHideKeepsNothing() = reboundPrivateEditorKeepsNothing(HoldExit.HIDE_AFTER_PANEL, stopFirst = true)
 
+    /**
+     * Signal order (#61 visit trace): the platform reset inside the configuration change, then the
+     * recreated activity briefly starts input with no editor (TYPE_NULL) before its message field
+     * starts input again. No editor is not a private editor: the take stays eligible.
+     */
+    @Test fun signalOrderTransientInputStartWithoutEditorKeepsTheTakeEligible() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90)
+        advance(130)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        val none = Field(service)
+        service.onCreateInputMethodInterface().startInput(none, EditorInfo().apply { inputType = InputType.TYPE_NULL })
+        service.onStartInputView(EditorInfo().apply { inputType = InputType.TYPE_NULL }, false)
+        service.onFinishInputView(false)
+        service.onWindowHidden()
+        service.onFinishInput()
+        val next = Field(service)
+        service.onCreateInputMethodInterface().startInput(next, editor())
+        pump()
+        val returned = showPanel(service)!!
+        settleHistory()
+        assertEquals("checkpoint kept through the editor-less start", 1, rows().size)
+        assertEquals(View.GONE, returned.findViewById<TextView>(R.id.retention_notice).visibility)
+        advance(ROTATION_SETTLE_MS)
+        // Rotate back the same way: still eligible.
+        platformResetOnRotation(service, android.view.Surface.ROTATION_0)
+        advance(130)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onCreateInputMethodInterface().startInput(Field(service), EditorInfo())
+        service.onFinishInput()
+        val last = Field(service)
+        service.onCreateInputMethodInterface().startInput(last, editor())
+        pump()
+        val back = showPanel(service)!!
+        advance(ROTATION_SETTLE_MS)
+        assertEquals(View.GONE, back.findViewById<TextView>(R.id.retention_notice).visibility)
+        feed(input, 20000, 2)
+        button(back).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech"), last.inserted)
+        assertTrue(none.inserted.isEmpty())
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+        assertEquals("old speech private speech", rows().single().text)
+    }
+
+    /** A no-learning editor during the hold is positively private: excluded at once, like a password. */
+    @Test fun reboundNoLearningEditorExcludesTheTakeEvenWithoutTheReturningPanel() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size)
+        rotateHidden(service, android.view.Surface.ROTATION_90, editor().apply { imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING })
+        settleHistory()
+        assertTrue(rows().isEmpty())
+        advance(ROTATION_HOLD_GAP_MS)
+        await { input.releases.get() == 1 }
+        repeat(3) { decode.drain(); settleHistory() }
+        assertTrue(rows().isEmpty())
+    }
+
+    /** An unclassifiable editor the panel settles on excludes the take; an editor-less start alone does not. */
+    @Test fun panelSettlingOnAnUnclassifiableEditorExcludesTheTake() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        val odd = EditorInfo().apply { inputType = InputType.TYPE_CLASS_NUMBER }
+        rotateHidden(service, android.view.Surface.ROTATION_90, odd)
+        settleHistory()
+        assertEquals("not private by itself during the hold", 1, rows().size)
+        val returned = showPanel(service, odd)!!
+        advance(ROTATION_SETTLE_MS)
+        settleHistory()
+        assertTrue(rows().isEmpty())
+        assertEquals(View.VISIBLE, returned.findViewById<TextView>(R.id.retention_notice).visibility)
+    }
+
     @Test fun privateStartingEditorStaysExcludedAfterReboundToOrdinaryField() {
         DictationImeService.requestPanel = {}
         val input = Input()
@@ -1178,8 +1271,12 @@ class DictationProductionLifecycleTest {
             assertEquals(1L, row(RotationEvent.CONFIGURATION).getLong("rotations"))
             assertEquals(1L, row(RotationEvent.SERVICE_DESTROY).getLong("rotations"))
             val allowed = setOf("protocol", "process", "service", "sequence", "ns", "event", "case", "run",
-                "active", "authority", "flag", "view", "take", "rotation", "rotations", "configDiff", "handledConfig")
+                "active", "authority", "flag", "view", "take", "rotation", "rotations", "configDiff", "handledConfig", "retention")
             assertTrue(rows.all { allowed.containsAll(it.keys().asSequence().toSet()) })
+            // Only the fixed retention class, and only where input starts.
+            assertEquals("ELIGIBLE", row(RotationEvent.INPUT_START_DONE).getString("retention"))
+            assertTrue(rows.filter { it.has("retention") }.all { it.getString("event") == RotationEvent.INPUT_START_DONE.name &&
+                it.getString("retention") in EditorRetention.entries.map { e -> e.name } })
         } finally { RotationTrace.abortProbe() }
     }
 

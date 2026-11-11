@@ -61,7 +61,14 @@ microphone ends or capture is reported silenced. No hold without an identified
 rotation; no timer after a plain hide. **Authority:** Stop grants it to the session
 the visible panel is attached to; any session change after the press revokes it,
 except an identified rotation (#53, below). Commit guards unchanged.
-Retention stays latched from the starting editor and only tightens on rebind.
+Retention stays latched from the starting editor and only tightens: at once for a
+positively private editor seen during the hold (password variation, no-personalized-learning
+flag), or when the take settles on an excluded editor (password, no-learning, unclassifiable:
+the panel settled after the rotation, or Stop). An input start without an editor (null or
+`TYPE_NULL`, as while an app recreates its activity) is not a private editor and never
+tightens by itself (#61: Signal lost History eligibility on every rotation). The rotation
+trace records the fixed class (ELIGIBLE, PASSWORD, NO_LEARNING, UNCLASSIFIABLE, NO_EDITOR) on
+`INPUT_START_DONE`, nothing else about the editor.
 
 **Stop wait (#53):** the hold also covers the Stop wait. An identified rotation
 after the press revokes Stop's authority and holds the result before dispatch; the

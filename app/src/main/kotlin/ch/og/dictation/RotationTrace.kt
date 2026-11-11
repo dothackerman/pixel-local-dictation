@@ -157,7 +157,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                             authority: Boolean? = null, flag: Boolean? = null,
                             view: Long? = null, take: Long? = null,
                             rotation: Int? = null, rotations: Long? = null,
-                            configDiff: Int? = null, handledConfig: Int? = null) {
+                            configDiff: Int? = null, handledConfig: Int? = null,
+                            retention: EditorRetention? = null) {
         if (closed || (probeScoped && !probeActive())) return
         observe(service, event, take, active)
         val row = JSONObject().put("protocol", "ime-rotation-v1").put("process", process)
@@ -177,6 +178,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         // CONFIGURATION only: ActivityInfo.CONFIG_* bitmasks (integers, no device data).
         configDiff?.let { row.put("configDiff", it) }
         handledConfig?.let { row.put("handledConfig", it) }
+        // INPUT_START_DONE only: the fixed retention class of the editor that started input.
+        retention?.let { row.put("retention", it.name) }
         val line = row.toString() + "\n"
         writer.execute {
             if (!failed) try {

@@ -82,6 +82,8 @@ class DictationImeService : InputMethodService() {
     }
     private var inputViewVisible = false
     private var rotationTrace: RotationTrace? = null
+    /** Retention class of the editor that last started input. */
+    private var editorRetention = EditorRetention.NO_EDITOR
     private var rotationView = 0L
     private var rotationTake = 0L
     /** Last observed display rotation and the number of rotation changes this service saw. */
@@ -250,13 +252,14 @@ class DictationImeService : InputMethodService() {
         super.onStartInput(attribute, restarting)
         observeGeometry()
         Log.i(tag, "input start: restarting=$restarting take=$takeActive")
-        editorRetentionEligible = EditorRetentionPolicy.isEligible(attribute)
+        editorRetention = EditorRetentionPolicy.classify(attribute)
+        editorRetentionEligible = editorRetention.eligible
         previewAllowed = false
         showPreview("")
         // Any input start ends the previous session (InputSession.start).
         session.start()
         editorEvent(EditorEvent.INPUT_START)
-        rotationEvent(RotationEvent.INPUT_START_DONE, restarting)
+        rotationEvent(RotationEvent.INPUT_START_DONE, restarting, retention = editorRetention)
     }
 
     private fun attachRotationTrace() {
@@ -450,8 +453,8 @@ class DictationImeService : InputMethodService() {
             EditorDecision.REVOKE_AUTHORITY -> {
                 if (authority != null) authorityMoves = true
                 revokeAuthority()
-                // A rebound editor's retention applies now, not only if the panel returns.
-                if (event == EditorEvent.INPUT_START) tightenRetentionForReboundEditor()
+                // A positively private rebound editor applies now, not only if the panel returns.
+                if (event == EditorEvent.INPUT_START && editorRetention.positivelyPrivate) excludeTakeFromHistory()
                 enterRotationHold(event)
             }
             EditorDecision.INTERRUPT -> interruptTake()
@@ -537,6 +540,7 @@ class DictationImeService : InputMethodService() {
         endHold()
         rotationsWhenVisible = rotationChanges
         authorityMoves = false
+        if (takeActive && !interruptedView && editorRetention.excludesSettledTake) excludeTakeFromHistory()
         restoreAfterRotation()
     }
 
@@ -561,7 +565,7 @@ class DictationImeService : InputMethodService() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
         if (authorityMoves && finishing && !interruptedView) authority = recordingToken
-        tightenRetentionForReboundEditor()
+        if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
         if (holding) {
             holding = false
             if (!interruptedView) {
@@ -574,12 +578,14 @@ class DictationImeService : InputMethodService() {
     }
 
     /**
-     * Retention stays latched from the starting editor and only tightens: an excluded editor the
-     * take rebinds to (password, no-learning, unclassifiable) excludes the take and removes what
-     * was saved, whatever ends the take afterwards.
+     * Retention stays latched from the starting editor and only tightens: a positively private
+     * editor (password, no-learning) seen while the take rebinds, or an excluded editor the take
+     * settles on (panel settled after a rotation, or Stop), excludes the take and removes what was
+     * saved, whatever ends the take afterwards. An input start without an editor (NO_EDITOR, e.g.
+     * TYPE_NULL while an app recreates its activity) never tightens by itself (#61).
      */
-    private fun tightenRetentionForReboundEditor() {
-        if (editorRetentionEligible || takeRetentionEligible != true) return
+    private fun excludeTakeFromHistory() {
+        if (takeRetentionEligible != true) return
         takeRetentionEligible = false
         take?.excludeFromHistory()
         showPanelDisclosure(R.string.retention_field_off)
@@ -598,12 +604,13 @@ class DictationImeService : InputMethodService() {
         showPreview("")
     }
 
-    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null) {
+    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null,
+                              retention: EditorRetention? = null) {
         val trace = rotationTrace ?: return
         val rotation = observeRotation()
         trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
             flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges,
-            configDiff, handledConfig)
+            configDiff, handledConfig, retention)
     }
 
     /** Trace only: the configuration this service last saw, to report what a change differs in. */
@@ -869,6 +876,8 @@ class DictationImeService : InputMethodService() {
 
     private fun stopAndInsert() {
         if (!takeActive || finishing) return
+        // Stop settles the take on this editor.
+        if (editorRetention.excludesSettledTake) excludeTakeFromHistory()
         // Stop grants authority to the input session the visible panel is attached to.
         authority = recordingToken?.takeIf { session.matches(it) }
         authorityMoves = false
