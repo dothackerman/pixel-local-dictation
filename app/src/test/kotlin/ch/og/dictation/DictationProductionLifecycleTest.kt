@@ -471,6 +471,25 @@ class DictationProductionLifecycleTest {
         assertTrue(rows().none { it.text.contains("old speech") })
     }
 
+    @Test fun explicitRestartLatchesCurrentBenchmarkOptIn() {
+        val original = Input()
+        val next = Input()
+        devices.add(original); devices.add(next)
+        val app = RuntimeEnvironment.getApplication()
+        BenchmarkStore.setEnabled(app, true)
+        try {
+            val (service, view) = service(editor())
+            assertEquals(View.VISIBLE, view.findViewById<View>(R.id.benchmark_banner).visibility)
+            original.endUnexpectedly()
+            await { !MicrophoneOwner.state().occupied }
+            BenchmarkStore.setEnabled(app, false)
+            service.onStartInputView(editor(), true)
+            button(view).performClick()
+            await { next.starts.get() == 1 }
+            assertEquals(View.GONE, view.findViewById<View>(R.id.benchmark_banner).visibility)
+        } finally { BenchmarkStore.setEnabled(app, false) }
+    }
+
     @Test fun regressionOldEndDeliveredAfterExplicitNewTakeDoesNotInterruptIt() {
         val original = Input()
         val next = Input()

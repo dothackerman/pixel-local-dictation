@@ -223,12 +223,8 @@ class DictationImeService : InputMethodService() {
             return
         }
         takeRetentionEligible = null
-        val liveCheck = Engine.liveReceipt() != null
-        // The supervised live check stores timing/identity receipts only, never new recordings.
-        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         observeGeometry(startupTake)
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
         rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
@@ -369,6 +365,10 @@ class DictationImeService : InputMethodService() {
             setMicrophone(false, R.string.status_no_permission)
             return
         }
+        // Latch current policy for each new take, including explicit restarts.
+        val liveCheck = Engine.liveReceipt() != null
+        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         rotationTake++
         rotationEvent(RotationEvent.CAPTURE_START)

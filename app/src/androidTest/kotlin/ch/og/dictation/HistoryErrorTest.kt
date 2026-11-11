@@ -46,10 +46,10 @@ class HistoryErrorTest {
         val bad = File(root, "$id.history").apply { writeText("bad synthetic record") }
         val activity = launch()
         try {
-            val retry = await(activity, context.getString(R.string.history_read_error))
+            val retry = await(activity, context.getString(R.string.history_retry))
             assertTrue(bad.exists())
             assertTrue(bad.delete())
-            instrumentation.runOnMainSync { retry.parent.let { (it as View).performClick() } }
+            instrumentation.runOnMainSync { retry.performClick() }
             await(activity, "Synthetic preserved record")
             assertEquals(good, store.get(goodId))
         } finally { instrumentation.runOnMainSync { activity.finish() }; bad.delete(); store.delete(goodId) }
