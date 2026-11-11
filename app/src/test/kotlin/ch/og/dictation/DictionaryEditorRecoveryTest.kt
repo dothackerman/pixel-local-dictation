@@ -310,6 +310,9 @@ class DictionaryEditorRecoveryTest {
             val item = toolbar.menu.findItem(R.id.dictionary_add_item)
             assertTrue(item.isVisible && item.isEnabled)
             assertEquals(app.getString(R.string.dictionary_add), item.title.toString())
+            // Device capture: the shared ic_add carries the FAB's onPrimary tint; on the top bar it is ink.
+            val ink = com.google.android.material.color.MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
+            assertEquals(ink, androidx.core.view.MenuItemCompat.getIconTintList(item)?.defaultColor)
             toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
             shadowOf(Looper.getMainLooper()).idle()
             assertNotNull(ShadowDialog.getLatestDialog().findViewById<android.view.View>(R.id.dictionary_entry))
