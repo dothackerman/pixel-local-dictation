@@ -644,6 +644,41 @@ class DictationProductionLifecycleTest {
         assertTrue(rows().any { it.text.contains("old speech") && it.completion == HistoryCompletion.INTERRUPTED })
     }
 
+    @Test fun lateInterruptedTimingKeepsOriginalTakeAfterExplicitRestart() {
+        val original = Input()
+        val next = Input()
+        devices.add(original); devices.add(next)
+        val app = RuntimeEnvironment.getApplication()
+        val timing = File(app.filesDir, "lab/recovery-timing.jsonl")
+        fun receipts(): List<org.json.JSONObject> = if (timing.exists())
+            timing.readLines().filter { it.isNotBlank() }.map { org.json.JSONObject(it) } else emptyList()
+        val (_, view) = service(editor())
+        feed(original, 1000, 1)
+        decode.drain(); settleHistory()
+        val prefix = rows().single()
+        val blocked = File(root, "${prefix.id}.tmp")
+        assertTrue(blocked.mkdir())
+        File(blocked, "block").writeText("synthetic")
+        try {
+            feed(original, 20000, 2)
+            original.endUnexpectedly()
+            await { !MicrophoneOwner.state().occupied && button(view).isEnabled }
+            button(view).performClick()
+            await { next.starts.get() == 1 }
+            await { receipts().count { it.optString("phase") == "captureStart" } >= 2 }
+            val starts = receipts().filter { it.optString("phase") == "captureStart" }
+            val oldId = starts[starts.size - 2].getString("takeId")
+            val newId = starts.last().getString("takeId")
+            assertNotEquals(oldId, newId)
+            decode.drain(); settleHistory()
+            await { receipts().any { it.optString("phase") == "checkpointFailed" } &&
+                receipts().any { it.optString("phase") == "takeEnded" && it.optString("takeId") == oldId } }
+            val late = receipts().filter { it.optString("phase") in setOf("checkpointFailed", "takeEnded") }
+            assertTrue(late.any { it.optString("phase") == "checkpointFailed" })
+            assertTrue(late.all { !it.isNull("takeId") && it.getString("takeId") == oldId })
+        } finally { blocked.deleteRecursively() }
+    }
+
     @Test fun explicitRestartLatchesCurrentBenchmarkOptIn() {
         val original = Input()
         val next = Input()
