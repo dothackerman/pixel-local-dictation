@@ -71,12 +71,12 @@ first interrupting event in every case; Android restarts input inside the
 configuration change on every rotation, also with `resourcesUnused` declared
 (not preventable from `method.xml`); service not destroyed by rotation. Panel
 visible again +38–45 ms (kept editor) and, for the recreated editor, hidden at
-+119–147 ms and back by our request at +160–165 ms (hidden ≤ 46 ms); drawn ≤ 183 ms.
++119–147 ms and back by our request at +160–178 ms (hidden ≤ 46 ms); drawn ≤ 183 ms.
 Capture was never reported silenced (longest hidden interval 46 ms, so silencing
 of a long-hidden client stays untested). Demo: one take, one capture, speech
 before and after the rotation inserted once, FUTO restored, both modes. Rotation
 during the Stop wait still ends in History (#53). Gap 3 s and settle 1 s kept:
-≥ 18× and ≥ 7× the measured times; one probe editor, one device.
+≥ 16× and ≥ 9× the measured times; one probe editor, one device.
 Limits: a hide or focus change within the settle time after a rotation cannot be
 told apart from the editor reacting to it (held, then History at the gap); the
 display callback can still report the old rotation (#56), so a 180° turn without a
