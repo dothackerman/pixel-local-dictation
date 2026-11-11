@@ -53,6 +53,8 @@ class RotationProbeCompletionTest {
         trace.event(RotationEvent.INPUT_VIEW_FINISH_DONE)
         trace.event(RotationEvent.TAKE_ENDED, take = 1)
         assertFalse(RotationTrace.finishProbe(0))
+        trace.event(RotationEvent.CAPTURE_STARTED, take = 1)
+        assertFalse(RotationTrace.finishProbe(0))
         trace.event(RotationEvent.TERMINAL_CANCELLED, take = 1)
         assertFalse(RotationTrace.finishProbe(0))
         trace.event(RotationEvent.CAPTURE_RELEASED, take = 1)
@@ -83,6 +85,37 @@ class RotationProbeCompletionTest {
             trace.event(RotationEvent.INPUT_VIEW_START)
             trace.event(RotationEvent.INPUT_VIEW_FINISH_DONE)
             assertFalse(RotationTrace.finishProbe(0))
+        } finally { RotationTrace.abortProbe() }
+    }
+
+    @Test fun requestedButNeverAcquiredCaptureCannotPass() {
+        val file = Files.createTempDirectory("rotation-no-acquire").resolve("trace.jsonl").toFile()
+        RotationTrace.beginProbe("capture-rotation", "run-123")
+        try {
+            val trace = RotationTrace(file)
+            trace.event(RotationEvent.INPUT_VIEW_START)
+            trace.event(RotationEvent.CAPTURE_START, take = 1)
+            trace.event(RotationEvent.CAPTURE_FAILED, take = 1)
+            trace.event(RotationEvent.CAPTURE_NOT_ACQUIRED, take = 1)
+            trace.event(RotationEvent.TERMINAL_FAILED, take = 1)
+            trace.event(RotationEvent.CAPTURE_RELEASED, take = 1)
+            trace.event(RotationEvent.INPUT_VIEW_FINISH_DONE)
+            assertFalse(RotationTrace.finishProbe(0))
+        } finally { RotationTrace.abortProbe() }
+    }
+
+    @Test fun rowsIdentifyNamedRunWithoutContentFields() {
+        val file = Files.createTempDirectory("rotation-metadata").resolve("trace.jsonl").toFile()
+        RotationTrace.beginProbe("finishing-rotation", "run-123")
+        try {
+            val trace = RotationTrace(file)
+            trace.event(RotationEvent.INPUT_START)
+            assertTrue(trace.flush())
+            val row = JSONObject(file.readLines().single())
+            assertEquals("finishing-rotation", row.getString("case"))
+            assertEquals("run-123", row.getString("run"))
+            assertEquals(setOf("protocol", "process", "service", "sequence", "ns", "event", "case", "run"),
+                row.keys().asSequence().toSet())
         } finally { RotationTrace.abortProbe() }
     }
 }

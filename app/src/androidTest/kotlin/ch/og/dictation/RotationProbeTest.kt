@@ -15,7 +15,7 @@ class RotationProbeTest {
     @Test fun observeUntilOwnerFinishes() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        RotationTrace.beginProbe()
+        RotationTrace.beginProbe("capture-rotation")
         RotationProbeActivity.done = CountDownLatch(1)
         try {
             instrumentation.startActivitySync(Intent(context, RotationProbeActivity::class.java)
