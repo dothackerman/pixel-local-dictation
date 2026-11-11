@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square switch thumb (#36): white at the end when on, a smaller outline-ink square at the start when off. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <inset android:inset="6dp"><shape android:shape="rectangle"><size android:width="20dp" android:height="20dp" />
+            <solid android:color="?attr/colorOnSecondary" /></shape></inset>
+    </item>
+    <item>
+        <inset android:inset="8dp"><shape android:shape="rectangle"><size android:width="16dp" android:height="16dp" />
+            <solid android:color="?attr/colorOutline" /></shape></inset>
+    </item>
+</selector>

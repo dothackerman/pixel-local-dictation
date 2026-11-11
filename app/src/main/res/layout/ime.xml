@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Recording panel, portrait (#36 Crate B2). Inflated from Theme.Dictation; colours are theme
+     roles only. A 2dp rule closes the panel against the host app. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@color/panel_surface"
-    android:paddingStart="12dp"
-    android:paddingEnd="12dp"
-    android:paddingBottom="8dp">
+    android:background="?attr/colorSurfaceContainer">
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="?attr/colorOutline" />
     <TextView
         android:id="@+id/benchmark_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#B00020"
-        android:textColor="#FFFFFF"
+        android:background="?attr/colorErrorContainer"
+        android:textColor="?attr/colorOnErrorContainer"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
         android:padding="4dp"
         android:gravity="center"
         android:text="@string/benchmark_banner"
@@ -21,97 +25,27 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="56dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-        <ImageButton
-            android:id="@+id/back"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_back"
-            android:contentDescription="@string/discard_recording" />
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="@color/panel_on_surface"
-            android:textSize="14sp"
-            android:accessibilityLiveRegion="polite"
-            android:text="@string/status_opening" />
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
+        <include layout="@layout/panel_status" />
+        <FrameLayout
+            android:id="@+id/stage"
+            android:layout_width="match_parent"
+            android:layout_height="200dp">
+            <include layout="@layout/panel_stage" />
+            <!-- The paused choice and Undo take the stage's place; the panel height does not change. -->
+            <include
+                layout="@layout/panel_choice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center" />
+            <include
+                layout="@layout/panel_undo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center" />
+        </FrameLayout>
     </LinearLayout>
-    <!-- After a take ended without insertion: one clear way back (#61), under the status. -->
-    <Button
-        android:id="@+id/back_to_keyboard"
-        style="?android:attr/borderlessButtonStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="56dp"
-        android:layout_marginBottom="8dp"
-        android:minHeight="48dp"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:background="@drawable/choice_primary"
-        android:stateListAnimator="@null"
-        android:fontFamily="sans-serif-medium"
-        android:textAllCaps="false"
-        android:textColor="@color/panel_on_container"
-        android:textSize="14sp"
-        android:text="@string/back_to_keyboard"
-        android:visibility="gone" />
-    <TextView
-        android:id="@+id/retention_notice"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="56dp"
-        android:layout_marginEnd="8dp"
-        android:fontFamily="sans-serif"
-        android:textColor="@color/panel_on_surface"
-        android:textSize="12sp"
-        android:visibility="gone" />
-    <TextView
-        android:id="@+id/preview"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:fontFamily="sans-serif"
-        android:textColor="@color/panel_preview"
-        android:minLines="3"
-        android:maxLines="3"
-        android:ellipsize="start"
-        android:gravity="bottom"
-        android:lineSpacingExtra="2dp"
-        android:textSize="14sp" />
-    <FrameLayout
-        android:id="@+id/stage"
-        android:layout_width="match_parent"
-        android:layout_height="255dp">
-        <ch.og.dictation.RecordingRingView
-            android:id="@+id/recording_ring"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:importantForAccessibility="no" />
-        <ImageButton
-            android:id="@+id/microphone"
-            android:layout_width="70dp"
-            android:layout_height="70dp"
-            android:layout_gravity="center"
-            android:background="@drawable/mic_background"
-            android:src="@drawable/ic_mic"
-            android:padding="20dp"
-            android:contentDescription="@string/stop_recording" />
-        <!-- The Cancel choice takes the stage's place; the panel height does not change. -->
-        <include
-            layout="@layout/panel_choice"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginStart="24dp"
-            android:layout_marginEnd="24dp" />
-    </FrameLayout>
 </LinearLayout>

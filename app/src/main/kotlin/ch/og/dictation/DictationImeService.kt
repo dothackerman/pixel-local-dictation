@@ -17,6 +17,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.ContextThemeWrapper
+import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -108,8 +110,21 @@ class DictationImeService : InputMethodService() {
      * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
      */
     private var choice: PanelChoice? = null
-    /** A take ended without insertion while the panel showed it; the panel says so and offers the way back. */
-    private var endedNotInserted = false
+    /**
+     * Take discarded · Undo (#36): the choice that was open when Discard was chosen, while its Undo
+     * window runs. The take stays paused (or its result held), out of History, until the window
+     * ends, Back, a system interruption or hiding the panel makes the discard final.
+     */
+    private var discardPending: PanelChoice? = null
+    private var discardDeadline = 0L
+    private val discardWindowEnded = Runnable { finalizeDiscard(back = true) }
+    private val discardTick = object : Runnable {
+        override fun run() {
+            if (discardPending == null) return
+            showDiscardTimer()
+            mainHandler.postDelayed(this, DISCARD_TICK_MS)
+        }
+    }
     private val gapExpired = Runnable {
         if (!rotationEpisode) return@Runnable
         if (holding) { Log.i(tag, "rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
@@ -191,7 +206,8 @@ class DictationImeService : InputMethodService() {
         rotationView++
         rotationEvent(RotationEvent.VIEW_CREATE)
         startup?.event("inputViewCreateBegin")
-        val v = layoutInflater.inflate(R.layout.ime, null)
+        // The panel uses the one application theme (#36); the service's own theme is the platform's.
+        val v = LayoutInflater.from(ContextThemeWrapper(this, R.style.Theme_Dictation)).inflate(R.layout.ime, null)
         startup?.event("inputViewInflated")
         panel = v
         panelConfiguration = Configuration(resources.configuration)
@@ -241,11 +257,12 @@ class DictationImeService : InputMethodService() {
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
-        v.findViewById<View>(R.id.back_to_keyboard).setOnClickListener { leaveEndedTake() }
+        v.findViewById<View>(R.id.undo_discard).setOnClickListener { undoDiscard() }
         v.findViewById<View>(R.id.choice_safe).setOnClickListener { chooseSafe() }
         v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
         v.findViewById<View>(R.id.choice_discard).setOnClickListener { chooseDiscard() }
         renderChoice()
+        showDiscardTimer()
         startup?.event("inputViewCreateEnd")
         return v
     }
@@ -555,7 +572,7 @@ class DictationImeService : InputMethodService() {
             if (!interruptedView) {
                 previewAllowed = true
                 showPreview(latestPreview)
-                if (!finishing && choice == null) ring?.follow(feedback)
+                if (!finishing && choice == null && discardPending == null) ring?.follow(feedback)
             }
         }
         settleAfterRotation()
@@ -636,6 +653,7 @@ class DictationImeService : InputMethodService() {
 
     override fun onDestroy() {
         rotationEvent(RotationEvent.SERVICE_DESTROY)
+        mainHandler.removeCallbacks(discardTick)
         if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
         destroyed = true
         endHold()
@@ -660,7 +678,6 @@ class DictationImeService : InputMethodService() {
         MicrophoneOwner.acceptExplicitStart()
         interruptedView = false
         choice = null
-        endedNotInserted = false
         renderChoice()
         previewAllowed = true
         if (!hasMicPermission()) {
@@ -728,14 +745,8 @@ class DictationImeService : InputMethodService() {
                         finishing = false
                         choice = null
                         showPreview("")
-                        if (inputViewVisible) endedNotInserted = true
-                        renderChoice()
-                        showStatus(if (!inputViewVisible) R.string.status_recording_stopped else when {
-                            result.interruptedSaved -> R.string.status_saved_history
-                            result.failure != null -> R.string.status_transcription_incomplete
-                            !result.retentionEligible -> R.string.status_stopped_recovery_unavailable
-                            else -> R.string.status_recording_stopped
-                        })
+                        // Whether History kept it shows on the History page; the private-field line says when it cannot.
+                        showStatus(R.string.status_unable_insert)
                         setMicrophone(true, R.string.start_recording)
                         return
                     }
@@ -877,9 +888,9 @@ class DictationImeService : InputMethodService() {
         authority = recordingToken?.takeIf { session.matches(it) }
         authorityMoves = false
         finishing = true
+        feedback?.stop()
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
-        feedback?.stop()
         ring?.follow(null)
         take?.stop()
     }
@@ -927,6 +938,8 @@ class DictationImeService : InputMethodService() {
 
     /** System interruption: revokes authority to insert, then stops capture. */
     private fun interruptTake() {
+        // A pending discard is never saved by an interruption: it becomes final instead.
+        if (discardPending != null) { finalizeDiscard(back = false); return }
         val old = take ?: return
         // A system interruption overrides any open or moved choice; the take goes to History.
         endHoldAndClearDeliveryHold()
@@ -941,10 +954,9 @@ class DictationImeService : InputMethodService() {
         finishing = true
         latestPreview = ""
         showPreview("")
-        if (inputViewVisible) endedNotInserted = true
-        renderChoice()
         feedback?.stop()
         ring?.follow(null)
+        // Truthful while the microphone is released; then "Unable to insert text" with its marker.
         showStatus(R.string.status_stopping_recording)
         setMicrophone(false, R.string.status_stopping_recording)
         old.interrupt {
@@ -955,9 +967,7 @@ class DictationImeService : InputMethodService() {
                 recordingToken = null
                 authority = null
                 startupTake = null
-                showStatus(if (!inputViewVisible) R.string.status_recording_stopped else
-                    if (takeRetentionEligible == true) R.string.status_stopped_finishing_history
-                    else R.string.status_stopped_recovery_unavailable)
+                showStatus(R.string.status_unable_insert)
                 setMicrophone(true, R.string.start_recording)
             }
         }
@@ -986,8 +996,10 @@ class DictationImeService : InputMethodService() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
-            // Back on an open choice is its safe default; otherwise it opens the choice.
-            if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
+            // Back during the Undo window makes the discard final; on an open choice it is the
+            // safe default; otherwise it opens the choice.
+            if (discardPending != null) finalizeDiscard(back = true)
+            else if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -1051,43 +1063,95 @@ class DictationImeService : InputMethodService() {
         if (captureEnded()) interruptTake() else stopAndInsert()
     }
 
-    /** Discard take: revokes insertion, removes the take's checkpoints and returns to the keyboard. */
+    /**
+     * Discard take (#36): opens the Undo window. Nothing is inserted (the take stays paused, or its
+     * result held), the microphone does not record and History stops listing the take; the
+     * discard becomes final when the window ends ([finalizeDiscard]).
+     */
     private fun chooseDiscard() {
-        val current = take ?: return
-        if (choice == null) return
+        val open = choice ?: return
+        if (take == null || discardPending != null) return
+        rotationEvent(RotationEvent.CANCEL_REQUESTED)
         choice = null
-        renderChoice()
+        discardPending = open
+        take?.suspendHistory()
+        ring?.follow(null)
+        discardDeadline = SystemClock.uptimeMillis() + DISCARD_UNDO_MS
+        mainHandler.removeCallbacks(discardWindowEnded)
+        mainHandler.postDelayed(discardWindowEnded, DISCARD_UNDO_MS)
+        mainHandler.removeCallbacks(discardTick)
+        mainHandler.post(discardTick)
+        showStatus(R.string.status_discarded)
+        showDiscardTimer()
+    }
+
+    /** Undo: the same take, paused at the same choice, listed in History again. */
+    private fun undoDiscard() {
+        val open = discardPending ?: return
+        endDiscardWindow()
+        take?.resumeHistory()
+        choice = open
+        showStatus(if (open == PanelChoice.RECORDING) R.string.status_paused else R.string.status_finishing_choice)
+    }
+
+    private fun endDiscardWindow() {
+        discardPending = null
+        mainHandler.removeCallbacks(discardWindowEnded)
+        mainHandler.removeCallbacks(discardTick)
+    }
+
+    /**
+     * The discard becomes final exactly as before #36: insertion revoked, saved text removed,
+     * capture released; late callbacks cannot bring the take back. [back]: the panel returns to
+     * the keyboard (window end, Back); an interruption or hidden panel only ends the take.
+     */
+    private fun finalizeDiscard(back: Boolean) {
+        if (discardPending == null) return
+        endDiscardWindow()
+        val current = take ?: run { showIdle(); return }
         val generation = takeGeneration
         val editor = recordingToken
+        authority = null
         current.cancel(onDiscarded = { deleted ->
-            if (generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
+            if (back && generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
         })
+        Log.i(tag, "cancelled: discard final")
         showIdle()
     }
 
-    /** The way back after a take ended without insertion. */
-    private fun leaveEndedTake() {
-        endedNotInserted = false
-        renderChoice()
-        returnToKeyboard()
+    private fun showDiscardTimer() {
+        val view = panel ?: return
+        if (discardPending == null) return
+        val left = (discardDeadline - SystemClock.uptimeMillis()).coerceIn(0L, DISCARD_UNDO_MS)
+        view.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.undo_timer)?.progress =
+            (left * 1000 / DISCARD_UNDO_MS).toInt()
     }
 
-    /** Renders the open choice (or none) and the state-correct Back label on the current panel. */
+    /** Renders the take's state (choice, Undo, Preparing text, marker, glyph, Back label) on the current panel. */
     private fun renderChoice() {
         val view = panel ?: return
         val open = choice
-        renderPanelChoice(view, open, endedNotInserted && !takeActive, when {
-            open == PanelChoice.RECORDING -> R.string.continue_recording
-            open == PanelChoice.FINISHING -> R.string.keep_finishing
-            takeActive && !interruptedView -> R.string.discard_recording
-            else -> R.string.back_to_keyboard
-        })
+        val running = takeActive && !interruptedView
+        renderPanel(view, PanelFrame(
+            choice = open,
+            undo = discardPending != null,
+            preparing = running && finishing && open == null && discardPending == null,
+            stopGlyph = running && !finishing,
+            unableToInsert = statusText == R.string.status_unable_insert,
+            backLabel = when {
+                discardPending != null -> R.string.back_to_keyboard
+                open == PanelChoice.RECORDING -> R.string.continue_recording
+                open == PanelChoice.FINISHING -> R.string.keep_finishing
+                running && finishing -> R.string.back_hold_and_choose
+                running -> R.string.discard_recording
+                else -> R.string.back_to_keyboard
+            }))
     }
 
     private fun cancelAndReturn() {
+        if (discardPending != null) { finalizeDiscard(back = true); return }
         if (choice != null) { chooseSafe(); return }
         if (takeActive && !interruptedView) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
-        endedNotInserted = false
         renderChoice()
         // An interrupted take keeps finishing into History; Back only leaves.
         if (takeActive) { returnToKeyboard(); return }
@@ -1157,14 +1221,15 @@ class DictationImeService : InputMethodService() {
     private fun showStatus(label: Int) {
         statusText = label
         status?.setText(label)
+        renderChoice()
     }
 
     private fun setMicrophone(enabled: Boolean, label: Int) {
         microphoneEnabled = enabled
         microphoneLabel = label
+        // One disk colour in every state (#36): the glyph and the status say what it does.
         microphone?.apply {
             isEnabled = enabled
-            alpha = if (enabled) 1f else 0.55f
             contentDescription = getString(label)
         }
     }

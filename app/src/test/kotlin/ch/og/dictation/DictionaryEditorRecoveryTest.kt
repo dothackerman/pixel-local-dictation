@@ -31,7 +31,7 @@ class DictionaryEditorRecoveryTest {
         override val defaultViewModelProviderFactory: ViewModelProvider.Factory
             get() = ViewModelProvider.AndroidViewModelFactory(application)
         override fun onCreate(savedInstanceState: Bundle?) {
-            setTheme(R.style.Theme_Dictation_Settings)
+            setTheme(R.style.Theme_Dictation)
             super.onCreate(savedInstanceState)
         }
     }

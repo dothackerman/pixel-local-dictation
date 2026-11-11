@@ -3,35 +3,37 @@
     android:layout_width="match_parent" android:layout_height="match_parent" android:background="?attr/colorSurface">
     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
         <com.google.android.material.appbar.MaterialToolbar android:id="@+id/history_toolbar"
-            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
             app:title="@string/history_title" app:menu="@menu/history"
-            app:navigationIcon="@drawable/ic_dictionary_back" app:navigationIconTint="?attr/colorOnSurface" app:navigationContentDescription="@string/history_back" />
+            app:navigationIcon="@drawable/ic_arrow_back" app:navigationContentDescription="@string/history_back" />
+        <View android:layout_width="match_parent" android:layout_height="2dp" android:background="?attr/colorOnSurface" />
         <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
             <LinearLayout android:id="@+id/history_list_pane" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
                 <!-- One status slot (Dictionary's state line): the page's own state first, else one pending warning. -->
                 <com.google.android.material.card.MaterialCardView android:id="@+id/history_status"
                     style="@style/Widget.Material3.CardView.Filled" android:visibility="gone"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp" android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                    android:layout_marginHorizontal="16dp" android:layout_marginTop="12dp"
+                    app:cardBackgroundColor="?attr/colorSecondaryContainer">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="8dp" android:paddingEnd="4dp">
                         <TextView android:id="@+id/history_status_text" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
                             android:paddingVertical="12dp" android:paddingStart="8dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface"
                             android:accessibilityLiveRegion="polite" />
                         <com.google.android.material.button.MaterialButton android:id="@+id/history_status_action"
-                            style="@style/Widget.Material3.Button.TextButton" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:minHeight="48dp" android:minWidth="48dp" android:textColor="?attr/colorPrimary" />
+                            style="@style/Widget.Dictation.Button.Text" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:minHeight="48dp" android:minWidth="48dp" android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
                 <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
                     <androidx.recyclerview.widget.RecyclerView android:id="@+id/history_list" android:layout_width="match_parent" android:layout_height="match_parent"
-                        android:paddingHorizontal="16dp" android:paddingBottom="24dp" android:clipToPadding="false" />
-                    <LinearLayout android:id="@+id/history_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center"
-                        android:orientation="vertical" android:gravity="center_horizontal" android:paddingHorizontal="40dp" android:paddingVertical="48dp" android:visibility="gone">
-                        <TextView android:id="@+id/history_empty_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center"
+                        android:paddingBottom="24dp" android:clipToPadding="false" />
+                    <!-- Empty state: the same left-aligned pattern as Dictionary's state line. -->
+                    <LinearLayout android:id="@+id/history_empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical" android:paddingHorizontal="24dp" android:paddingTop="56dp" android:visibility="gone">
+                        <TextView android:id="@+id/history_empty_title" android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:text="@string/history_empty" android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface" />
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center"
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp"
                             android:text="@string/history_empty_hint" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
                 </FrameLayout>

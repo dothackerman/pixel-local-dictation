@@ -1,0 +1,8 @@
+<!-- Day header: Today, Yesterday or the date, in the display face, closed by a hairline. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+    <TextView android:id="@+id/history_day" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp" android:paddingTop="16dp" android:paddingBottom="8dp" android:accessibilityHeading="true"
+        android:textAppearance="?attr/textAppearanceTitleSmall" android:textColor="?attr/colorOnSurface" />
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOnSurface" />
+</LinearLayout>

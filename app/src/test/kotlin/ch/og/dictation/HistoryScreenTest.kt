@@ -25,7 +25,7 @@ class HistoryScreenTest {
     class Page : HistoryActivity() {
         override val undoWindowMs: Long get() = 60_000
         override fun onCreate(savedInstanceState: Bundle?) {
-            setTheme(R.style.Theme_Dictation_Settings)
+            setTheme(R.style.Theme_Dictation)
             super.onCreate(savedInstanceState)
         }
     }
@@ -69,10 +69,18 @@ class HistoryScreenTest {
         return page
     }
 
-    @Test fun listShowsStatusOnlyForTakesThatAreNotCompleteAndInserted() {
+    @Test fun listMarksOnlyTakesThatAreNotCompleteAndInsertedWithOneGlyph() {
         val page = open()
-        val metas = texts(page.window.decorView).filter { it.id == R.id.history_row_meta }.map { it.text.toString() }
-        assertEquals(listOf(HistoryRows.date(200), HistoryRows.date(100) + " · Not inserted"), metas)
+        val markers = (0..1).map { rowAt(page, it).findViewById<View>(R.id.history_row_marker).visibility }
+        assertEquals("a clean row shows nothing; at most one marker", listOf(View.GONE, View.VISIBLE), markers)
+        // No text chips: the words are the row's spoken description, the same sentence as the detail.
+        assertFalse(shown(page, app.getString(R.string.history_delivery_rejected)))
+        assertEquals(app.getString(R.string.history_row_description, HistoryRows.time(100), "Second synthetic transcript") + ", " +
+            app.getString(R.string.marker_not_inserted_line), rowAt(page, 1).findViewById<View>(R.id.history_row_body).contentDescription.toString())
+        assertEquals(HistoryRows.time(200), rowAt(page, 0).findViewById<TextView>(R.id.history_row_time).text.toString())
+        // One day header above both rows.
+        val days = texts(page.window.decorView).filter { it.id == R.id.history_day }.map { it.text.toString() }
+        assertEquals(listOf(HistoryRows.dayText(200)), days)
         assertEquals(View.VISIBLE, page.findViewById<View>(R.id.history_explanation).visibility)
         assertEquals(View.GONE, page.findViewById<View>(R.id.history_empty).visibility)
     }
@@ -105,8 +113,11 @@ class HistoryScreenTest {
         assertTrue(File(root, "$b.history").exists())
     }
 
-    /** Item 0 of the list is the explanation header; rows follow it. */
-    private fun rowAt(page: Page, n: Int) = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).getChildAt(n + 1)
+    /** Item 0 of the list is the explanation header; rows follow under their day headers. */
+    private fun rowAt(page: Page, n: Int): View {
+        val list = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list)
+        return (0 until list.childCount).map(list::getChildAt).filter { it.findViewById<View>(R.id.history_row_body) != null }[n]
+    }
     private fun firstRow(page: Page) = rowAt(page, 0)
     private fun clipboard() = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     private fun clipText() = clipboard().primaryClip?.getItemAt(0)?.text?.toString()
@@ -117,8 +128,9 @@ class HistoryScreenTest {
         firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         val toolbar = toolbar(page)
-        assertEquals(HistoryRows.date(200), toolbar.title.toString())
+        assertEquals(HistoryRows.dayText(200), toolbar.title.toString())
         assertFalse(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
+        assertFalse(toolbar.menu.findItem(R.id.history_marks_item).isVisible)
         assertEquals("First synthetic transcript", page.findViewById<TextView>(R.id.history_detail_text).text.toString())
         val copy = toolbar.menu.findItem(R.id.history_copy_item)
         val delete = toolbar.menu.findItem(R.id.history_delete_item)
@@ -132,8 +144,43 @@ class HistoryScreenTest {
         assertEquals(copy.contentDescription.toString(), copy.tooltipText.toString())
         assertEquals(delete.contentDescription.toString(), delete.tooltipText.toString())
         // No text buttons in the detail.
-        assertFalse(texts(page.window.decorView).any { it is android.widget.Button })
+        assertFalse(texts(page.window.decorView).any { it is android.widget.Button && it.text.isNotEmpty() })
         assertEquals(View.GONE, page.findViewById<View>(R.id.history_list_pane).visibility)
+        // Delete keeps a 16dp gap after Copy and is a 48dp target with its words.
+        val action = delete.actionView!!
+        val density = app.resources.displayMetrics.density
+        assertTrue(action.paddingStart >= (16 * density).toInt())
+        val button = action.findViewById<View>(R.id.history_delete_action)
+        assertTrue(button.layoutParams.width >= (48 * density).toInt() && button.layoutParams.height >= (48 * density).toInt())
+        assertEquals(app.getString(R.string.history_delete_transcript), button.contentDescription.toString())
+        button.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(shown(page, "First synthetic transcript"))
+    }
+
+    @Test fun marksSheetListsEveryMarkWithItsSentenceFromTheMenuAndTheDetailLine() {
+        val page = open()
+        val toolbar = toolbar(page)
+        val items = (0 until toolbar.menu.size()).map { toolbar.menu.getItem(it) }.filter { it.isVisible }.map { it.itemId }
+        assertEquals("marks first, then Clear History", listOf(R.id.history_marks_item, R.id.history_clear_item), items)
+        toolbar.menu.performIdentifierAction(R.id.history_marks_item, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog() as com.google.android.material.bottomsheet.BottomSheetDialog
+        val rows = sheet.findViewById<ViewGroup>(R.id.history_marks_rows)!!
+        assertEquals(HistoryMarker.entries.size + 1, rows.childCount)
+        for (mark in HistoryMarker.entries) assertTrue(texts(rows).any { it.text.toString() == app.getString(mark.sentence) })
+        sheet.dismiss()
+        rowAt(page, 1).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val line = page.findViewById<View>(R.id.history_detail_marker)
+        assertTrue(line.minimumHeight >= (48 * app.resources.displayMetrics.density).toInt())
+        line.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val opened = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+        val marks = opened.findViewById<ViewGroup>(R.id.history_marks_rows)
+        val selected = (0 until marks.childCount).map { marks.getChildAt(it).findViewById<View>(R.id.history_mark_body) }.filter { it.isSelected }
+        assertEquals("the sheet opens at that mark", 1, selected.size)
+        assertTrue(texts(selected.single()).any { it.text.toString() == app.getString(R.string.marker_not_inserted_sentence) })
     }
 
     @Test fun listHidesTheDetailActionsAndShowsClear() {
@@ -233,19 +280,25 @@ class HistoryScreenTest {
         val header = list.getChildAt(0)
         assertSame(page.findViewById<View>(R.id.history_explanation).parent, header)
         assertEquals(0, list.getChildAdapterPosition(header))
-        assertEquals(1, list.getChildAdapterPosition(firstRow(page)))
+        assertEquals("a day header, then the first row", 2, list.getChildAdapterPosition(firstRow(page)))
     }
 
-    @Test fun detailMetadataIsTheSameLineAsTheListRowAndTextIsSelectable() {
+    @Test fun detailSaysTheSameSentenceAsTheRowAndTextIsSelectable() {
         val page = open()
-        val rowMeta = firstRow(page).findViewById<TextView>(R.id.history_row_meta).text.toString()
-        val secondMeta = rowAt(page, 1).findViewById<TextView>(R.id.history_row_meta).text.toString()
+        val spoken = rowAt(page, 1).findViewById<View>(R.id.history_row_body).contentDescription.toString()
         rowAt(page, 1).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(secondMeta, page.findViewById<TextView>(R.id.history_detail_meta).text.toString())
-        assertEquals(HistoryRows.date(100) + " · Not inserted", secondMeta)
-        assertNotEquals(rowMeta, secondMeta)
+        assertEquals(HistoryRows.time(100) + " · 3 words", page.findViewById<TextView>(R.id.history_detail_meta).text.toString())
+        val sentence = page.findViewById<TextView>(R.id.history_detail_marker_text).text.toString()
+        assertEquals(app.getString(R.string.marker_not_inserted_line), sentence)
+        assertTrue("row and detail share one sentence", spoken.endsWith(sentence))
         assertTrue(page.findViewById<TextView>(R.id.history_detail_text).isTextSelectable)
+        // A clean take has no exception line.
+        page.onBackPressedDispatcher.onBackPressed()
+        shadowOf(Looper.getMainLooper()).idle()
+        firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(View.GONE, page.findViewById<View>(R.id.history_detail_marker).visibility)
     }
 
     private fun slot(page: Page) = page.findViewById<View>(R.id.history_status)

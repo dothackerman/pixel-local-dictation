@@ -957,9 +957,11 @@ class DictationProductionLifecycleTest {
     }
 
     private fun choiceShown(panel: View) = panel.findViewById<View>(R.id.choice).visibility == View.VISIBLE
-    private fun safe(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_safe)
-    private fun stopAction(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_stop)
-    private fun discardAction(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_discard)
+    private fun safe(panel: View) = panel.findViewById<ImageButton>(R.id.choice_safe)
+    private fun stopAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_stop)
+    private fun discardAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_discard)
+    private fun undoAction(panel: View) = panel.findViewById<View>(R.id.undo_discard)
+    private fun undoShown(panel: View) = panel.findViewById<View>(R.id.undo_group).visibility == View.VISIBLE
     private fun back(panel: View) = panel.findViewById<ImageButton>(R.id.back)
     private fun systemBack(service: DictationImeService) =
         service.onKeyDown(android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
@@ -1036,6 +1038,7 @@ class DictationProductionLifecycleTest {
         assertEquals("rotation never selects Discard", 1, rows().size)
         advance(ROTATION_SETTLE_MS)
         discardAction(returned).performClick()
+        advance(DISCARD_UNDO_MS)
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
@@ -1078,6 +1081,7 @@ class DictationProductionLifecycleTest {
     @Test fun finishingChoiceRenderedAgainAfterARotationDiscardRemovesSavedTextOnce() {
         val (_, next, returned) = finishingChoiceThroughARotation()
         discardAction(returned).performClick()
+        advance(DISCARD_UNDO_MS)
         settleHistory()
         advance(ROTATION_HOLD_GAP_MS)
         decode.drain(); settleHistory()
@@ -1153,12 +1157,17 @@ class DictationProductionLifecycleTest {
             assertTrue("status clipped", status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
             val mic = button(returned)
             assertFalse(mic.isEnabled)
-            assertTrue("a finishing microphone looks like a live one", mic.alpha < 1f)
+            // Preparing text… (#35/#36): no disk and no ring; the arc says it, segmented when still.
+            assertEquals("a preparing panel shows no microphone disk", View.INVISIBLE, mic.visibility)
+            assertEquals(View.INVISIBLE, returned.findViewById<View>(R.id.recording_ring).visibility)
+            val arc = returned.findViewById<PreparingArcView>(R.id.processing)
+            assertEquals(View.VISIBLE, arc.visibility)
+            arc.draw(Canvas(Bitmap.createBitmap(arc.width, arc.height, Bitmap.Config.ARGB_8888)))
+            assertTrue("with animations off the arc is a static segmented ring", arc.segmented)
             assertEquals(service.getString(R.string.status_finishing), mic.contentDescription.toString())
             assertTrue("recording ring not drawn", recordingRing > 200)
-            assertTrue("finishing ring looks like recording", ringAlpha(returned) < recordingRing * 0.6)
             val whole = android.graphics.Rect(0, 0, returned.width, returned.height)
-            for (target in listOf(returned.findViewById<View>(R.id.back), mic)) {
+            for (target in listOf(returned.findViewById<View>(R.id.back), arc)) {
                 assertTrue(target.width >= 48 * density && target.height >= 48 * density)
                 val bounds = android.graphics.Rect(0, 0, target.width, target.height)
                 (returned as android.view.ViewGroup).offsetDescendantRectToMyCoords(target, bounds)
@@ -1278,7 +1287,7 @@ class DictationProductionLifecycleTest {
         assertTrue(choiceShown(view))
         assertEquals(service.getString(R.string.status_paused), status(view))
         assertTrue("the safe action has focus", safe(view).isFocused)
-        assertEquals(service.getString(R.string.continue_recording), safe(view).text.toString())
+        assertEquals(service.getString(R.string.continue_recording), safe(view).contentDescription.toString())
         assertEquals(View.VISIBLE, stopAction(view).visibility)
         assertEquals(1, input.stops.get())
         assertEquals(0, input.releases.get())
@@ -1398,7 +1407,190 @@ class DictationProductionLifecycleTest {
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
         assertEquals(0, commits)
-        assertEquals(service.getString(R.string.status_saved_history), status(view))
+        assertEquals(service.getString(R.string.status_unable_insert), status(view))
+    }
+
+    // --- Take discarded · Undo (#36): the discard is held for DISCARD_UNDO_MS, then final. ---
+
+    /** Records one checkpoint, opens the paused choice and discards; returns what the window holds. */
+    private fun discardedWhilePaused(): Triple<DictationImeService, View, Input> {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size)
+        back(view).performClick()
+        discardAction(view).performClick()
+        settleHistory()
+        return Triple(service, view, input)
+    }
+
+    /** The final discard, exactly as before #36: capture released, saved text gone, nothing inserted. */
+    private fun assertDiscardFinal(input: Input) {
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory(); decode.drain(); settleHistory()
+        assertTrue("a final discard leaves nothing in History", rows().isEmpty())
+        assertEquals(0, commits)
+    }
+
+    @Test fun discardOffersUndoAndMeanwhileNothingIsInsertedRecordedOrListed() {
+        val (service, view, input) = discardedWhilePaused()
+        assertEquals(service.getString(R.string.status_discarded), status(view))
+        assertTrue(undoShown(view))
+        assertFalse("only Undo and Back while Undo is offered", choiceShown(view))
+        assertEquals("no microphone, so nothing ends the window by accident", View.INVISIBLE, button(view).visibility)
+        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.undo_timer).visibility)
+        assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
+        assertFalse("the microphone is not recording", input.running)
+        assertEquals("the take is kept until the window ends", 0, input.releases.get())
+        assertTrue("the take is not visible in History", rows().isEmpty())
+        decode.drain(); settleHistory()
+        assertTrue("late output cannot list it", rows().isEmpty())
+        assertEquals(0, commits)
+        assertNoWindow()
+    }
+
+    @Test fun undoRestoresTheSameTakePausedAtTheChoiceWithItsSavedText() {
+        val (service, view, input) = discardedWhilePaused()
+        undoAction(view).performClick()
+        settleHistory()
+        assertTrue(choiceShown(view))
+        assertFalse(undoShown(view))
+        assertEquals(service.getString(R.string.status_paused), status(view))
+        assertTrue(safe(view).isFocused)
+        assertEquals("saved text intact", "old speech", rows().single().text)
+        assertEquals(0, input.releases.get())
+        advance(DISCARD_UNDO_MS * 2)
+        assertTrue("an undone discard never fires later", choiceShown(view))
+        assertEquals(0, input.releases.get())
+        safe(view).performClick()
+        assertEquals("same take, same microphone", 2, input.starts.get())
+        feed(input, 20000, 2)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        assertEquals(listOf("old speech private speech"), firstField.getValue(service).inserted)
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+    }
+
+    @Test fun undoWindowEndMakesTheDiscardFinalAndReturnsToTheKeyboard() {
+        val (_, view, input) = discardedWhilePaused()
+        org.robolectric.shadows.ShadowLog.clear()
+        advance(DISCARD_UNDO_MS - 100)
+        assertTrue(undoShown(view))
+        assertEquals(0, input.releases.get())
+        advance(200)
+        assertDiscardFinal(input)
+        assertFalse(undoShown(view))
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
+        assertEquals(View.VISIBLE, button(view).visibility)
+    }
+
+    @Test fun backDuringTheUndoWindowMakesTheDiscardFinal() {
+        val (_, view, input) = discardedWhilePaused()
+        back(view).performClick()
+        assertDiscardFinal(input)
+        assertFalse(undoShown(view))
+    }
+
+    @Test fun systemBackDuringTheUndoWindowMakesTheDiscardFinal() {
+        val (service, _, input) = discardedWhilePaused()
+        assertTrue(systemBack(service))
+        assertDiscardFinal(input)
+    }
+
+    @Test fun hidingThePanelDuringTheUndoWindowMakesTheDiscardFinalNotHistory() {
+        val (service, view, input) = discardedWhilePaused()
+        service.onFinishInputView(true)
+        assertDiscardFinal(input)
+        assertFalse(undoShown(view))
+        advance(DISCARD_UNDO_MS)
+        decode.drain(); settleHistory()
+        assertTrue(rows().isEmpty())
+    }
+
+    @Test fun lockDuringTheUndoWindowMakesTheDiscardFinal() {
+        val (_, _, input) = discardedWhilePaused()
+        screenOff()
+        assertDiscardFinal(input)
+    }
+
+    @Test fun serviceDestroyedDuringTheUndoWindowMakesTheDiscardFinal() {
+        val (service, _, input) = discardedWhilePaused()
+        service.onDestroy()
+        assertDiscardFinal(input)
+    }
+
+    @Test fun rotationDuringTheUndoWindowRendersUndoAgainAndUndoKeepsTheTake() {
+        DictationImeService.requestPanel = {}
+        val (service, _, input) = discardedWhilePaused()
+        val (next, returned) = rotateToRecreatedEditor(service)
+        assertTrue("the recreated panel renders the same Undo", undoShown(returned))
+        assertEquals(service.getString(R.string.status_discarded), status(returned))
+        advance(ROTATION_SETTLE_MS)
+        assertTrue("rotation never decides the discard", undoShown(returned))
+        assertEquals(0, input.releases.get())
+        assertTrue(rows().isEmpty())
+        undoAction(returned).performClick()
+        settleHistory()
+        assertTrue(choiceShown(returned))
+        assertEquals("old speech", rows().single().text)
+        stopAction(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        assertEquals(listOf("old speech"), next.inserted)
+    }
+
+    @Test fun rotationDuringTheUndoWindowThenTheWindowEndsMakesTheDiscardFinal() {
+        DictationImeService.requestPanel = {}
+        val (service, _, input) = discardedWhilePaused()
+        val (next, returned) = rotateToRecreatedEditor(service)
+        advance(ROTATION_SETTLE_MS)
+        advance(DISCARD_UNDO_MS)
+        assertDiscardFinal(input)
+        assertFalse(undoShown(returned))
+        assertTrue(next.inserted.isEmpty())
+    }
+
+    @Test fun finishingDiscardOffersUndoAndUndoReturnsToTheHeldResult() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        back(view).performClick()
+        discardAction(view).performClick()
+        decode.drain(); settleHistory(); decode.drain(); settleHistory()
+        assertTrue(undoShown(view))
+        assertEquals("nothing is inserted during the window", 0, commits)
+        assertTrue("the take is not visible in History", rows().isEmpty())
+        undoAction(view).performClick()
+        settleHistory()
+        assertTrue(choiceShown(view))
+        assertEquals(service.getString(R.string.status_finishing_choice), status(view))
+        assertEquals("old speech", rows().single().text)
+        safe(view).performClick()
+        await { settleHistory(); commits == 1 }
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+    }
+
+    @Test fun finishingDiscardBecomesFinalWhenTheWindowEnds() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        back(view).performClick()
+        discardAction(view).performClick()
+        decode.drain(); settleHistory()
+        advance(DISCARD_UNDO_MS)
+        decode.drain(); settleHistory(); decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        assertTrue(rows().isEmpty())
+        assertFalse(undoShown(view))
     }
 
     @Test fun recordingChoiceDiscardRemovesCheckpointsAndNeverInserts() {
@@ -1410,6 +1602,7 @@ class DictationProductionLifecycleTest {
         assertEquals(1, rows().size)
         back(view).performClick()
         discardAction(view).performClick()
+        advance(DISCARD_UNDO_MS)
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
@@ -1449,8 +1642,12 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
-    /** P1 (#61 visit): an interrupted take must not leave a silent idle panel with old text. */
-    @Test fun historyOnlyEndSaysNotInsertedClearsThePreviewAndOffersTheWayBack() {
+    /**
+     * P1 (#61 visit), #36: an interrupted take must not leave a silent idle panel with old text. The
+     * panel says "Unable to insert text" with its marker and nothing more; Back is the way out and
+     * the microphone stays for a new take.
+     */
+    @Test fun historyOnlyEndSaysUnableToInsertWithItsMarkerAndBackLeaves() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1461,13 +1658,14 @@ class DictationProductionLifecycleTest {
         service.onStartInputView(editor(), true)
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
-        await { status(view) == service.getString(R.string.status_saved_history) }
+        await { status(view) == service.getString(R.string.status_unable_insert) }
         assertEquals("", preview(view))
-        val way = view.findViewById<View>(R.id.back_to_keyboard)
-        assertEquals(View.VISIBLE, way.visibility)
+        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.status_marker).visibility)
+        assertEquals(View.VISIBLE, button(view).visibility)
+        assertTrue("the microphone stays for a new take", button(view).isEnabled)
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
         org.robolectric.shadows.ShadowLog.clear()
-        way.performClick()
+        back(view).performClick()
         pump()
         assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
         assertEquals(1, input.starts.get())
@@ -1483,7 +1681,7 @@ class DictationProductionLifecycleTest {
         await { input.releases.get() == 1 }
         back(view).performClick()
         assertTrue(choiceShown(view))
-        assertEquals(service.getString(R.string.keep_finishing), safe(view).text.toString())
+        assertEquals(service.getString(R.string.keep_finishing), safe(view).contentDescription.toString())
         assertTrue(safe(view).isFocused)
         decode.drain(); settleHistory()
         assertEquals(0, commits)
@@ -1519,6 +1717,7 @@ class DictationProductionLifecycleTest {
         decode.drain(); settleHistory()
         assertEquals(0, commits)
         discardAction(view).performClick()
+        advance(DISCARD_UNDO_MS)
         settleHistory()
         assertEquals(0, commits)
         assertTrue(rows().isEmpty())
@@ -1540,25 +1739,28 @@ class DictationProductionLifecycleTest {
         back(view).performClick()
         layOut(view, widthDp)
         val density = view.resources.displayMetrics.density
-        fun check(actions: List<android.widget.Button>) {
+        fun check(actions: List<ImageButton>) {
             val whole = android.graphics.Rect(0, 0, view.width, view.height)
+            val tops = mutableSetOf<Int>()
             for (action in actions) {
-                assertTrue("${action.text} below 48dp", action.height >= 48 * density && action.width >= 48 * density)
+                val name = action.contentDescription
+                assertTrue("$name below 52dp", action.height >= 52 * density && action.width >= 52 * density)
                 val bounds = android.graphics.Rect(0, 0, action.width, action.height)
                 (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(action, bounds)
-                assertTrue("${action.text} outside the panel", whole.contains(bounds))
-                val layout = action.layout
-                assertTrue("${action.text} truncated", (0 until layout.lineCount).all { layout.getEllipsisCount(it) == 0 })
-                assertTrue("${action.text} clipped", action.height >= layout.height + action.compoundPaddingTop + action.compoundPaddingBottom)
+                assertTrue("$name outside the panel", whole.contains(bounds))
+                assertFalse("icon-only buttons still carry their words", name.isNullOrBlank())
+                assertEquals("$name tooltip", name.toString(), action.tooltipText?.toString())
+                tops.add(bounds.top)
             }
+            assertEquals("one row at one height", 1, tops.size)
             val safeBounds = android.graphics.Rect(0, 0, safe(view).width, safe(view).height)
             val discardBounds = android.graphics.Rect(0, 0, discardAction(view).width, discardAction(view).height)
             (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(safe(view), safeBounds)
             view.offsetDescendantRectToMyCoords(discardAction(view), discardBounds)
             val apart = maxOf(discardBounds.left - safeBounds.right, discardBounds.top - safeBounds.bottom)
             assertTrue("Discard sits next to the safe action", apart >= 16 * density)
-            assertNotEquals(safe(view).currentTextColor, discardAction(view).currentTextColor)
-            assertEquals(view.context.getColor(R.color.panel_destructive), discardAction(view).currentTextColor)
+            assertTrue("Discard sits 40dp apart", apart >= 40 * density)
+            assertNotSame("Discard has its own (dashed) edge", safe(view).background.constantState, discardAction(view).background.constantState)
             assertTrue(safe(view).isFocused)
         }
         check(listOf(safe(view), stopAction(view), discardAction(view)))
@@ -1633,7 +1835,7 @@ class DictationProductionLifecycleTest {
         old.onFinishInputView(true)
         assertEquals("", preview(oldView))
         await { !MicrophoneOwner.state().occupied }
-        await { status(oldView) == old.getString(R.string.status_recording_stopped) }
+        await { status(oldView) == old.getString(R.string.status_unable_insert) }
         opened.removeAt(0).destroy()
         val (replacement, view) = service(editor(privateField = true))
         assertEquals(0, next.starts.get())
@@ -1688,7 +1890,7 @@ class DictationProductionLifecycleTest {
 
         gate.countDown()
         await { !MicrophoneOwner.state().occupied }
-        await { status(view) == service.getString(R.string.status_stopped_finishing_history) }
+        await { status(view) == service.getString(R.string.status_unable_insert) }
         decode.drain()
         settleHistory()
         val saved = rows().single()
@@ -1726,7 +1928,7 @@ class DictationProductionLifecycleTest {
 
         gate.countDown()
         await { !MicrophoneOwner.state().occupied }
-        await { status(view) == service.getString(R.string.status_stopped_finishing_history) }
+        await { status(view) == service.getString(R.string.status_unable_insert) }
         decode.drain()
         settleHistory()
         val saved = rows().single()
@@ -1780,7 +1982,7 @@ class DictationProductionLifecycleTest {
             await { !MicrophoneOwner.state().occupied }
             await { flushes.get() == 1 }
             decode.drain(); settleHistory()
-            await { status(view) == service.getString(R.string.status_saved_history) }
+            await { status(view) == service.getString(R.string.status_unable_insert) }
             assertEquals("old speech", rows().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
             assertEquals(0, commits)
@@ -1842,7 +2044,7 @@ class DictationProductionLifecycleTest {
             await { !MicrophoneOwner.state().occupied }
             await { flushes.get() == 1 }
             decode.drain(); settleHistory()
-            await { status(view) == service.getString(R.string.status_stopped_recovery_unavailable) }
+            await { status(view) == service.getString(R.string.status_unable_insert) }
             assertTrue(rows().isEmpty())
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
@@ -1987,7 +2189,7 @@ class DictationProductionLifecycleTest {
             assertEquals(prefix.id, rows().single().id)
             assertEquals("old speech", rows().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-            assertEquals(service.getString(R.string.status_transcription_incomplete), status(view))
+            assertEquals(service.getString(R.string.status_unable_insert), status(view))
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
         } finally { BenchmarkStore.setEnabled(app, false); benchmarkDir.deleteRecursively() }
@@ -2063,21 +2265,24 @@ class DictationProductionLifecycleTest {
         val ring = view.findViewById<RecordingRingView>(R.id.recording_ring)
         val size = (200 * service.resources.displayMetrics.density).toInt()
         ring.layout(0, 0, size, size)
-        fun maxAlpha(): Int {
+        val primary = view.context.getColor(R.color.b2_primary)
+        /** Pixels in the recording ink (red-orange); the resting ring is an outline hairline. */
+        fun inkPixels(): Int {
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             return try {
                 ring.draw(Canvas(bitmap))
                 val pixels = IntArray(size * size)
                 bitmap.getPixels(pixels, 0, size, 0, 0, size, size)
-                pixels.maxOf { Color.alpha(it) }
+                pixels.count { it == primary }
             } finally { bitmap.recycle() }
         }
-        val listeningAlpha = maxAlpha()
+        val listening = inkPixels()
         input.endUnexpectedly()
         try {
             await { status(view) == service.getString(R.string.status_stopping_recording) }
-            assertTrue("active ring was not drawn", listeningAlpha > 200)
-            assertTrue("ring still looks active after capture ended", maxAlpha() < listeningAlpha)
+            assertTrue("active ring was not drawn", listening > 0)
+            assertEquals("ring still looks active after capture ended", 0, inkPixels())
+            assertFalse(ring.recording)
             assertFalse(button(view).isEnabled)
             assertEquals(service.getString(R.string.status_stopping_recording), button(view).contentDescription.toString())
             assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, view.findViewById<TextView>(R.id.status).accessibilityLiveRegion)

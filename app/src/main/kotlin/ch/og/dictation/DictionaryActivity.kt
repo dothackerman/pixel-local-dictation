@@ -19,7 +19,6 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
@@ -44,7 +43,6 @@ open class DictionaryActivity : AppCompatActivity() {
     private var snackbar: Snackbar? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.dictionary)
         root = findViewById(R.id.dictionary_root)
@@ -108,7 +106,9 @@ open class DictionaryActivity : AppCompatActivity() {
         val state = model.state.value ?: return
         add.isEnabled = !state.busy && state.snapshot != null
         val all = state.snapshot?.entries.orEmpty()
-        findViewById<TextView>(R.id.dictionary_count).text = resources.getQuantityString(R.plurals.dictionary_count, all.size, all.size)
+        // An empty dictionary says so in the state line; no "0 terms" above it (same pattern as History).
+        findViewById<TextView>(R.id.dictionary_count).text =
+            if (all.isEmpty()) "" else resources.getQuantityString(R.plurals.dictionary_count, all.size, all.size)
         val query = search.text?.toString().orEmpty().trim()
         terms.items = all.filter { it.contains(query, ignoreCase = true) }.sortedWith(Collator.getInstance(Locale.GERMAN))
         terms.enabled = !state.busy

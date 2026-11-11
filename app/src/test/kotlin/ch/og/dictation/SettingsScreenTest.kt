@@ -24,7 +24,7 @@ class SettingsScreenTest {
     class Page : SettingsActivity() {
         override fun historyRoot() = File(noBackupFilesDir, "history-settings-screen-test")
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
-            setTheme(R.style.Theme_Dictation_Settings)
+            setTheme(R.style.Theme_Dictation)
             super.onCreate(savedInstanceState)
         }
     }
@@ -65,7 +65,7 @@ class SettingsScreenTest {
         assertEquals(left(page.findViewById(R.id.benchmark_switch)), left(title))
         assertEquals(dictionary.width, history.width)
         // History keeps only its short count, in the subdued role.
-        assertEquals("2", page.findViewById<TextView>(R.id.settings_history_count).text.toString())
+        assertEquals(app.resources.getQuantityString(R.plurals.settings_history_count, 2, 2), page.findViewById<TextView>(R.id.settings_history_count).text.toString())
         assertEquals(app.getString(R.string.history_row_with_count, app.getString(R.string.history_title), 2), history.contentDescription)
     }
 
@@ -74,9 +74,20 @@ class SettingsScreenTest {
         val delete = page.findViewById<MaterialButton>(R.id.benchmark_delete)
         val fill = delete.backgroundTintList?.defaultColor ?: 0
         assertEquals("text button, no fill", 0, android.graphics.Color.alpha(fill))
+        assertTrue("quiet but marked destructive: underlined", (delete.text as android.text.Spanned).getSpans(0, delete.text.length, android.text.style.UnderlineSpan::class.java).isNotEmpty())
         assertTrue(delete.minimumHeight >= (48 * app.resources.displayMetrics.density).toInt())
         fun top(view: View): Int { val at = IntArray(2); view.getLocationInWindow(at); return at[1] }
         assertTrue(top(delete) > top(page.findViewById(R.id.benchmark_switch)))
         assertTrue(top(page.findViewById(R.id.benchmark_switch)) > top(page.findViewById(R.id.open_history)))
+    }
+
+    /** #36: the shared toolbar sits outside the scroll; a Material switch, no platform Switch. */
+    @Test fun settingsUsesTheSharedToolbarAndAMaterialSwitch() {
+        val page = open()
+        val toolbar = page.findViewById<View>(R.id.settings_toolbar)
+        var parent = toolbar.parent
+        while (parent is View) { assertFalse("toolbar scrolls away", parent is android.widget.ScrollView); parent = parent.parent }
+        assertTrue(toolbar.minimumHeight >= (64 * app.resources.displayMetrics.density).toInt())
+        assertTrue(page.findViewById<View>(R.id.benchmark_switch) is com.google.android.material.materialswitch.MaterialSwitch)
     }
 }

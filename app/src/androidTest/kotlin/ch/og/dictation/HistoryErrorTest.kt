@@ -83,7 +83,7 @@ class HistoryErrorTest {
             instrumentation.runOnMainSync { HistoryUi.click(row) }
             await(activity, context.getString(R.string.history_copy_transcript))
             instrumentation.runOnMainSync {
-                assertTrue(activity.findViewById<TextView>(R.id.history_detail_meta).text.contains(context.getString(R.string.history_delivery_rejected)))
+                assertEquals(context.getString(R.string.marker_not_inserted_line), activity.findViewById<TextView>(R.id.history_detail_marker_text).text.toString())
             }
             assertTrue(temp.mkdir())
             File(temp, "block").writeText("synthetic")

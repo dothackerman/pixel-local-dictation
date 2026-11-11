@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class HistoryLayoutTest {
-    @Test fun historyListAndDetailControlsFitLargeTypeInLightAndDark() {
+    @Test fun historyListAndDetailControlsFitLargeTypeInTheOneScheme() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val root = java.io.File(context.noBackupFilesDir, "history-ui-test-layout")
@@ -21,7 +21,7 @@ class HistoryLayoutTest {
         HistoryTestActivity.largeTextPreview = true
         HistoryTestActivity.historyRootSuffix = "layout"
         try {
-            for (mode in listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO, android.content.res.Configuration.UI_MODE_NIGHT_YES)) {
+            for (mode in listOf(android.content.res.Configuration.UI_MODE_NIGHT_NO)) {
                 HistoryTestActivity.nightMode = mode
                 val activity = instrumentation.startActivitySync(Intent(context, HistoryTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as HistoryActivity
                 try {
@@ -72,12 +72,13 @@ class HistoryLayoutTest {
                             assertTrue(control.width >= (48 * density).toInt() && control.height >= (48 * density).toInt())
                             assertTrue(control.width <= (320 * density).toInt())
                         }
-                        val copyTop = IntArray(2).also(copy::getLocationOnScreen)[1]
-                        val deleteTop = IntArray(2).also(delete::getLocationOnScreen)[1]
-                        assertEquals(copyTop, deleteTop)
-                        assertEquals(copy.height, delete.height)
-                        // Copy leads by order.
-                        assertTrue(IntArray(2).also(copy::getLocationOnScreen)[0] < IntArray(2).also(delete::getLocationOnScreen)[0])
+                        // Same height in the bar (centres aligned), Copy first, Delete at least 16dp after it.
+                        val copyAt = IntArray(2).also(copy::getLocationOnScreen)
+                        val deleteAt = IntArray(2).also(delete::getLocationOnScreen)
+                        assertTrue(kotlin.math.abs((copyAt[1] + copy.height / 2) - (deleteAt[1] + delete.height / 2)) <= 2)
+                        assertTrue(copyAt[0] < deleteAt[0])
+                        val iconGap = (deleteAt[0] + (delete.width - (24 * density).toInt()) / 2) - (copyAt[0] + (copy.width + (24 * density).toInt()) / 2)
+                        assertTrue("Copy and Delete glyphs ${iconGap}px apart", iconGap >= (16 * density).toInt())
                     }
                 } finally { instrumentation.runOnMainSync { activity.finish() } }
             }
@@ -97,7 +98,7 @@ class HistoryLayoutTest {
             instrumentation.runOnMainSync {
                 assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
                 val density = activity.resources.displayMetrics.density
-                val root = activity.findViewById<ScrollView>(R.id.settings_root)
+                val root = activity.findViewById<ScrollView>(R.id.settings_scroll)
                 val width = (320 * density).toInt()
                 val height = (320 * density).toInt()
                 root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))

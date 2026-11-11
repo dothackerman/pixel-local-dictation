@@ -6,9 +6,10 @@ import android.widget.TextView
 
 /** Shared view lookups for the History instrumentation tests. */
 object HistoryUi {
-    /** What a TextView says: its text, or for an icon-only toolbar action its content description. */
+    /** What a TextView says: its text, or for an icon-only action (toolbar or button) its content description. */
     fun label(view: TextView): String =
-        if (view is androidx.appcompat.view.menu.ActionMenuItemView && view.isShown) view.contentDescription?.toString().orEmpty() else view.text.toString()
+        if ((view is androidx.appcompat.view.menu.ActionMenuItemView || view.text.isNullOrEmpty()) && view.isShown)
+            view.contentDescription?.toString().orEmpty() else view.text.toString()
 
     fun findText(view: View, value: String, exact: Boolean = false): TextView? {
         if (view is TextView && (if (exact) label(view) == value else label(view).contains(value))) return view

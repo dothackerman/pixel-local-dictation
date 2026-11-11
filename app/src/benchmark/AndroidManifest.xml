@@ -26,11 +26,11 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".HistoryTestActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
         <activity android:name=".SettingsLargeTextPreviewActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
         <activity android:name=".DictionaryLargeTextPreviewActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation"
             android:windowSoftInputMode="adjustResize" />
         <!-- Optional vendor drivers for the synthetic accelerator access probe. -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />

@@ -1,0 +1,15 @@
+<!-- "What the marks mean": every mark with its one sentence; rows are added by HistoryActivity. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="16dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
+        android:paddingStart="24dp" android:paddingEnd="8dp" android:gravity="center_vertical">
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="@string/history_marks" android:accessibilityHeading="true"
+            android:textAppearance="?attr/textAppearanceTitleLarge" android:textColor="?attr/colorOnSurface" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/history_marks_close" style="@style/Widget.Dictation.Button.Icon"
+            android:layout_width="48dp" android:layout_height="48dp" android:contentDescription="@string/history_marks_close"
+            app:icon="@drawable/ic_close" app:iconTint="?attr/colorOnSurface" />
+    </LinearLayout>
+    <View android:layout_width="match_parent" android:layout_height="2dp" android:background="?attr/colorOnSurface" />
+    <LinearLayout android:id="@+id/history_marks_rows" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+</LinearLayout>

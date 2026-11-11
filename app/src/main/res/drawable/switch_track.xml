@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square switch track (#36): rind green when on; when off the panel-high fill with an outline edge. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle"><size android:width="52dp" android:height="32dp" />
+            <solid android:color="?attr/colorSurfaceContainerHigh" /><stroke android:width="2dp" android:color="?attr/colorOutlineVariant" /></shape>
+    </item>
+    <item android:state_checked="true">
+        <shape android:shape="rectangle"><size android:width="52dp" android:height="32dp" />
+            <solid android:color="?attr/colorSecondary" /><stroke android:width="2dp" android:color="?attr/colorSecondary" /></shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle"><size android:width="52dp" android:height="32dp" />
+            <solid android:color="?attr/colorSurfaceContainerHigh" /><stroke android:width="2dp" android:color="?attr/colorOutline" /></shape>
+    </item>
+</selector>

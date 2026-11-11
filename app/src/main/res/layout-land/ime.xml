@@ -1,24 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact landscape panel: the same views and ids as layout/ime.xml, side by side so the
-     editor stays visible above. Text column on the start side, microphone on the end side
-     under the right thumb. The stage is shorter than in portrait; RecordingRingView scales
-     its loudness motion to fit it; under 600dp it is square (panel_stage_width_land).
-     Same controls as portrait; the Cancel choice replaces the preview here. -->
+<!-- Compact landscape panel: the same views, ids and rules as layout/ime.xml, side by side so the
+     editor stays visible above. Status column on the start side, the stage under the right thumb;
+     under 600dp the stage is square (panel_stage_width_land). The paused choice and Undo take the
+     preview's place in the column; the stage is then empty (no microphone to tap by mistake). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@color/panel_surface"
-    android:paddingStart="12dp"
-    android:paddingEnd="12dp"
-    android:paddingBottom="8dp">
+    android:background="?attr/colorSurfaceContainer">
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="?attr/colorOutline" />
     <TextView
         android:id="@+id/benchmark_banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#B00020"
-        android:textColor="#FFFFFF"
+        android:background="?attr/colorErrorContainer"
+        android:textColor="?attr/colorOnErrorContainer"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
         android:padding="4dp"
         android:gravity="center"
         android:text="@string/benchmark_banner"
@@ -27,86 +28,25 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
         <LinearLayout
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:orientation="vertical">
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="56dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-                <ImageButton
-                    android:id="@+id/back"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:padding="12dp"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_back"
-                    android:contentDescription="@string/discard_recording" />
-                <TextView
-                    android:id="@+id/status"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:fontFamily="sans-serif-medium"
-                    android:textColor="@color/panel_on_surface"
-                    android:textSize="14sp"
-                    android:accessibilityLiveRegion="polite"
-                    android:text="@string/status_opening" />
-            </LinearLayout>
-            <!-- After a take ended without insertion: one clear way back (#61), under the status. -->
-            <Button
-                android:id="@+id/back_to_keyboard"
-                style="?android:attr/borderlessButtonStyle"
+            <include layout="@layout/panel_status" />
+            <include
+                layout="@layout/panel_choice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="56dp"
-                android:layout_marginBottom="8dp"
-                android:minHeight="48dp"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
-                android:background="@drawable/choice_primary"
-                android:stateListAnimator="@null"
-                android:fontFamily="sans-serif-medium"
-                android:textAllCaps="false"
-                android:textColor="@color/panel_on_container"
-                android:textSize="14sp"
-                android:text="@string/back_to_keyboard"
-                android:visibility="gone" />
-            <TextView
-                android:id="@+id/retention_notice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="56dp"
-                android:layout_marginEnd="8dp"
-                android:fontFamily="sans-serif"
-                android:textColor="@color/panel_on_surface"
-                android:textSize="12sp"
-                android:visibility="gone" />
-            <!-- Indented to the status text so the column reads as one block. -->
-            <TextView
-                android:id="@+id/preview"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="56dp"
-                android:paddingEnd="8dp"
-                android:fontFamily="sans-serif"
-                android:textColor="@color/panel_preview"
-                android:minLines="3"
-                android:maxLines="3"
-                android:ellipsize="start"
-                android:gravity="bottom"
-                android:lineSpacingExtra="2dp"
-                android:textSize="14sp" />
-            <!-- The Cancel choice takes the preview's place, indented like it; one row when it fits. -->
+                android:layout_marginBottom="8dp" />
             <include
-                layout="@layout/panel_choice"
-                android:layout_width="match_parent"
+                layout="@layout/panel_undo"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="56dp"
                 android:layout_marginBottom="8dp" />
@@ -116,20 +56,7 @@
             android:layout_width="@dimen/panel_stage_width_land"
             android:layout_height="148dp"
             android:layout_marginStart="12dp">
-            <ch.og.dictation.RecordingRingView
-                android:id="@+id/recording_ring"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:importantForAccessibility="no" />
-            <ImageButton
-                android:id="@+id/microphone"
-                android:layout_width="70dp"
-                android:layout_height="70dp"
-                android:layout_gravity="center"
-                android:background="@drawable/mic_background"
-                android:src="@drawable/ic_mic"
-                android:padding="20dp"
-                android:contentDescription="@string/stop_recording" />
+            <include layout="@layout/panel_stage" />
         </FrameLayout>
     </LinearLayout>
 </LinearLayout>

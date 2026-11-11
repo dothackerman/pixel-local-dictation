@@ -6,10 +6,16 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.annotation.SuppressLint
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -19,9 +25,10 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import java.io.File
@@ -44,6 +51,7 @@ open class HistoryActivity : AppCompatActivity() {
     private val commitPending = Runnable { settleDelete() }
     private val notices by lazy { historyNotices(this) }
     private var snackbar: Snackbar? = null
+    private var marks: BottomSheetDialog? = null
     private var entries = emptyList<HistoryEntry>()
     private var selected: String? = null
     private var detail: View? = null
@@ -61,7 +69,6 @@ open class HistoryActivity : AppCompatActivity() {
     private val storeRoot by lazy { historyRoot() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.history)
@@ -87,11 +94,13 @@ open class HistoryActivity : AppCompatActivity() {
         toolbar.setOnMenuItemClickListener { item: MenuItem ->
             when (item.itemId) {
                 R.id.history_clear_item -> { onClearMenu(); true }
+                R.id.history_marks_item -> { showMarks(null); true }
                 R.id.history_copy_item -> { selected?.let(::copy); true }
                 R.id.history_delete_item -> { selected?.let(::requestDelete); true }
                 else -> false
             }
         }
+        styleMenu()
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -111,6 +120,11 @@ open class HistoryActivity : AppCompatActivity() {
         settleDelete()
         snackbar?.dismiss()
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        marks?.dismiss()
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -175,7 +189,7 @@ open class HistoryActivity : AppCompatActivity() {
         val clear = HistoryIo.currentClear(storeRoot)
         val visible = visibleEntries()
         visibleSavedCount = visible.size
-        rows.items = visible
+        rows.show(visible)
         rows.pendingClear = if (clear?.status == HistoryClearStatus.FAILED) clear.ids else emptySet()
         rows.notifyDataSetChanged()
         val clearing = submittedClearToken != null
@@ -202,7 +216,7 @@ open class HistoryActivity : AppCompatActivity() {
         val warning = if (message == null && detail == null) notices.pending().firstOrNull() else null
         status.visibility = if (message == null && warning == null) View.GONE else View.VISIBLE
         // A page state reads as a plain line; only a warning is a filled row.
-        status.setCardBackgroundColor(if (warning != null) MaterialColors.getColor(status, com.google.android.material.R.attr.colorSurfaceVariant)
+        status.setCardBackgroundColor(if (warning != null) MaterialColors.getColor(status, com.google.android.material.R.attr.colorSecondaryContainer)
             else android.graphics.Color.TRANSPARENT)
         statusText.text = when {
             message != null -> getString(message)
@@ -254,8 +268,21 @@ open class HistoryActivity : AppCompatActivity() {
             detailContainer.addView(it); detail = it
         }
         listPane.visibility = View.GONE
-        toolbar.title = HistoryRows.date(entry.timestamp)
-        view.findViewById<TextView>(R.id.history_detail_meta).text = HistoryRows.line(entry, ::statusLabel)
+        toolbar.title = dayLabel(entry.timestamp)
+        val marker = HistoryRows.marker(entry)
+        val words = HistoryRows.words(entry.text)
+        view.findViewById<TextView>(R.id.history_detail_meta).text = getString(R.string.history_detail_meta,
+            HistoryRows.time(entry.timestamp), resources.getQuantityString(
+                if (marker == HistoryMarker.RECORDING) R.plurals.history_words_so_far else R.plurals.history_words, words, words))
+        view.findViewById<View>(R.id.history_detail_marker).apply {
+            visibility = if (marker == null) View.GONE else View.VISIBLE
+            if (marker != null) {
+                findViewById<ImageView>(R.id.history_detail_marker_glyph).setImageResource(marker.glyph)
+                findViewById<TextView>(R.id.history_detail_marker_text).setText(marker.line)
+                contentDescription = getString(R.string.history_marks_open, getString(marker.line))
+                setOnClickListener { showMarks(marker) }
+            }
+        }
         view.findViewById<TextView>(R.id.history_detail_text).text = entry.text
         renderStatus()
         updateClearMenu()
@@ -316,9 +343,10 @@ open class HistoryActivity : AppCompatActivity() {
         val hasHistoryTargets = visibleSavedCount > 0 || hasStoredHistoryCopies || HistoryProcess.owner.activeIds().isNotEmpty()
         toolbar.menu.findItem(R.id.history_clear_item)?.apply {
             isVisible = detail == null
-            setTitle(if (retrying) R.string.history_clear_retry else R.string.history_clear)
+            title = clearTitle(getString(if (retrying) R.string.history_clear_retry else R.string.history_clear))
             isEnabled = if (retrying) !busy else !busy && hasHistoryTargets
         }
+        toolbar.menu.findItem(R.id.history_marks_item)?.isVisible = detail == null
         // Copy and Delete are the detail's icon actions; the list has its own per-row gestures.
         toolbar.menu.findItem(R.id.history_copy_item)?.isVisible = detail != null
         toolbar.menu.findItem(R.id.history_delete_item)?.isVisible = detail != null
@@ -370,38 +398,117 @@ open class HistoryActivity : AppCompatActivity() {
 
     private fun isClearTarget(id: String): Boolean = HistoryIo.currentClear(storeRoot)?.ids?.contains(id) == true
 
-    private fun statusLabel(status: HistoryRowStatus): String = getString(when (status) {
-        HistoryRowStatus.RECORDING -> R.string.history_recording
-        HistoryRowStatus.FINISHING -> R.string.history_finishing
-        HistoryRowStatus.MAY_BE_INCOMPLETE -> R.string.history_status_incomplete
-        HistoryRowStatus.NOT_INSERTED -> R.string.history_delivery_rejected
-        HistoryRowStatus.INSERTION_UNCERTAIN -> R.string.history_status_uncertain
-    })
+    private fun dayLabel(timestamp: Long): String = when (HistoryRows.day(timestamp)) {
+        HistoryDay.Today -> getString(R.string.history_today)
+        HistoryDay.Yesterday -> getString(R.string.history_yesterday)
+        is HistoryDay.Date -> HistoryRows.dayText(timestamp)
+    }
 
-    /** Item 0 is the explanation, so it scrolls away and the first row is on screen at large font. */
+    /** Overflow icons shown (the marks sheet's info, the error-coloured Clear); Delete's 16dp gap. */
+    @SuppressLint("RestrictedApi")
+    private fun styleMenu() {
+        (toolbar.menu as? androidx.appcompat.view.menu.MenuBuilder)?.setOptionalIconsVisible(true)
+        toolbar.overflowIcon = androidx.appcompat.content.res.AppCompatResources.getDrawable(toolbar.context, R.drawable.ic_more_vert)
+        val error = MaterialColors.getColor(toolbar, androidx.appcompat.R.attr.colorError)
+        toolbar.menu.findItem(R.id.history_clear_item)?.apply {
+            icon?.mutate()?.setTint(error)
+        }
+        toolbar.menu.findItem(R.id.history_delete_item)?.actionView?.findViewById<View>(R.id.history_delete_action)
+            ?.setOnClickListener { selected?.let(::requestDelete) }
+    }
+
+    private fun clearTitle(text: CharSequence) = SpannableString(text).also {
+        it.setSpan(ForegroundColorSpan(MaterialColors.getColor(toolbar, androidx.appcompat.R.attr.colorError)), 0, it.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** "What the marks mean": every mark with its one sentence; [highlight] is the mark the detail line named. */
+    private fun showMarks(highlight: HistoryMarker?) {
+        val dialog = BottomSheetDialog(this)
+        val sheet = layoutInflater.inflate(R.layout.history_marks, null)
+        val rowsView = sheet.findViewById<LinearLayout>(R.id.history_marks_rows)
+        var focus: View? = null
+        for (mark in HistoryMarker.entries.map { it as HistoryMarker? } + null) {
+            val row = layoutInflater.inflate(R.layout.history_mark_row, rowsView, false)
+            val glyph = row.findViewById<ImageView>(R.id.history_mark_glyph)
+            if (mark != null) glyph.setImageResource(mark.glyph) else glyph.visibility = View.INVISIBLE
+            row.findViewById<TextView>(R.id.history_mark_title).setText(mark?.title ?: R.string.marker_none_title)
+            row.findViewById<TextView>(R.id.history_mark_sentence).setText(mark?.sentence ?: R.string.marker_none_sentence)
+            val body = row.findViewById<View>(R.id.history_mark_body)
+            if (mark != null && mark == highlight) {
+                body.setBackgroundColor(MaterialColors.getColor(body, com.google.android.material.R.attr.colorSurfaceContainer))
+                body.isSelected = true
+                focus = body
+            }
+            rowsView.addView(row)
+        }
+        sheet.findViewById<View>(R.id.history_marks_close).setOnClickListener { dialog.dismiss() }
+        dialog.setContentView(sheet)
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.setOnShowListener {
+            dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            dialog.behavior.skipCollapsed = true
+            focus?.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED)
+        }
+        marks = dialog
+        dialog.show()
+    }
+
+    private sealed interface Item {
+        data object Header : Item
+        data class Day(val label: String) : Item
+        data class Row(val entry: HistoryEntry) : Item
+    }
+
+    /** Item 0 is the explanation, so it scrolls away and the first row is on screen at large font; rows sit under their day. */
     private inner class RowsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-        var items = emptyList<HistoryEntry>()
+        var items: List<Item> = listOf(Item.Header)
         var pendingClear = emptySet<String>()
+        fun show(entries: List<HistoryEntry>) {
+            val next = mutableListOf<Item>(Item.Header)
+            var day: String? = null
+            for (entry in entries) {
+                val label = dayLabel(entry.timestamp)
+                if (label != day) { next.add(Item.Day(label)); day = label }
+                next.add(Item.Row(entry))
+            }
+            items = next
+        }
         inner class Header(view: View) : RecyclerView.ViewHolder(view)
+        inner class Day(view: View) : RecyclerView.ViewHolder(view) { val label: TextView = view.findViewById(R.id.history_day) }
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
             val body: View = view.findViewById(R.id.history_row_body)
+            val time: TextView = view.findViewById(R.id.history_row_time)
+            val marker: ImageView = view.findViewById(R.id.history_row_marker)
             val preview: TextView = view.findViewById(R.id.history_row_preview)
-            val meta: TextView = view.findViewById(R.id.history_row_meta)
             val delete: View = view.findViewById(R.id.history_row_delete)
         }
-        override fun getItemViewType(position: Int) = if (position == 0) 0 else 1
-        override fun onCreateViewHolder(parent: ViewGroup, type: Int): RecyclerView.ViewHolder =
-            if (type == 0) Header(layoutInflater.inflate(R.layout.history_list_header, parent, false))
-            else Holder(layoutInflater.inflate(R.layout.history_row, parent, false))
-        override fun getItemCount() = items.size + 1
+        override fun getItemViewType(position: Int) = when (items[position]) { Item.Header -> 0; is Item.Day -> 2; is Item.Row -> 1 }
+        override fun onCreateViewHolder(parent: ViewGroup, type: Int): RecyclerView.ViewHolder = when (type) {
+            0 -> Header(layoutInflater.inflate(R.layout.history_list_header, parent, false))
+            2 -> Day(layoutInflater.inflate(R.layout.history_day, parent, false))
+            else -> Holder(layoutInflater.inflate(R.layout.history_row, parent, false))
+        }
+        override fun getItemCount() = items.size
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            if (holder is Header) return
-            holder as Holder
-            val entry = items[position - 1]
+            when (val item = items[position]) {
+                Item.Header -> return
+                is Item.Day -> { (holder as Day).label.text = item.label; return }
+                is Item.Row -> bindRow(holder as Holder, item.entry)
+            }
+        }
+        private fun bindRow(holder: Holder, entry: HistoryEntry) {
             val clearPending = entry.id in pendingClear
             val date = HistoryRows.date(entry.timestamp)
-            holder.preview.text = if (clearPending) getString(R.string.history_clear_pending) else entry.text.replace('\n', ' ').take(200)
-            holder.meta.text = if (clearPending) date else HistoryRows.line(entry, ::statusLabel)
+            val time = HistoryRows.time(entry.timestamp)
+            val marker = if (clearPending) null else HistoryRows.marker(entry)
+            val text = if (clearPending) getString(R.string.history_clear_pending) else entry.text.replace('\n', ' ').take(200)
+            holder.time.text = time
+            holder.preview.text = text
+            holder.marker.visibility = if (marker == null) View.GONE else View.VISIBLE
+            marker?.let { holder.marker.setImageResource(it.glyph) }
+            // One node: time, preview, then the mark's one sentence (the same words as the detail line).
+            holder.body.contentDescription = listOfNotNull(getString(R.string.history_row_description, time, text),
+                marker?.let { getString(it.line) }).joinToString(", ")
             holder.body.setOnClickListener { showDetail(entry.id) }
             // Long-press copies (the framework adds the long-press haptic when the listener handles it).
             holder.body.setOnLongClickListener { if (clearPending) false else { copy(entry.id); true } }

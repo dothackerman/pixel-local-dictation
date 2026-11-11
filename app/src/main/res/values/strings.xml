@@ -5,25 +5,28 @@
     <string name="status_opening">Opening microphone…</string>
     <string name="status_capture_ended">Microphone stopped · tap to finish</string>
     <string name="status_recording">Recording…</string>
-    <string name="status_finishing">Finishing…</string>
+    <string name="status_finishing">Preparing text…</string>
     <string name="status_failed">Recognition failed</string>
     <string name="status_release_failed">Microphone release unconfirmed · tap to retry</string>
     <string name="retry_release">Retry microphone release</string>
     <string name="status_no_permission">Microphone permission missing</string>
-    <string name="discard_recording">Cancel take</string>
+    <string name="discard_recording">Pause and choose</string>
     <string name="stop_recording">Stop recording</string>
     <string name="start_recording">Start recording</string>
     <string name="retry_recording">Retry recording</string>
     <string name="finish_transcription">Stop and insert</string>
     <string name="cancel">Cancel</string>
-    <string name="settings_label">Local dictation settings</string>
+    <string name="settings_label">Dictation</string>
     <string name="benchmark_switch">Benchmark mode: save recordings</string>
     <string name="benchmark_explanation">When on, every take is stored on this phone as audio plus its recognition result, until you delete it below. Nothing leaves the phone. When off, audio stays in memory and is discarded after use.</string>
     <string name="benchmark_banner">benchmark: saving audio</string>
-    <string name="retention_field_off">History off for this field · recovery unavailable</string>
-    <string name="benchmark_stored">Stored takes: %1$d</string>
+    <string name="retention_field_off">History off for this field</string>
+    <plurals name="benchmark_stored"><item quantity="one">%d recording saved</item><item quantity="other">%d recordings saved</item></plurals>
+    <string name="benchmark_section">Benchmark</string>
+    <string name="benchmark_delete_title">Delete benchmark data?</string>
+    <plurals name="settings_history_count"><item quantity="one">%d saved</item><item quantity="other">%d saved</item></plurals>
     <string name="benchmark_delete">Delete benchmark data</string>
-    <string name="benchmark_delete_confirm">Delete all stored benchmark recordings and results?</string>
+    <string name="benchmark_delete_confirm">Every stored recording and its result is deleted from this phone. This can’t be undone.</string>
     <string name="benchmark_delete_failed">Deleting failed</string>
     <string name="dictionary_title">Dictionary</string>
     <string name="dictionary_back">Back to Settings</string>
@@ -60,7 +63,7 @@
     <string name="dictionary_no_matches">No matching terms.</string>
     <string name="dictionary_empty">No terms yet. Add a name or phrase you want dictation to recognise.</string>
     <string name="history_title">History</string>
-    <string name="history_clear">Clear History</string>
+    <string name="history_clear">Clear History…</string>
     <string name="history_clear_title">Clear History?</string>
     <string name="history_clear_action">Clear</string>
     <string name="history_clear_retry">Retry clear</string>
@@ -68,8 +71,8 @@
     <string name="history_clear_busy">Clearing History…</string>
     <string name="history_clear_error">Couldn’t finish clearing History. Some copies may remain; retry to remove the accepted set.</string>
     <string name="history_clear_pending">Included in the pending clear. Retry to finish.</string>
-    <string name="history_recording">Recording</string>
-    <string name="history_finishing">Finishing</string>
+    <string name="history_recording">Still recording</string>
+    <string name="history_finishing">Preparing text</string>
     <string name="history_explanation">Audio is not stored.</string>
     <string name="history_loading">Loading history…</string>
     <string name="history_empty">No saved transcripts.</string>
@@ -77,7 +80,7 @@
     <string name="history_read_error">Couldn’t open History.</string>
     <string name="history_save_error">Couldn’t save this History update. Recovery may be incomplete; unsaved speech cannot be recovered.</string>
     <string name="history_recovery_incomplete">Recovery may be incomplete. History contains only speech saved before the failure; later speech may be missing.</string>
-    <string name="history_delivery_rejected">Not inserted</string>
+    <string name="history_delivery_rejected">Unable to insert text</string>
     <string name="history_cancel_delete_error">Couldn’t delete a transcript. It is still listed; delete it again.</string>
     <string name="history_receipt_error">Couldn’t save an insertion status. Check the field before pasting a copy.</string>
     <string name="history_notice_dismiss">Dismiss</string>
@@ -87,11 +90,36 @@
     <string name="history_delete_transcript">Delete transcript</string>
     <string name="history_deleted">Transcript deleted</string>
     <string name="history_delete_row">Delete transcript from %1$s: %2$s</string>
-    <string name="history_status_incomplete">May be incomplete</string>
+    <string name="history_status_incomplete">Cut short</string>
     <string name="history_status_uncertain">Insertion uncertain</string>
     <string name="history_empty_hint">Dictated takes appear here and stay on this device until you delete them.</string>
     <string name="history_row_with_count">%1$s · %2$d</string>
     <string name="history_missing">This transcript is no longer in History.</string>
     <string name="continue_recording">Continue recording</string>
     <string name="discard_take">Discard take</string>
+    <!-- History marks (#36 Crate B2): one glyph and one sentence per mark, shared by the detail
+         line, TalkBack and "What the marks mean". Titles are history_recording, history_finishing,
+         history_status_incomplete, history_delivery_rejected, history_status_uncertain. -->
+    <string name="marker_recording_sentence">The text so far is saved.</string>
+    <string name="marker_preparing_sentence">It appears when ready; open it again in a moment.</string>
+    <string name="marker_cut_short_sentence">Words at the end may be missing.</string>
+    <string name="marker_not_inserted_sentence">Copy it to use it.</string>
+    <string name="marker_uncertain_sentence">Check the app before you paste.</string>
+    <string name="marker_recording_line">Still recording. The text so far is saved.</string>
+    <string name="marker_preparing_line">Still preparing text. It appears when ready; open it again in a moment.</string>
+    <string name="marker_cut_short_line">Cut short. Words at the end may be missing.</string>
+    <string name="marker_not_inserted_line">Unable to insert text. Copy it to use it.</string>
+    <string name="marker_uncertain_line">Insertion uncertain. Check the app before you paste.</string>
+    <string name="marker_none_title">No mark</string>
+    <string name="marker_none_sentence">Finished and inserted.</string>
+    <string name="history_marks">What the marks mean</string>
+    <string name="history_marks_close">Close</string>
+    <string name="history_marks_open">%1$s Opens what the marks mean.</string>
+    <string name="history_today">Today</string>
+    <string name="history_yesterday">Yesterday</string>
+    <plurals name="history_words"><item quantity="one">%d word</item><item quantity="other">%d words</item></plurals>
+    <plurals name="history_words_so_far"><item quantity="one">%d word so far</item><item quantity="other">%d words so far</item></plurals>
+    <string name="history_detail_meta">%1$s · %2$s</string>
+    <!-- A row read as one node: time, preview, then its mark's sentence (if any). -->
+    <string name="history_row_description">%1$s, %2$s</string>
 </resources>

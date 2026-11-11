@@ -37,15 +37,17 @@ class SettingsHistoryScreenshotTest {
         HistoryNotice.entries.forEach(notices::dismiss)
         val full = File(context.noBackupFilesDir, "history-ui-test-shots").apply { deleteRecursively() }
         val empty = File(context.noBackupFilesDir, "history-ui-test-shots-empty").apply { deleteRecursively() }
-        val now = 1735812000000
+        // Today, yesterday and an earlier day, so the day headers read as on the phone (#36 mock).
+        val now = System.currentTimeMillis()
         val entries = listOf(
-            HistoryEntry(UUID.randomUUID().toString(), now, "Pick up bread and milk on the way home.", HistoryDelivery.ACCEPTED),
+            HistoryEntry(UUID.randomUUID().toString(), now - 60_000, "Pick up bread and milk on the way home.", HistoryDelivery.ACCEPTED),
+            HistoryEntry(UUID.randomUUID().toString(), now - 3_600_000, "Grüße an alle, wir kommen etwa um halb acht und bringen Brot mit.", HistoryDelivery.UNKNOWN),
             HistoryEntry(UUID.randomUUID().toString(), now - 86_400_000, "Meeting notes: review the project plan tomorrow, then send the summary to everyone who joined the call.", HistoryDelivery.REJECTED),
             HistoryEntry(UUID.randomUUID().toString(), now - 172_800_000, "Remind me to call the dentist about the appointment next week.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED, 1),
         )
         entries.forEach { HistoryStore(full).save(it) }
         try {
-            for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+            for (night in listOf(Configuration.UI_MODE_NIGHT_NO)) { // One fixed light scheme (#36).
                 for (scale in listOf(1f, 2f)) {
                     val tag = "${if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"}-font${scale.toInt()}"
                     HistoryTestActivity.nightMode = night
@@ -84,6 +86,33 @@ class SettingsHistoryScreenshotTest {
                         notices.dismiss(HistoryNotice.SAVE)
 
                         val page = currentHistory(warned)
+                        // What the marks mean, from the overflow menu.
+                        instrumentation.runOnMainSync {
+                            val toolbar = requireNotNull(HistoryUi.find(page.window.decorView) { it is MaterialToolbar } as MaterialToolbar)
+                            toolbar.menu.performIdentifierAction(R.id.history_marks_item, 0)
+                        }
+                        settle()
+                        instrumentation.runOnMainSync {
+                            val sheet = WindowInspector.getGlobalWindowViews().last { it.findViewById<View>(R.id.history_marks_rows) != null }
+                            capture(sheet, File(output, "history-marks-$tag.png"), page.window.decorView)
+                            sheet.findViewById<View>(R.id.history_marks_close).performClick()
+                        }
+                        settle()
+                        // A detail with a mark: its line opens the sheet at that mark.
+                        val marked = await(page, entries[2].text)
+                        instrumentation.runOnMainSync { HistoryUi.click(marked) }
+                        await(page, context.getString(R.string.history_copy_transcript))
+                        settle()
+                        instrumentation.runOnMainSync { capture(page.window.decorView, File(output, "history-detail-marked-$tag.png")) }
+                        instrumentation.runOnMainSync { page.findViewById<View>(R.id.history_detail_marker).performClick() }
+                        settle()
+                        instrumentation.runOnMainSync {
+                            val sheet = WindowInspector.getGlobalWindowViews().last { it.findViewById<View>(R.id.history_marks_rows) != null }
+                            capture(sheet, File(output, "history-marks-at-mark-$tag.png"), page.window.decorView)
+                            sheet.findViewById<View>(R.id.history_marks_close).performClick()
+                        }
+                        settle()
+                        instrumentation.runOnMainSync { page.onBackPressedDispatcher.onBackPressed() }
                         val tapped = await(page, entries.first().text)
                         instrumentation.runOnMainSync { HistoryUi.click(tapped) }
                         await(page, context.getString(R.string.history_copy_transcript))
@@ -105,6 +134,15 @@ class SettingsHistoryScreenshotTest {
                         }
                         settle()
                         assertEquals(entries.size, full.listFiles().orEmpty().count { it.name.endsWith(".history") })
+                        // Delete from a row: the row goes, the Snackbar offers Undo; Undo brings it back.
+                        val trash = await(page, context.getString(R.string.history_delete_row, HistoryRows.date(entries.first().timestamp),
+                            HistoryRows.previewWords(entries.first().text)))
+                        instrumentation.runOnMainSync { trash.performClick() }
+                        settle()
+                        instrumentation.runOnMainSync { capture(page.window.decorView, File(output, "history-deleted-undo-$tag.png")) }
+                        val undo = await(page, context.getString(R.string.dictionary_undo))
+                        instrumentation.runOnMainSync { undo.performClick() }
+                        await(page, entries.first().text)
                     } finally { instrumentation.runOnMainSync { currentHistoryOrNull()?.finish() } }
 
                     HistoryTestActivity.historyRootSuffix = "shots-empty"

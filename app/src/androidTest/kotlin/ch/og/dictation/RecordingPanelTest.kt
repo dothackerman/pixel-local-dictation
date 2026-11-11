@@ -23,32 +23,43 @@ import kotlin.math.roundToInt
 /** Inflates only our panel: no microphone, keyboard handoff, settings changes or stored audio. */
 @RunWith(AndroidJUnit4::class)
 class RecordingPanelTest {
-    @Test fun quietRingKeepsItsCentreTransparent() {
+    /** The panel as the service builds it: inflated from Theme.Dictation (#36). */
+    private fun panelOf(context: Context): View =
+        LayoutInflater.from(android.view.ContextThemeWrapper(context, R.style.Theme_Dictation)).inflate(R.layout.ime, null)
+
+    /** Recording: a thick red-orange ribbon around a pale field; at rest a hairline in the outline role. */
+    @Test fun recordingRingIsAnInkRibbonAroundAPaleFieldAndRestIsAHairline() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
-            val context = instrumentation.targetContext
+            val context = android.view.ContextThemeWrapper(instrumentation.targetContext, R.style.Theme_Dictation)
             val density = context.resources.displayMetrics.density
             val width = (300 * density).roundToInt()
-            val height = (255 * density).roundToInt()
+            val height = (200 * density).roundToInt()
             val ring = RecordingRingView(context)
             ring.layout(0, 0, width, height)
+            val primary = context.getColor(R.color.b2_primary)
+            val field = context.getColor(R.color.b2_surface)
+            fun draw(): IntArray {
+                val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                try {
+                    ring.draw(Canvas(image))
+                    assertEquals("the field between disk and ring is the pale surface", field, image.getPixel(width / 2 + (43 * density).roundToInt(), height / 2))
+                    return IntArray(width).also { image.getPixels(it, 0, width, 0, height / 2, width, 1) }
+                } finally { image.recycle() }
+            }
             ring.follow(RecordingFeedback().apply { start() })
-            val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            try {
-                ring.draw(Canvas(image))
-                val gap = image.getPixel(width / 2 + (43 * density).roundToInt(), height / 2)
-                assertTrue("ring filled the gap around the microphone", Color.alpha(gap) < 32)
-                val row = IntArray(width)
-                image.getPixels(row, 0, width, 0, height / 2, width, 1)
-                assertTrue("ring outline was not drawn", row.any { Color.alpha(it) > 200 })
-            } finally { image.recycle() }
+            assertTrue("recording ribbon not drawn in the brand ink", draw().count { it == primary } >= 2 * (4 * density).toInt())
+            assertTrue(ring.recording)
+            ring.follow(null)
+            assertEquals("the resting ring is not red-orange", 0, draw().count { it == primary })
+            assertFalse(ring.recording)
         }
     }
 
     @Test fun privacyDisclosureIsSecondaryAndOrdinaryHistoryDisclosureStartsHidden() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
-            val panel = LayoutInflater.from(instrumentation.targetContext).inflate(R.layout.ime, null)
+            val panel = panelOf(instrumentation.targetContext)
             val status = panel.findViewById<TextView>(R.id.status)
             val disclosure = panel.findViewById<TextView>(R.id.retention_notice)
             status.setText(R.string.status_finishing)
@@ -57,7 +68,7 @@ class RecordingPanelTest {
             // Rebind the same latched decision after the system recreates the panel.
             val latchedEligible = false
             PanelDisclosure.bind(disclosure, if (latchedEligible) null else R.string.retention_field_off)
-            val recreated = LayoutInflater.from(instrumentation.targetContext).inflate(R.layout.ime, null)
+            val recreated = panelOf(instrumentation.targetContext)
             val recreatedNotice = recreated.findViewById<TextView>(R.id.retention_notice)
             PanelDisclosure.bind(recreatedNotice, if (latchedEligible) null else R.string.retention_field_off)
             assertEquals(View.VISIBLE, recreatedNotice.visibility)
@@ -75,7 +86,7 @@ class RecordingPanelTest {
                 val config = Configuration(app.resources.configuration).apply { this.fontScale = fontScale }
                 val context = app.createConfigurationContext(config)
                 val density = context.resources.displayMetrics.density
-                val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+                val panel = panelOf(context)
                 val status = panel.findViewById<TextView>(R.id.status)
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 status.setText(R.string.status_capture_ended)
@@ -102,8 +113,8 @@ class RecordingPanelTest {
                 val stage = mic.parent as ViewGroup
                 assertTrue(mic.left >= 0 && mic.right <= stage.width && mic.bottom <= stage.height)
                 assertEquals(2, actions(panel))
-                for (message in listOf(R.string.status_stopping_recording,
-                    R.string.status_stopped_finishing_history, R.string.status_stopped_recovery_unavailable, R.string.status_transcription_incomplete, R.string.status_saved_history)) {
+                for (message in listOf(R.string.status_stopping_recording, R.string.status_unable_insert,
+                    R.string.status_discarded, R.string.status_finishing_choice, R.string.status_paused)) {
                     status.setText(message)
                     panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -132,7 +143,7 @@ class RecordingPanelTest {
                 if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
         }
         val context = app.createConfigurationContext(config)
-        val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+        val panel = panelOf(context)
         val density = context.resources.displayMetrics.density
         val metrics = app.resources.displayMetrics
         val width = maxOf(metrics.widthPixels, metrics.heightPixels)
@@ -210,7 +221,7 @@ class RecordingPanelTest {
                     }
                 }
                 val context = app.createConfigurationContext(config)
-                val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+                val panel = panelOf(context)
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 val words = (1..60).joinToString(" ") { "word$it" }
                 PanelPreview.bind(preview, PanelPreview.tail(words))
@@ -269,7 +280,7 @@ class RecordingPanelTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val out = File(instrumentation.targetContext.filesDir, "lab/issue56").apply { mkdirs() }
         instrumentation.runOnMainSync {
-            for (night in listOf(false, true)) for (fontScale in listOf(1f, 2f)) for (privateField in listOf(false, true)) {
+            for (night in listOf(false)) for (fontScale in listOf(1f, 2f)) for (privateField in listOf(false, true)) {
                 val (panel, _) = landscapePanel(fontScale, night)
                 PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
                 panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
@@ -302,7 +313,7 @@ class RecordingPanelTest {
                 if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
         }
         val context = app.createConfigurationContext(config)
-        val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+        val panel = panelOf(context)
         panel.findViewById<TextView>(R.id.status).setText(R.string.status_recording)
         PanelPreview.bind(panel.findViewById(R.id.preview),
             PanelPreview.tail("An invented preview sentence for checking the portrait panel. ".repeat(6).trim()))
@@ -318,68 +329,92 @@ class RecordingPanelTest {
     }
 
     /**
-     * #61 review captures (files/lab/issue61-ui, pulled into corpus/): the inline Cancel choice
-     * (recording: paused; finishing: insertion held) and the History-only end, portrait and
-     * landscape × light/dark × font 1/2, rendered by the service's own renderer. Offscreen; synthetic
-     * text only, no window, microphone or setting is touched. Every action ≥ 48dp, inside the panel
-     * and not truncated; portrait keeps the recording height.
+     * #36 Crate B2 review captures (files/lab/issue36/b2-panel, pulled into corpus/): every panel
+     * state the service renders (idle, recording, paused choice, preparing text, preparing choice,
+     * take discarded with Undo, unable to insert, private field), portrait and landscape, font 1×
+     * and 2×, through the service's own renderer. Offscreen; synthetic text only; no window,
+     * microphone or setting is touched. Every target ≥ 48dp (≥ 52dp for the paused buttons, ≥ 56dp
+     * for Undo), inside the panel and on one row; status never clipped; the preview keeps three
+     * lines; portrait keeps one panel height in every state.
      */
-    @Test fun captureInlineChoicesAndHistoryOnlyEnd() {
+    @Test fun captureEveryPanelStateAtBothFontScales() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
-        val out = File(app.filesDir, "lab/issue61-ui").apply { mkdirs() }
+        val out = File(app.filesDir, "lab/issue36/b2-panel").apply { mkdirs() }
         instrumentation.runOnMainSync {
-            for (landscape in listOf(false, true)) for (night in listOf(false, true)) for (fontScale in listOf(1f, 2f)) {
-                val (panel, context) = phonePanel(landscape, fontScale, night)
+            for (landscape in listOf(false, true)) for (fontScale in listOf(1f, 2f)) {
+                val (panel, context) = phonePanel(landscape, fontScale, night = false)
                 val width = panel.width
                 val density = context.resources.displayMetrics.density
-                val recordingHeight = panel.height
-                val suffix = "${if (landscape) "land" else "port"}-${if (night) "dark" else "light"}-font${if (fontScale > 1f) "large" else "default"}.png"
-                fun save(name: String) {
+                val heights = mutableMapOf<String, Int>()
+                val suffix = "${if (landscape) "land" else "port"}-font${if (fontScale > 1f) "2" else "1"}.png"
+                val status = panel.findViewById<TextView>(R.id.status)
+                val preview = panel.findViewById<TextView>(R.id.preview)
+                val mic = panel.findViewById<ImageButton>(R.id.microphone)
+                val text = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
+                fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false) {
+                    status.setText(label)
+                    PanelPreview.bind(preview, words)
+                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
+                    renderPanel(panel, frame)
                     layOut(panel, width)
+                    heights[name] = panel.height
+                    val whole = Rect(0, 0, panel.width, panel.height)
+                    assertTrue("status clipped ($name $suffix)", status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                    if (preview.visibility == View.VISIBLE) assertTrue("preview lost its three lines ($name $suffix)",
+                        preview.height >= preview.layout.getLineBottom(minOf(2, preview.layout.lineCount - 1), false))
+                    val back = panel.findViewById<View>(R.id.back)
+                    for (target in listOf(back, mic).filter { it.visibility == View.VISIBLE }) {
+                        assertTrue("target below 48dp ($name $suffix)", target.width >= 48 * density - 1 && target.height >= 48 * density - 1)
+                        assertTrue("target outside the panel ($name $suffix)", whole.contains(bounds(target, panel)))
+                    }
                     val image = Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888)
                     try {
                         panel.draw(Canvas(image))
                         File(out, "$name-$suffix").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     } finally { image.recycle() }
                 }
-                fun checkActions(state: String, ids: List<Int>) {
+                fun oneRow(state: String, ids: List<Int>) {
+                    val tops = ids.map { bounds(panel.findViewById(it), panel).top }.toSet()
+                    assertEquals("one row at one height ($state $suffix)", 1, tops.size)
                     for (id in ids) {
-                        val action = panel.findViewById<TextView>(id)
-                        val r = bounds(action, panel)
-                        assertTrue("${action.text} outside the panel ($state $suffix)", Rect(0, 0, panel.width, panel.height).contains(r))
-                        assertTrue("${action.text} below 48dp ($state $suffix)", action.height >= 48 * density - 1)
-                        val layout = action.layout
-                        assertTrue("${action.text} truncated ($state $suffix)", (0 until layout.lineCount).all { layout.getEllipsisCount(it) == 0 })
+                        val button = panel.findViewById<ImageButton>(id)
+                        assertTrue("${button.contentDescription} below 52dp ($state $suffix)", button.height >= 52 * density - 1 && button.width >= 52 * density - 1)
+                        assertTrue("${button.contentDescription} outside the panel ($state $suffix)", Rect(0, 0, panel.width, panel.height).contains(bounds(button, panel)))
+                        assertFalse(button.contentDescription.isNullOrBlank())
                     }
                 }
-                val mic = panel.findViewById<ImageButton>(R.id.microphone)
-                save("recording")
-                panel.findViewById<TextView>(R.id.status).setText(R.string.status_paused)
-                mic.isEnabled = false; mic.alpha = 0.55f
-                renderPanelChoice(panel, PanelChoice.RECORDING, false, R.string.continue_recording)
-                save("recording-choice")
-                checkActions("recording-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))
-                if (!landscape) assertEquals("choice keeps the panel height ($suffix)", recordingHeight, panel.height)
-                panel.findViewById<TextView>(R.id.status).setText(R.string.status_finishing_choice)
-                renderPanelChoice(panel, PanelChoice.FINISHING, false, R.string.keep_finishing)
-                save("finishing-choice")
-                checkActions("finishing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
-                panel.findViewById<TextView>(R.id.status).setText(R.string.status_saved_history)
-                PanelPreview.bind(panel.findViewById(R.id.preview), "")
-                mic.isEnabled = true; mic.alpha = 1f
-                renderPanelChoice(panel, null, true, R.string.back_to_keyboard)
-                save("history-only-end")
-                checkActions("history-only-end", listOf(R.id.back_to_keyboard))
-                val status = panel.findViewById<TextView>(R.id.status)
-                assertTrue("status clipped ($suffix)", status.height >= status.layout.height)
+                mic.isEnabled = true
+                state("idle", R.string.status_idle, PanelFrame(), words = "")
+                state("private-field", R.string.status_idle, PanelFrame(), words = "", privateField = true)
+                state("recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording))
+                state("paused-choice", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording))
+                oneRow("paused-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))
+                val apart = bounds(panel.findViewById(R.id.choice_discard), panel).left - bounds(panel.findViewById(R.id.choice_stop), panel).right
+                assertTrue("Discard set apart ($suffix)", apart >= 40 * density - 1)
+                state("preparing", R.string.status_finishing, PanelFrame(preparing = true, backLabel = R.string.back_hold_and_choose))
+                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.processing).visibility)
+                assertNotEquals("no microphone disk while preparing", View.VISIBLE, mic.visibility)
+                state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
+                oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
+                state("discarded-undo", R.string.status_discarded, PanelFrame(undo = true))
+                val undo = panel.findViewById<View>(R.id.undo_discard)
+                assertTrue("Undo below 56dp ($suffix)", undo.height >= 56 * density - 1)
+                assertEquals("no microphone during the Undo window", false, mic.visibility == View.VISIBLE)
+                state("unable-to-insert", R.string.status_unable_insert, PanelFrame(unableToInsert = true), words = "")
+                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
+                assertEquals(View.VISIBLE, mic.visibility)
+                if (!landscape) assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
+                    heights.filterKeys { it != "private-field" }.values.toSet().size)
             }
         }
     }
 
-    private fun actions(view: View): Int = when (view) {
-        is ImageButton -> 1
-        is ViewGroup -> (0 until view.childCount).sumOf { actions(view.getChildAt(it)) }
+    /** Visible tap targets on the panel (Back and the microphone at rest). */
+    private fun actions(view: View): Int = when {
+        view.visibility != View.VISIBLE -> 0
+        view is ImageButton || view is android.widget.Button -> 1
+        view is ViewGroup -> (0 until view.childCount).sumOf { actions(view.getChildAt(it)) }
         else -> 0
     }
 }

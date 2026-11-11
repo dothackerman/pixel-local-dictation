@@ -35,6 +35,20 @@ class HistoryActivityTest {
     }
     private fun ActivityScenario<HistoryTestActivity>.awaitText(text: String) =
         awaitView { it is TextView && HistoryUi.label(it).contains(text) } as TextView
+    /** A row read as one node: its spoken description names the preview and, if any, its mark's sentence. */
+    private fun ActivityScenario<HistoryTestActivity>.awaitRow(text: String, sentence: Int?): View = awaitView {
+        it.id == R.id.history_row_body && it.contentDescription?.toString()?.contains(text) == true &&
+            (sentence == null || it.contentDescription.toString().endsWith(context.getString(sentence)))
+    }
+    private fun ActivityScenario<HistoryTestActivity>.detailLine(): String? = query {
+        it.findViewById<View>(R.id.history_detail_marker)?.takeIf { line -> line.visibility == View.VISIBLE }
+            ?.findViewById<TextView>(R.id.history_detail_marker_text)?.text?.toString()
+    }
+    private fun ActivityScenario<HistoryTestActivity>.awaitDetailLine(sentence: Int?) {
+        val expected = sentence?.let(context::getString)
+        repeat(100) { if (query { it.findViewById<View>(R.id.history_detail_text)?.isShown } == true && detailLine() == expected) return; Thread.sleep(50) }
+        error("Detail line never became $expected (was: ${detailLine()})")
+    }
     private fun ActivityScenario<HistoryTestActivity>.detailMeta(): String =
         query { it.findViewById<TextView>(R.id.history_detail_meta)?.text?.toString() }.orEmpty()
     private fun ActivityScenario<HistoryTestActivity>.awaitDetailMeta(text: String) {
@@ -61,18 +75,15 @@ class HistoryActivityTest {
         save(*entries.toTypedArray())
         val scenario = ActivityScenario.launch(HistoryTestActivity::class.java)
         try {
-            // List and detail say the same thing: the date, then a status only when the take is not complete and inserted.
-            val suffix = listOf(" · " + context.getString(R.string.history_status_uncertain),
-                " · " + context.getString(R.string.history_delivery_rejected),
-                " · " + context.getString(R.string.history_delivery_rejected), "")
+            // List and detail say the same sentence; a complete, inserted take says nothing.
+            val lines = listOf(R.string.marker_uncertain_line, R.string.marker_not_inserted_line, R.string.marker_not_inserted_line, null)
             entries.forEachIndexed { index, _ ->
-                val row = scenario.awaitText("Synthetic status $index")
-                val rowMeta = (row.parent as View).findViewById<TextView>(R.id.history_row_meta).text.toString()
+                val row = scenario.awaitRow("Synthetic status $index", lines[index])
+                val marker = scenario.query { (row.parent as View).findViewById<View>(R.id.history_row_marker).visibility }
+                assertEquals(if (lines[index] == null) View.GONE else View.VISIBLE, marker)
                 scenario.onActivity { HistoryUi.click(row) }
-                val expected = HistoryRows.date(100L + index) + suffix[index]
-                assertEquals(expected, rowMeta)
-                scenario.awaitDetailMeta(expected)
-                assertEquals(expected, scenario.detailMeta())
+                scenario.awaitDetailLine(lines[index])
+                scenario.awaitDetailMeta(HistoryRows.time(100L + index))
                 scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             }
         } finally {
@@ -87,10 +98,11 @@ class HistoryActivityTest {
         save(inserted, notInserted)
         val scenario = ActivityScenario.launch(HistoryTestActivity::class.java)
         try {
-            val insertedMeta = scenario.awaitText("Synthetic inserted row").let { (it.parent as View).findViewById<TextView>(R.id.history_row_meta).text.toString() }
-            val missedMeta = scenario.awaitText("Synthetic missed row").let { (it.parent as View).findViewById<TextView>(R.id.history_row_meta).text.toString() }
-            assertEquals(HistoryRows.date(300), insertedMeta)
-            assertEquals(HistoryRows.date(200) + " · " + context.getString(R.string.history_delivery_rejected), missedMeta)
+            val inRow = scenario.awaitRow("Synthetic inserted row", null)
+            val missedRow = scenario.awaitRow("Synthetic missed row", R.string.marker_not_inserted_line)
+            assertFalse(inRow.contentDescription.toString().contains(context.getString(R.string.marker_not_inserted_line)))
+            assertEquals(View.GONE, scenario.query { (inRow.parent as View).findViewById<View>(R.id.history_row_marker).visibility })
+            assertEquals(View.VISIBLE, scenario.query { (missedRow.parent as View).findViewById<View>(R.id.history_row_marker).visibility })
         } finally {
             scenario.close()
             deleteAll(inserted.id, notInserted.id)
@@ -109,21 +121,19 @@ class HistoryActivityTest {
         assertTrue(ready.await(10, TimeUnit.SECONDS))
         val scenario = ActivityScenario.launch(HistoryTestActivity::class.java)
         try {
-            scenario.awaitText(context.getString(R.string.history_recording))
+            scenario.awaitRow("Synthetic live checkpoint", R.string.marker_recording_line)
             scenario.recreate()
-            scenario.awaitText(context.getString(R.string.history_recording))
+            scenario.awaitRow("Synthetic live checkpoint", R.string.marker_recording_line)
             HistoryProcess.owner.finishing(id)
             scenario.recreate()
-            scenario.awaitText(context.getString(R.string.history_finishing))
+            scenario.awaitRow("Synthetic live checkpoint", R.string.marker_preparing_line)
             HistoryProcess.owner.remove(id)
             scenario.recreate()
-            scenario.awaitText(context.getString(R.string.history_status_incomplete))
-            scenario.awaitText(context.getString(R.string.history_status_uncertain))
+            // An abandoned checkpoint is cut short; that one marker wins over its delivery truth.
+            val row = scenario.awaitRow("Synthetic live checkpoint", R.string.marker_cut_short_line)
             scenario.awaitText(context.getString(R.string.history_explanation))
-            val row = scenario.awaitText("Synthetic live checkpoint")
             scenario.onActivity { HistoryUi.click(row) }
-            scenario.awaitDetailMeta(context.getString(R.string.history_status_incomplete))
-            scenario.awaitDetailMeta(context.getString(R.string.history_status_uncertain))
+            scenario.awaitDetailLine(R.string.marker_cut_short_line)
         } finally {
             scenario.close()
             HistoryProcess.owner.remove(id)
@@ -140,7 +150,7 @@ class HistoryActivityTest {
             val row = scenario.awaitText("Synthetic row")
             scenario.onActivity { HistoryUi.click(row) }
             scenario.awaitView { it is TextView && it.text.toString() == full }
-            assertEquals(HistoryRows.date(123), scenario.query { it.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar).title.toString() })
+            assertEquals(HistoryRows.dayText(123), scenario.query { it.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar).title.toString() })
             scenario.recreate()
             scenario.awaitView { it is TextView && it.text.toString() == full }
             val back = scenario.awaitView { it.contentDescription == context.getString(R.string.history_back) }

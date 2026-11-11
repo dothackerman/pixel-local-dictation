@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Safe action of the inline choice: filled like the microphone, pill-shaped. -->
-<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/panel_ripple">
-    <item><shape android:shape="rectangle"><corners android:radius="24dp" /><solid android:color="@color/panel_container" /><stroke android:width="1dp" android:color="@color/panel_outline" /></shape></item>
-</ripple>

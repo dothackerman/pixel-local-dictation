@@ -1,14 +1,17 @@
 <resources>
     <string name="status_stopping_recording">Stopping recording</string>
-    <string name="status_stopped_finishing_history">Stopped · not inserted · finishing for History</string>
-    <string name="status_stopped_recovery_unavailable">Stopped · not inserted · History off for this field</string>
-    <string name="status_transcription_incomplete">Stopped · not inserted · may be incomplete</string>
-    <string name="status_saved_history">Not inserted · saved to History</string>
-    <string name="status_recording_stopped">Stopped · not inserted</string>
-    <string name="keep_finishing">Keep finishing</string>
+    <string name="keep_finishing">Keep preparing text</string>
     <!-- Inline Cancel choice on the recording panel (#61). One noun: take; verbs: Stop, Discard. -->
     <string name="status_paused">Paused · choose</string>
-    <string name="status_finishing_choice">Finishing · insertion held · choose</string>
+    <string name="status_finishing_choice">Preparing text · choose</string>
     <string name="choice_title">Cancel take</string>
     <string name="back_to_keyboard">Back to keyboard</string>
+    <!-- The take ended without insertion (system interruption); its marker sits in the status row. -->
+    <string name="status_unable_insert">Unable to insert text</string>
+    <!-- Take discarded · Undo (#36): the discard becomes final when the window ends. -->
+    <string name="status_discarded">Take discarded</string>
+    <string name="undo_discard">Undo</string>
+    <string name="undo_discard_description">Undo discard take</string>
+    <!-- Back while Preparing text: holds the text and opens the choice. -->
+    <string name="back_hold_and_choose">Hold text and choose</string>
 </resources>

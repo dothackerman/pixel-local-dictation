@@ -2,6 +2,6 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
     <TextView android:id="@+id/history_explanation" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:paddingHorizontal="8dp" android:paddingBottom="12dp"
+        android:paddingHorizontal="24dp" android:paddingTop="12dp" android:paddingBottom="4dp"
         android:text="@string/history_explanation" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
 </LinearLayout>
