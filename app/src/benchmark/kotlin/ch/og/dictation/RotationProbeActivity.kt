@@ -1,10 +1,12 @@
 package ch.og.dictation
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Bundle
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.InputConnection
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -16,28 +18,37 @@ import java.util.concurrent.CountDownLatch
 class RotationProbeActivity : Activity() {
     companion object { @Volatile var done = CountDownLatch(1) }
 
+    @SuppressLint("AppCompatCustomView") // Plain Activity deliberately uses platform widgets.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val caseName = requireNotNull(intent.getStringExtra("case"))
-        require(caseName in RotationTrace.allowedCases)
+        require(caseName in RotationTrace.allowedCases || caseName in setOf("privacy-password", "privacy-no-learning", "privacy-ordinary"))
         val instruction = when (caseName) {
             "signal-capture-rotation" -> "In Signal, start dictation and rotate during capture. Return here and tap Done."
+            "signal-finishing-rotation" -> "In Signal, start dictation, tap Stop, and rotate while waiting for text. Return here and tap Done."
             "app-capture-rotation" -> "Start dictation in an ordinary field and rotate during capture. Tap Done."
-            "app-finishing-rotation" -> "Start dictation in an ordinary field, finish input during capture and rotate. Tap Done."
+            "app-finishing-rotation" -> "Start dictation in an ordinary field, tap Stop, and rotate while waiting for text. Tap Done."
             "app-restart" -> "Start dictation in an ordinary field, then tap Restart focused input. Tap Done."
             "app-focus" -> "Start dictation in one ordinary field, then switch to the other. Tap Done."
             "app-hide" -> "Start dictation in an ordinary field, then hide the keyboard. Tap Done."
             "app-lock" -> "Start dictation in an ordinary field, then lock and unlock the phone. Tap Done."
-            "app-password" -> "Start dictation in an ordinary field, then switch to the password field. Tap Done."
-            else -> "Start dictation in an ordinary field, then switch to the no-learning field. Tap Done."
+            "privacy-ordinary" -> "Start dictation in an ordinary field, speak a harmless test phrase, tap Stop, and wait for completion. Tap Done."
+            "privacy-password" -> "Start dictation in the password field, speak a harmless test phrase, tap Stop, and wait for completion. Tap Done."
+            else -> "Start dictation in the no-learning field, speak a harmless test phrase, tap Stop, and wait for completion. Tap Done."
         }
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(TextView(this).apply { text = "$caseName\n$instruction" })
         val ordinary = List(2) { index ->
-            EditText(this).apply {
+            object : EditText(this) {
+                override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
+                    super.onCreateInputConnection(outAttrs).also {
+                        outAttrs.fieldId = R.id.probe_ordinary_one
+                        outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE
+                    }
+            }.apply {
                 id = if (index == 0) R.id.probe_ordinary_one else R.id.probe_ordinary_two
                 inputType = InputType.TYPE_CLASS_TEXT
-                hint = "Ordinary field ${index + 1} (same settings)"
+                hint = "Ordinary field (same settings)"
                 column.addView(this)
             }
         }
