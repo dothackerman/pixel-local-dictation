@@ -20,8 +20,9 @@ ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease
 
 Enable the app’s input method, grant microphone permission, and enable FUTO Keyboard’s **Disable built-in voice input** setting. Then use FUTO’s microphone key:
 
-- **Stop** inserts the recognized text once and returns to the keyboard.
-- **Cancel** discards the take without inserting text.
+- **Stop** finishes transcription and inserts once if the original field is still available.
+- **Cancel** opens a choice. While recording, choose **Continue recording**, **Finish transcription**, or **Discard**. After Stop, choose **Keep finishing** or **Discard** while insertion is pending.
+- If the keyboard disappears, the phone locks, or the microphone stops unexpectedly, capture ends. Open **Settings → History** to copy recoverable text. If insertion is uncertain, check the original field before pasting.
 - Open the app’s **Settings → Dictionary** to edit vocabulary. Changes apply to later takes, not a recording already in progress.
 
 English or German is selected automatically, with one language per take. German output uses Swiss spelling (`ss` instead of `ß`). Mixed-language conversation and speaker diarization are outside scope.
@@ -37,6 +38,8 @@ Recognition can still change meaning, including negation, numbers and units. Rev
 See [the baseline decision and evidence](adrs/026-dictionary-first.md), [dictionary behavior](adrs/027-editable-dictionary.md), and [known gaps](DEVELOPMENT.md#known-gaps). Current work is tracked in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues).
 
 ## Privacy
+
+History keeps ordinary-field transcripts on this device until you delete them. You can delete one take or clear History. Password, no-personalized-learning and unrecognized fields show a recovery-unavailable notice. A sudden process death can lose all speech since the last saved text, including the entire take before its first checkpoint.
 
 Normal-use audio stays in memory and is discarded after the take. Benchmark recording is opt-in and visibly marked. Model downloads are separate from on-device inference.
 
