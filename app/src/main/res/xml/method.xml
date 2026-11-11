@@ -2,8 +2,11 @@
 <!-- Voice-only input method. No locale is declared on purpose: the recognizer
      decides the language per recording (R2). overridesImplicitlyEnabledSubtype makes
      Android count this subtype as enabled although it has no locale (SubtypeUtils
-     .getImplicitlyApplicableSubtypesImpl); without it FUTO's shortcut lookup finds nothing. -->
+     .getImplicitlyApplicableSubtypesImpl); without it FUTO's shortcut lookup finds nothing.
+     configChanges: rotation and resizing must not reset the views and restart input (which
+     the service treats as an interruption); the service rebuilds its own panel instead. -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
     android:isDefault="false"
     android:settingsActivity="ch.og.dictation.SettingsActivity"
     android:supportsSwitchingToNextInputMethod="true">

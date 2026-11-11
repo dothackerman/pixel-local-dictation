@@ -78,6 +78,8 @@ class DictationImeService : InputMethodService() {
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
+    /** Layout configuration the current panel was inflated for. */
+    private var panelConfiguration: Configuration? = null
     // Observation is separate from take completion, but ends when the input view is hidden.
     private var geometryTake: String? = null
     private var geometryUntilNs = 0L
@@ -135,6 +137,7 @@ class DictationImeService : InputMethodService() {
         val v = layoutInflater.inflate(R.layout.ime, null)
         startup?.event("inputViewInflated")
         panel = v
+        panelConfiguration = Configuration(resources.configuration)
         observeGeometry(startupTake)
         if (startup != null) {
             v.viewTreeObserver.addOnPreDrawListener {
@@ -318,11 +321,28 @@ class DictationImeService : InputMethodService() {
         rotationEvent(RotationEvent.INPUT_FINISH_DONE)
     }
 
+    /**
+     * method.xml declares orientation and screen-size changes as handled, so Android neither
+     * resets the views nor restarts input for them. Rebuild only our panel for the new layout;
+     * the take lives in this service and the panel renders its state. Never starts, cancels or
+     * interrupts a take.
+     */
     override fun onConfigurationChanged(newConfig: Configuration) {
         rotationEvent(RotationEvent.CONFIGURATION)
         super.onConfigurationChanged(newConfig)
+        val layoutChanged = panelConfiguration?.let {
+            it.orientation != newConfig.orientation || it.screenWidthDp != newConfig.screenWidthDp ||
+                it.screenHeightDp != newConfig.screenHeightDp
+        } ?: false
+        if (layoutChanged && panel != null) {
+            ring?.follow(null)
+            setInputView(onCreateInputView())
+        }
         rotationEvent(RotationEvent.CONFIGURATION_DONE)
     }
+
+    /** Extract mode would hide the editor and our panel; landscape uses the compact panel. */
+    override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onWindowShown() {
         rotationEvent(RotationEvent.WINDOW_SHOWN)

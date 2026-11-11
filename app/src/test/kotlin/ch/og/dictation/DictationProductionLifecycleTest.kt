@@ -189,6 +189,93 @@ class DictationProductionLifecycleTest {
         shadowOf(app).getReceiversForIntent(intent).single().onReceive(app, intent)
     }
 
+    /** Rotates the service's own configuration the way Android does when the method handles it. */
+    private fun rotate(service: DictationImeService, qualifiers: String): View {
+        // Robolectric does not load the android.view.im meta-data, so hand the framework's own
+        // configuration tracker what Android reads from method.xml (InputMethodInfo.getConfigChanges).
+        val tracker = android.inputmethodservice.InputMethodService::class.java.getDeclaredField("mConfigTracker")
+            .apply { isAccessible = true }.get(service)
+        tracker.javaClass.getMethod("setHandledConfigChanges", Int::class.java).invoke(tracker, declaredConfigChanges())
+        RuntimeEnvironment.setQualifiers(qualifiers)
+        service.onConfigurationChanged(android.content.res.Configuration(service.resources.configuration))
+        pump()
+        return service.window.findViewById(R.id.panel)
+    }
+
+    private fun declaredConfigChanges(): Int {
+        val parser = RuntimeEnvironment.getApplication().resources.getXml(R.xml.method)
+        while (parser.next() != org.xmlpull.v1.XmlPullParser.START_TAG || parser.name != "input-method") Unit
+        return parser.getAttributeIntValue("http://schemas.android.com/apk/res/android", "configChanges", 0)
+    }
+
+    @Test fun inputMethodDeclaresRotationAndResizeAsHandled() {
+        val handled = declaredConfigChanges()
+        for (change in listOf(android.content.pm.ActivityInfo.CONFIG_ORIENTATION, android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE,
+                android.content.pm.ActivityInfo.CONFIG_SMALLEST_SCREEN_SIZE, android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT)) {
+            assertEquals(change, handled and change)
+        }
+    }
+
+    @Test @Config(qualifiers = "land")
+    fun landscapeNeverUsesFullscreenExtractMode() {
+        val (service, _) = service(editor())
+        assertFalse(service.onEvaluateFullscreenMode())
+        assertFalse(service.isFullscreenMode)
+    }
+
+    @Test fun rotationDuringRecordingRecreatesPanelFromTakeAndKeepsCapture() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor(privateField = true))
+        feed(input, 20000, 1)
+        decode.drain(); pump()
+        assertEquals("private speech", preview(view))
+
+        val landscape = rotate(service, "+land")
+        assertNotSame(view, landscape)
+        assertEquals(service.getString(R.string.status_recording), status(landscape))
+        assertEquals("private speech", preview(landscape))
+        assertTrue(button(landscape).isEnabled)
+        assertEquals(service.getString(R.string.stop_recording), button(landscape).contentDescription.toString())
+        val notice = landscape.findViewById<TextView>(R.id.retention_notice)
+        assertEquals(View.VISIBLE, notice.visibility)
+        assertEquals(service.getString(R.string.retention_field_off), notice.text.toString())
+        assertEquals(1, input.starts.get())
+        assertEquals(0, input.releases.get())
+
+        feed(input, 20000, 2)
+        decode.drain(); pump()
+        assertEquals("private speech private speech", preview(landscape))
+        val portrait = rotate(service, "+port")
+        assertEquals(service.getString(R.string.status_recording), status(portrait))
+        assertEquals("private speech private speech", preview(portrait))
+        assertEquals(0, input.releases.get())
+        button(portrait).performClick()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(1, commits)
+        assertEquals(1, input.starts.get())
+    }
+
+    @Test fun rotationDuringStopWaitKeepsFinishingAndInsertsOnce() {
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        assertEquals(service.getString(R.string.status_finishing), status(view))
+
+        val landscape = rotate(service, "+land")
+        assertEquals(service.getString(R.string.status_finishing), status(landscape))
+        assertFalse(button(landscape).isEnabled)
+        gate.countDown()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(1, commits)
+        assertEquals(HistoryCompletion.COMPLETE, rows().single().completion)
+    }
+
     @Test fun recordingCancelOffersContinueWithoutStoppingTheTake() {
         val input = Input()
         devices.add(input)
