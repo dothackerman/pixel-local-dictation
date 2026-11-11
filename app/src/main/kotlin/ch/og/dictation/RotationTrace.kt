@@ -18,7 +18,11 @@ enum class RotationEvent {
     /** Display listener callback for the default display (trace only). */
     DISPLAY_CHANGED,
     /** First draw of a newly created panel view. */
-    PANEL_DRAWN
+    PANEL_DRAWN,
+    /** Written by the automated probe: it requested a new orientation for its own editor. */
+    PROBE_ROTATE_REQUESTED,
+    /** Written by the automated probe: our active recording's silenced state (flag) changed. */
+    PROBE_RECORDING_STATE
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */
@@ -41,7 +45,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         private val terminal = mutableSetOf<Pair<Long, Long>>()
 
         val allowedCases = setOf("signal-capture-rotation", "signal-finishing-rotation", "app-capture-rotation", "app-finishing-rotation",
-            "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls")
+            "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls",
+            "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing")
 
         fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
             require(caseName in allowedCases)

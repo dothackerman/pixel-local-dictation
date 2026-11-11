@@ -15,6 +15,15 @@
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".RotationProbeActivity" android:exported="false"
             android:excludeFromRecents="false" android:windowSoftInputMode="adjustResize" />
+        <!-- Self-rotating probe editors (#56): recreated with the keyboard left hidden, like
+             Signal; and one that handles rotation itself and shows the keyboard again. -->
+        <activity android:name=".SelfRotationProbeActivity" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".SelfRotationProbeActivity$Keep" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateUnchanged"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".HistoryTestActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
         <activity android:name=".SettingsLargeTextPreviewActivity" android:exported="false"
