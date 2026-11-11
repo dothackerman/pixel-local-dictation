@@ -38,4 +38,18 @@ class HistoryRowsTest {
         assertFalse(text, Regex("\\d:\\d\\d:\\d\\d").containsMatchIn(text))
         assertTrue(text, text.contains("10:00"))
     }
+
+    @Test fun listAndDetailShareOneStatusLine() {
+        val label = { s: HistoryRowStatus -> s.name.lowercase() }
+        val at = HistoryRows.date(0)
+        assertEquals(at, HistoryRows.line(entry(HistoryDelivery.ACCEPTED, HistoryCompletion.COMPLETE), label))
+        assertEquals("$at · may_be_incomplete · not_inserted",
+            HistoryRows.line(entry(HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED), label))
+    }
+
+    @Test fun previewWordsKeepsWholeFirstWordsOnOneLine() {
+        assertEquals("Pick up bread and milk", HistoryRows.previewWords("Pick up bread and milk on the way home."))
+        assertEquals("one two", HistoryRows.previewWords("  one\n\ntwo  ", 5))
+        assertEquals("", HistoryRows.previewWords("   "))
+    }
 }

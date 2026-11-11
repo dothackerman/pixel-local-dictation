@@ -26,6 +26,14 @@ object HistoryRows {
         )
     }
 
+    /** The one status line, date first, shared by the list row and the detail. */
+    fun line(entry: HistoryEntry, label: (HistoryRowStatus) -> String): String =
+        (listOf(date(entry.timestamp)) + statuses(entry).map(label)).joinToString(" · ")
+
+    /** The first words, for naming a row to a screen reader. */
+    fun previewWords(text: String, count: Int = 5): String =
+        text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.take(count).joinToString(" ")
+
     /** Medium date, short time, no seconds. */
     fun date(timestamp: Long, locale: Locale = Locale.getDefault(), zone: TimeZone = TimeZone.getDefault()): String =
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale).apply { timeZone = zone }.format(Date(timestamp))

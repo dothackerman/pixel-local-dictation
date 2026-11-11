@@ -16,6 +16,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
@@ -85,7 +86,12 @@ open class HistoryActivity : AppCompatActivity() {
         visibleSavedCount = savedInstanceState?.getInt(SAVED_COUNT) ?: 0
         toolbar.setNavigationOnClickListener { back() }
         toolbar.setOnMenuItemClickListener { item: MenuItem ->
-            if (item.itemId == R.id.history_clear_item) { onClearMenu(); true } else false
+            when (item.itemId) {
+                R.id.history_clear_item -> { onClearMenu(); true }
+                R.id.history_copy_item -> { selected?.let(::copy); true }
+                R.id.history_delete_item -> { selected?.let(::requestDelete); true }
+                else -> false
+            }
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -117,6 +123,7 @@ open class HistoryActivity : AppCompatActivity() {
     private companion object {
         const val SELECTED_ID = "history_selected_id"
         const val SAVED_COUNT = "history_visible_count"
+        const val HINT_DISMISSED = "copy_hint_dismissed"
     }
 
     private fun back() { if (selected != null) showList() else finish() }
@@ -250,10 +257,8 @@ open class HistoryActivity : AppCompatActivity() {
         }
         listPane.visibility = View.GONE
         toolbar.title = HistoryRows.date(entry.timestamp)
-        view.findViewById<TextView>(R.id.history_detail_meta).text = completionLabel(entry.completion) + " · " + deliveryLabel(entry.delivery)
+        view.findViewById<TextView>(R.id.history_detail_meta).text = HistoryRows.line(entry, ::statusLabel)
         view.findViewById<TextView>(R.id.history_detail_text).text = entry.text
-        view.findViewById<View>(R.id.history_copy_button).setOnClickListener { copy(id) }
-        view.findViewById<View>(R.id.history_delete_button).setOnClickListener { requestDelete(id) }
         renderStatus()
         updateClearMenu()
     }
@@ -321,6 +326,9 @@ open class HistoryActivity : AppCompatActivity() {
             setTitle(if (retrying) R.string.history_clear_retry else R.string.history_clear)
             isEnabled = if (retrying) !busy else !busy && hasHistoryTargets
         }
+        // Copy and Delete are the detail's icon actions; the list has its own per-row gestures.
+        toolbar.menu.findItem(R.id.history_copy_item)?.isVisible = detail != null
+        toolbar.menu.findItem(R.id.history_delete_item)?.isVisible = detail != null
     }
 
     private fun onClearMenu() {
@@ -369,18 +377,6 @@ open class HistoryActivity : AppCompatActivity() {
 
     private fun isClearTarget(id: String): Boolean = HistoryIo.currentClear(storeRoot)?.ids?.contains(id) == true
 
-    private fun completionLabel(completion: HistoryCompletion): String = getString(when (completion) {
-        HistoryCompletion.RECORDING -> R.string.history_recording
-        HistoryCompletion.FINISHING -> R.string.history_finishing
-        HistoryCompletion.COMPLETE -> R.string.history_complete
-        HistoryCompletion.INTERRUPTED -> R.string.history_interrupted
-    })
-    private fun deliveryLabel(delivery: HistoryDelivery): String = getString(when (delivery) {
-        HistoryDelivery.UNKNOWN -> R.string.history_delivery_unknown
-        HistoryDelivery.NOT_ATTEMPTED -> R.string.history_delivery_not_attempted
-        HistoryDelivery.REJECTED -> R.string.history_delivery_rejected
-        HistoryDelivery.ACCEPTED -> R.string.history_delivery_accepted
-    })
     private fun statusLabel(status: HistoryRowStatus): String = getString(when (status) {
         HistoryRowStatus.RECORDING -> R.string.history_recording
         HistoryRowStatus.FINISHING -> R.string.history_finishing
@@ -389,27 +385,52 @@ open class HistoryActivity : AppCompatActivity() {
         HistoryRowStatus.INSERTION_UNCERTAIN -> R.string.history_status_uncertain
     })
 
-    private inner class RowsAdapter : RecyclerView.Adapter<RowsAdapter.Holder>() {
+    private val hintPrefs by lazy { getSharedPreferences("history_ui", Context.MODE_PRIVATE) }
+    private fun hintShown() = !hintPrefs.getBoolean(HINT_DISMISSED, false)
+
+    /** Item 0 is the explanation and the one-time hint, so both scroll away and the first row is on screen at large font. */
+    private inner class RowsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         var items = emptyList<HistoryEntry>()
         var pendingClear = emptySet<String>()
+        inner class Header(view: View) : RecyclerView.ViewHolder(view)
         inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
             val body: View = view.findViewById(R.id.history_row_body)
             val preview: TextView = view.findViewById(R.id.history_row_preview)
             val meta: TextView = view.findViewById(R.id.history_row_meta)
             val delete: View = view.findViewById(R.id.history_row_delete)
         }
-        override fun onCreateViewHolder(parent: ViewGroup, type: Int) =
-            Holder(layoutInflater.inflate(R.layout.history_row, parent, false))
-        override fun getItemCount() = items.size
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            val entry = items[position]
+        override fun getItemViewType(position: Int) = if (position == 0) 0 else 1
+        override fun onCreateViewHolder(parent: ViewGroup, type: Int): RecyclerView.ViewHolder =
+            if (type == 0) Header(layoutInflater.inflate(R.layout.history_list_header, parent, false))
+            else Holder(layoutInflater.inflate(R.layout.history_row, parent, false))
+        override fun getItemCount() = items.size + 1
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            if (holder is Header) {
+                val hint = holder.itemView.findViewById<View>(R.id.history_hint)
+                hint.visibility = if (hintShown()) View.VISIBLE else View.GONE
+                holder.itemView.findViewById<View>(R.id.history_hint_dismiss).setOnClickListener {
+                    hintPrefs.edit().putBoolean(HINT_DISMISSED, true).apply()
+                    hint.visibility = View.GONE
+                }
+                return
+            }
+            holder as Holder
+            val entry = items[position - 1]
             val clearPending = entry.id in pendingClear
             val date = HistoryRows.date(entry.timestamp)
             holder.preview.text = if (clearPending) getString(R.string.history_clear_pending) else entry.text.replace('\n', ' ').take(200)
-            holder.meta.text = if (clearPending) date
-                else (listOf(date) + HistoryRows.statuses(entry).map(::statusLabel)).joinToString(" · ")
+            holder.meta.text = if (clearPending) date else HistoryRows.line(entry, ::statusLabel)
             holder.body.setOnClickListener { showDetail(entry.id) }
-            holder.delete.contentDescription = getString(R.string.history_delete_row, date)
+            // Long-press copies (the framework adds the long-press haptic when the listener handles it).
+            holder.body.setOnLongClickListener { if (clearPending) false else { copy(entry.id); true } }
+            // Touch and hold is invisible to a screen reader, so Copy and Delete are named actions too.
+            ViewCompat.replaceAccessibilityAction(holder.body, AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK,
+                getString(R.string.history_copy_transcript)) { _, _ -> if (clearPending) false else { copy(entry.id); true } }
+            ViewCompat.addAccessibilityAction(holder.body, getString(R.string.history_delete_transcript)) { _, _ ->
+                if (clearPending) false else { requestDelete(entry.id); true }
+            }
+            val words = if (clearPending) "" else HistoryRows.previewWords(entry.text)
+            holder.delete.contentDescription = getString(R.string.history_delete_row, date, words).trimEnd(' ', ':')
             holder.delete.isEnabled = !clearPending
             holder.delete.setOnClickListener { requestDelete(entry.id) }
         }

@@ -79,7 +79,7 @@ class HistoryScreenTest {
 
     @Test fun deleteNeedsNoDialogHidesTheRowAtOnceAndUndoRestoresIt() {
         val page = open()
-        val rowDelete = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).getChildAt(0).findViewById<View>(R.id.history_row_delete)
+        val rowDelete = firstRow(page).findViewById<View>(R.id.history_row_delete)
         rowDelete.performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(shown(page, "First synthetic transcript"))
@@ -97,7 +97,7 @@ class HistoryScreenTest {
         val controller = Robolectric.buildActivity(Page::class.java).create().start().resume().visible()
         val page = controller.get()
         settle { shown(page, "First synthetic transcript") }
-        page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).getChildAt(0).findViewById<View>(R.id.history_row_delete).performClick()
+        firstRow(page).findViewById<View>(R.id.history_row_delete).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(File(root, "$a.history").exists())
         controller.pause().stop()
@@ -105,17 +105,153 @@ class HistoryScreenTest {
         assertTrue(File(root, "$b.history").exists())
     }
 
-    @Test fun detailHasItsOwnTitleOneCopyActionAndNoClearHistory() {
+    /** Item 0 of the list is the explanation header; rows follow it. */
+    private fun rowAt(page: Page, n: Int) = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).getChildAt(n + 1)
+    private fun firstRow(page: Page) = rowAt(page, 0)
+    private fun clipboard() = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    private fun clipText() = clipboard().primaryClip?.getItemAt(0)?.text?.toString()
+    private fun toolbar(page: Page) = page.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar)
+
+    @Test fun detailHasItsOwnTitleIconActionsInOrderAndNoClearHistoryOrTextButtons() {
         val page = open()
-        val body = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).getChildAt(0).findViewById<View>(R.id.history_row_body)
-        body.performClick()
+        firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        val toolbar = page.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar)
+        val toolbar = toolbar(page)
         assertEquals(HistoryRows.date(200), toolbar.title.toString())
         assertFalse(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
         assertEquals("First synthetic transcript", page.findViewById<TextView>(R.id.history_detail_text).text.toString())
-        assertEquals(app.getString(R.string.history_copy), page.findViewById<TextView>(R.id.history_copy_button).text.toString())
+        val copy = toolbar.menu.findItem(R.id.history_copy_item)
+        val delete = toolbar.menu.findItem(R.id.history_delete_item)
+        assertTrue(copy.isVisible && delete.isVisible)
+        // Same toolbar, same height; Copy leads by order only.
+        val order = (0 until toolbar.menu.size()).map { toolbar.menu.getItem(it).itemId }
+        assertTrue(order.indexOf(R.id.history_copy_item) < order.indexOf(R.id.history_delete_item))
+        assertNotNull(copy.icon); assertNotNull(delete.icon)
+        assertEquals(app.getString(R.string.history_copy_transcript), copy.contentDescription.toString())
+        assertEquals(app.getString(R.string.history_delete_transcript), delete.contentDescription.toString())
+        assertEquals(copy.contentDescription.toString(), copy.tooltipText.toString())
+        assertEquals(delete.contentDescription.toString(), delete.tooltipText.toString())
+        // No text buttons in the detail.
+        assertFalse(texts(page.window.decorView).any { it is android.widget.Button })
         assertEquals(View.GONE, page.findViewById<View>(R.id.history_list_pane).visibility)
+    }
+
+    @Test fun listHidesTheDetailActionsAndShowsClear() {
+        val page = open()
+        val toolbar = toolbar(page)
+        assertFalse(toolbar.menu.findItem(R.id.history_copy_item).isVisible)
+        assertFalse(toolbar.menu.findItem(R.id.history_delete_item).isVisible)
+        assertTrue(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
+    }
+
+    @Test fun detailCopyIconCopiesWithTheSensitiveFlagAndConfirms() {
+        val page = open()
+        firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        toolbar(page).menu.performIdentifierAction(R.id.history_copy_item, 0)
+        settle { clipText() == "First synthetic transcript" }
+        assertTrue(clipboard().primaryClip!!.description.extras!!.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE))
+        settle { shown(page, app.getString(R.string.history_copied)) }
+    }
+
+    @Test fun detailDeleteIconReturnsToTheListWithUndo() {
+        val page = open()
+        firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        toolbar(page).menu.performIdentifierAction(R.id.history_delete_item, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(View.VISIBLE, page.findViewById<View>(R.id.history_list_pane).visibility)
+        assertNull(page.findViewById<View>(R.id.history_detail_text))
+        assertFalse(shown(page, "First synthetic transcript"))
+        assertTrue(shown(page, app.getString(R.string.dictionary_undo)))
+        assertTrue(File(root, "$a.history").exists())
+    }
+
+    @Test fun longPressOnARowCopiesThatTranscriptAndConfirmsOnTheList() {
+        val page = open()
+        // The second row (entry b), not the first: the right transcript is copied.
+        val row = rowAt(page, 1).findViewById<View>(R.id.history_row_body)
+        assertTrue(row.isLongClickable)
+        assertTrue(row.performLongClick())
+        settle { clipText() == "Second synthetic transcript" }
+        assertTrue(clipboard().primaryClip!!.description.extras!!.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE))
+        settle { shown(page, app.getString(R.string.history_copied)) }
+        // Still the list: long-press does not open the detail.
+        assertEquals(View.VISIBLE, page.findViewById<View>(R.id.history_list_pane).visibility)
+        assertNull(page.findViewById<View>(R.id.history_detail_text))
+    }
+
+    @Test fun longPressCopiesTheFullSavedTextNotTheTruncatedPreview() {
+        val long = (1..120).joinToString(" ") { "word$it" }
+        assertTrue(long.length > 400)
+        HistoryStore(root).save(HistoryEntry("0c1f2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b", 300, long, HistoryDelivery.ACCEPTED))
+        val page = open()
+        settle { shown(page, "word1 ") }
+        assertTrue(firstRow(page).findViewById<TextView>(R.id.history_row_preview).text.length <= 200)
+        assertTrue(firstRow(page).findViewById<View>(R.id.history_row_body).performLongClick())
+        settle { clipText() == long }
+    }
+
+    @Test fun rowExposesCopyAndDeleteAsAccessibilityActionsThatWork() {
+        val page = open()
+        val row = firstRow(page).findViewById<View>(R.id.history_row_body)
+        val actions = row.createAccessibilityNodeInfo().actionList.associate { it.label?.toString() to it.id }
+        val copyId = actions[app.getString(R.string.history_copy_transcript)]
+        val deleteId = actions[app.getString(R.string.history_delete_transcript)]
+        assertNotNull(copyId); assertNotNull(deleteId)
+        assertTrue(row.performAccessibilityAction(copyId!!, null))
+        settle { clipText() == "First synthetic transcript" }
+        assertTrue(row.performAccessibilityAction(deleteId!!, null))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(shown(page, "First synthetic transcript"))
+        assertTrue(File(root, "$a.history").exists())
+    }
+
+    @Test fun rowTrashIsAFortyEightDpButtonLabelledWithTheDate() {
+        val page = open()
+        val trash = firstRow(page).findViewById<View>(R.id.history_row_delete)
+        val density = app.resources.displayMetrics.density
+        assertTrue(trash.layoutParams.width >= (48 * density).toInt() && trash.layoutParams.height >= (48 * density).toInt())
+        // Date plus the first words, so two takes in one minute are told apart.
+        assertEquals(app.getString(R.string.history_delete_row, HistoryRows.date(200), "First synthetic transcript"), trash.contentDescription.toString())
+        // One node per row: the body carries tap and long-press, the trash is the only other focus.
+        val body = firstRow(page).findViewById<View>(R.id.history_row_body)
+        assertTrue(body.isClickable && body.isLongClickable && trash.isClickable)
+    }
+
+    @Test fun explanationIsOneShortLineAndScrollsAwayAsTheFirstListItem() {
+        val page = open()
+        assertTrue(app.getString(R.string.history_explanation).length <= 80)
+        val list = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list)
+        val header = list.getChildAt(0)
+        assertSame(page.findViewById<View>(R.id.history_explanation).parent, header)
+        assertEquals(0, list.getChildAdapterPosition(header))
+        assertEquals(1, list.getChildAdapterPosition(firstRow(page)))
+    }
+
+    @Test fun oneTimeHintNamesTheLongPressAndStaysDismissed() {
+        val prefs = app.getSharedPreferences("history_ui", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val hint = app.getString(R.string.history_hint)
+        assertTrue(hint.contains("hold", ignoreCase = true) && hint.contains("copy", ignoreCase = true))
+        val page = open()
+        assertTrue(shown(page, hint))
+        page.findViewById<View>(R.id.history_hint_dismiss).performClick()
+        assertFalse(shown(page, hint))
+        val again = open()
+        assertFalse(shown(again, hint))
+    }
+
+    @Test fun detailMetadataIsTheSameLineAsTheListRowAndTextIsSelectable() {
+        val page = open()
+        val rowMeta = firstRow(page).findViewById<TextView>(R.id.history_row_meta).text.toString()
+        val secondMeta = rowAt(page, 1).findViewById<TextView>(R.id.history_row_meta).text.toString()
+        rowAt(page, 1).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(secondMeta, page.findViewById<TextView>(R.id.history_detail_meta).text.toString())
+        assertEquals(HistoryRows.date(100) + " · Not inserted", secondMeta)
+        assertNotEquals(rowMeta, secondMeta)
+        assertTrue(page.findViewById<TextView>(R.id.history_detail_text).isTextSelectable)
     }
 
     private fun slot(page: Page) = page.findViewById<View>(R.id.history_status)

@@ -35,7 +35,7 @@ class HistoryClearTest {
     }
 
     private fun findText(view: View, value: String, exact: Boolean = false): TextView? {
-        if (view is TextView && (if (exact) view.text.toString() == value else view.text.toString().contains(value))) return view
+        if (view is TextView && (if (exact) HistoryUi.label(view) == value else HistoryUi.label(view).contains(value))) return view
         if (view is ViewGroup) for (i in 0 until view.childCount) findText(view.getChildAt(i), value, exact)?.let { return it }
         return null
     }
@@ -216,7 +216,7 @@ class HistoryClearTest {
             assertEquals("Synthetic row blocked for retry", store.get(blockedId)?.text)
             assertTrue(store.list().any { it.id == blockedId })
             awaitAbsent("Synthetic row blocked for retry")
-            awaitAbsent(context.getString(R.string.history_copy))
+            awaitAbsent(context.getString(R.string.history_copy_transcript))
 
             registerActive(later)
             HistoryIo.executor.submit { HistoryIo.store(root).save(HistoryEntry(later, 20, "Synthetic post-boundary take")) }
@@ -251,7 +251,7 @@ class HistoryClearTest {
         try {
             val row = awaitText(transcript)
             instrumentation.runOnMainSync { HistoryUi.click(row) }
-            val staleCopyButton = awaitText(context.getString(R.string.history_copy), exact = true)
+            val staleCopyButton = awaitText(context.getString(R.string.history_copy_transcript), exact = true)
             // The detail page has its own title and no Clear History.
             scenario.onActivity {
                 assertFalse(it.findViewById<MaterialToolbar>(R.id.history_toolbar).menu.findItem(R.id.history_clear_item).isVisible)
@@ -267,7 +267,7 @@ class HistoryClearTest {
             awaitText(context.getString(R.string.history_empty))
             awaitText(context.getString(R.string.history_missing))
             assertEquals("keep existing clipboard", clipboard.primaryClip?.getItemAt(0)?.text.toString())
-            scenario.onActivity { assertNull(findText(it.window.decorView, context.getString(R.string.history_copy), exact = true)) }
+            scenario.onActivity { assertNull(findText(it.window.decorView, context.getString(R.string.history_copy_transcript), exact = true)) }
         } finally {
             clipboard.clearPrimaryClip()
             closeAndClean(scenario)
@@ -294,10 +294,10 @@ class HistoryClearTest {
                 assertTrue(delete.layoutParams.width >= (48 * density).toInt() && delete.layoutParams.height >= (48 * density).toInt())
             }
             scenario.onActivity { HistoryUi.click(findText(it.window.decorView, "Synthetic large-text row")!!) }
-            val copy = awaitText(context.getString(R.string.history_copy), exact = true)
+            val copy = awaitText(context.getString(R.string.history_copy_transcript), exact = true)
             scenario.onActivity {
                 val density = it.resources.displayMetrics.density
-                assertTrue(copy.minimumHeight >= (48 * density).toInt())
+                assertTrue(copy.height >= (48 * density).toInt() && copy.width >= (48 * density).toInt())
                 val scroll = findScrollView(it.window.decorView) ?: error("History detail scroll view missing")
                 val size = (320 * density).toInt()
                 scroll.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY))

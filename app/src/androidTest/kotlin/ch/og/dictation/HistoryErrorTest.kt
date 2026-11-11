@@ -81,13 +81,13 @@ class HistoryErrorTest {
         try {
             val row = await(activity, "Synthetic deletion test")
             instrumentation.runOnMainSync { HistoryUi.click(row) }
-            await(activity, context.getString(R.string.history_copy))
+            await(activity, context.getString(R.string.history_copy_transcript))
             instrumentation.runOnMainSync {
                 assertTrue(activity.findViewById<TextView>(R.id.history_detail_meta).text.contains(context.getString(R.string.history_delivery_rejected)))
             }
             assertTrue(temp.mkdir())
             File(temp, "block").writeText("synthetic")
-            val delete = await(activity, context.getString(R.string.history_delete))
+            val delete = await(activity, context.getString(R.string.history_delete_transcript))
             instrumentation.runOnMainSync { delete.performClick() }
             await(activity, context.getString(R.string.history_cancel_delete_error))
             await(activity, "Synthetic deletion test")
@@ -109,11 +109,11 @@ class HistoryErrorTest {
         try {
             val row = await(activity, "Synthetic deletion test")
             instrumentation.runOnMainSync { HistoryUi.click(row) }
-            val copy = await(activity, context.getString(R.string.history_copy))
+            val copy = await(activity, context.getString(R.string.history_copy_transcript))
             store.delete(id)
             instrumentation.runOnMainSync { copy.performClick() }
             await(activity, context.getString(R.string.history_missing))
-            instrumentation.runOnMainSync { assertNull(find(activity.window.decorView, context.getString(R.string.history_copy))) }
+            instrumentation.runOnMainSync { assertNull(find(activity.window.decorView, context.getString(R.string.history_copy_transcript))) }
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
             store.delete(id)

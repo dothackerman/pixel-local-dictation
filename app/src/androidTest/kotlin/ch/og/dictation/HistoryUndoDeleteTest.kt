@@ -41,7 +41,7 @@ class HistoryUndoDeleteTest {
     private fun launch() = ActivityScenario.launch(HistoryTestActivity::class.java)
     private fun ActivityScenario<HistoryTestActivity>.visible(text: String): Boolean {
         var found = false
-        onActivity { found = HistoryUi.find(it.window.decorView) { v -> v is TextView && v.isShown && v.text.toString().contains(text) } != null }
+        onActivity { found = HistoryUi.find(it.window.decorView) { v -> v is TextView && v.isShown && HistoryUi.label(v).contains(text) } != null }
         return found
     }
     private fun ActivityScenario<HistoryTestActivity>.await(text: String, shown: Boolean = true) {
@@ -107,8 +107,8 @@ class HistoryUndoDeleteTest {
         val scenario = launch()
         try {
             scenario.click("Synthetic row to delete")
-            scenario.await(context.getString(R.string.history_copy))
-            scenario.click(context.getString(R.string.history_delete), exact = true)
+            scenario.await(context.getString(R.string.history_copy_transcript))
+            scenario.click(context.getString(R.string.history_delete_transcript), exact = true)
             scenario.await(context.getString(R.string.history_deleted))
             scenario.await("Synthetic row to delete", shown = false)
             scenario.await("Synthetic row to keep")
@@ -181,7 +181,7 @@ class HistoryUndoDeleteTest {
                 val row = HistoryUi.find(activity.window.decorView) { v -> v is TextView && v.isShown && v.id == R.id.history_row_preview }!!
                 HistoryUi.click(row)
             }
-            scenario.await(context.getString(R.string.history_copy))
+            scenario.await(context.getString(R.string.history_copy_transcript))
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             var loadingShown = false
             var after = -1

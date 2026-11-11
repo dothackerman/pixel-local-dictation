@@ -1,3 +1,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Detail only, icons at the same height; Copy leads by order. -->
+    <item android:id="@+id/history_copy_item" android:title="@string/history_copy" android:icon="@drawable/ic_history_copy"
+        android:visible="false" app:showAsAction="always" app:iconTint="?attr/colorOnSurface"
+        app:contentDescription="@string/history_copy_transcript" app:tooltipText="@string/history_copy_transcript" />
+    <item android:id="@+id/history_delete_item" android:title="@string/history_delete" android:icon="@drawable/ic_dictionary_delete"
+        android:visible="false" app:showAsAction="always" app:iconTint="?attr/colorOnSurfaceVariant"
+        app:contentDescription="@string/history_delete_transcript" app:tooltipText="@string/history_delete_transcript" />
     <item android:id="@+id/history_clear_item" android:title="@string/history_clear" app:showAsAction="never" />
 </menu>

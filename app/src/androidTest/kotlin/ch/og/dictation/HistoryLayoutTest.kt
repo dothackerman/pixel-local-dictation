@@ -16,6 +16,8 @@ class HistoryLayoutTest {
         val context = instrumentation.targetContext
         val root = java.io.File(context.noBackupFilesDir, "history-ui-test-layout")
         root.deleteRecursively()
+        // Worst case for the first-row check: the one-time hint is still showing.
+        context.getSharedPreferences("history_ui", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         val entry = HistoryEntry(java.util.UUID.randomUUID().toString(), 1, "Synthetic layout transcript")
         HistoryStore(root).save(entry)
         HistoryTestActivity.largeTextPreview = true
@@ -26,7 +28,7 @@ class HistoryLayoutTest {
                 val activity = instrumentation.startActivitySync(Intent(context, HistoryTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as HistoryActivity
                 try {
                     fun find(view: View, text: String): android.widget.TextView? {
-                        if (view is android.widget.TextView && view.text.toString().contains(text)) return view
+                        if (view is android.widget.TextView && HistoryUi.label(view).contains(text)) return view
                         if (view is android.view.ViewGroup) for (i in 0 until view.childCount) find(view.getChildAt(i), text)?.let { return it }
                         return null
                     }
@@ -51,29 +53,34 @@ class HistoryLayoutTest {
                         // Preview stays within two lines in the primary text role.
                         assertTrue(text.maxLines <= 2)
                     }
-                    fun checkControl(control: View) {
-                        val scroll = generateSequence(control.parent) { it.parent }.filterIsInstance<ScrollView>().first()
-                        val density = activity.resources.displayMetrics.density
-                        val size = (320 * density).toInt()
-                        scroll.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY))
-                        scroll.layout(0, 0, size, size)
-                        assertTrue(control.measuredWidth <= size)
-                        assertTrue(control.measuredHeight >= (48 * density).toInt())
-                        val rect = android.graphics.Rect()
-                        control.getDrawingRect(rect)
-                        scroll.offsetDescendantRectToMyCoords(control, rect)
-                        scroll.scrollTo(0, rect.top)
-                        assertTrue(rect.bottom > scroll.scrollY && rect.top < scroll.scrollY + scroll.height)
-                    }
                     instrumentation.runOnMainSync {
                         assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
                         assertEquals(mode, activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                         checkRow(row)
+                        // The first row is on screen without scrolling even at 2x: the explanation scrolls away with the list.
+                        val list = activity.findViewById<View>(R.id.history_list)
+                        val top = IntArray(2).also(row::getLocationOnScreen)[1]
+                        val listTop = IntArray(2).also(list::getLocationOnScreen)[1]
+                        assertTrue("first row below the viewport: $top", top - listTop < list.height)
                         HistoryUi.click(row)
                     }
-                    val copy = await(context.getString(R.string.history_copy))
-                    val delete = await(context.getString(R.string.history_delete))
-                    instrumentation.runOnMainSync { checkControl(copy); checkControl(delete) }
+                    // Detail: Copy and Delete are toolbar icons, 48dp, at the same height, inside 320dp.
+                    val copy = await(context.getString(R.string.history_copy_transcript))
+                    val delete = await(context.getString(R.string.history_delete_transcript))
+                    instrumentation.runOnMainSync {
+                        val density = activity.resources.displayMetrics.density
+                        for (control in listOf(copy, delete)) {
+                            assertTrue(control.isShown)
+                            assertTrue(control.width >= (48 * density).toInt() && control.height >= (48 * density).toInt())
+                            assertTrue(control.width <= (320 * density).toInt())
+                        }
+                        val copyTop = IntArray(2).also(copy::getLocationOnScreen)[1]
+                        val deleteTop = IntArray(2).also(delete::getLocationOnScreen)[1]
+                        assertEquals(copyTop, deleteTop)
+                        assertEquals(copy.height, delete.height)
+                        // Copy leads by order.
+                        assertTrue(IntArray(2).also(copy::getLocationOnScreen)[0] < IntArray(2).also(delete::getLocationOnScreen)[0])
+                    }
                 } finally { instrumentation.runOnMainSync { activity.finish() } }
             }
         } finally {
