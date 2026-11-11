@@ -138,6 +138,16 @@ Add saves one entry, clears the field and retains editor focus for repeated addi
 
 Counts/language labels and editor feedback use the subdued text role. Status and inline feedback use polite accessibility live regions. Empty, no-match, loading and failed-load states occupy the inline status area; failed load can be tapped to retry. Successful add stays inline. Edit/restore feedback uses anchored native Snackbar. Delete has no confirmation dialog: successful deletion shows an Undo Snackbar for 8000ms, anchored above the FAB.
 
+### History
+
+History is a sibling of Dictionary, not a variant. Source: `layout/{history,history_row,history_detail}.xml`, `menu/history.xml`, `HistoryActivity.kt`, `HistoryRows.kt`. Same toolbar (64dp, back icon tinted `colorOnSurface`), same 24dp explanation inset, same 16dp list inset, same selectable rows with a 48dp trailing icon action.
+
+- **List.** One short explanation (stored locally, audio is not), then one status slot, then the list. Rows are at least 64dp: preview (two lines, `BodyLarge`, `colorOnSurface`) over one meta line (`LabelMedium`, `colorOnSurfaceVariant`): medium date, short time, no seconds, status after a " · " separator. A status appears only when the take is not complete and inserted: Recording, Finishing, May be incomplete, Not inserted, Insertion uncertain. The empty state is its own centered block (title and hint), not another line of the explanation. Returning from a detail keeps the list in place and never shows a loading state.
+- **Detail.** Own title: the date. Metadata line, full transcript, then Copy as the one filled primary action; Delete is a quiet text button below it. No Clear History here (the menu item is hidden).
+- **Delete model.** One transcript, from a row or the detail, no dialog: the row disappears at once and a Snackbar offers Undo for 8 s. Storage is touched when the window ends or the page is left, whichever is first; a second delete settles the first at once; process death inside the window leaves the transcript in place. A failed removal restores the row and posts the Delete warning. Clear History is the exception: it keeps a confirmation (title "Clear History?", saved and in-progress counts, clipboard copies and benchmark recordings not affected, button "Clear") and has no Undo.
+- **Warning row.** History warnings (save failure, incomplete recovery, delete failure, receipt failure) are one inline row (filled card, `colorSecondaryContainer`, polite live region) in the slot Dictionary uses for its state line, with a 48dp Dismiss action. One at a time; dismissing shows the next. Each message names only actions that exist on the page. They never appear on the recording panel, and Settings shows at most a saved-count on its History row.
+- **Feedback.** Inline status or a Snackbar on the page; no Toasts.
+
 Dictionary semantics the UI must respect: [PRODUCT.md](PRODUCT.md).
 
 ## Do's and Don'ts

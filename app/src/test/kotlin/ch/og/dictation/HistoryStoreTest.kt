@@ -7,6 +7,20 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class HistoryStoreTest {
+    @Test fun savedCountIgnoresTemporaryFilesAndTombstones() {
+        val root = Files.createTempDirectory("history-count").toFile()
+        val store = HistoryStore(root, HistoryOwner())
+        assertEquals(0, store.savedCount())
+        val a = "b3de7a72-84ce-4721-8412-497b90c09315"
+        val b = "9a67d378-1c8c-405e-bdb1-c113df823988"
+        store.save(HistoryEntry(a, 1, "one"))
+        store.save(HistoryEntry(b, 2, "two"))
+        java.io.File(root, "076b1f86-154f-4307-9e3b-5d8935dc6e7e.tmp").writeText("partial")
+        assertEquals(2, store.savedCount())
+        store.delete(a)
+        assertEquals(1, store.savedCount())
+    }
+
     @Test fun clearSnapshotFreezesKnownAndActiveIdsAtAcceptance() {
         val owner = HistoryOwner()
         val saved = "b3de7a72-84ce-4721-8412-497b90c09315"

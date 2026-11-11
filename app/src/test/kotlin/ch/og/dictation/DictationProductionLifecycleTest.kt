@@ -787,7 +787,11 @@ class DictationProductionLifecycleTest {
             assertEquals(prefix.id, rows().single().id)
             assertEquals("old speech", rows().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-            assertTrue(view.findViewById<TextView>(R.id.retention_notice).text.contains(app.getString(R.string.history_save_error)))
+            // The warning is pending for the History page, and the panel is unchanged by it.
+            val panelNotice = view.findViewById<TextView>(R.id.retention_notice)
+            assertEquals(android.view.View.GONE, panelNotice.visibility)
+            assertEquals("", panelNotice.text.toString())
+            assertFalse(panelNotice.text.contains(app.getString(R.string.history_save_error)))
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
         } finally { blocked?.deleteRecursively(); BenchmarkStore.setEnabled(app, false); benchmarkDir.deleteRecursively() }

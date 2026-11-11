@@ -4,6 +4,7 @@
     android:layout_height="match_parent"
     android:id="@+id/settings_root"
     android:fillViewport="true"
+    android:clipToPadding="false"
     android:padding="24dp">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
     <com.google.android.material.appbar.MaterialToolbar
@@ -12,15 +13,11 @@
     <com.google.android.material.button.MaterialButton
         android:id="@+id/open_dictionary" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:minHeight="64dp"
-        android:layout_marginBottom="24dp" android:text="@string/dictionary_title" />
+        android:layout_marginBottom="12dp" android:text="@string/dictionary_title" />
     <com.google.android.material.button.MaterialButton
         android:id="@+id/open_history" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:minHeight="64dp"
         android:layout_marginBottom="24dp" android:text="@string/history_title" />
-    <LinearLayout
-        android:id="@+id/history_notices"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" />
     <Switch
         android:id="@+id/benchmark_switch"
         android:layout_width="match_parent"

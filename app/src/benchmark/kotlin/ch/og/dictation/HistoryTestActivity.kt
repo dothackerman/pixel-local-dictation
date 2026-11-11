@@ -11,7 +11,9 @@ class HistoryTestActivity : HistoryActivity() {
         @Volatile var largeTextPreview = false
         @Volatile var nightMode: Int? = null
         @Volatile var historyRootSuffix: String? = null
+        @Volatile var undoWindow: Long = 8000L
     }
+    override val undoWindowMs: Long get() = undoWindow
     override fun attachBaseContext(base: Context) {
         nightMode?.let {
             delegate.localNightMode = if (it == Configuration.UI_MODE_NIGHT_YES) {

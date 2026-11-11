@@ -1,11 +1,11 @@
 package ch.og.dictation
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inspector.WindowInspector
 import android.widget.TextView
@@ -18,85 +18,134 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Captures app-owned windows; History uses a separate store containing only synthetic text. */
+/**
+ * Captures app-owned windows into app-private files (pull with `phone pull files/lab/settings-history/<name>.png`).
+ * History uses separate stores containing only synthetic text. Names: <screen>-<light|dark>-<font1|font2>.png
+ * for Settings, list, detail, empty state, warning row and clear dialog.
+ */
 @RunWith(AndroidJUnit4::class)
 class SettingsHistoryScreenshotTest {
-    @Test fun settingsAndHistory() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val context = instrumentation.targetContext
-        val output = File(context.filesDir, "lab/settings-history").apply { mkdirs() }
-        fun settle() { Thread.sleep(450); instrumentation.waitForIdleSync() }
-        val settings = instrumentation.startActivitySync(Intent(context, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
-        try {
-            settle()
-            instrumentation.runOnMainSync { capture(settings.window.decorView, File(output, "settings.png")) }
-        } finally { instrumentation.runOnMainSync { settings.finish() } }
+    private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+    private val context get() = instrumentation.targetContext
+    private fun settle() { Thread.sleep(450); instrumentation.waitForIdleSync() }
 
-        val root = File(context.noBackupFilesDir, "history-ui-test-screenshots")
-        root.deleteRecursively()
+    @Test fun settingsAndHistory() {
+        val output = File(context.filesDir, "lab/settings-history").apply { mkdirs() }
+        val notices = historyNotices(context)
+        val originalNotices = notices.pending()
+        HistoryNotice.entries.forEach(notices::dismiss)
+        val full = File(context.noBackupFilesDir, "history-ui-test-shots").apply { deleteRecursively() }
+        val empty = File(context.noBackupFilesDir, "history-ui-test-shots-empty").apply { deleteRecursively() }
+        val now = 1735812000000
         val entries = listOf(
-            HistoryEntry(UUID.randomUUID().toString(), 1735812000000, "Pick up bread and milk on the way home.", HistoryDelivery.ACCEPTED),
-            HistoryEntry(UUID.randomUUID().toString(), 1735725600000, "Meeting notes: review the project plan tomorrow.", HistoryDelivery.REJECTED),
+            HistoryEntry(UUID.randomUUID().toString(), now, "Pick up bread and milk on the way home.", HistoryDelivery.ACCEPTED),
+            HistoryEntry(UUID.randomUUID().toString(), now - 86_400_000, "Meeting notes: review the project plan tomorrow, then send the summary to everyone who joined the call.", HistoryDelivery.REJECTED),
+            HistoryEntry(UUID.randomUUID().toString(), now - 172_800_000, "Remind me to call the dentist about the appointment next week.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED, 1),
         )
-        entries.forEach { HistoryStore(root).save(it) }
-        HistoryTestActivity.historyRootSuffix = "screenshots"
-        val activity = instrumentation.startActivitySync(Intent(context, HistoryTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as HistoryActivity
+        entries.forEach { HistoryStore(full).save(it) }
         try {
-            fun find(view: View, text: String): TextView? {
-                if (view is TextView && view.text.toString().contains(text)) return view
-                if (view is ViewGroup) for (i in 0 until view.childCount) find(view.getChildAt(i), text)?.let { return it }
-                return null
-            }
-            fun await(text: String): TextView {
-                repeat(100) {
-                    instrumentation.waitForIdleSync()
-                    var result: TextView? = null
-                    instrumentation.runOnMainSync { result = find(activity.window.decorView, text) }
-                    result?.let { return it }
-                    Thread.sleep(50)
+            for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+                for (scale in listOf(1f, 2f)) {
+                    val tag = "${if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"}-font${scale.toInt()}"
+                    HistoryTestActivity.nightMode = night
+                    HistoryTestActivity.largeTextPreview = scale > 1f
+                    SettingsLargeTextPreviewActivity.nightMode = night
+                    SettingsLargeTextPreviewActivity.fontScale = scale
+                    SettingsLargeTextPreviewActivity.historyRootSuffix = "shots"
+                    HistoryTestActivity.historyRootSuffix = "shots"
+
+                    val settings = instrumentation.startActivitySync(Intent(context, SettingsLargeTextPreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+                    try {
+                        settle()
+                        instrumentation.runOnMainSync { capture(settings.window.decorView, File(output, "settings-$tag.png")) }
+                    } finally { instrumentation.runOnMainSync { settings.finish() } }
+
+                    val activity = launchHistory()
+                    try {
+                        val row = await(activity, entries.first().text)
+                        await(activity, entries.last().text)
+                        settle()
+                        instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-list-$tag.png")) }
+
+                        // Warning row on the History page.
+                        notices.record(HistoryNotice.SAVE)
+                        instrumentation.runOnMainSync { activity.recreate() }
+                        settle()
+                        val warned = currentHistory(activity)
+                        await(warned, context.getString(R.string.history_save_error))
+                        settle()
+                        instrumentation.runOnMainSync { capture(warned.window.decorView, File(output, "history-warning-$tag.png")) }
+                        notices.dismiss(HistoryNotice.SAVE)
+
+                        val page = currentHistory(warned)
+                        val tapped = await(page, entries.first().text)
+                        instrumentation.runOnMainSync { HistoryUi.click(tapped) }
+                        await(page, context.getString(R.string.history_copy))
+                        settle()
+                        instrumentation.runOnMainSync { capture(page.window.decorView, File(output, "history-detail-$tag.png")) }
+                        instrumentation.runOnMainSync { page.onBackPressedDispatcher.onBackPressed() }
+                        await(page, entries.first().text)
+                        settle()
+                        instrumentation.runOnMainSync {
+                            val toolbar = requireNotNull(HistoryUi.find(page.window.decorView) { it is MaterialToolbar } as MaterialToolbar)
+                            assertTrue(toolbar.menu.findItem(R.id.history_clear_item).isEnabled)
+                            toolbar.menu.performIdentifierAction(R.id.history_clear_item, 0)
+                        }
+                        settle()
+                        instrumentation.runOnMainSync {
+                            val dialog = WindowInspector.getGlobalWindowViews().last { it.findViewById<View>(android.R.id.message) != null }
+                            capture(dialog, File(output, "history-clear-dialog-$tag.png"), page.window.decorView)
+                            dialog.findViewById<View>(android.R.id.button2).performClick()
+                        }
+                        settle()
+                        assertEquals(entries.size, full.listFiles().orEmpty().count { it.name.endsWith(".history") })
+                    } finally { instrumentation.runOnMainSync { currentHistoryOrNull()?.finish() } }
+
+                    HistoryTestActivity.historyRootSuffix = "shots-empty"
+                    val blank = launchHistory()
+                    try {
+                        await(blank, context.getString(R.string.history_empty))
+                        settle()
+                        instrumentation.runOnMainSync { capture(blank.window.decorView, File(output, "history-empty-$tag.png")) }
+                    } finally { instrumentation.runOnMainSync { blank.finish() } }
                 }
-                error("Missing $text")
             }
-            val row = await(entries.first().text)
-            await(entries.last().text)
-            settle()
-            instrumentation.runOnMainSync {
-                capture(activity.window.decorView, File(output, "history-list.png"))
-                row.performClick()
-            }
-            await(context.getString(R.string.history_copy))
-            settle()
-            instrumentation.runOnMainSync {
-                capture(activity.window.decorView, File(output, "history-detail.png"))
-                activity.onBackPressedDispatcher.onBackPressed()
-            }
-            await(entries.first().text)
-            settle()
-            instrumentation.runOnMainSync {
-                val toolbar = (activity.window.decorView as ViewGroup).let { rootView ->
-                    fun findToolbar(view: View): MaterialToolbar? {
-                        if (view is MaterialToolbar) return view
-                        if (view is ViewGroup) for (i in 0 until view.childCount) findToolbar(view.getChildAt(i))?.let { return it }
-                        return null
-                    }
-                    requireNotNull(findToolbar(rootView))
-                }
-                assertTrue(toolbar.menu.getItem(0).isEnabled)
-                toolbar.menu.performIdentifierAction(toolbar.menu.getItem(0).itemId, 0)
-            }
-            settle()
-            instrumentation.runOnMainSync {
-                val dialog = WindowInspector.getGlobalWindowViews().last { it.findViewById<View>(android.R.id.message) != null }
-                capture(dialog, File(output, "history-clear-confirmation.png"), activity.window.decorView)
-                dialog.findViewById<View>(android.R.id.button2).performClick()
-            }
-            settle()
-            assertTrue(root.listFiles().orEmpty().count { it.name.endsWith(".history") } == entries.size)
         } finally {
-            instrumentation.runOnMainSync { activity.finish() }
+            HistoryTestActivity.nightMode = null
+            HistoryTestActivity.largeTextPreview = false
             HistoryTestActivity.historyRootSuffix = null
-            root.deleteRecursively()
+            SettingsLargeTextPreviewActivity.nightMode = null
+            SettingsLargeTextPreviewActivity.fontScale = 2f
+            SettingsLargeTextPreviewActivity.historyRootSuffix = null
+            HistoryNotice.entries.forEach { if (it in originalNotices) notices.record(it) else notices.dismiss(it) }
+            full.deleteRecursively(); empty.deleteRecursively()
         }
+    }
+
+    private var latest: HistoryActivity? = null
+    private fun launchHistory(): HistoryActivity =
+        (instrumentation.startActivitySync(Intent(context, HistoryTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as HistoryActivity).also { latest = it }
+    private fun currentHistoryOrNull(): HistoryActivity? = latest
+    /** After recreate() the instance changes; find the resumed one. */
+    private fun currentHistory(previous: HistoryActivity): HistoryActivity {
+        repeat(100) {
+            val resumed = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<HistoryActivity>().firstOrNull()
+            if (resumed != null) { latest = resumed; return resumed }
+            Thread.sleep(50)
+        }
+        return previous
+    }
+
+    private fun await(activity: HistoryActivity, text: String): TextView {
+        repeat(100) {
+            instrumentation.waitForIdleSync()
+            var result: TextView? = null
+            instrumentation.runOnMainSync { result = HistoryUi.findText(activity.window.decorView, text) }
+            result?.let { return it }
+            Thread.sleep(50)
+        }
+        error("Missing $text")
     }
 
     private fun capture(view: View, file: File, underlay: View? = null) {
