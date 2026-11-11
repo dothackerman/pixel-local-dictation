@@ -226,6 +226,8 @@ class RecordingPanelTest {
                     layout.getLineBottom(lastLine) - preview.scrollY <= box + 1)
                 assertTrue("newest words above the box (landscape=$landscape fontScale=$fontScale)",
                     layout.getLineTop(lastLine) - preview.scrollY >= 0)
+                assertEquals("a clipped older line shows above (landscape=$landscape fontScale=$fontScale)",
+                    layout.getLineTop(layout.getLineForVertical(preview.scrollY)), preview.scrollY)
             }
         }
     }

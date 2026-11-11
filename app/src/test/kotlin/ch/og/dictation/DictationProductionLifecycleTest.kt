@@ -805,7 +805,8 @@ class DictationProductionLifecycleTest {
             val newId = starts.last().getString("takeId")
             assertNotEquals(oldId, newId)
             decode.drain(); settleHistory()
-            await { receipts().any { it.optString("phase") == "checkpointFailed" } &&
+            // Late decode work may be queued after the first drain; keep draining while waiting.
+            await { decode.drain(); receipts().any { it.optString("phase") == "checkpointFailed" } &&
                 receipts().any { it.optString("phase") == "takeEnded" && it.optString("takeId") == oldId } }
             val late = receipts().filter { it.optString("phase") in setOf("checkpointFailed", "takeEnded") }
             assertTrue(late.any { it.optString("phase") == "checkpointFailed" })

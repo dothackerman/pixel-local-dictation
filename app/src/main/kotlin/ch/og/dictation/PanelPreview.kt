@@ -20,6 +20,11 @@ object PanelPreview {
     private fun showEnd(view: TextView) {
         val layout = view.layout ?: return
         val box = view.height - view.compoundPaddingTop - view.compoundPaddingBottom
-        view.scrollTo(0, (layout.height - box).coerceAtLeast(0))
+        if (layout.lineCount == 0 || box <= 0) return
+        // Start at a whole line so no clipped line shows above the newest ones.
+        val bottom = layout.getLineBottom(layout.lineCount - 1)
+        var first = layout.lineCount - 1
+        while (first > 0 && bottom - layout.getLineTop(first - 1) <= box) first--
+        view.scrollTo(0, layout.getLineTop(first))
     }
 }
