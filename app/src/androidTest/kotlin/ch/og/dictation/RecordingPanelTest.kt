@@ -50,7 +50,6 @@ class RecordingPanelTest {
             val disclosure = panel.findViewById<TextView>(R.id.retention_notice)
             status.setText(R.string.status_finishing)
             assertEquals(View.GONE, disclosure.visibility)
-            assertFalse(instrumentation.targetContext.getString(R.string.history_disclosure) in status.text)
 
             // Rebind the same latched decision after the system recreates the panel.
             val latchedEligible = false

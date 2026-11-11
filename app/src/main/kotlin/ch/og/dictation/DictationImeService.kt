@@ -157,7 +157,7 @@ class DictationImeService : InputMethodService() {
         banner = v.findViewById(R.id.benchmark_banner)
         retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
-        showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else if (takeRetentionEligible == true) R.string.history_disclosure else null)
+        showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else null)
         ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
         microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
             setOnClickListener {
@@ -387,7 +387,7 @@ class DictationImeService : InputMethodService() {
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
-            showPanelDisclosure(if (retentionEligible) R.string.history_disclosure else R.string.retention_field_off)
+            showPanelDisclosure(if (retentionEligible) null else R.string.retention_field_off)
             var identity: () -> org.json.JSONObject? = { null }
             var attempted = false
             val output = object : TakeOutput {
@@ -817,8 +817,7 @@ class DictationImeService : InputMethodService() {
     private fun recordHistoryNotice(notice: HistoryNotice) {
         historyNotices(this).record(notice)
         mainHandler.post {
-            showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off
-                else if (takeRetentionEligible == true) R.string.history_disclosure else null)
+            showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else null)
         }
     }
 
