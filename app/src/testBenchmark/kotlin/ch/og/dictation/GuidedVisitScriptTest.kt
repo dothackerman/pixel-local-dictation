@@ -171,6 +171,18 @@ class GuidedVisitScriptTest {
         assertTrue(GuidedVisit.script.flatMap { it.doItems }.none { it.contains("Finish transcription") })
     }
 
+    /** #36 (owner 2026-11-11): Discard take is final at once; only History's delete offers Undo. */
+    @Test fun panelDiscardStepsExpectNoUndoOrWait() {
+        for (id in listOf("A7", "A8")) {
+            val step = GuidedVisit.script.first { it.id == id }
+            val text = (step.doItems + step.expect).joinToString(" ")
+            assertTrue("$id names Discard", text.contains("Discard take"))
+            for (gone in listOf("Undo", "Take discarded", "Wait 8 seconds")) assertFalse("$id still says $gone", text.contains(gone))
+            assertTrue("$id expects nothing inserted after Discard", step.expect.any { it.startsWith("Discard:") && it.contains("nothing is inserted") })
+        }
+        assertTrue(GuidedVisit.script.first { it.id == "B10" }.doItems.contains("Tap Undo."))
+    }
+
     /** B9 is checkable: every Signal take starts with its step number, and B9 names those numbers. */
     @Test fun signalTakesSayTheirStepSoHistoryCanBeChecked() {
         for (step in GuidedVisit.script.filter { it.id.startsWith("A") }) {

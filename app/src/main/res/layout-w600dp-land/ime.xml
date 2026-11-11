@@ -2,7 +2,7 @@
 <!-- Landscape on the phone (window 600dp and wider): the same views, ids and rules as
      layout/ime.xml, side by side so the editor stays visible above. Status column (status,
      private-field line, preview) on the start side, the stage under the right thumb. The paused
-     choice and Undo take the microphone's place in the stage, as in portrait; the preview stays
+     choice takes the microphone's place in the stage, as in portrait; the preview stays
      in view while Stop or Discard is decided and the panel keeps its height in every state.
      A narrower landscape window uses layout-land/ime.xml. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -52,11 +52,6 @@
             <include layout="@layout/panel_stage" />
             <include
                 layout="@layout/panel_choice"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center" />
-            <include
-                layout="@layout/panel_undo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center" />

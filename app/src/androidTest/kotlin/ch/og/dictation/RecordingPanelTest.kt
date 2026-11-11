@@ -114,7 +114,7 @@ class RecordingPanelTest {
                 assertTrue(mic.left >= 0 && mic.right <= stage.width && mic.bottom <= stage.height)
                 assertEquals(2, actions(panel))
                 for (message in listOf(R.string.status_stopping_recording, R.string.status_unable_insert,
-                    R.string.status_discarded, R.string.status_finishing_choice, R.string.status_paused)) {
+                    R.string.status_finishing_choice, R.string.status_paused)) {
                     status.setText(message)
                     panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -342,10 +342,10 @@ class RecordingPanelTest {
     /**
      * #36 Crate B2 review captures (files/lab/issue36/b2-panel, pulled into corpus/): every panel
      * state the service renders (idle, recording, paused choice, preparing text, preparing choice,
-     * take discarded with Undo, unable to insert, private field), portrait and landscape, font 1×
+     * unable to insert, private field), portrait and landscape, font 1×
      * and 2×, through the service's own renderer. Offscreen; synthetic text only; no window,
-     * microphone or setting is touched. Every target ≥ 48dp (≥ 52dp for the paused buttons, ≥ 56dp
-     * for Undo), inside the panel and on one row; status never clipped; the preview keeps three
+     * microphone or setting is touched. Every target ≥ 48dp (≥ 52dp for the paused buttons),
+     * inside the panel and on one row; status never clipped; the preview keeps three
      * lines (two beside the private-field line in landscape); portrait keeps one panel height in
      * every state. The recording frame draws the ribbon from synthetic loudness.
      */
@@ -414,13 +414,6 @@ class RecordingPanelTest {
                 assertNotEquals("no microphone disk while preparing", View.VISIBLE, mic.visibility)
                 state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
-                // As the service draws it 3 s into the 8 s window.
-                panel.findViewById<UndoTimerView>(R.id.undo_timer).fraction = 5f / 8f
-                state("discarded-undo", R.string.status_discarded, PanelFrame(undo = true))
-                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.undo_timer).visibility)
-                val undo = panel.findViewById<View>(R.id.undo_discard)
-                assertTrue("Undo below 56dp ($suffix)", undo.height >= 56 * density - 1)
-                assertEquals("no microphone during the Undo window", false, mic.visibility == View.VISIBLE)
                 state("unable-to-insert", R.string.status_unable_insert, PanelFrame(unableToInsert = true), words = "")
                 assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
                 assertEquals(View.VISIBLE, mic.visibility)

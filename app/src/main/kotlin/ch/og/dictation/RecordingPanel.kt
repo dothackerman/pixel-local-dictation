@@ -5,25 +5,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import androidx.appcompat.widget.TooltipCompat
 
-/** How long Undo is offered after Discard take (#36); the same model as History delete. */
-const val DISCARD_UNDO_MS = 8_000L
-/** How often the Undo timer rule is redrawn. */
-const val DISCARD_TICK_MS = 100L
-
-/**
- * Undo's spoken words carry what is left of the window ([secondsLeft]), computed when TalkBack
- * asks for the node; no live region and no event per tick, so nothing chatters while it runs.
- */
-fun bindUndoSecondsLeft(undo: View, secondsLeft: () -> Int) {
-    undo.accessibilityDelegate = object : View.AccessibilityDelegate() {
-        override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
-            super.onInitializeAccessibilityNodeInfo(host, info)
-            val left = secondsLeft()
-            info.contentDescription = host.resources.getQuantityString(R.plurals.undo_discard_left, left, left)
-        }
-    }
-}
-
 /** The inline Cancel choice a take can have open. RECORDING: the take is paused. FINISHING: delivery held. */
 enum class PanelChoice { RECORDING, FINISHING }
 
@@ -35,8 +16,6 @@ enum class PanelChoice { RECORDING, FINISHING }
 data class PanelFrame(
     /** The open choice, or null. */
     val choice: PanelChoice? = null,
-    /** Take discarded · Undo: the window is open; only Undo and Back show. */
-    val undo: Boolean = false,
     /** Preparing text…: the arc replaces the microphone disk. */
     val preparing: Boolean = false,
     /** The disk's glyph is the Stop square (a take is open and recording); otherwise the mic. */
@@ -49,8 +28,8 @@ data class PanelFrame(
 
 /**
  * Renders [frame] on [panel] (built from ime.xml, either orientation). Portrait and the phone's
- * landscape: the choice and Undo take the stage's place, the preview stays and the panel keeps its
- * height. A narrow landscape window (under 600dp, `panel_choice_over_stage` false): they take the
+ * landscape: the choice takes the stage's place, the preview stays and the panel keeps its
+ * height. A narrow landscape window (under 600dp, `panel_choice_over_stage` false): it takes the
  * preview's place in the status column and the stage stays empty. The safe action takes focus when a choice
  * opens, so a hardware key or TalkBack lands on it; one tap still chooses it.
  */
@@ -59,7 +38,7 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     val open = frame.choice
     val overStage = context.resources.getBoolean(R.bool.panel_choice_over_stage)
     val choice = panel.findViewById<View>(R.id.choice)
-    choice?.visibility = if (open != null && !frame.undo) View.VISIBLE else View.GONE
+    choice?.visibility = if (open != null) View.VISIBLE else View.GONE
     val safe = panel.findViewById<ImageButton>(R.id.choice_safe)
     val safeLabel = context.getString(if (open == PanelChoice.FINISHING) R.string.keep_finishing else R.string.continue_recording)
     safe?.contentDescription = safeLabel
@@ -71,11 +50,9 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         TooltipCompat.setTooltipText(it, it.contentDescription)
     }
     panel.findViewById<View>(R.id.choice_discard)?.let { TooltipCompat.setTooltipText(it, it.contentDescription) }
-    panel.findViewById<View>(R.id.undo_group)?.visibility = if (frame.undo) View.VISIBLE else View.GONE
-    panel.findViewById<View>(R.id.undo_timer)?.visibility = if (frame.undo) View.VISIBLE else View.GONE
 
-    // The stage: in a choice or the Undo window there is no microphone to tap by mistake.
-    val covered = open != null || frame.undo
+    // The stage: in a choice there is no microphone to tap by mistake.
+    val covered = open != null
     val disk = when {
         covered || frame.preparing -> View.INVISIBLE
         else -> View.VISIBLE
@@ -88,7 +65,7 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     panel.findViewById<View>(R.id.processing)?.visibility = if (frame.preparing && !covered) View.VISIBLE else View.GONE
     panel.findViewById<View>(R.id.preview)?.visibility = when {
         !covered -> View.VISIBLE
-        overStage -> if (frame.undo) View.INVISIBLE else View.VISIBLE
+        overStage -> View.VISIBLE
         else -> View.GONE
     }
     panel.findViewById<ImageView>(R.id.status_marker)?.apply {
@@ -96,13 +73,9 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         if (frame.unableToInsert) setImageResource(R.drawable.ic_marker_not_inserted)
     }
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
-    if (open != null && !frame.undo && safe != null) {
+    if (open != null && safe != null) {
         safe.isFocusableInTouchMode = true
         safe.requestFocus()
         safe.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED)
-    }
-    if (frame.undo) panel.findViewById<View>(R.id.undo_discard)?.let {
-        it.isFocusableInTouchMode = true
-        it.requestFocus()
     }
 }

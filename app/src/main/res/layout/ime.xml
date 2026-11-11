@@ -35,14 +35,9 @@
             android:layout_width="match_parent"
             android:layout_height="200dp">
             <include layout="@layout/panel_stage" />
-            <!-- The paused choice and Undo take the stage's place; the panel height does not change. -->
+            <!-- The paused choice takes the stage's place; the panel height does not change. -->
             <include
                 layout="@layout/panel_choice"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center" />
-            <include
-                layout="@layout/panel_undo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center" />

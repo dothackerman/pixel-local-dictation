@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The panel's status block, shared by both orientations: Back, status and its marker slot, the
-     Undo timer rule, the private-field line and the preview (newest of three lines last). -->
+     private-field line and the preview (newest of three lines last). -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools">
     <LinearLayout
@@ -67,35 +67,20 @@
         android:textAppearance="?attr/textAppearanceLabelMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
-    <!-- The preview's place; the Undo timer rule sits at its top while the preview is hidden, so
-         the panel keeps its height. The preview's measure stops at 28em (about 70 characters,
-         PreviewTextView), which only the wide landscape column reaches. -->
-    <FrameLayout
+    <!-- The preview's measure stops at 28em (about 70 characters, PreviewTextView), which only
+         the wide landscape column reaches. -->
+    <ch.og.dictation.PreviewTextView
+        android:id="@+id/preview"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="56dp">
-        <ch.og.dictation.PreviewTextView
-            android:id="@+id/preview"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingEnd="12dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:minLines="3"
-            android:maxLines="3"
-            android:ellipsize="start"
-            android:gravity="bottom"
-            android:breakStrategy="high_quality"
-            android:hyphenationFrequency="normal" />
-        <!-- Take discarded: what is left of the Undo window, as a 2dp rule (same model as History delete). -->
-        <ch.og.dictation.UndoTimerView
-            android:id="@+id/undo_timer"
-            android:layout_width="match_parent"
-            android:layout_height="2dp"
-            android:layout_gravity="top"
-            android:layout_marginTop="4dp"
-            android:layout_marginEnd="12dp"
-            android:importantForAccessibility="no"
-            android:visibility="gone" />
-    </FrameLayout>
+        android:layout_marginStart="56dp"
+        android:paddingEnd="12dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:minLines="3"
+        android:maxLines="3"
+        android:ellipsize="start"
+        android:gravity="bottom"
+        android:breakStrategy="high_quality"
+        android:hyphenationFrequency="normal" />
 </merge>

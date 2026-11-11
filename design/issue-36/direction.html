@@ -108,12 +108,9 @@ td.g.lose{opacity:.55}
 .ib{all:unset;box-sizing:border-box;width:calc(48*var(--u));height:calc(48*var(--u));display:grid;place-items:center;color:var(--onSurface);flex:0 0 auto;cursor:pointer}
 .ib svg{width:calc(24*var(--u));height:calc(24*var(--u))}
 .status{flex:1;font-family:var(--disp);font-weight:800;font-size:calc(18*var(--u)*var(--fs));line-height:1.2;letter-spacing:.01em}
-.undobtn{all:unset;box-sizing:border-box;cursor:pointer;min-width:calc(128*var(--u));min-height:calc(56*var(--u));display:grid;place-items:center;padding:0 calc(24*var(--u));background:var(--primary);color:var(--onPrimary);font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(18*var(--u)*var(--fs))}
 .undo{all:unset;cursor:pointer;color:var(--primary);text-decoration:underline;text-decoration-thickness:calc(2*var(--u));text-underline-offset:calc(3*var(--u));display:inline-flex;align-items:center;min-height:calc(48*var(--u));padding:0 calc(4*var(--u))}
 .slot{flex:0 0 auto;width:calc(48*var(--u));height:calc(48*var(--u));display:grid;place-items:center;color:var(--onSurface)}
 .slot svg{width:calc(24*var(--u));height:calc(24*var(--u))}
-.timer{margin:0 calc(8*var(--u)) calc(6*var(--u)) calc(56*var(--u));height:calc(4*var(--u));background:var(--outlineVariant);position:relative}
-.timer i{position:absolute;inset:0 auto 0 0;width:62%;background:var(--onSurface)}
 .helper{display:flex;gap:calc(6*var(--u));align-items:center;margin:calc(-6*var(--u)) 0 calc(6*var(--u)) calc(56*var(--u));font-family:var(--disp);font-weight:700;letter-spacing:.02em;font-size:calc(14*var(--u)*var(--fs));line-height:1.3;color:var(--onSurfaceVariant)}
 .helper svg{flex:0 0 auto;width:calc(16*var(--u));height:calc(16*var(--u))}
 /* preview: always 3 lines, newest last; older lines clip at the top */
@@ -243,7 +240,6 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
 </header>
 
 <section class="decide" aria-label="Decisions needed from the owner"><h3>Decisions needed from you</h3><ol>
-<li><b>Undo for about 8 s after "Discard take"</b> (frame "Take discarded · Undo"). If you decline, Discard stays final as it is today. It is protected only by the two-step Back → paused choice, and Error prevention drops by about one point.</li>
 <li><b>The "Marks explained" sheet</b> (History menu, and a tap on the detail line). If you decline, the markers are explained only by the detail sentence and TalkBack, and the detail line is no longer tappable.</li></ol></section>
 <h2>Recording panel</h2>
 <p class="sub">The microphone button looks the same in every state: a red-orange disk with a white glyph. The state shows in the glyph (microphone or Stop), the ring (hairline at rest, soft red-orange ink while recording, reaching outward unevenly with loudness) and the status line. The status row's trailing slot carries a History marker only when nothing else on the panel shows the state (today: Unable to insert text). The preview always shows 3 lines, newest last; at 2× older lines clip at the top.</p>
@@ -268,7 +264,7 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
     <div>
       <h3>Measured contrast</h3>
       <table id="pairs"><thead><tr><th>Pair</th><th class="num">Ratio</th><th class="num">Needs</th><th></th></tr></thead><tbody></tbody></table>
-      <p class="note">These are WCAG 2.x ratios, computed in this page from the colour table. Text needs 4.5:1. Arcs, disks, rings, markers and control edges need 3:1. Error and brand red-orange are close in lightness, so a destructive control is never told apart by colour alone. Discard is the only dashed button, carries the trash glyph, sits apart from the others, and is followed by an Undo window.</p>
+      <p class="note">These are WCAG 2.x ratios, computed in this page from the colour table. Text needs 4.5:1. Arcs, disks, rings, markers and control edges need 3:1. Error and brand red-orange are close in lightness, so a destructive control is never told apart by colour alone. Discard is the only dashed button, carries the trash glyph, and sits apart from the others; Discard is final at once (owner, 2026-11-11), so these are the protection against a slip.</p>
     </div>
   </div>
 </section>
@@ -296,14 +292,14 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
 
 <script>
 const P={surface:'#F3E9D4',surfaceContainer:'#E9DCC1',surfaceContainerHigh:'#DDCEAF',onSurface:'#1C1A12',onSurfaceVariant:'#4E4838',primary:'#A52E07',onPrimary:'#FFFFFF',primaryContainer:'#FFD8C6',onPrimaryContainer:'#3A0E00',inversePrimary:'#FFB59A',secondary:'#2E4A21',onSecondary:'#FFFFFF',secondaryContainer:'#CFE0BC',onSecondaryContainer:'#13240A',outline:'#6D6550',outlineVariant:'#C7B999',error:'#8A1145',onError:'#FFFFFF',errorContainer:'#F8D7E3',onErrorContainer:'#3D0019'};
-const USE={surface:'Screen ground (Settings, Dictionary, History), menu, sheet',surfaceContainer:'Recording panel ground',surfaceContainerHigh:'Switch track off, search field, pressed rows',onSurface:'Status, titles, transcripts, markers, Stop outline, selected ring, Snackbar ground',onSurfaceVariant:'Preview, helper line, explanations, time meta, counts, trash icon',primary:'Mic disk (every state), recording ring and marker, preparing arc, Continue fill, panel Undo',onPrimary:'Mic, Stop and Continue glyphs',primaryContainer:'Text selection',onPrimaryContainer:'Text on selection',inversePrimary:'Snackbar Undo',secondary:'Switch on (rind green)',onSecondary:'Switch thumb on',secondaryContainer:'History warning row',onSecondaryContainer:'Text on warning row',outline:'Panel top rule, idle hairline ring, switch edge',outlineVariant:'Row hairlines, arc track, Undo timer track',error:'Discard (dashed), Clear History, Delete benchmark data',onError:'Confirm button in Clear History dialog',errorContainer:'Benchmark banner, failure rows',onErrorContainer:'Text on errorContainer'};
+const USE={surface:'Screen ground (Settings, Dictionary, History), menu, sheet',surfaceContainer:'Recording panel ground',surfaceContainerHigh:'Switch track off, search field, pressed rows',onSurface:'Status, titles, transcripts, markers, Stop outline, selected ring, Snackbar ground',onSurfaceVariant:'Preview, helper line, explanations, time meta, counts, trash icon',primary:'Mic disk (every state), recording ring and marker, preparing arc, Continue fill',onPrimary:'Mic, Stop and Continue glyphs',primaryContainer:'Text selection',onPrimaryContainer:'Text on selection',inversePrimary:'Snackbar Undo',secondary:'Switch on (rind green)',onSecondary:'Switch thumb on',secondaryContainer:'History warning row',onSecondaryContainer:'Text on warning row',outline:'Panel top rule, idle hairline ring, switch edge',outlineVariant:'Row hairlines, arc track',error:'Discard (dashed), Clear History, Delete benchmark data',onError:'Confirm button in Clear History dialog',errorContainer:'Benchmark banner, failure rows',onErrorContainer:'Text on errorContainer'};
 const PAIRS=[
  ['onSurface','surface',4.5,'Transcript, row preview on screens'],
  ['onSurface','surfaceContainer',4.5,'Panel status, Stop outline, selected ring'],
  ['onSurfaceVariant','surface',4.5,'Explanation, time meta, counts, trash icon'],
  ['onSurfaceVariant','surfaceContainer',4.5,'Panel preview and helper line'],
  ['onPrimary','primary',4.5,'Mic / Stop / Continue glyph on red-orange'],
- ['primary','surfaceContainer',4.5,'Panel Undo (text); also arc, disk, ring, Continue fill (3:1)'],
+ ['primary','surfaceContainer',3,'Arc, disk, ring, Continue fill'],
  ['primary','surface',3,'Recording marker in History rows'],
  ['inversePrimary','onSurface',4.5,'Snackbar Undo'],
  ['surface','onSurface',4.5,'Snackbar text'],
@@ -395,7 +391,7 @@ const nav=`<div class="navbar"><i></i></div>`;
 const kb=()=>{const row=s=>`<div class="r">${[...s].map(c=>`<span class="k">${c}</span>`).join('')}</div>`;
  return `<div class="kb" aria-label="Dark keyboard (stand-in)"><div class="sugg"><span>Kürbis</span><span>Kürbissuppe</span>${G.mic}</div>${row('qwertzuiopü')}${row('asdfghjklöä')}<div class="r"><span class="k w">⇧</span>${[...'yxcvbnm'].map(c=>`<span class="k">${c}</span>`).join('')}<span class="k w">⌫</span></div><div class="r"><span class="k w">?123</span><span class="k">,</span><span class="k sp"></span><span class="k">.</span><span class="k w">⏎</span></div></div>`};
 
-const BACK={idle:'Back to keyboard',private:'Back to keyboard',rec:'Pause and choose',paused:'Continue recording',fin:'Back to keyboard',saved:'Back to keyboard',discarded:'Back to keyboard'};
+const BACK={idle:'Back to keyboard',private:'Back to keyboard',rec:'Pause and choose',paused:'Continue recording',fin:'Back to keyboard',saved:'Back to keyboard'};
 function panel(st){
  const top=(status,m)=>`<div class="p-top"><button class="ib" aria-label="${BACK[st]}">${G.arrow_back}</button><div class="status" role="status">${status}</div>${m?mk(m,'slot'):''}</div>`;
  const ring=k=>`<svg class="ring" data-ring="${k}" viewBox="0 0 300 196" aria-hidden="true"></svg>`;
@@ -410,7 +406,6 @@ function panel(st){
     <button class="ibtn out" aria-label="Stop and insert">${G.stop}</button>
     <span class="sp"></span>
     <button class="ibtn danger" aria-label="Discard take">${G.delete}</button></div></div></div>`;
-  case 'discarded': return `<div class="panel"><div class="p-top"><button class="ib" aria-label="${BACK[st]}">${G.arrow_back}</button><div class="status" role="status">Take discarded</div></div><div class="timer" role="progressbar" aria-label="Undo available for 5 more seconds"><i></i></div><div class="stage"><button class="undobtn" aria-label="Undo discard">Undo</button></div></div>`;
   case 'fin': return `<div class="panel">${top('Preparing text…')}${pv}<div class="stage">
     <svg class="arc move" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="var(--outlineVariant)" stroke-width="5"/><path d="M32 5a27 27 0 0 1 27 27" fill="none" stroke="var(--primary)" stroke-width="5"/></svg>
     <svg class="arc rest" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="var(--primary)" stroke-width="5" stroke-dasharray="11.3 5.67" transform="rotate(-90 32 32)"/></svg></div></div>`;
@@ -474,7 +469,6 @@ const PANEL=[
  [()=>docked('idle'),'<b>After: idle panel</b> · the light/dark jump you are choosing. A red-orange disk with a mic glyph and a hairline ring. A 2dp rule closes the panel against the host app.'],
  [()=>docked('rec'),'<b>Recording</b> · same disk, now with a Stop square. A thick ring follows loudness. Back pauses and opens the choice. There is no marker in the slot, because the ring already shows the state.'],
  [()=>docked('paused'),'<b>Paused</b> · three icon buttons at one height. Continue is filled and pre-selected, Stop is outlined, Discard is dashed and set apart. Back here means Continue recording.','<div class="callout"><b>Long-press tooltips (TooltipCompat), also the TalkBack labels</b><ol><li>Continue recording</li><li>Stop and insert</li><li>Discard take</li></ol></div>'],
- [()=>docked('discarded'),P_+'<b>Take discarded · Undo</b> · while Undo is offered, the panel shows only Undo and Back. No mic, so nothing ends the window by accident. A timer rule shows the 8 s left, the same model as History delete. Then the panel returns to the keyboard. Today a confirmed Discard is final.'],
  [()=>docked('fin'),'<b>Preparing text…</b> · a small red-orange arc and no disk. With animations off it becomes a static segmented ring, so it never reads as a stuck spinner. There is no marker in the slot, because the arc already shows the state.'],
  [()=>docked('saved'),'<b>Unable to insert text</b> · the status line and its marker, nothing more. Back is the way out. The mic stays for a new take.'],
  [()=>docked('private'),'<b>Private field</b> · a plain lock line in the condensed label face, tucked under the status. It is not in the preview\'s face.']

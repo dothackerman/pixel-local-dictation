@@ -23,7 +23,7 @@ WCAG contrast: every pair passes. The page lists all of them.
 | Panel status | 12.8 |
 | Preview | 6.7 |
 | Glyph on the disk | 7.0 |
-| Arc, disk, ring and panel Undo | 5.17 |
+| Arc, disk and ring | 5.17 |
 | Snackbar Undo | ≥4.5 |
 | Row markers | 14.4 |
 
@@ -39,9 +39,7 @@ WCAG contrast: every pair passes. The page lists all of them.
 - **Preparing text…:** an animated arc. With animations off it becomes a static segmented ring.
 - **Unable to insert text:** the status plus its marker. Back exits and the mic stays.
 - **Preview:** always 3 lines, newest last.
-- **PROPOSED, needs approval: Take discarded · Undo.** After Discard, Undo stays available for 8 s with a timer rule, then the panel returns to the keyboard.
-  - **Rule:** while Undo is offered, the panel shows only Undo (a filled primary button) and Back. There is no mic, so nothing ends the window by accident. The mic returns with the keyboard when the window ends.
-  - Today a confirmed Discard is final, so this changes the service's discard path: delay the delete and keep the take until the window closes.
+- **Discard take is final at once** (owner, 2026-11-11): no Undo in the panel, which shows Idle straight away. The dashed, set-apart Discard is the protection against a slip.
 
 ## Wording
 
@@ -91,7 +89,6 @@ Rules:
 - **Dashed Discard border:** `GradientDrawable` with `setStroke(width, color, dashWidth, dashGap)`.
 - **Square switch:** `MaterialSwitch` with custom track and thumb drawables (0dp rectangles), a track tint list for on/off, and a thumb that moves. Sizes sit on `<layer-list>` items (track 52×32dp, thumb cell 32dp holding a 20dp on / 16dp off square): a bare selector has no size until its state is set, and the switch then measured about 29×16dp on the device.
 - **Underlined text button** (Delete benchmark data): an `UnderlineSpan` on a `MaterialButton.TextButton`.
-- **Panel Undo:** a filled `MaterialButton` (primary, 0dp corners, at least 56dp tall), not a span.
 - **Line breaking:** `breakStrategy="high_quality"` and `hyphenationFrequency="normal"` on transcripts. For German compounds at 2×, check the panel status with `lineBreakWordStyle="phrase"`.
 - **Preview clipped to the newest 3 lines:** `maxLines=3` with `ellipsize=start`, plus `gravity=bottom`. This keeps the current 240-character whole-word tail.
 - **Markers:** `ic_marker_*.xml` vector drawables. Each row puts one `ImageView` in its slot, with `importantForAccessibility=no`; the words go into the row's content description.
@@ -106,7 +103,7 @@ Rules:
 - Type and fonts: `type.xml`, `res/font/*`.
 - Icons: `drawable/ic_*.xml`.
 - Manifest.
-- `DictationImeService.kt`: themed context, paused trio, marker slot, proposed Undo.
+- `DictationImeService.kt`: themed context, paused trio, marker slot.
 - Remove DynamicColors.
 - Panel: both `ime.xml`, `RecordingRingView.kt`.
 - History: `history*.xml`, `menu/history.xml`, the new marks sheet, `HistoryActivity.kt`.
@@ -126,5 +123,4 @@ Rules:
 - **The light/dark jump.**
 - **Icon-only paused buttons** on first use.
 - **Markers are a new convention**, mitigated by the sheet.
-- **The Undo window is unapproved behaviour.**
 - **Not verified:** the page's glyphs are hand drawings; the device; TalkBack.

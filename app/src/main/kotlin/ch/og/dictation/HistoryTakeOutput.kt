@@ -9,7 +9,7 @@ class HistoryTakeOutput(
     private val store: () -> HistoryStore,
     private val io: Executor,
     private val onSaveFailure: () -> Unit,
-    id: String = UUID.randomUUID().toString(),
+    private val id: String = UUID.randomUUID().toString(),
     private val timestamp: Long = System.currentTimeMillis(),
     private val delivery: Executor = Executor { it.run() },
     private val onDeleteFailure: () -> Unit = onSaveFailure,
@@ -17,14 +17,7 @@ class HistoryTakeOutput(
     private val onTakeFailure: (hasDurablePrefix: Boolean) -> Unit = {},
     private val timeline: TimelineObserver? = null,
 ) : TakeOutput by delegate {
-    /** Changes only when Undo restores a discarded take: the old id carries a deletion marker. */
-    @Volatile private var id = id
     private var eligible = false
-    // Delivery executor only: what Undo of a pending discard saves again.
-    private var lastText: String? = null
-    private var lastFinal = false
-    private var finishingNow = false
-    private var historySuspended = false
     private var saved = false // Serial I/O executor only.
     private val lock = Any()
     private data class Pending(
@@ -46,7 +39,7 @@ class HistoryTakeOutput(
         this.eligible = eligible
         if (eligible) HistoryProcess.owner.register(id)
     }
-    override fun finishingHistory() { finishingNow = true; if (eligible) HistoryProcess.owner.finishing(id) }
+    override fun finishingHistory() { if (eligible) HistoryProcess.owner.finishing(id) }
     override fun finished(result: TakeResult, pcm: ByteArray) {
         if (eligible && result.outcome == TakeOutcome.FAILED && result.text == null) {
             // Run after all prior checkpoints so the persistent warning reflects what
@@ -58,16 +51,14 @@ class HistoryTakeOutput(
     }
     override fun preview(text: String) {
         delegate.preview(text)
-        if (eligible && text.isNotEmpty()) { remember(text, false); enqueue(Pending(text, null)) }
+        if (eligible && text.isNotEmpty()) enqueue(Pending(text, null))
     }
     override fun preview(text: String, sourceEndSample: Long?) {
         delegate.preview(text)
         if (eligible && text.isNotEmpty()) {
-            remember(text, false)
             enqueue(Pending(text, null, sourceEndSample = sourceEndSample))
         }
     }
-    private fun remember(text: String, final: Boolean) { if (!lastFinal) { lastText = text; lastFinal = final } }
     private fun enqueue(next: Pending) {
         var rejected = false
         var queuedWork: Pending? = null
@@ -114,7 +105,6 @@ class HistoryTakeOutput(
                 var interruptedSaved = false
                 try {
                     val history = store()
-                    val id = this@HistoryTakeOutput.id // One id per write, even if Undo renews it meanwhile.
                     if (work.interruptedReady != null) {
                         val durable = history.checkpoint(HistoryEntry(id, timestamp, work.text, HistoryDelivery.UNKNOWN, HistoryCompletion.INTERRUPTED, work.revision))
                         val committed = history.get(id)
@@ -157,7 +147,6 @@ class HistoryTakeOutput(
         if (!retentionEligible) { eligible = false; ready(); return }
         eligible = true
         if (text.isEmpty()) { ready(); return }
-        remember(text, true)
         enqueue(Pending(text, ready, sourceEndSample = sourceEndSample))
     }
     override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) {
@@ -179,29 +168,6 @@ class HistoryTakeOutput(
         // Serial I/O: runs after any checkpoint already being written.
         io.execute { try { store().delete(id) } catch (_: Exception) { onDeleteFailure() } }
     }
-    /** Pending Discard: History stops listing the take (its file is deleted); the text stays in memory for Undo. */
-    override fun suspendHistory() {
-        if (!eligible || historySuspended) return
-        historySuspended = true
-        val old = id
-        synchronized(lock) { suppressed = true; pending = null; pendingAfterTerminal = null }
-        HistoryProcess.owner.remove(old)
-        io.execute { try { store().delete(old) } catch (_: Exception) { onDeleteFailure() } }
-    }
-
-    /** Undo: the take is saved again under a new id (the old one is tombstoned) with its latest text. */
-    override fun resumeHistory() {
-        if (!historySuspended) return
-        historySuspended = false
-        if (!eligible) return
-        id = UUID.randomUUID().toString()
-        HistoryProcess.owner.register(id)
-        if (finishingNow) HistoryProcess.owner.finishing(id)
-        synchronized(lock) { suppressed = false; finalQueued = false }
-        val text = lastText ?: return
-        enqueue(Pending(text, if (lastFinal) ({}) else null))
-    }
-
     override fun discardStaged(done: (Boolean) -> Unit) {
         if (eligible) {
             synchronized(lock) { suppressed = true; pending = null }

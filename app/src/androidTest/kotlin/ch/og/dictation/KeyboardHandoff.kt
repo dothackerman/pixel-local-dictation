@@ -176,8 +176,8 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
                 discard != null -> {
                     status("hand-back $attempt: our prompt up, Discard")
                     discard.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    // Discard opens an Undo window (#36); our Back makes it final and hands back.
-                    waitFor(1_000) { futoSelected() || ourNode(R.id.undo_discard) != null }
+                    // Discard is final at once and leaves our idle panel (#36); our Back hands back.
+                    waitFor(1_000) { futoSelected() || ourPromptDiscard() == null }
                     if (!futoSelected()) runCatching { clickOurs(R.id.back) }.onFailure { status("hand-back $attempt: ${it.message}") }
                     waitFor(4_000) { futoSelected() }
                 }

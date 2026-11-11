@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Landscape on the phone: the choice and Undo take the stage's place, as in portrait. -->
+    <!-- Landscape on the phone: the choice takes the stage's place, as in portrait. -->
     <bool name="panel_choice_over_stage">true</bool>
     <!-- The trio fills the 272dp stage: Discard drawn 52dp from Stop. -->
     <dimen name="choice_gap">40dp</dimen>

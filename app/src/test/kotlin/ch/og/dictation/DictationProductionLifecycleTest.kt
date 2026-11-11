@@ -960,8 +960,6 @@ class DictationProductionLifecycleTest {
     private fun safe(panel: View) = panel.findViewById<ImageButton>(R.id.choice_safe)
     private fun stopAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_stop)
     private fun discardAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_discard)
-    private fun undoAction(panel: View) = panel.findViewById<View>(R.id.undo_discard)
-    private fun undoShown(panel: View) = panel.findViewById<View>(R.id.undo_group).visibility == View.VISIBLE
     private fun back(panel: View) = panel.findViewById<ImageButton>(R.id.back)
     private fun systemBack(service: DictationImeService) =
         service.onKeyDown(android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
@@ -1038,7 +1036,6 @@ class DictationProductionLifecycleTest {
         assertEquals("rotation never selects Discard", 1, rows().size)
         advance(ROTATION_SETTLE_MS)
         discardAction(returned).performClick()
-        advance(DISCARD_UNDO_MS)
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
@@ -1081,7 +1078,6 @@ class DictationProductionLifecycleTest {
     @Test fun finishingChoiceRenderedAgainAfterARotationDiscardRemovesSavedTextOnce() {
         val (_, next, returned) = finishingChoiceThroughARotation()
         discardAction(returned).performClick()
-        advance(DISCARD_UNDO_MS)
         settleHistory()
         advance(ROTATION_HOLD_GAP_MS)
         decode.drain(); settleHistory()
@@ -1410,157 +1406,50 @@ class DictationProductionLifecycleTest {
         assertEquals(service.getString(R.string.status_unable_insert), status(view))
     }
 
-    // --- Take discarded · Undo (#36): the discard is held for DISCARD_UNDO_MS, then final. ---
+    // --- Discard take (#36, owner 2026-11-11): final at once, from either choice; no Undo window. ---
 
-    /** Records one checkpoint, opens the paused choice and discards; returns what the window holds. */
-    private fun discardedWhilePaused(): Triple<DictationImeService, View, Input> {
+    /** Records one checkpoint, opens the paused choice and discards. */
+    private fun discardedWhilePaused(info: EditorInfo = editor(), drainFirst: Boolean = true): Triple<DictationImeService, View, Input> {
         val input = Input()
         devices.add(input)
-        val (service, view) = service(editor())
+        val (service, view) = service(info)
         feed(input, 1000, 1)
-        decode.drain(); settleHistory()
-        assertEquals(1, rows().size)
+        if (drainFirst) { decode.drain(); settleHistory() }
         back(view).performClick()
         discardAction(view).performClick()
-        settleHistory()
         return Triple(service, view, input)
     }
 
-    /** The final discard, exactly as before #36: capture released, saved text gone, nothing inserted. */
+    /** The discard is final: capture released, saved text gone, nothing inserted. */
     private fun assertDiscardFinal(input: Input) {
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory(); decode.drain(); settleHistory()
-        assertTrue("a final discard leaves nothing in History", rows().isEmpty())
+        assertTrue("a discard leaves nothing in History", rows().isEmpty())
         assertEquals(0, commits)
     }
 
-    @Test fun discardOffersUndoAndMeanwhileNothingIsInsertedRecordedOrListed() {
-        val (service, view, input) = discardedWhilePaused()
-        assertEquals(service.getString(R.string.status_discarded), status(view))
-        assertTrue(undoShown(view))
-        assertFalse("only Undo and Back while Undo is offered", choiceShown(view))
-        assertEquals("no microphone, so nothing ends the window by accident", View.INVISIBLE, button(view).visibility)
-        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.undo_timer).visibility)
-        // TalkBack can hear what is left of the window on Undo itself, without a ticking live region.
-        fun spoken() = undoAction(view).createAccessibilityNodeInfo().contentDescription.toString()
-        assertEquals("Undo discard take. 8 seconds left", spoken())
-        advance(3_000)
-        assertEquals("Undo discard take. 5 seconds left", spoken())
-        assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, undoAction(view).accessibilityLiveRegion)
-        assertEquals("the timer rule draws what is left", 5f / 8f, view.findViewById<UndoTimerView>(R.id.undo_timer).fraction, 0.02f)
+    /** The idle panel, microphone ready, on the panel itself (no hand-back to the keyboard). */
+    private fun assertIdlePanel(service: DictationImeService, view: View) {
+        assertFalse("no choice after Discard", choiceShown(view))
+        assertEquals(service.getString(R.string.status_idle), status(view))
+        assertEquals("", preview(view))
+        assertEquals(View.VISIBLE, button(view).visibility)
+        assertTrue("the microphone is ready for a new take", button(view).isEnabled)
+        assertEquals(service.getString(R.string.start_recording), button(view).contentDescription.toString())
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
-        assertFalse("the microphone is not recording", input.running)
-        assertEquals("the take is kept until the window ends", 0, input.releases.get())
-        assertTrue("the take is not visible in History", rows().isEmpty())
-        decode.drain(); settleHistory()
-        assertTrue("late output cannot list it", rows().isEmpty())
-        assertEquals(0, commits)
+    }
+
+    @Test fun discardFromThePausedChoiceIsFinalAtOnceAndLeavesTheIdlePanel() {
+        org.robolectric.shadows.ShadowLog.clear()
+        val (service, view, input) = discardedWhilePaused()
+        assertDiscardFinal(input)
+        assertIdlePanel(service, view)
+        assertFalse("the panel stays", org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
+        assertEquals("no new take by itself", 1, input.starts.get())
         assertNoWindow()
     }
 
-    @Test fun undoRestoresTheSameTakePausedAtTheChoiceWithItsSavedText() {
-        val (service, view, input) = discardedWhilePaused()
-        undoAction(view).performClick()
-        settleHistory()
-        assertTrue(choiceShown(view))
-        assertFalse(undoShown(view))
-        assertEquals(service.getString(R.string.status_paused), status(view))
-        assertTrue(safe(view).isFocused)
-        assertEquals("saved text intact", "old speech", rows().single().text)
-        assertEquals(0, input.releases.get())
-        advance(DISCARD_UNDO_MS * 2)
-        assertTrue("an undone discard never fires later", choiceShown(view))
-        assertEquals(0, input.releases.get())
-        safe(view).performClick()
-        assertEquals("same take, same microphone", 2, input.starts.get())
-        feed(input, 20000, 2)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); commits == 1 }
-        assertEquals(listOf("old speech private speech"), firstField.getValue(service).inserted)
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-    }
-
-    @Test fun undoWindowEndMakesTheDiscardFinalAndReturnsToTheKeyboard() {
-        val (_, view, input) = discardedWhilePaused()
-        org.robolectric.shadows.ShadowLog.clear()
-        advance(DISCARD_UNDO_MS - 100)
-        assertTrue(undoShown(view))
-        assertEquals(0, input.releases.get())
-        advance(200)
-        assertDiscardFinal(input)
-        assertFalse(undoShown(view))
-        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
-        assertEquals(View.VISIBLE, button(view).visibility)
-    }
-
-    @Test fun backDuringTheUndoWindowMakesTheDiscardFinal() {
-        val (_, view, input) = discardedWhilePaused()
-        back(view).performClick()
-        assertDiscardFinal(input)
-        assertFalse(undoShown(view))
-    }
-
-    @Test fun systemBackDuringTheUndoWindowMakesTheDiscardFinal() {
-        val (service, _, input) = discardedWhilePaused()
-        assertTrue(systemBack(service))
-        assertDiscardFinal(input)
-    }
-
-    @Test fun hidingThePanelDuringTheUndoWindowMakesTheDiscardFinalNotHistory() {
-        val (service, view, input) = discardedWhilePaused()
-        service.onFinishInputView(true)
-        assertDiscardFinal(input)
-        assertFalse(undoShown(view))
-        advance(DISCARD_UNDO_MS)
-        decode.drain(); settleHistory()
-        assertTrue(rows().isEmpty())
-    }
-
-    @Test fun lockDuringTheUndoWindowMakesTheDiscardFinal() {
-        val (_, _, input) = discardedWhilePaused()
-        screenOff()
-        assertDiscardFinal(input)
-    }
-
-    @Test fun serviceDestroyedDuringTheUndoWindowMakesTheDiscardFinal() {
-        val (service, _, input) = discardedWhilePaused()
-        service.onDestroy()
-        assertDiscardFinal(input)
-    }
-
-    @Test fun rotationDuringTheUndoWindowRendersUndoAgainAndUndoKeepsTheTake() {
-        DictationImeService.requestPanel = {}
-        val (service, _, input) = discardedWhilePaused()
-        val (next, returned) = rotateToRecreatedEditor(service)
-        assertTrue("the recreated panel renders the same Undo", undoShown(returned))
-        assertEquals(service.getString(R.string.status_discarded), status(returned))
-        advance(ROTATION_SETTLE_MS)
-        assertTrue("rotation never decides the discard", undoShown(returned))
-        assertEquals(0, input.releases.get())
-        assertTrue(rows().isEmpty())
-        undoAction(returned).performClick()
-        settleHistory()
-        assertTrue(choiceShown(returned))
-        assertEquals("old speech", rows().single().text)
-        stopAction(returned).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); commits == 1 }
-        assertEquals(listOf("old speech"), next.inserted)
-    }
-
-    @Test fun rotationDuringTheUndoWindowThenTheWindowEndsMakesTheDiscardFinal() {
-        DictationImeService.requestPanel = {}
-        val (service, _, input) = discardedWhilePaused()
-        val (next, returned) = rotateToRecreatedEditor(service)
-        advance(ROTATION_SETTLE_MS)
-        advance(DISCARD_UNDO_MS)
-        assertDiscardFinal(input)
-        assertFalse(undoShown(returned))
-        assertTrue(next.inserted.isEmpty())
-    }
-
-    @Test fun finishingDiscardOffersUndoAndUndoReturnsToTheHeldResult() {
+    @Test fun discardFromTheFinishingChoiceIsFinalAtOnceAndLeavesTheIdlePanel() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1568,36 +1457,43 @@ class DictationProductionLifecycleTest {
         button(view).performClick()
         await { input.releases.get() == 1 }
         back(view).performClick()
-        discardAction(view).performClick()
-        decode.drain(); settleHistory(); decode.drain(); settleHistory()
-        assertTrue(undoShown(view))
-        assertEquals("nothing is inserted during the window", 0, commits)
-        assertTrue("the take is not visible in History", rows().isEmpty())
-        undoAction(view).performClick()
-        settleHistory()
-        assertTrue(choiceShown(view))
         assertEquals(service.getString(R.string.status_finishing_choice), status(view))
-        assertEquals("old speech", rows().single().text)
-        safe(view).performClick()
-        await { settleHistory(); commits == 1 }
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-    }
-
-    @Test fun finishingDiscardBecomesFinalWhenTheWindowEnds() {
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor())
-        feed(input, 1000, 1)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        back(view).performClick()
         discardAction(view).performClick()
+        assertDiscardFinal(input)
+        assertIdlePanel(service, view)
+        advance(10_000)
         decode.drain(); settleHistory()
-        advance(DISCARD_UNDO_MS)
-        decode.drain(); settleHistory(); decode.drain(); settleHistory()
         assertEquals(0, commits)
         assertTrue(rows().isEmpty())
-        assertFalse(undoShown(view))
+    }
+
+    @Test fun lateDecoderOutputAfterADiscardChangesNothing() {
+        val (service, view, input) = discardedWhilePaused(drainFirst = false)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory(); decode.drain(); settleHistory()
+        assertTrue("late output cannot list it", rows().isEmpty())
+        assertEquals("late output is never inserted", 0, commits)
+        assertIdlePanel(service, view)
+    }
+
+    @Test fun rotationRightAfterADiscardLeavesTheIdlePanel() {
+        DictationImeService.requestPanel = {}
+        val (service, _, input) = discardedWhilePaused()
+        val (next, returned) = rotateToRecreatedEditor(service)
+        advance(ROTATION_SETTLE_MS)
+        assertDiscardFinal(input)
+        assertIdlePanel(service, returned)
+        assertTrue(next.inserted.isEmpty())
+        assertEquals("no new take by itself", 1, input.starts.get())
+    }
+
+    @Test fun discardInAPrivateFieldIsFinalAtOnceAndKeepsThePrivateLine() {
+        val (service, view, input) = discardedWhilePaused(editor(privateField = true))
+        assertDiscardFinal(input)
+        assertIdlePanel(service, view)
+        val notice = view.findViewById<TextView>(R.id.retention_notice)
+        assertEquals(View.VISIBLE, notice.visibility)
+        assertEquals(service.getString(R.string.retention_field_off), notice.text.toString())
     }
 
     @Test fun recordingChoiceDiscardRemovesCheckpointsAndNeverInserts() {
@@ -1609,7 +1505,6 @@ class DictationProductionLifecycleTest {
         assertEquals(1, rows().size)
         back(view).performClick()
         discardAction(view).performClick()
-        advance(DISCARD_UNDO_MS)
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
@@ -1735,7 +1630,6 @@ class DictationProductionLifecycleTest {
         decode.drain(); settleHistory()
         assertEquals(0, commits)
         discardAction(view).performClick()
-        advance(DISCARD_UNDO_MS)
         settleHistory()
         assertEquals(0, commits)
         assertTrue(rows().isEmpty())
@@ -1880,12 +1774,12 @@ class DictationProductionLifecycleTest {
     }
 
     /**
-     * Landscape on the phone (#36 critique P1): the choice and Undo sit in the stage under the
+     * Landscape on the phone (#36 critique P1): the choice sits in the stage under the
      * right thumb, where the microphone was; the preview stays readable while Stop or Discard is
      * decided, and the panel keeps its height in every state.
      */
     @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun landscapeChoiceAndUndoTakeTheStageAndKeepThePreview() {
+    fun landscapeChoiceTakesTheStageAndKeepsThePreview() {
         val input = Input()
         devices.add(input)
         val (_, view) = service(editor())
@@ -1910,16 +1804,10 @@ class DictationProductionLifecycleTest {
         assertEquals("the preview stays during the choice", View.VISIBLE, view.findViewById<View>(R.id.preview).visibility)
         assertEquals(words, preview(view))
         assertEquals("the choice keeps the panel height", height, view.height)
-        discardAction(view).performClick()
-        settleHistory()
-        layOut(view, 960)
-        assertTrue(undoShown(view))
-        inStage(R.id.undo_group)
-        assertEquals("Undo keeps the panel height", height, view.height)
-        undoAction(view).performClick()
-        settleHistory()
         stopAction(view).performClick()
         await { decode.drain(); settleHistory(); commits == 1 }
+        layOut(view, 960)
+        assertEquals("the idle panel keeps the panel height", height, view.height)
     }
 
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {

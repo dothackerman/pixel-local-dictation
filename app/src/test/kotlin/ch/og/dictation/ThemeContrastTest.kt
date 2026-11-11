@@ -51,7 +51,7 @@ class ThemeContrastTest {
         Triple("colorOnSurface", "colorSurfaceContainer", 4.5),   // panel status
         Triple("colorOnSurfaceVariant", "colorSurface", 4.5),     // explanations, times, counts
         Triple("colorOnSurfaceVariant", "colorSurfaceContainer", 4.5), // panel preview, private-field line
-        Triple("colorOnPrimary", "colorPrimary", 4.5),            // Undo label, glyphs on the disk
+        Triple("colorOnPrimary", "colorPrimary", 4.5),            // glyphs on the disk and Continue
         Triple("colorPrimary", "colorSurfaceContainer", 4.5),     // red-orange on the panel
         Triple("colorPrimaryInverse", "colorSurfaceInverse", 4.5), // Snackbar Undo
         Triple("colorOnSurfaceInverse", "colorSurfaceInverse", 4.5), // Snackbar text

@@ -8,15 +8,6 @@
     <string name="back_to_keyboard">Back to keyboard</string>
     <!-- The take ended without insertion (system interruption); its marker sits in the status row. -->
     <string name="status_unable_insert">Unable to insert text</string>
-    <!-- Take discarded · Undo (#36): the discard becomes final when the window ends. -->
-    <string name="status_discarded">Take discarded</string>
-    <string name="undo_discard">Undo</string>
-    <string name="undo_discard_description">Undo discard take</string>
-    <!-- Undo's spoken words while the window runs: read when TalkBack reaches it, not announced per tick. -->
-    <plurals name="undo_discard_left">
-        <item quantity="one">Undo discard take. %d second left</item>
-        <item quantity="other">Undo discard take. %d seconds left</item>
-    </plurals>
     <!-- Back while Preparing text: holds the text and opens the choice. -->
     <string name="back_hold_and_choose">Hold text and choose</string>
 </resources>

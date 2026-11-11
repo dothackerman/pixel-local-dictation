@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Narrow landscape window (under 600dp, square stage): the choice and Undo take the
+    <!-- Narrow landscape window (under 600dp, square stage): the choice takes the
          preview's place in the status column; the stage stays empty. -->
     <bool name="panel_choice_over_stage">false</bool>
     <!-- Landscape keeps the editor visible: the preview gives the private-field line one of its

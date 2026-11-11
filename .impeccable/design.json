@@ -330,7 +330,7 @@
       {
         "name": "undo-window",
         "value": "8000ms linear",
-        "purpose": "Take discarded and History delete Undo windows; a 2dp timer rule on the panel."
+        "purpose": "History and Dictionary delete Undo windows (Snackbar)."
       }
     ],
     "breakpoints": [
@@ -356,14 +356,6 @@
       "description": "Three icon-only buttons at one height: Continue filled with a fixed selected ring, Stop outlined, Discard dashed in error and set 40dp apart.",
       "html": "<div class=\"ds-trio\"><button class=\"ds-cont\" aria-label=\"Continue recording\">&#9654;</button><button class=\"ds-stop\" aria-label=\"Stop and insert\">&#9632;</button><button class=\"ds-disc\" aria-label=\"Discard take\">&#128465;</button></div>",
       "css": ".ds-trio{display:flex;align-items:center;gap:8px;background:#E9DCC1;padding:16px}.ds-trio button{width:64px;height:56px;border-radius:0;font-size:20px;cursor:pointer;background:transparent}.ds-cont{background:#A52E07!important;color:#fff;border:0;box-shadow:0 0 0 2px #E9DCC1,0 0 0 4px #1C1A12}.ds-stop{border:2px solid #1C1A12;color:#1C1A12}.ds-disc{margin-left:32px;border:2px dashed #8A1145;color:#8A1145}.ds-trio button:focus-visible{outline:2px solid #1C1A12;outline-offset:4px}"
-    },
-    {
-      "name": "Panel Undo",
-      "kind": "button",
-      "refersTo": "panel-undo",
-      "description": "Take discarded: only Undo (filled) and Back for 8 s, with a 2dp timer rule.",
-      "html": "<div class=\"ds-undo\"><div class=\"ds-undo-rule\"><i></i></div><button>Undo</button></div>",
-      "css": ".ds-undo{background:#E9DCC1;padding:16px;display:grid;gap:24px;justify-items:center}.ds-undo-rule{width:100%;height:2px;background:#C7B999}.ds-undo-rule i{display:block;height:2px;width:60%;background:#1C1A12}.ds-undo button{min-width:112px;height:56px;border:0;border-radius:0;background:#A52E07;color:#fff;font:800 16px 'Big Shoulders Display',sans-serif;cursor:pointer}.ds-undo button:hover{filter:brightness(1.1)}.ds-undo button:focus-visible{outline:2px solid #1C1A12;outline-offset:3px}"
     },
     {
       "name": "History row",
@@ -399,7 +391,7 @@
       "Condensed display face for titles, times and counts",
       "Square corners, 2dp rules, 1dp hairlines",
       "One mark per History row, one sentence per mark",
-      "Undo after Discard take and after delete"
+      "Undo after delete; Discard take final at once"
     ],
     "rules": [
       {
@@ -427,7 +419,7 @@
       "Do resolve theme roles; hex only in values/colors.xml.",
       "Do give every state words: status, tooltips, one sentence per mark.",
       "Do keep 48dp targets (56dp on the panel) and check font scale 2 in both orientations.",
-      "Do keep Undo after deletion and after Discard take."
+      "Do keep Undo after deletion; Discard take in the panel is final at once (owner, 2026-11-11)."
     ],
     "donts": [
       "Don't add DayNight resources, dynamic colour or a second theme.",

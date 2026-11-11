@@ -36,10 +36,6 @@ interface TakeOutput {
     /** Stop keeping this take and remove what was kept (the take continues). */
     fun excludeHistory() {}
     fun discardStaged(done: (Boolean) -> Unit = {}) { done(true) }
-    /** Discard take is pending its Undo window: take the saved text out of History, keeping it in memory. */
-    fun suspendHistory() {}
-    /** Undo: save the take again (its latest text) and keep saving from here. */
-    fun resumeHistory() {}
     fun returnToKeyboard(): Boolean
     /** PCM is borrowed for this callback only and wiped immediately afterwards. */
     fun finished(result: TakeResult, pcm: ByteArray)
@@ -205,12 +201,6 @@ class TakeSession internal constructor(
         retentionEligible = false
         output.excludeHistory()
     }
-
-    /** Discard take awaits its Undo window: History stops listing the take; nothing else changes. */
-    fun suspendHistory() { if (state != State.ENDED) output.suspendHistory() }
-
-    /** Undo of a pending discard: the take is listed in History again with its latest text. */
-    fun resumeHistory() { if (state != State.ENDED) output.resumeHistory() }
 
     /** While recording: no audio is captured until [resume]; Stop, cancel and interrupt still apply. */
     var paused = false

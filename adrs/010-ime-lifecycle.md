@@ -148,6 +148,9 @@ an open choice, History-only end, layout at font 2 portrait/landscape light/dark
 
 ## Amendment — Undo after Discard take (#36)
 
+*Superseded by the next amendment (2026-11-11): Discard take is final at once again; the last
+paragraph (History-only end) still holds.*
+
 The owner approved the Crate B2 direction's Undo window. **Discard take no longer discards at
 once.** It opens an 8 s Undo window (`DISCARD_UNDO_MS`) in the panel: status "Take discarded",
 a shrinking timer rule, a filled Undo button and Back; no microphone, so nothing ends the window
@@ -173,3 +176,18 @@ Back to keyboard button, no detail line); the back arrow is the way out and the 
 for a new take. Evidence: host lifecycle tests for each exit path (window end, arrow Back,
 system Back, hide, lock, destroy), rotation inside the window (Undo after it, and the window
 ending after it), late decoder output during the window, and Undo from both choices.
+
+## Amendment — Discard take final at once (#36, 2026-11-11)
+
+Owner decision, 2026-11-11: **the panel's Undo window is removed.** In use the owner found the
+8 s wait after Discard unnecessary in the panel. Discard take, from the recording choice or the
+Still preparing text choice, is final at once — the pre-#36 discard: insertion revoked, saved
+text removed from History, capture released, later decoder output suppressed (nothing listed,
+nothing inserted). There is no "Take discarded" state: the panel shows its idle state at once
+(microphone ready, Back returns to the keyboard). A discard sets the explicit-start rule, as an
+interruption does, so a panel shown again (a rotation right after Discard, or the next show) never
+starts a take by itself; the microphone tap does. `TakeOutput.suspendHistory`/`resumeHistory`
+and the panel's Undo views are gone. Discard stays the dashed error-coloured button set apart
+from Stop, now the only protection against a slip; the safe action stays preselected. History's
+own Undo after delete is unchanged. Evidence: host lifecycle tests (discard final at once from
+both choices, late decoder output after Discard, rotation right after Discard, private field).

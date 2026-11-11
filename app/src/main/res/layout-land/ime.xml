@@ -2,7 +2,7 @@
 <!-- Narrow landscape window (under 600dp; the phone uses layout-w600dp-land/ime.xml): the same
      views, ids and rules as layout/ime.xml, side by side so the
      editor stays visible above. Status column on the start side, the stage under the right thumb;
-     under 600dp the stage is square (panel_stage_width_land). The paused choice and Undo take the
+     under 600dp the stage is square (panel_stage_width_land). The paused choice takes the
      preview's place in the column; the stage is then empty (no microphone to tap by mistake). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel"
@@ -44,12 +44,6 @@
             <include layout="@layout/panel_status" />
             <include
                 layout="@layout/panel_choice"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="56dp"
-                android:layout_marginBottom="8dp" />
-            <include
-                layout="@layout/panel_undo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="56dp"
