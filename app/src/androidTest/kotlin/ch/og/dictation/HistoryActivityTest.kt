@@ -34,7 +34,7 @@ class HistoryActivityTest {
         error("Missing view")
     }
     private fun ActivityScenario<HistoryTestActivity>.awaitText(text: String) =
-        awaitView { it is TextView && it.text.toString().contains(text) } as TextView
+        awaitView { it is TextView && HistoryUi.label(it).contains(text) } as TextView
     private fun ActivityScenario<HistoryTestActivity>.detailMeta(): String =
         query { it.findViewById<TextView>(R.id.history_detail_meta)?.text?.toString() }.orEmpty()
     private fun ActivityScenario<HistoryTestActivity>.awaitDetailMeta(text: String) {

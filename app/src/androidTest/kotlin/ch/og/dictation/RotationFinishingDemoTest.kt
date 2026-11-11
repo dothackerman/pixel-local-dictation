@@ -92,6 +92,7 @@ class RotationFinishingDemoTest {
         bound("choiceNotMade", rows().none { it.getString("event") in setOf("STOP_REQUESTED", "CANCEL_REQUESTED", "CAPTURE_RESUMED") })
         click(keys.ourButton(R.string.continue_recording))
         until(5_000, "resumed") { count("CAPTURE_RESUMED") == 1 }
+        current!!.expectedStarts = 2
         Thread.sleep(3_000)
         stop()
         expectInsertion()
@@ -123,6 +124,8 @@ class RotationFinishingDemoTest {
         val bounds = JSONObject()
         var inserted = ""
         var expectsInsertion = false
+        /** Platform microphone starts: one, plus one for each pause the take resumes from. */
+        var expectedStarts = 1
         var rotatedAt = 0L
         var panelBackMs = -1L
     }
@@ -321,7 +324,7 @@ class RotationFinishingDemoTest {
             File(context.filesDir, "lab/issue53/demo-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertEquals("one take", 1, count("CAPTURE_START"))
-            assertEquals("no restarted microphone", 1, starts.get())
+            assertEquals("microphone starts", state.expectedStarts, starts.get())
             assertTrue("more than one insertion", commits <= 1)
             if (state.expectsInsertion) {
                 assertEquals("TERMINAL_COMPLETED", terminal)
