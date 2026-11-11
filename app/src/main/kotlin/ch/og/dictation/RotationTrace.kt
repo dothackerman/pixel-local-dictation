@@ -29,11 +29,19 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         private var viewFinished = false
         private var captureStarted = false
         private var invalid = false
+        private var probeCase = "unspecified"
+        private var probeRun = "unspecified"
+        private val acquired = mutableSetOf<Pair<Long, Long>>()
         private val pending = mutableSetOf<Pair<Long, Long>>()
         private val released = mutableSetOf<Pair<Long, Long>>()
         private val terminal = mutableSetOf<Pair<Long, Long>>()
 
-        fun beginProbe() {
+        val allowedCases = setOf("signal-capture-rotation", "app-capture-rotation", "app-finishing-rotation",
+            "app-restart", "app-focus", "app-hide", "app-lock", "app-password", "app-no-learning")
+
+        fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
+            require(caseName in allowedCases)
+            require(runId.matches(Regex("[A-Za-z0-9-]{1,64}")))
             synchronized(probeLock) {
                 check(deadline == 0L || System.nanoTime() >= deadline) { "probe already active" }
                 deadline = 0L
@@ -45,6 +53,9 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                 viewFinished = false
                 captureStarted = false
                 invalid = false
+                probeCase = caseName
+                probeRun = runId
+                acquired.clear()
                 pending.clear()
                 released.clear()
                 terminal.clear()
@@ -61,15 +72,23 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                 RotationEvent.INPUT_VIEW_START -> { viewStarted = true; viewFinished = false }
                 RotationEvent.INPUT_VIEW_FINISH_DONE -> viewFinished = true
                 RotationEvent.SERVICE_ATTACH -> if (active == true) invalid = true
-                RotationEvent.CAPTURE_START -> if (take != null) { captureStarted = true; pending.add(service to take) }
+                RotationEvent.CAPTURE_START -> if (take != null) pending.add(service to take)
+                RotationEvent.CAPTURE_STARTED -> if (take != null && service to take in pending) { captureStarted = true; acquired.add(service to take) }
+                RotationEvent.CAPTURE_FAILED -> invalid = true
                 RotationEvent.TERMINAL_COMPLETED, RotationEvent.TERMINAL_CANCELLED,
                 RotationEvent.TERMINAL_INPUT_CHANGED, RotationEvent.TERMINAL_FAILED,
                 RotationEvent.TERMINAL_COMMIT_REJECTED -> if (take != null) terminal.add(service to take)
-                RotationEvent.CAPTURE_RELEASED, RotationEvent.CAPTURE_NOT_ACQUIRED ->
+                RotationEvent.CAPTURE_RELEASED -> if (take != null) released.add(service to take)
+                RotationEvent.CAPTURE_NOT_ACQUIRED -> {
+                    invalid = true
                     if (take != null) released.add(service to take)
+                }
                 else -> Unit
             }
-            if (take != null && service to take in terminal && service to take in released) pending.remove(service to take)
+            if (take != null && service to take in terminal && service to take in released) {
+                if (service to take !in acquired) invalid = true
+                pending.remove(service to take)
+            }
             probeLock.notifyAll()
         }
 
@@ -117,6 +136,9 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         val row = JSONObject().put("protocol", "ime-rotation-v1").put("process", process)
             .put("service", service).put("sequence", ++sequence).put("ns", System.nanoTime())
             .put("event", event.name)
+        if (probeScoped) synchronized(probeLock) {
+            row.put("case", probeCase).put("run", probeRun)
+        }
         active?.let { row.put("active", it) }
         authority?.let { row.put("authority", it) }
         flag?.let { row.put("flag", it) }

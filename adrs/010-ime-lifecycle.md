@@ -26,7 +26,10 @@ decode and storage. A view reattachment does not start another take; the person
 must explicitly start again. Service destruction is best-effort; process death
 preserves only durable checkpoints. Screen-off and unexpected microphone end use
 the same recovery path. Destination safety remains unchanged; no rotation
-continuity exception is enabled. Deliberate Cancel still discards immediately.
+continuity exception is enabled. An app-controlled Cancel requires confirmation. While the choice is open, recording
+continues or a finishing take holds its result before insertion. A system
+interruption overrides the choice and uses History recovery. A confirmed discard
+revokes insertion and removes the take's checkpoints.
 Eligible ordinary-field transcripts remain in no-backup History until deletion;
 password, no-learning and unclassifiable editors retain neither History nor
 benchmark content. Separately opted-in eligible benchmark Stop keeps its existing

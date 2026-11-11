@@ -166,6 +166,8 @@ class DictationProductionLifecycleTest {
         inputMethod.bindInput(InputBinding(connection, Binder(), 1000, 1000))
         inputMethod.startInput(connection, info)
         val view = panel(service)
+        val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        activity.setContentView(view)
         service.onStartInputView(info, false)
         if (accepted.get() == 0) decode.drain() // Initial warm-up only.
         pump()
@@ -185,6 +187,177 @@ class DictationProductionLifecycleTest {
         val app = RuntimeEnvironment.getApplication()
         val intent = Intent(Intent.ACTION_SCREEN_OFF)
         shadowOf(app).getReceiversForIntent(intent).single().onReceive(app, intent)
+    }
+
+    @Test fun recordingCancelOffersContinueWithoutStoppingTheTake() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        val originalId = rows().single().id
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull(dialog)
+        assertTrue(dialog.isShowing)
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        assertEquals(0, input.releases.get())
+        feed(input, 20000, 2)
+        decode.drain(); settleHistory()
+        assertEquals(originalId, rows().single().id)
+        assertEquals(0, commits)
+    }
+
+    @Test fun promptCancellationAndPanelRecreationKeepRecording() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        val id = rows().single().id
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertTrue(dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).isFocusable)
+        service.onCreateInputView()
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        assertSame(dialog, org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog())
+        dialog.cancel()
+        assertEquals(0, input.releases.get())
+        feed(input, 20000, 2)
+        decode.drain(); settleHistory()
+        assertEquals(id, rows().single().id)
+        assertEquals(0, commits)
+    }
+
+    @Test fun recordingPromptFinishStopsOnceAndInserts() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(1, commits)
+        assertEquals(1, input.releases.get())
+    }
+
+    @Test fun recordingPromptDiscardRemovesCheckpointsAndNeverInserts() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size)
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertTrue(rows().isEmpty())
+        assertEquals(0, commits)
+    }
+
+    @Test fun inputLossDismissesRecordingPromptAndKeepsInterruptedText() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        service.onFinishInputView(true)
+        assertFalse(dialog.isShowing)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory()
+        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        assertEquals(0, commits)
+    }
+
+    @Test fun finishingPromptHoldsDecodedTextUntilKept() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertTrue(dialog.isShowing)
+        assertTrue(dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).isFocusable)
+        decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        settleHistory()
+        assertEquals(1, commits)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h320dp-land")
+    fun attachedPromptsKeepSafeFocusAtLargeTextInLandscape() {
+        val app = RuntimeEnvironment.getApplication()
+        val config = android.content.res.Configuration(app.resources.configuration)
+        config.fontScale = 2f
+        app.resources.updateConfiguration(config, app.resources.displayMetrics)
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val recording = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, recording.window!!.attributes.type)
+        val root = recording.window!!.decorView
+        val width = (320 * app.resources.displayMetrics.density).toInt()
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        root.layout(0, 0, width, root.measuredHeight)
+        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
+        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_NEUTRAL, android.app.AlertDialog.BUTTON_POSITIVE)) {
+            val action = recording.getButton(which)
+            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
+        }
+        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).text.isNotEmpty())
+        recording.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val finishing = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, finishing.window!!.attributes.type)
+        val finishRoot = finishing.window!!.decorView
+        finishRoot.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        finishRoot.layout(0, 0, width, finishRoot.measuredHeight)
+        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
+        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_POSITIVE)) {
+            val action = finishing.getButton(which)
+            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
+        }
+        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_POSITIVE).text.isNotEmpty())
+        val safe = finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
+        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
+        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+        // Robolectric does not synthesize Button clicks from Enter; ensure it did not discard,
+        // then exercise the focused safe action explicitly.
+        assertEquals(0, commits)
+        if (finishing.isShowing) safe.performClick()
+        decode.drain(); settleHistory()
+        assertEquals(1, commits)
+    }
+
+    @Test fun finishingPromptDiscardSuppressesLateOutput() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        settleHistory()
+        assertEquals(0, commits)
+        assertTrue(rows().isEmpty())
     }
 
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
@@ -451,7 +624,7 @@ class DictationProductionLifecycleTest {
         }
     }
 
-    @Test fun regressionCancelledTakeIgnoresQueuedEndAndAllowsNewTake() {
+    @Test fun regressionUnexpectedEndOverridesPromptAndAllowsNewTake() {
         val original = Input()
         val next = Input()
         devices.add(original); devices.add(next)
@@ -468,7 +641,26 @@ class DictationProductionLifecycleTest {
         decode.drain(); settleHistory()
         assertEquals("private speech", preview(view))
         assertEquals(0, commits)
-        assertTrue(rows().none { it.text.contains("old speech") })
+        assertTrue(rows().any { it.text.contains("old speech") && it.completion == HistoryCompletion.INTERRUPTED })
+    }
+
+    @Test fun explicitRestartLatchesCurrentBenchmarkOptIn() {
+        val original = Input()
+        val next = Input()
+        devices.add(original); devices.add(next)
+        val app = RuntimeEnvironment.getApplication()
+        BenchmarkStore.setEnabled(app, true)
+        try {
+            val (service, view) = service(editor())
+            assertEquals(View.VISIBLE, view.findViewById<View>(R.id.benchmark_banner).visibility)
+            original.endUnexpectedly()
+            await { !MicrophoneOwner.state().occupied }
+            BenchmarkStore.setEnabled(app, false)
+            service.onStartInputView(editor(), true)
+            button(view).performClick()
+            await { next.starts.get() == 1 }
+            assertEquals(View.GONE, view.findViewById<View>(R.id.benchmark_banner).visibility)
+        } finally { BenchmarkStore.setEnabled(app, false) }
     }
 
     @Test fun regressionOldEndDeliveredAfterExplicitNewTakeDoesNotInterruptIt() {
@@ -479,13 +671,15 @@ class DictationProductionLifecycleTest {
         devices.add(original); devices.add(next)
         val (service, view) = service(editor())
         feed(original, 1000, 1)
+        view.findViewById<ImageButton>(R.id.back).performClick()
         original.endUnexpectedly()
         original.readerThread!!.join(2000)
         assertFalse(original.readerThread!!.isAlive)
         val oldEnd = heldEnd.poll(2, TimeUnit.SECONDS)
         assertNotNull("real capture-end delivery must be held", oldEnd)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        // Process cancellation and the separate release acknowledgement, keeping only
+        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+            .getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        // Process interruption and the separate release acknowledgement, keeping only
         // the old capture-end event out of the main queue.
         await { !MicrophoneOwner.state().occupied && button(view).isEnabled }
         MicrophoneOwner.requireExplicitStart()

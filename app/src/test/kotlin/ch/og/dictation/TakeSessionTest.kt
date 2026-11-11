@@ -353,4 +353,126 @@ class TakeSessionTest {
         assertTrue(result!!.interruptedSaved)
     }
 
+    @Test fun finishingChoiceHoldsDeliveryUntilKept() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val take = runtime.open(capture, output, direct)
+        take.start()
+        capture.feed(floatArrayOf(1f))
+        take.stop()
+        assertTrue(take.holdDelivery())
+        capture.drained(Result.success(byteArrayOf()))
+        assertTrue(output.inserted.isEmpty())
+        take.resumeDelivery()
+        assertEquals(listOf("word"), output.inserted)
+        take.resumeDelivery()
+        assertEquals(1, output.returns)
+    }
+
+    @Test fun finishingChoiceOpenedReentrantlyBeforeDispatchHoldsUntilKept() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        lateinit var take: TakeSession
+        var attempted = false
+        var commits = 0
+        var results = 0
+        val output = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun commit(text: String): Boolean = error("guarded commit required")
+            override fun commitAttempted() = attempted
+            override fun commit(text: String, allowed: () -> Boolean): Boolean {
+                if (commits == 0 && !attempted) assertTrue(take.holdDelivery())
+                if (!allowed()) return false
+                attempted = true
+                commits++
+                return true
+            }
+            override fun returnToKeyboard() = true
+            override fun finished(result: TakeResult, pcm: ByteArray) { results++ }
+        }
+        take = runtime.open(capture, output, direct)
+        take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+        capture.drained(Result.success(byteArrayOf()))
+        assertEquals(0, commits)
+        // The second dispatch must be allowed to proceed.
+        attempted = true
+        take.resumeDelivery()
+        assertEquals(1, commits)
+        assertEquals(1, results)
+    }
+
+    @Test fun finishingChoiceDuringDelayedSaveCanDiscardWithoutLateDelivery() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        lateinit var ready: () -> Unit
+        var commits = 0
+        var deletions = 0
+        val output = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun stage(text: String, retentionEligible: Boolean, callback: () -> Unit) { ready = callback }
+            override fun discardStaged(done: (Boolean) -> Unit) { deletions++; done(true) }
+            override fun commit(text: String): Boolean { commits++; return true }
+            override fun returnToKeyboard() = true
+            override fun finished(result: TakeResult, pcm: ByteArray) {}
+        }
+        val take = runtime.open(capture, output, direct)
+        take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+        capture.drained(Result.success(byteArrayOf()))
+        assertTrue(take.holdDelivery())
+        var deleted = false
+        take.cancel(onDiscarded = { deleted = it })
+        ready()
+        assertTrue(deleted)
+        assertEquals(1, deletions)
+        assertEquals(0, commits)
+    }
+
+    @Test fun finishingChoiceDuringDelayedSaveKeepsAndDeliversOnce() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        lateinit var ready: () -> Unit
+        var commits = 0
+        val output = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun stage(text: String, retentionEligible: Boolean, callback: () -> Unit) { ready = callback }
+            override fun commit(text: String): Boolean { commits++; return true }
+            override fun returnToKeyboard() = true
+            override fun finished(result: TakeResult, pcm: ByteArray) {}
+        }
+        val take = runtime.open(capture, output, direct)
+        take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+        capture.drained(Result.success(byteArrayOf()))
+        assertTrue(take.holdDelivery())
+        ready()
+        assertEquals(0, commits)
+        take.resumeDelivery()
+        take.resumeDelivery()
+        assertEquals(1, commits)
+    }
+
+    @Test fun failedDiscardRemainsSuppressedAndCanBeRetriedInHistory() {
+        val root = java.nio.file.Files.createTempDirectory("history-discard").toFile()
+        try {
+            val id = java.util.UUID.randomUUID().toString()
+            val store = HistoryStore(root)
+            var failDelete = false
+            var failures = 0
+            val output = HistoryTakeOutput(Output(), { if (failDelete) error("delete failure") else store }, direct,
+                onSaveFailure = {}, id = id, onDeleteFailure = { failures++ })
+            output.startHistory(true)
+            output.preview("word")
+            failDelete = true
+            var deleted = true
+            output.discardStaged { deleted = it }
+            assertFalse(deleted)
+            assertEquals(1, failures)
+            failDelete = false
+            output.preview("later")
+            assertEquals("word", store.get(id)!!.text)
+            store.delete(id)
+            assertNull(store.get(id))
+        } finally { root.deleteRecursively() }
+    }
+
 }

@@ -64,7 +64,7 @@ alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 
 | Concern | Where | Decision |
 |---|---|---|
-| IME lifecycle: record on initial open; deliberate Cancel/Keyboard discard; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md), amendment for #36 |
+| IME lifecycle: record on initial open; confirmed discard removes the take; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md), amendment for #36 |
 | Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](adrs/017-shared-take-experiments.md) |
 | Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
 | Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |

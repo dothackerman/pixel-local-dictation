@@ -15,10 +15,12 @@ class RotationProbeTest {
     @Test fun observeUntilOwnerFinishes() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        RotationTrace.beginProbe()
+        val caseName = requireNotNull(InstrumentationRegistry.getArguments().getString("case")) { "case argument required" }
+        RotationTrace.beginProbe(caseName)
         RotationProbeActivity.done = CountDownLatch(1)
         try {
             instrumentation.startActivitySync(Intent(context, RotationProbeActivity::class.java)
+                .putExtra("case", caseName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             assertTrue("owner did not finish probe within five minutes",
                 RotationProbeActivity.done.await(5, TimeUnit.MINUTES))

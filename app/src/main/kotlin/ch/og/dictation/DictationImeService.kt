@@ -1,6 +1,9 @@
 package ch.og.dictation
 
 import android.Manifest
+import android.app.AlertDialog
+import android.view.KeyEvent
+import android.view.WindowManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.res.Configuration
@@ -18,6 +21,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.TextView
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -37,6 +41,8 @@ class DictationImeService : InputMethodService() {
     private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
+    private var recordingPrompt: AlertDialog? = null
+    private var captureEnded: () -> Boolean = { false }
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
@@ -223,12 +229,8 @@ class DictationImeService : InputMethodService() {
             return
         }
         takeRetentionEligible = null
-        val liveCheck = Engine.liveReceipt() != null
-        // The supervised live check stores timing/identity receipts only, never new recordings.
-        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         observeGeometry(startupTake)
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
         rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
@@ -369,6 +371,10 @@ class DictationImeService : InputMethodService() {
             setMicrophone(false, R.string.status_no_permission)
             return
         }
+        // Latch current policy for each new take, including explicit restarts.
+        val liveCheck = Engine.liveReceipt() != null
+        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         rotationTake++
         rotationEvent(RotationEvent.CAPTURE_START)
@@ -449,6 +455,8 @@ class DictationImeService : InputMethodService() {
             val traceTake = startupTake
             val traceRotation = rotationTrace
             val traceRotationTake = rotationTake
+            val unexpectedEnd = AtomicBoolean(false)
+            captureEnded = { unexpectedEnd.get() }
             val microphoneCapture = MicrophoneCapture(onStarted = {
                 traceRotation?.event(RotationEvent.CAPTURE_STARTED, take = traceRotationTake)
                 trace?.event("recordingStarted", traceTake)
@@ -460,6 +468,7 @@ class DictationImeService : InputMethodService() {
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
+                unexpectedEnd.set(true)
                 traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
                 postCaptureEnd(mainHandler, Runnable {
                     if (feedback === currentFeedback && takeActive) {
@@ -624,6 +633,7 @@ class DictationImeService : InputMethodService() {
                 setMicrophone(true, R.string.start_recording)
             }
         }
+        dismissRecordingPrompt()
     }
 
     private fun discardTake(reason: String) {
@@ -647,7 +657,101 @@ class DictationImeService : InputMethodService() {
         mainHandler.post { if (session.matches(token)) returnToKeyboard(); returning = false }
     }
 
+    private fun dismissRecordingPrompt() {
+        recordingPrompt?.dismiss()
+        recordingPrompt = null
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
+            if (finishing) showFinishingPrompt() else showRecordingPrompt()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun showRecordingPrompt() {
+        if (recordingPrompt?.isShowing == true || !takeActive || finishing) return
+        if (captureEnded()) { interruptTake(); return }
+        val token = panel?.windowToken ?: return
+        val generation = takeGeneration
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.discard_take_title)
+            .setMessage(R.string.discard_take_recording)
+            .setNegativeButton(R.string.continue_recording) { _, _ -> }
+            .setNeutralButton(R.string.finish_transcription) { _, _ ->
+                if (generation == takeGeneration && takeActive && !finishing) {
+                    if (captureEnded()) interruptTake() else stopAndInsert()
+                }
+            }
+            .setPositiveButton(R.string.discard_take) { _, _ ->
+                if (generation == takeGeneration && takeActive && !finishing) {
+                    if (captureEnded()) { interruptTake(); return@setPositiveButton }
+                    val token = recordingToken
+                    take?.cancel(onDiscarded = { deleted ->
+                        if (generation == takeGeneration && deleted && session.matches(token)) returnToKeyboard()
+                    })
+                    showIdle()
+                }
+            }
+            .create()
+        recordingPrompt = dialog
+        dialog.setOnDismissListener { if (recordingPrompt === dialog) recordingPrompt = null }
+        dialog.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+            attributes = attributes.apply { this.token = token }
+            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+        try {
+            dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
+        } catch (_: WindowManager.BadTokenException) {
+            recordingPrompt = null
+            interruptTake()
+        }
+    }
+
+    private fun showFinishingPrompt() {
+        if (recordingPrompt?.isShowing == true || !takeActive) return
+        val current = take ?: return
+        val token = panel?.windowToken ?: return
+        if (!current.holdDelivery()) return
+        val generation = takeGeneration
+        var discarded = false
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.discard_transcript_title)
+            .setNegativeButton(R.string.keep_finishing) { _, _ -> }
+            .setPositiveButton(R.string.discard_take) { _, _ ->
+                if (generation == takeGeneration && take === current) {
+                    discarded = true
+                    val editor = recordingToken
+                    current.cancel(onDiscarded = { deleted ->
+                        if (generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
+                    })
+                    showIdle()
+                }
+            }.create()
+        recordingPrompt = dialog
+        dialog.setOnDismissListener {
+            if (recordingPrompt === dialog) recordingPrompt = null
+            if (!discarded) current.resumeDelivery()
+        }
+        dialog.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+            attributes = attributes.apply { this.token = token }
+            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+        try {
+            dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
+        } catch (_: WindowManager.BadTokenException) {
+            recordingPrompt = null
+            interruptTake()
+        }
+    }
+
     private fun cancelAndReturn() {
+        if (takeActive) { if (finishing) showFinishingPrompt() else showRecordingPrompt(); return }
         val token = recordingToken
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }
