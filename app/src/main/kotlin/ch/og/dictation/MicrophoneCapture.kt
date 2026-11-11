@@ -76,6 +76,23 @@ class MicrophoneCapture(
         }
     }
     fun setReleaseRetry(action: () -> Unit) = MicrophoneOwner.setRetry(this, action)
+    /**
+     * Pause and resume run on the caller's thread (the IME main thread): stopping a platform
+     * recording and joining its read returns within milliseconds. The microphone stays owned by
+     * this capture throughout, so no other capture can start while paused (ADR-010).
+     */
+    override fun pause() {
+        synchronized(lock) {
+            feedback?.pause()
+            recorder.pause()
+        }
+    }
+    override fun resume() {
+        synchronized(lock) {
+            recorder.resume()
+            feedback?.resume()
+        }
+    }
     override fun stop(done: (Result<ByteArray>) -> Unit) {
         feedback?.stop()
         Thread({

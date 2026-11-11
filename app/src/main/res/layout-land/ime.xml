@@ -3,13 +3,13 @@
      editor stays visible above. Text column on the start side, microphone on the end side
      under the right thumb. The stage is shorter than in portrait; RecordingRingView scales
      its loudness motion to fit it; under 600dp it is square (panel_stage_width_land).
-     No controls beyond portrait's. -->
+     Same controls as portrait; the Cancel choice replaces the preview here. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/panel"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#E4E9DE"
+    android:background="@color/panel_surface"
     android:paddingStart="12dp"
     android:paddingEnd="12dp"
     android:paddingBottom="8dp">
@@ -54,10 +54,27 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
                     android:fontFamily="sans-serif-medium"
-                    android:textColor="#52604C"
+                    android:textColor="@color/panel_on_surface"
                     android:textSize="14sp"
                     android:accessibilityLiveRegion="polite"
                     android:text="@string/status_opening" />
+                <!-- After a take ended without insertion: one clear way back (#61). -->
+                <Button
+                    android:id="@+id/back_to_keyboard"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:background="@drawable/choice_outlined"
+                    android:stateListAnimator="@null"
+                    android:fontFamily="sans-serif-medium"
+                    android:textAllCaps="false"
+                    android:textColor="@color/panel_on_surface"
+                    android:textSize="14sp"
+                    android:text="@string/back_to_keyboard"
+                    android:visibility="gone" />
             </LinearLayout>
             <TextView
                 android:id="@+id/retention_notice"
@@ -66,7 +83,7 @@
                 android:layout_marginStart="56dp"
                 android:layout_marginEnd="8dp"
                 android:fontFamily="sans-serif"
-                android:textColor="#52604C"
+                android:textColor="@color/panel_on_surface"
                 android:textSize="12sp"
                 android:visibility="gone" />
             <!-- Indented to the status text so the column reads as one block. -->
@@ -77,15 +94,23 @@
                 android:layout_marginStart="56dp"
                 android:paddingEnd="8dp"
                 android:fontFamily="sans-serif"
-                android:textColor="#5E6A58"
+                android:textColor="@color/panel_preview"
                 android:minLines="3"
                 android:maxLines="3"
                 android:ellipsize="start"
                 android:gravity="bottom"
                 android:lineSpacingExtra="2dp"
                 android:textSize="14sp" />
+            <!-- The Cancel choice takes the preview's place, indented like it; one row when it fits. -->
+            <include
+                layout="@layout/panel_choice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="56dp"
+                android:layout_marginBottom="8dp" />
         </LinearLayout>
         <FrameLayout
+            android:id="@+id/stage"
             android:layout_width="@dimen/panel_stage_width_land"
             android:layout_height="148dp"
             android:layout_marginStart="12dp">

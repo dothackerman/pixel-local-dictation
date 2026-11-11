@@ -33,6 +33,10 @@ enum class RotationEvent {
     HOLD_GAP_EXPIRED,
     /** The panel stayed visible after the rotation; the hold is over and the take goes on. */
     HOLD_SETTLED,
+    /** Cancel while recording: the take's platform recording stopped (inline choice open). */
+    CAPTURE_PAUSED,
+    /** Continue recording: the same take's platform recording started again. */
+    CAPTURE_RESUMED,
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */

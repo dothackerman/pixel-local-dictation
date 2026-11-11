@@ -8,6 +8,10 @@ interface TakeCapture {
     fun stop(done: (Result<ByteArray>) -> Unit)
     fun cancel(done: () -> Unit)
     fun cancelWithResult(done: (Result<Unit>) -> Unit) = cancel { done(Result.success(Unit)) }
+    /** Stops capturing audio without ending the take; throws if it cannot. */
+    fun pause(): Unit = throw UnsupportedOperationException("pause")
+    /** Captures audio again after [pause]; throws if it cannot. */
+    fun resume(): Unit = throw UnsupportedOperationException("resume")
 }
 
 /** The platform did not confirm release; the owner must retain the capture. */
@@ -137,6 +141,7 @@ class TakeSession internal constructor(
 
     fun stop() {
         if (state != State.RECORDING) return
+        paused = false
         state = State.DRAINING
         output.finishingHistory()
         synchronized(audioLock) {
@@ -195,6 +200,27 @@ class TakeSession internal constructor(
         if (!retentionEligible || state == State.ENDED) return
         retentionEligible = false
         output.excludeHistory()
+    }
+
+    /** While recording: no audio is captured until [resume]; Stop, cancel and interrupt still apply. */
+    var paused = false
+        private set
+
+    /** Pauses capture during recording; false if the take is not recording or capture cannot pause. */
+    fun pause(): Boolean {
+        if (state != State.RECORDING || interrupted || paused) return false
+        if (runCatching { capture.pause() }.isFailure) return false
+        paused = true
+        return true
+    }
+
+    /** Resumes the same capture; false if the take is no longer paused or capture cannot restart. */
+    fun resume(): Boolean {
+        if (!paused) return false
+        if (state != State.RECORDING || interrupted) { paused = false; return false }
+        if (runCatching { capture.resume() }.isFailure) return false
+        paused = false
+        return true
     }
 
     /** Hold only before dispatch; once a commit starts it cannot be retracted. */

@@ -77,12 +77,8 @@ released only once the panel has stayed visible there for `ROTATION_SETTLE_MS`
 (Android's own reset panel can be hidden again ~95 ms later). It is inserted there
 once and FUTO returns. A panel that does not return within the same gap, or any
 other session change, sends the result to History only. A commit already
-dispatched or accepted is never held, undone or repeated. **Cancel choices:** a
-rotation hold closes an open choice without choosing and shows it again on the
-settled panel; if it cannot be attached there, its safe action applies (Continue
-recording, Keep finishing), never an interruption. The finishing choice keeps the
-result held throughout. Lock, hide and focus change still override any choice
-(History).
+dispatched or accepted is never held, undone or repeated. **Cancel choices:** see
+the #61 amendment (inline, take state; rotation never chooses).
 
 Evidence: host lifecycle tests for both editor modes, the Pixel callback order,
 gap expiry, real hide after rotation, repeated rotation, lock, focus change,
@@ -118,3 +114,34 @@ Limits: a hide or focus change within the settle time after a rotation cannot be
 told apart from the editor reacting to it (held, then History at the gap); the
 display callback can still report the old rotation (#56), so a 180° turn without a
 configuration change is counted only at the next editor event.
+
+## Amendment — inline Cancel choice and pause (#61)
+
+2026-11-11 · Branch implementation for #36; host-tested, Pixel run pending.
+
+The owner's Signal visit (A7) showed that closing the choice *dialog* made Signal restart
+input within 5 ms of Stop (`STOP_REQUESTED` → `INPUT_VIEW_FINISH`/`INPUT_FINISH`/`INPUT_START`,
+no rotation): the session change revoked Stop's authority and the text went to History only.
+**The choice is now inline in the recording panel**, part of the take's state: no window, so
+no focus change and no input restart is caused by us, and nothing to re-attach after a
+rotation (the recreated panel renders the same choice; the #53 moved/pending prompt
+machinery is gone). Actions and safe defaults are unchanged: recording — Continue recording
+(default), Stop and insert, Discard take; Stop wait — Keep finishing (default), Discard take.
+System Back or our Back arrow on an open choice is its safe default. Stop and insert is
+exactly Stop: insert once where the take runs, then FUTO returns. An editor that restarts
+input by itself right after Stop, without a rotation, is still a session change: History only.
+**Pause:** while the recording choice is open the take is paused. Its platform recorder is
+stopped (`AudioRecord.stop`; no audio captured, the microphone indicator goes off) but not
+released, and the microphone stays owned by the take, so "one microphone" means never two at
+once and none recording while paused. Continue restarts the same recorder inside the same
+take (`AudioRecord.startRecording`): one take, speech before and after in the result. A
+failed pause or restart is a system interruption (History). Pause and restart run on the IME
+main thread (milliseconds). A system interruption (hide, lock, focus change, microphone loss,
+gap) still overrides an open choice; audio captured before the pause finishes into History.
+The finishing choice keeps the delivery hold as before. The rotation trace records
+`CAPTURE_PAUSED`/`CAPTURE_RESUMED`. After a History-only end the panel clears the preview,
+says "Not inserted · saved to History" (or why not) and offers Back to keyboard.
+Evidence: host lifecycle tests (pause/resume, Back = safe default, Stop and insert, Discard,
+the Signal order, self-restart after Stop, rotation with each choice open, lock and hide over
+an open choice, History-only end, layout at font 2 portrait/landscape light/dark).
+

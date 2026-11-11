@@ -58,7 +58,10 @@ class DictationProductionLifecycleTest {
         val releases = AtomicInteger()
         @Volatile var readerThread: Thread? = null
         private val frames = LinkedBlockingQueue<ShortArray>()
-        override fun start() { starts.incrementAndGet(); if (startFails) error("synthetic start failure") }
+        val stops = AtomicInteger()
+        /** Like the platform recorder: frames are captured only while started; a restart starts empty. */
+        @Volatile var running = false
+        override fun start() { starts.incrementAndGet(); if (startFails) error("synthetic start failure"); frames.clear(); running = true }
         override fun read(buffer: ShortArray): Int {
             readerThread = Thread.currentThread()
             val frame = frames.take()
@@ -66,12 +69,12 @@ class DictationProductionLifecycleTest {
             frame.copyInto(buffer)
             return if (frame.isEmpty()) -1 else frame.size
         }
-        override fun stop() { frames.offer(shortArrayOf()) }
+        override fun stop() { stops.incrementAndGet(); running = false; frames.offer(shortArrayOf()) }
         override fun release() {
             releaseGate?.await(2, TimeUnit.SECONDS)
             if (releases.incrementAndGet() <= failedReleases) error("synthetic release failure")
         }
-        fun feed(sample: Short) { frames.add(shortArrayOf(sample)) }
+        fun feed(sample: Short) { if (running) frames.add(shortArrayOf(sample)) }
         fun endUnexpectedly() { frames.add(shortArrayOf()) }
     }
     private val decode = DecodeQueue()
@@ -953,66 +956,62 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
-    private fun latestPrompt() = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+    private fun choiceShown(panel: View) = panel.findViewById<View>(R.id.choice).visibility == View.VISIBLE
+    private fun safe(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_safe)
+    private fun stopAction(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_stop)
+    private fun discardAction(panel: View) = panel.findViewById<android.widget.Button>(R.id.choice_discard)
+    private fun back(panel: View) = panel.findViewById<ImageButton>(R.id.back)
+    private fun systemBack(service: DictationImeService) =
+        service.onKeyDown(android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+    /** The choice is part of the panel: no dialog or other window is ever shown for it. */
+    private fun assertNoWindow() = assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
 
-    /**
-     * Pixel-order rotation into a recreated editor; returns the new field and the returned panel.
-     * [attached]: the returned panel's window is attached, so a prompt can be attached to it.
-     */
-    private fun rotateToRecreatedEditor(service: DictationImeService, attached: Boolean = true): Pair<Field, View> {
+    /** Pixel-order rotation into a recreated editor; returns the new field and the returned panel. */
+    private fun rotateToRecreatedEditor(service: DictationImeService): Pair<Field, View> {
         platformResetOnRotation(service, android.view.Surface.ROTATION_90)
         val next = recreatedEditorTakesInput(service)
-        val returned = showPanel(service)!!
-        // Robolectric cannot attach the input method window; host the panel in an activity window
-        // as service() does, so it has a window token a prompt can attach to.
-        if (attached) {
-            (returned.parent as android.view.ViewGroup).removeView(returned)
-            Robolectric.buildActivity(android.app.Activity::class.java).setup().get().setContentView(returned)
-            pump()
-        }
-        assertEquals(attached, returned.windowToken != null)
-        return next to returned
+        return next to showPanel(service)!!
     }
 
-    @Test fun recordingChoiceOpenThroughARotationIsShownAgainAndContinueKeepsTheTake() {
+    @Test fun recordingChoiceOpenThroughARotationIsRenderedAgainAndContinueKeepsTheTake() {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val before = latestPrompt()
-        assertTrue(before.isShowing)
+        back(view).performClick()
+        assertTrue(choiceShown(view))
         val (next, returned) = rotateToRecreatedEditor(service)
-        assertEquals(0, input.releases.get())
+        assertNotSame(view, returned)
+        assertTrue("the recreated panel renders the same choice", choiceShown(returned))
+        assertEquals(service.getString(R.string.status_paused), status(returned))
         advance(ROTATION_SETTLE_MS)
-        val again = latestPrompt()
-        assertNotSame(before, again)
-        assertTrue("the choice is shown again, not made", again.isShowing)
-        assertEquals(service.getString(R.string.status_recording), status(returned))
-        again.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        assertTrue("rotation never chooses", choiceShown(returned))
         assertEquals(0, input.releases.get())
+        assertEquals("still paused: no second platform start", 1, input.starts.get())
+        safe(returned).performClick()
+        assertEquals(2, input.starts.get())
+        assertEquals(service.getString(R.string.status_recording), status(returned))
         feed(input, 20000, 2)
         button(returned).performClick()
         await { input.releases.get() == 1 }
         await { decode.drain(); settleHistory(); commits == 1 }
         assertEquals(listOf("old speech private speech"), next.inserted)
-        assertEquals(1, input.starts.get())
+        assertNoWindow()
     }
 
-    @Test fun recordingChoiceShownAgainAfterARotationFinishStopsOnceAndInsertsThere() {
+    @Test fun recordingChoiceRenderedAgainAfterARotationStopInsertsOnceThere() {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         val first = firstField.getValue(service)
         feed(input, 1000, 1)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val (next, _) = rotateToRecreatedEditor(service)
-        assertFalse("rotation never selects Finish", latestPrompt().isShowing)
+        back(view).performClick()
+        val (next, returned) = rotateToRecreatedEditor(service)
         assertEquals(0, input.releases.get())
         advance(ROTATION_SETTLE_MS)
-        latestPrompt().getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        stopAction(returned).performClick()
         await { input.releases.get() == 1 }
         await { decode.drain(); settleHistory(); commits == 1 }
         advance(ROTATION_HOLD_GAP_MS)
@@ -1023,7 +1022,7 @@ class DictationProductionLifecycleTest {
         assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
     }
 
-    @Test fun recordingChoiceShownAgainAfterARotationDiscardRemovesSavedTextOnce() {
+    @Test fun recordingChoiceRenderedAgainAfterARotationDiscardRemovesSavedTextOnce() {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
@@ -1031,20 +1030,20 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         decode.drain(); settleHistory()
         assertEquals(1, rows().size)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        rotateToRecreatedEditor(service)
+        back(view).performClick()
+        val (_, returned) = rotateToRecreatedEditor(service)
         settleHistory()
         assertEquals("rotation never selects Discard", 1, rows().size)
         advance(ROTATION_SETTLE_MS)
-        latestPrompt().getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        discardAction(returned).performClick()
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
         assertEquals(0, commits)
     }
 
-    /** Stop, Back (finishing choice open), rotate; the result decodes under the moved choice. */
-    private fun finishingChoiceThroughARotation(attached: Boolean = true): Triple<DictationImeService, Field, Input> {
+    /** Stop, Back (finishing choice open), rotate; the result decodes under the open choice. */
+    private fun finishingChoiceThroughARotation(): Triple<DictationImeService, Field, View> {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
@@ -1052,31 +1051,33 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         button(view).performClick()
         await { input.releases.get() == 1 }
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        assertTrue(latestPrompt().isShowing)
-        val (next, returned) = rotateToRecreatedEditor(service, attached)
-        assertEquals(service.getString(R.string.status_finishing), status(returned))
+        back(view).performClick()
+        assertTrue(choiceShown(view))
+        assertEquals(View.GONE, stopAction(view).visibility)
+        val (next, returned) = rotateToRecreatedEditor(service)
+        assertTrue(choiceShown(returned))
+        assertEquals(service.getString(R.string.status_finishing_choice), status(returned))
         decode.drain(); settleHistory(); decode.drain(); settleHistory()
         assertEquals(0, commits)
         advance(ROTATION_SETTLE_MS)
         settleHistory()
-        return Triple(service, next, input)
+        return Triple(service, next, returned)
     }
 
     @Test fun finishingChoiceOpenThroughARotationHoldsTheResultUntilKept() {
-        val (_, next, _) = finishingChoiceThroughARotation()
-        val again = latestPrompt()
-        assertTrue("the choice is shown again, not made", again.isShowing)
+        val (_, next, returned) = finishingChoiceThroughARotation()
+        assertTrue("rotation never chooses", choiceShown(returned))
         assertEquals("a result decoded under the choice waits for it", 0, commits)
-        again.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        safe(returned).performClick()
         await { settleHistory(); commits == 1 }
         assertEquals(listOf("old speech"), next.inserted)
         assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+        assertNoWindow()
     }
 
-    @Test fun finishingChoiceShownAgainAfterARotationDiscardRemovesSavedTextOnce() {
-        val (_, next, _) = finishingChoiceThroughARotation()
-        latestPrompt().getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+    @Test fun finishingChoiceRenderedAgainAfterARotationDiscardRemovesSavedTextOnce() {
+        val (_, next, returned) = finishingChoiceThroughARotation()
+        discardAction(returned).performClick()
         settleHistory()
         advance(ROTATION_HOLD_GAP_MS)
         decode.drain(); settleHistory()
@@ -1085,36 +1086,7 @@ class DictationProductionLifecycleTest {
         assertTrue(rows().isEmpty())
     }
 
-    @Test fun finishingChoiceThatCannotBeAttachedAfterARotationKeepsFinishing() {
-        val (_, next, _) = finishingChoiceThroughARotation(attached = false)
-        await { settleHistory(); commits == 1 }
-        assertEquals(listOf("old speech"), next.inserted)
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-    }
-
-    @Test fun recordingChoiceThatCannotBeAttachedAfterARotationContinuesRecording() {
-        DictationImeService.requestPanel = {}
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val before = latestPrompt()
-        val (next, returned) = rotateToRecreatedEditor(service, attached = false)
-        advance(ROTATION_SETTLE_MS)
-        advance(ROTATION_HOLD_GAP_MS)
-        assertSame(before, latestPrompt())
-        assertFalse(before.isShowing)
-        assertEquals(0, input.releases.get())
-        assertEquals(service.getString(R.string.status_recording), status(returned))
-        feed(input, 20000, 2)
-        button(returned).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); commits == 1 }
-        assertEquals(listOf("old speech private speech"), next.inserted)
-    }
-
-    @Test fun lockDuringARotationOverridesAMovedChoiceAndGoesToHistory() {
+    @Test fun lockDuringARotationOverridesAnOpenChoiceAndGoesToHistory() {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
@@ -1122,15 +1094,14 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         button(view).performClick()
         await { input.releases.get() == 1 }
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val before = latestPrompt()
+        back(view).performClick()
         rotateHidden(service, android.view.Surface.ROTATION_90)
         screenOff()
         awaitInterruptedInHistory()
-        showPanel(service)
+        val returned = showPanel(service)!!
         advance(ROTATION_SETTLE_MS)
         decode.drain(); settleHistory()
-        assertSame("no choice comes back after a lock", before, latestPrompt())
+        assertFalse("no choice comes back after a lock", choiceShown(returned))
         assertEquals(0, commits)
     }
 
@@ -1291,179 +1262,331 @@ class DictationProductionLifecycleTest {
         assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
     }
 
-    @Test fun recordingCancelOffersContinueWithoutStoppingTheTake() {
+    /**
+     * #61 owner decision: Cancel while recording pauses the take. The platform recording stops
+     * (no audio, no microphone indicator), the microphone stays owned by this take (never a
+     * second one), and Continue resumes the same take: one take, speech before and after.
+     */
+    @Test fun recordingCancelPausesAndContinueResumesTheSameTake() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
         decode.drain(); settleHistory()
         val originalId = rows().single().id
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        assertNotNull(dialog)
-        assertTrue(dialog.isShowing)
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        back(view).performClick()
+        assertTrue(choiceShown(view))
+        assertEquals(service.getString(R.string.status_paused), status(view))
+        assertTrue("the safe action has focus", safe(view).isFocused)
+        assertEquals(service.getString(R.string.continue_recording), safe(view).text.toString())
+        assertEquals(View.VISIBLE, stopAction(view).visibility)
+        assertEquals(1, input.stops.get())
         assertEquals(0, input.releases.get())
+        assertTrue(MicrophoneOwner.state().occupied)
+        assertFalse(button(view).isEnabled)
+        val acceptedWhilePaused = accepted.get()
+        input.feed(20000) // Speech while paused is not captured.
+        pump(); Thread.sleep(50); pump()
+        assertEquals(acceptedWhilePaused, accepted.get())
+        safe(view).performClick()
+        assertFalse(choiceShown(view))
+        assertEquals(2, input.starts.get())
+        assertEquals(service.getString(R.string.status_recording), status(view))
+        assertTrue(button(view).isEnabled)
         feed(input, 20000, 2)
         decode.drain(); settleHistory()
         assertEquals(originalId, rows().single().id)
-        assertEquals(0, commits)
+        button(view).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        assertEquals(listOf("old speech private speech"), firstField.getValue(service).inserted)
+        assertEquals(originalId, rows().single().id)
+        assertEquals(1, input.releases.get())
+        assertNoWindow()
     }
 
-    @Test fun promptCancellationAndPanelRecreationKeepRecording() {
+    @Test fun systemBackAndTheBackArrowOnAnOpenChoiceContinueRecording() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
-        decode.drain(); settleHistory()
-        val id = rows().single().id
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        assertTrue(dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).isFocusable)
-        service.onCreateInputView()
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        assertSame(dialog, org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog())
-        dialog.cancel()
+        assertTrue(systemBack(service))
+        assertTrue(choiceShown(view))
+        assertEquals(service.getString(R.string.continue_recording), back(view).contentDescription.toString())
+        assertTrue(systemBack(service))
+        assertFalse("Back is the safe default", choiceShown(view))
+        assertEquals(2, input.starts.get())
+        back(view).performClick()
+        assertTrue(choiceShown(view))
+        back(view).performClick()
+        assertFalse(choiceShown(view))
+        assertEquals(3, input.starts.get())
         assertEquals(0, input.releases.get())
         feed(input, 20000, 2)
         decode.drain(); settleHistory()
-        assertEquals(id, rows().single().id)
         assertEquals(0, commits)
+        assertEquals(1, rows().size)
     }
 
-    @Test fun recordingPromptFinishStopsOnceAndInserts() {
+    @Test fun panelRecreationKeepsTheOpenChoiceAndThePause() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        back(view).performClick()
+        val again = service.onCreateInputView()
+        assertTrue(choiceShown(again))
+        assertEquals(service.getString(R.string.status_paused), status(again))
+        assertEquals(1, input.starts.get())
+        safe(again).performClick()
+        assertEquals(2, input.starts.get())
+        assertEquals(0, input.releases.get())
+    }
+
+    /** #61 owner decision: Stop and insert on the choice is exactly Stop (one insertion, FUTO back). */
+    @Test fun recordingChoiceStopInsertsOnceLikeStop() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
         decode.drain(); settleHistory()
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        back(view).performClick()
+        stopAction(view).performClick()
+        assertFalse(choiceShown(view))
+        assertEquals(service.getString(R.string.status_finishing), status(view))
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(1, commits)
+        await { decode.drain(); settleHistory(); commits == 1 }
+        assertEquals(listOf("old speech"), firstField.getValue(service).inserted)
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
         assertEquals(1, input.releases.get())
     }
 
-    @Test fun recordingPromptDiscardRemovesCheckpointsAndNeverInserts() {
+    /**
+     * Signal order (#61 visit, A7): closing the choice *dialog* made Signal restart input within
+     * 5 ms, which revoked Stop's authority. The inline choice opens no window, so nothing restarts
+     * input: the Signal sequence after Stop is only our own hand-back, and the text is inserted.
+     */
+    @Test fun signalOrderStopFromTheChoiceInsertsBecauseNoWindowRestartsInput() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
+        back(view).performClick()
+        assertNoWindow()
+        stopAction(view).performClick()
+        assertNoWindow()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        assertEquals(listOf("old speech"), firstField.getValue(service).inserted)
+    }
+
+    /**
+     * An editor that restarts input by itself right after Stop, without a rotation, is a session
+     * change like any other: the result goes to History only, never inserted (spec #36).
+     */
+    @Test fun editorRestartingInputByItselfRightAfterStopGoesToHistoryOnly() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        back(view).performClick()
+        stopAction(view).performClick()
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onStartInput(editor(), true)
+        service.onStartInputView(editor(), true)
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        assertEquals(0, commits)
+        assertEquals(service.getString(R.string.status_saved_history), status(view))
+    }
+
+    @Test fun recordingChoiceDiscardRemovesCheckpointsAndNeverInserts() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
         decode.drain(); settleHistory()
         assertEquals(1, rows().size)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        back(view).performClick()
+        discardAction(view).performClick()
         await { input.releases.get() == 1 }
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
         assertEquals(0, commits)
+        assertFalse(choiceShown(view))
     }
 
-    @Test fun inputLossDismissesRecordingPromptAndKeepsInterruptedText() {
+    /** A system interruption overrides an open choice; audio captured before the pause goes to History. */
+    @Test fun hideOverridesAnOpenRecordingChoiceAndKeepsPausedAudioInHistory() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
-        decode.drain(); settleHistory()
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        back(view).performClick()
         service.onFinishInputView(true)
-        assertFalse(dialog.isShowing)
+        assertFalse(choiceShown(view))
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
+        assertEquals("old speech", rows().single().text)
         assertEquals(0, commits)
     }
 
-    @Test fun finishingPromptHoldsDecodedTextUntilKept() {
+    @Test fun lockWhilePausedStopsAndDoesNotResumeOnUnlock() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        back(view).performClick()
+        screenOff()
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        service.onStartInput(editor(), true)
+        service.onStartInputView(editor(), true)
+        pump()
+        assertEquals(1, input.starts.get())
+        assertFalse(choiceShown(view))
+        assertEquals(0, commits)
+    }
+
+    /** P1 (#61 visit): an interrupted take must not leave a silent idle panel with old text. */
+    @Test fun historyOnlyEndSaysNotInsertedClearsThePreviewAndOffersTheWayBack() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+        assertEquals("old speech", preview(view))
+        service.onStartInput(editor(), true) // Same-field restart: interruption.
+        service.onStartInputView(editor(), true)
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        await { status(view) == service.getString(R.string.status_saved_history) }
+        assertEquals("", preview(view))
+        val way = view.findViewById<View>(R.id.back_to_keyboard)
+        assertEquals(View.VISIBLE, way.visibility)
+        assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
+        org.robolectric.shadows.ShadowLog.clear()
+        way.performClick()
+        pump()
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
+        assertEquals(1, input.starts.get())
+        assertEquals(0, commits)
+    }
+
+    @Test fun finishingChoiceHoldsDecodedTextUntilKept() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
         button(view).performClick()
         await { input.releases.get() == 1 }
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        assertTrue(dialog.isShowing)
-        assertTrue(dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).isFocusable)
+        back(view).performClick()
+        assertTrue(choiceShown(view))
+        assertEquals(service.getString(R.string.keep_finishing), safe(view).text.toString())
+        assertTrue(safe(view).isFocused)
         decode.drain(); settleHistory()
         assertEquals(0, commits)
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        safe(view).performClick()
         settleHistory()
         assertEquals(1, commits)
+        assertNoWindow()
     }
 
-    @Test @Config(qualifiers = "w320dp-h320dp-land")
-    fun attachedPromptsKeepSafeFocusAtLargeTextInLandscape() = attachedPromptsKeepSafeFocusAtLargeText()
-
-    @Test @Config(qualifiers = "w320dp-h320dp-land-night")
-    fun attachedPromptsKeepSafeFocusAtLargeTextInLandscapeDark() = attachedPromptsKeepSafeFocusAtLargeText()
-
-    private fun attachedPromptsKeepSafeFocusAtLargeText() {
-        val app = RuntimeEnvironment.getApplication()
-        val config = android.content.res.Configuration(app.resources.configuration)
-        config.fontScale = 2f
-        app.resources.updateConfiguration(config, app.resources.displayMetrics)
+    @Test fun systemBackOnTheFinishingChoiceKeepsFinishing() {
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
         feed(input, 1000, 1)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val recording = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, recording.window!!.attributes.type)
-        val root = recording.window!!.decorView
-        val width = (320 * app.resources.displayMetrics.density).toInt()
-        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        root.layout(0, 0, width, root.measuredHeight)
-        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
-        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_NEUTRAL, android.app.AlertDialog.BUTTON_POSITIVE)) {
-            val action = recording.getButton(which)
-            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
-        }
-        assertTrue(recording.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).text.isNotEmpty())
-        recording.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick()
+        button(view).performClick()
         await { input.releases.get() == 1 }
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val finishing = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-        assertEquals(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG, finishing.window!!.attributes.type)
-        val finishRoot = finishing.window!!.decorView
-        finishRoot.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        finishRoot.layout(0, 0, width, finishRoot.measuredHeight)
-        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).hasFocus())
-        for (which in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_POSITIVE)) {
-            val action = finishing.getButton(which)
-            assertTrue(action.measuredWidth > 0 && action.measuredHeight >= 48 * app.resources.displayMetrics.density)
-        }
-        assertTrue(finishing.getButton(android.app.AlertDialog.BUTTON_POSITIVE).text.isNotEmpty())
-        val safe = finishing.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)
-        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
-        safe.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
-        // Robolectric does not synthesize Button clicks from Enter; ensure it did not discard,
-        // then exercise the focused safe action explicitly.
-        assertEquals(0, commits)
-        if (finishing.isShowing) safe.performClick()
+        assertTrue(systemBack(service))
         decode.drain(); settleHistory()
+        assertEquals(0, commits)
+        assertTrue(systemBack(service))
+        settleHistory()
         assertEquals(1, commits)
     }
 
-    @Test fun finishingPromptDiscardSuppressesLateOutput() {
+    @Test fun finishingChoiceDiscardSuppressesLateOutput() {
         val input = Input()
         devices.add(input)
         val (_, view) = service(editor())
         feed(input, 1000, 1)
         button(view).performClick()
         await { input.releases.get() == 1 }
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        back(view).performClick()
         decode.drain(); settleHistory()
         assertEquals(0, commits)
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        discardAction(view).performClick()
         settleHistory()
         assertEquals(0, commits)
         assertTrue(rows().isEmpty())
     }
+
+    /**
+     * The choice at fontScale 2 in the recording panel: every action ≥ 48dp, inside the panel and
+     * not truncated; the safe action first and focused; Discard destructive and apart. Portrait
+     * keeps the panel height of the recording state.
+     */
+    private fun choiceFitsAtLargeText(widthDp: Int, finishingToo: Boolean = true) {
+        RuntimeEnvironment.setFontScale(2f)
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor())
+        feed(input, 1000, 1)
+        layOut(view, widthDp)
+        val recordingHeight = view.height
+        back(view).performClick()
+        layOut(view, widthDp)
+        val density = view.resources.displayMetrics.density
+        fun check(actions: List<android.widget.Button>) {
+            val whole = android.graphics.Rect(0, 0, view.width, view.height)
+            for (action in actions) {
+                assertTrue("${action.text} below 48dp", action.height >= 48 * density && action.width >= 48 * density)
+                val bounds = android.graphics.Rect(0, 0, action.width, action.height)
+                (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(action, bounds)
+                assertTrue("${action.text} outside the panel", whole.contains(bounds))
+                val layout = action.layout
+                assertTrue("${action.text} truncated", (0 until layout.lineCount).all { layout.getEllipsisCount(it) == 0 })
+                assertTrue("${action.text} clipped", action.height >= layout.height + action.compoundPaddingTop + action.compoundPaddingBottom)
+            }
+            val safeBounds = android.graphics.Rect(0, 0, safe(view).width, safe(view).height)
+            val discardBounds = android.graphics.Rect(0, 0, discardAction(view).width, discardAction(view).height)
+            (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(safe(view), safeBounds)
+            view.offsetDescendantRectToMyCoords(discardAction(view), discardBounds)
+            val apart = maxOf(discardBounds.left - safeBounds.right, discardBounds.top - safeBounds.bottom)
+            assertTrue("Discard sits next to the safe action", apart >= 16 * density)
+            assertNotEquals(safe(view).currentTextColor, discardAction(view).currentTextColor)
+            assertEquals(view.context.getColor(R.color.panel_destructive), discardAction(view).currentTextColor)
+            assertTrue(safe(view).isFocused)
+        }
+        check(listOf(safe(view), stopAction(view), discardAction(view)))
+        if (view.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+            assertEquals("the choice keeps the panel height", recordingHeight, view.height)
+        }
+        if (!finishingToo) return
+        stopAction(view).performClick()
+        await { input.releases.get() == 1 }
+        back(view).performClick()
+        layOut(view, widthDp)
+        check(listOf(safe(view), discardAction(view)))
+        safe(view).performClick()
+        await { decode.drain(); settleHistory(); commits == 1 }
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun choiceFitsAtLargeTextInPortrait() = choiceFitsAtLargeText(411)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun choiceFitsAtLargeTextInPortraitDark() = choiceFitsAtLargeText(411)
+
+    /** Pixel 10 Pro XL landscape window. */
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun choiceFitsAtLargeTextInLandscape() = choiceFitsAtLargeText(960)
+
+    @Test @Config(qualifiers = "w960dp-h440dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun choiceFitsAtLargeTextInLandscapeDark() = choiceFitsAtLargeText(960)
 
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
         val gate = CountDownLatch(1)
@@ -1815,14 +1938,14 @@ class DictationProductionLifecycleTest {
         devices.add(original); devices.add(next)
         val (service, view) = service(editor())
         feed(original, 1000, 1)
-        view.findViewById<ImageButton>(R.id.back).performClick()
         original.endUnexpectedly()
         original.readerThread!!.join(2000)
         assertFalse(original.readerThread!!.isAlive)
         val oldEnd = heldEnd.poll(2, TimeUnit.SECONDS)
         assertNotNull("real capture-end delivery must be held", oldEnd)
-        org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
-            .getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        // Cancel after the capture already ended is a system interruption, not a choice.
+        view.findViewById<ImageButton>(R.id.back).performClick()
+        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
         // Process interruption and the separate release acknowledgement, keeping only
         // the old capture-end event out of the main queue.
         await { !MicrophoneOwner.state().occupied && button(view).isEnabled }

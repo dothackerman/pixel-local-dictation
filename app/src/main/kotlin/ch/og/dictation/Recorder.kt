@@ -38,8 +38,12 @@ class Recorder internal constructor(private val createInput: () -> AudioInput) {
     }
 
     @Volatile private var capturing = false
+    /** Paused: the platform recording is stopped but the device stays owned and the audio kept. */
+    @Volatile private var paused = false
     private var thread: Thread? = null
     private var record: AudioInput? = null
+    private var onSamples: (FloatArray) -> Unit = {}
+    private var onEnded: (() -> Unit)? = null
     private val buffer = ByteArrayOutputStream()
     val isRunning: Boolean get() = record != null
 
@@ -48,32 +52,62 @@ class Recorder internal constructor(private val createInput: () -> AudioInput) {
         val rec = createInput()
         record = rec
         buffer.reset()
+        this.onSamples = onSamples
+        this.onEnded = onEnded
+        paused = false
         try { rec.start() } catch (failure: Throwable) {
             try { rec.release(); record = null } catch (_: Throwable) { }
             throw failure
         }
         onStarted?.let { runCatching(it) }
         capturing = true
-        thread = Thread {
-            val chunk = ShortArray(rec.bufferSize / 2)
-            val bytes = ByteArray(rec.bufferSize)
-            try {
-                while (capturing) {
-                    val n = try { rec.read(chunk) } catch (failure: Throwable) {
-                        if (!capturing) break else throw failure
-                    }
-                    if (n < 0) break
-                    if (n == 0) continue
-                    for (i in 0 until n) {
-                        bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
-                    }
-                    synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
-                    onSamples(FloatArray(n) { chunk[it] / 32768f })
+        thread = read(rec)
+    }
+
+    private fun read(rec: AudioInput) = Thread {
+        val chunk = ShortArray(rec.bufferSize / 2)
+        val bytes = ByteArray(rec.bufferSize)
+        try {
+            while (capturing) {
+                val n = try { rec.read(chunk) } catch (failure: Throwable) {
+                    if (!capturing) break else throw failure
                 }
-            } catch (_: Throwable) {
-                // Capture ended unexpectedly; the owner still releases the device.
-            } finally { onEnded?.let { runCatching(it) } }
-        }.also { it.start() }
+                if (n < 0) break
+                if (n == 0) continue
+                for (i in 0 until n) {
+                    bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
+                }
+                synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
+                onSamples(FloatArray(n) { chunk[it] / 32768f })
+            }
+        } catch (_: Throwable) {
+            // Capture ended unexpectedly; the owner still releases the device.
+        } finally { if (!paused) onEnded?.let { runCatching(it) } }
+    }.also { it.start() }
+
+    /**
+     * Stops the platform recording without releasing the device or the audio so far, and returns
+     * once no read is in flight. Audio is not captured until [resume]. Throws if the platform
+     * could not stop; the owner then ends the take.
+     */
+    fun pause() {
+        val rec = record ?: return
+        if (paused) return
+        paused = true
+        capturing = false
+        rec.stop()
+        thread?.join()
+        thread = null
+    }
+
+    /** Restarts the same platform recorder after [pause]; the take's audio continues. */
+    fun resume() {
+        val rec = record ?: return
+        if (!paused) return
+        rec.start()
+        paused = false
+        capturing = true
+        thread = read(rec)
     }
 
     /** Stop the platform read before joining; return only after callbacks have drained. */

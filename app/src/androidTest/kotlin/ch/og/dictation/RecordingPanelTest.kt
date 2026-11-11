@@ -288,75 +288,91 @@ class RecordingPanelTest {
         }
     }
 
+    /** Inflates the panel as the input method would on this phone, in either orientation. */
+    private fun phonePanel(landscape: Boolean, fontScale: Float, night: Boolean): Pair<View, Context> {
+        if (landscape) return landscapePanel(fontScale, night)
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val base = app.resources.configuration
+        val config = Configuration(base).apply {
+            orientation = Configuration.ORIENTATION_PORTRAIT
+            screenWidthDp = minOf(base.screenWidthDp, base.screenHeightDp)
+            screenHeightDp = maxOf(base.screenWidthDp, base.screenHeightDp)
+            this.fontScale = fontScale
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        }
+        val context = app.createConfigurationContext(config)
+        val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+        panel.findViewById<TextView>(R.id.status).setText(R.string.status_recording)
+        PanelPreview.bind(panel.findViewById(R.id.preview),
+            PanelPreview.tail("An invented preview sentence for checking the portrait panel. ".repeat(6).trim()))
+        val metrics = app.resources.displayMetrics
+        layOut(panel, minOf(metrics.widthPixels, metrics.heightPixels))
+        return panel to context
+    }
+
+    private fun layOut(panel: View, width: Int) {
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+    }
+
     /**
-     * #53 review captures (files/lab/issue53-ui, pulled into corpus/): the landscape finishing panel
-     * as Stop leaves it, and each Cancel choice over it, light/dark × default/large font. Offscreen
-     * composites (the dialog as the input method builds it, centred over a dimmed sideways screen);
-     * synthetic text only, no window, microphone or setting is touched.
+     * #61 review captures (files/lab/issue61-ui, pulled into corpus/): the inline Cancel choice
+     * (recording: paused; finishing: insertion held) and the History-only end, portrait and
+     * landscape × light/dark × font 1/2, rendered by the service's own renderer. Offscreen; synthetic
+     * text only, no window, microphone or setting is touched. Every action ≥ 48dp, inside the panel
+     * and not truncated; portrait keeps the recording height.
      */
-    @Test fun captureLandscapeFinishingAndChoices() {
+    @Test fun captureInlineChoicesAndHistoryOnlyEnd() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
-        val out = File(app.filesDir, "lab/issue53-ui").apply { mkdirs() }
-        val metrics = app.resources.displayMetrics
-        val screenW = maxOf(metrics.widthPixels, metrics.heightPixels)
-        val screenH = minOf(metrics.widthPixels, metrics.heightPixels)
+        val out = File(app.filesDir, "lab/issue61-ui").apply { mkdirs() }
         instrumentation.runOnMainSync {
-            for (night in listOf(false, true)) for (fontScale in listOf(1f, 2f)) {
-                val (panel, context) = landscapePanel(fontScale, night)
-                panel.findViewById<TextView>(R.id.status).setText(R.string.status_finishing)
-                panel.findViewById<ImageButton>(R.id.microphone).apply {
-                    isEnabled = false; alpha = 0.55f; contentDescription = context.getString(R.string.status_finishing)
+            for (landscape in listOf(false, true)) for (night in listOf(false, true)) for (fontScale in listOf(1f, 2f)) {
+                val (panel, context) = phonePanel(landscape, fontScale, night)
+                val width = panel.width
+                val density = context.resources.displayMetrics.density
+                val recordingHeight = panel.height
+                val suffix = "${if (landscape) "land" else "port"}-${if (night) "dark" else "light"}-font${if (fontScale > 1f) "large" else "default"}.png"
+                fun save(name: String) {
+                    layOut(panel, width)
+                    val image = Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        panel.draw(Canvas(image))
+                        File(out, "$name-$suffix").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    } finally { image.recycle() }
                 }
-                PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), null)
-                panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-                panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
-                val suffix = "${if (night) "dark" else "light"}-font${if (fontScale > 1f) "large" else "default"}.png"
-                fun save(name: String, image: Bitmap) = try {
-                    File(out, "$name-$suffix").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                } finally { image.recycle() }
-                save("finishing-panel", Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888).also { panel.draw(Canvas(it)) })
-                // The input method's own theme (the service sets none): what its AlertDialog.Builder(this) resolves.
-                val themed = android.view.ContextThemeWrapper(context, android.R.style.Theme_DeviceDefault_InputMethod)
-                val recording = android.app.AlertDialog.Builder(themed)
-                    .setTitle(R.string.discard_take_title).setMessage(R.string.discard_take_recording)
-                    .setNegativeButton(R.string.continue_recording, null).setNeutralButton(R.string.finish_transcription, null)
-                    .setPositiveButton(R.string.discard_take, null).create()
-                val finishingChoice = android.app.AlertDialog.Builder(themed)
-                    .setTitle(R.string.discard_transcript_title)
-                    .setNegativeButton(R.string.keep_finishing, null).setPositiveButton(R.string.discard_take, null).create()
-                for ((name, dialog, status) in listOf(Triple("recording-choice", recording, R.string.status_recording),
-                        Triple("finishing-choice", finishingChoice, R.string.status_finishing))) {
-                    panel.findViewById<TextView>(R.id.status).setText(status)
-                    panel.findViewById<ImageButton>(R.id.microphone).apply {
-                        val on = status == R.string.status_recording
-                        isEnabled = on; alpha = if (on) 1f else 0.55f
-                    }
-                    dialog.create()
-                    val decor = dialog.window!!.decorView
-                    decor.measure(View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.AT_MOST),
-                        View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST))
-                    decor.layout(0, 0, decor.measuredWidth, decor.measuredHeight)
-                    val image = Bitmap.createBitmap(screenW, screenH, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(image)
-                    canvas.drawColor(if (night) Color.rgb(16, 16, 16) else Color.rgb(240, 240, 240))
-                    canvas.save(); canvas.translate(0f, (screenH - panel.height).toFloat()); panel.draw(canvas); canvas.restore()
-                    val dim = themed.obtainStyledAttributes(intArrayOf(android.R.attr.backgroundDimAmount)).let { a ->
-                        a.getFloat(0, 0.6f).also { a.recycle() }
-                    }
-                    canvas.drawColor(Color.argb((dim * 255).roundToInt(), 0, 0, 0))
-                    canvas.save()
-                    canvas.translate(((screenW - decor.width) / 2).toFloat(), ((screenH - decor.height) / 2).toFloat())
-                    decor.draw(canvas); canvas.restore()
-                    save(name, image)
-                    for (button in listOf(android.app.AlertDialog.BUTTON_NEGATIVE, android.app.AlertDialog.BUTTON_NEUTRAL, android.app.AlertDialog.BUTTON_POSITIVE)) {
-                        val b = dialog.getButton(button) ?: continue
-                        if (b.visibility != View.VISIBLE) continue
-                        val r = Rect(); b.getDrawingRect(r); (decor as ViewGroup).offsetDescendantRectToMyCoords(b, r)
-                        assertTrue("${b.text} outside its prompt ($name $suffix)", Rect(0, 0, decor.width, decor.height).contains(r) && b.width > 0)
+                fun checkActions(state: String, ids: List<Int>) {
+                    for (id in ids) {
+                        val action = panel.findViewById<TextView>(id)
+                        val r = bounds(action, panel)
+                        assertTrue("${action.text} outside the panel ($state $suffix)", Rect(0, 0, panel.width, panel.height).contains(r))
+                        assertTrue("${action.text} below 48dp ($state $suffix)", action.height >= 48 * density - 1)
+                        val layout = action.layout
+                        assertTrue("${action.text} truncated ($state $suffix)", (0 until layout.lineCount).all { layout.getEllipsisCount(it) == 0 })
                     }
                 }
+                val mic = panel.findViewById<ImageButton>(R.id.microphone)
+                save("recording")
+                panel.findViewById<TextView>(R.id.status).setText(R.string.status_paused)
+                mic.isEnabled = false; mic.alpha = 0.55f
+                renderPanelChoice(panel, PanelChoice.RECORDING, false, R.string.continue_recording)
+                save("recording-choice")
+                checkActions("recording-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))
+                if (!landscape) assertEquals("choice keeps the panel height ($suffix)", recordingHeight, panel.height)
+                panel.findViewById<TextView>(R.id.status).setText(R.string.status_finishing_choice)
+                renderPanelChoice(panel, PanelChoice.FINISHING, false, R.string.keep_finishing)
+                save("finishing-choice")
+                checkActions("finishing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
+                panel.findViewById<TextView>(R.id.status).setText(R.string.status_saved_history)
+                PanelPreview.bind(panel.findViewById(R.id.preview), "")
+                mic.isEnabled = true; mic.alpha = 1f
+                renderPanelChoice(panel, null, true, R.string.back_to_keyboard)
+                save("history-only-end")
+                checkActions("history-only-end", listOf(R.id.back_to_keyboard))
+                val status = panel.findViewById<TextView>(R.id.status)
+                assertTrue("status clipped ($suffix)", status.height >= status.layout.height)
             }
         }
     }

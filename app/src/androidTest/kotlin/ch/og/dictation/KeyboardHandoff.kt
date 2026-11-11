@@ -73,22 +73,22 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         return Shown.NONE
     }
 
-    /** One of our panel's views by id, in any window (the IME window or its attached prompt). */
+    /** One of our panel's views by id, in any of our windows. */
     fun ourNode(id: Int): AccessibilityNodeInfo? {
         val name = context.resources.getResourceName(id)
         return ourNodes().firstOrNull { it.viewIdResourceName == name && it.isVisibleToUser }
     }
 
-    /** A visible, clickable button of ours by its label (our prompt is attached to our panel's window). */
+    /** A visible, clickable button of ours by its label (the Cancel choice is inline in the panel). */
     fun ourButton(label: Int): AccessibilityNodeInfo? {
         val text = context.getString(label)
         return ourNodes().firstOrNull { it.isClickable && it.isVisibleToUser && it.text?.toString().equals(text, ignoreCase = true) }
     }
 
-    /** Our recording/finishing prompt's Discard button, if that prompt is up. */
+    /** The inline Cancel choice's Discard action, if the choice is open. */
     private fun ourPromptDiscard(): AccessibilityNodeInfo? {
         val label = context.getString(R.string.discard_take)
-        return ourNodes().firstOrNull { it.viewIdResourceName == "android:id/button1" && it.text?.toString() == label }
+        return ourNodes().firstOrNull { it.viewIdResourceName == context.resources.getResourceName(R.id.choice_discard) && it.isVisibleToUser && it.text?.toString() == label }
     }
 
     fun clickOurs(id: Int) {

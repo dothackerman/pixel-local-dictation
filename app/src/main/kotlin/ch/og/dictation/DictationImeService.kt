@@ -1,7 +1,6 @@
 package ch.og.dictation
 
 import android.Manifest
-import android.app.AlertDialog
 import android.view.KeyEvent
 import android.view.Display
 import android.hardware.display.DisplayManager
@@ -48,7 +47,6 @@ class DictationImeService : InputMethodService() {
     private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
-    private var recordingPrompt: AlertDialog? = null
     private var captureEnded: () -> Boolean = { false }
     private var finishing = false
     private var statusText = R.string.status_opening
@@ -105,12 +103,13 @@ class DictationImeService : InputMethodService() {
     private var authorityMoves = false
     /** A Stop-wait rotation hold holds the result before dispatch until the panel has settled. */
     private var deliveryHeldForRotation = false
-    /** A Cancel choice that was open when the rotation hold began; shown again once the panel settles. */
-    private var pendingPrompt: Prompt? = null
-    private enum class Prompt { RECORDING, FINISHING }
-    private var openPrompt: Prompt? = null
-    /** A prompt closed for a rotation: its dismissal decides nothing. */
-    private var movedPrompt: AlertDialog? = null
+    /**
+     * The open Cancel choice, part of the take's state: every panel (also one recreated for a
+     * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
+     */
+    private var choice: PanelChoice? = null
+    /** A take ended without insertion while the panel showed it; the panel says so and offers the way back. */
+    private var endedNotInserted = false
     private val gapExpired = Runnable {
         if (!rotationEpisode) return@Runnable
         if (holding) { Log.i(tag, "rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
@@ -242,6 +241,11 @@ class DictationImeService : InputMethodService() {
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
+        v.findViewById<View>(R.id.back_to_keyboard).setOnClickListener { leaveEndedTake() }
+        v.findViewById<View>(R.id.choice_safe).setOnClickListener { chooseSafe() }
+        v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
+        v.findViewById<View>(R.id.choice_discard).setOnClickListener { chooseDiscard() }
+        renderChoice()
         startup?.event("inputViewCreateEnd")
         return v
     }
@@ -471,8 +475,7 @@ class DictationImeService : InputMethodService() {
             Log.i(tag, "rotation hold")
             ring?.follow(null)
         }
-        // The prompt's window belongs to the panel that is going away; the choice stays open.
-        movePromptAside()
+        // An open choice is take state: the returned panel renders it again; nothing to move.
         // Stop wait: hold the result before dispatch; an accepted commit is never undone.
         if (finishing && !deliveryHeldForRotation && take?.holdDelivery() == true) deliveryHeldForRotation = true
         if (!rotationEpisode) {
@@ -494,30 +497,12 @@ class DictationImeService : InputMethodService() {
         }
     }
 
-    /** Closes an open Cancel choice without choosing; it is shown again when the panel settles. */
-    private fun movePromptAside() {
-        val dialog = recordingPrompt ?: return
-        if (!dialog.isShowing) return
-        pendingPrompt = openPrompt
-        movedPrompt = dialog
-        dismissRecordingPrompt()
-    }
-
-    /**
-     * The panel settled after a rotation: show a moved choice again, or apply its safe default
-     * (Continue recording, Keep finishing) when it cannot be shown; then release a held result.
-     */
+    /** The panel settled after a rotation: release a result held for it, unless the finishing choice holds it. */
     private fun restoreAfterRotation() {
-        val prompt = pendingPrompt
-        pendingPrompt = null
         val heldForRotation = deliveryHeldForRotation
         deliveryHeldForRotation = false
         if (!takeActive || interruptedView) return
-        when {
-            prompt == Prompt.RECORDING && !finishing -> showRecordingPrompt(reopen = true)
-            prompt == Prompt.FINISHING && finishing -> showFinishingPrompt(reopen = true)
-        }
-        if ((heldForRotation || prompt == Prompt.FINISHING) && openPrompt != Prompt.FINISHING) take?.resumeDelivery()
+        if (heldForRotation && choice != PanelChoice.FINISHING) take?.resumeDelivery()
     }
 
     private fun silencedDuringHold() {
@@ -546,14 +531,13 @@ class DictationImeService : InputMethodService() {
 
     /**
      * Take start, end or interruption: ends hold, gap and settling, and forgets everything a
-     * rotation decided for the take: moving authority, the moved choice and the rotation's
-     * delivery hold flag (the take itself releases or drops its held result).
+     * rotation decided for the take: moving authority and the rotation's delivery hold flag (the
+     * take itself releases or drops its held result).
      */
     private fun endHoldAndClearDeliveryHold() {
         endHold()
         authorityMoves = false
         deliveryHeldForRotation = false
-        pendingPrompt = null
     }
 
     /**
@@ -571,7 +555,7 @@ class DictationImeService : InputMethodService() {
             if (!interruptedView) {
                 previewAllowed = true
                 showPreview(latestPreview)
-                if (!finishing) ring?.follow(feedback)
+                if (!finishing && choice == null) ring?.follow(feedback)
             }
         }
         settleAfterRotation()
@@ -675,6 +659,9 @@ class DictationImeService : InputMethodService() {
         }
         MicrophoneOwner.acceptExplicitStart()
         interruptedView = false
+        choice = null
+        endedNotInserted = false
+        renderChoice()
         previewAllowed = true
         if (!hasMicPermission()) {
             showStatus(R.string.status_no_permission)
@@ -739,6 +726,10 @@ class DictationImeService : InputMethodService() {
                     if (result.interrupted) {
                         take = null
                         finishing = false
+                        choice = null
+                        showPreview("")
+                        if (inputViewVisible) endedNotInserted = true
+                        renderChoice()
                         showStatus(if (!inputViewVisible) R.string.status_recording_stopped else when {
                             result.interruptedSaved -> R.string.status_saved_history
                             result.failure != null -> R.string.status_transcription_incomplete
@@ -748,6 +739,7 @@ class DictationImeService : InputMethodService() {
                         setMicrophone(true, R.string.start_recording)
                         return
                     }
+                    choice = null
                     showIdle()
                     if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         Log.e(tag, "take failed: ${result.outcome}")
@@ -818,6 +810,8 @@ class DictationImeService : InputMethodService() {
                         done()
                     }
                 }
+                override fun pause() = microphoneCapture.pause()
+                override fun resume() = microphoneCapture.resume()
                 override fun cancelWithResult(done: (Result<Unit>) -> Unit) {
                     microphoneCapture.cancelWithResult { result ->
                         traceRotation?.event(if (result.isSuccess) RotationEvent.CAPTURE_RELEASED else RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
@@ -857,6 +851,7 @@ class DictationImeService : InputMethodService() {
                     retentionEligible = retentionEligible).also { it.start() }
             }
             take = startedTake
+            renderChoice()
             microphoneCapture.setReleaseRetry { startedTake.retryCaptureRelease() }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
@@ -937,11 +932,17 @@ class DictationImeService : InputMethodService() {
         endHoldAndClearDeliveryHold()
         MicrophoneOwner.requireExplicitStart()
         revokeAuthority()
-        if (interruptedView) return
+        // A system interruption overrides an open choice (paused audio already captured goes to History).
+        choice = null
+        if (interruptedView) { renderChoice(); return }
         interruptedView = true
         val generation = takeGeneration
         session.invalidate()
         finishing = true
+        latestPreview = ""
+        showPreview("")
+        if (inputViewVisible) endedNotInserted = true
+        renderChoice()
         feedback?.stop()
         ring?.follow(null)
         showStatus(R.string.status_stopping_recording)
@@ -960,7 +961,6 @@ class DictationImeService : InputMethodService() {
                 setMicrophone(true, R.string.start_recording)
             }
         }
-        dismissRecordingPrompt()
     }
 
     private fun discardTake(reason: String) {
@@ -984,109 +984,113 @@ class DictationImeService : InputMethodService() {
         mainHandler.post { if (session.matches(token)) returnToKeyboard(); returning = false }
     }
 
-    private fun dismissRecordingPrompt() {
-        recordingPrompt?.dismiss()
-        recordingPrompt = null
-        openPrompt = null
-    }
-
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
-            if (finishing) showFinishingPrompt() else showRecordingPrompt()
+            // Back on an open choice is its safe default; otherwise it opens the choice.
+            if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
             return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
     /**
-     * [reopen]: shown again on the panel that returned after a rotation. If it cannot be attached
-     * there, the safe default applies (Continue recording), never an interruption.
+     * Cancel while recording pauses the take (#61): the platform recording stops, the microphone
+     * stays owned by this take, and the choice opens inline in the panel. No window opens, so the
+     * editor sees no focus change and restarts nothing. If capture already ended or cannot pause,
+     * this is a system interruption (History).
      */
-    private fun showRecordingPrompt(reopen: Boolean = false) {
-        if (recordingPrompt?.isShowing == true || !takeActive || finishing) return
+    private fun openRecordingChoice() {
+        if (choice != null || !takeActive || finishing || interruptedView) return
         if (captureEnded()) { interruptTake(); return }
-        val token = panel?.windowToken ?: return
-        val generation = takeGeneration
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.discard_take_title)
-            .setMessage(R.string.discard_take_recording)
-            .setNegativeButton(R.string.continue_recording) { _, _ -> }
-            .setNeutralButton(R.string.finish_transcription) { _, _ ->
-                if (generation == takeGeneration && takeActive && !finishing) {
-                    if (captureEnded()) interruptTake() else stopAndInsert()
-                }
-            }
-            .setPositiveButton(R.string.discard_take) { _, _ ->
-                if (generation == takeGeneration && takeActive && !finishing) {
-                    if (captureEnded()) { interruptTake(); return@setPositiveButton }
-                    val token = recordingToken
-                    take?.cancel(onDiscarded = { deleted ->
-                        if (generation == takeGeneration && deleted && session.matches(token)) returnToKeyboard()
-                    })
-                    showIdle()
-                }
-            }
-            .create()
-        dialog.setOnDismissListener { if (recordingPrompt === dialog) { recordingPrompt = null; openPrompt = null } }
-        if (!attachPrompt(dialog, token, Prompt.RECORDING) && !reopen) interruptTake()
+        if (take?.pause() != true) { interruptTake(); return }
+        rotationTrace?.event(RotationEvent.CAPTURE_PAUSED, take = rotationTake)
+        choice = PanelChoice.RECORDING
+        ring?.follow(null)
+        showStatus(R.string.status_paused)
+        setMicrophone(false, R.string.status_paused)
+        renderChoice()
     }
 
-    /** Shows [dialog] attached to the panel's window; false if that window is gone. */
-    private fun attachPrompt(dialog: AlertDialog, token: android.os.IBinder, kind: Prompt): Boolean {
-        recordingPrompt = dialog
-        openPrompt = kind
-        dialog.window?.apply {
-            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
-            attributes = attributes.apply { this.token = token }
-            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
-        }
-        return try {
-            dialog.show()
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).apply { isFocusableInTouchMode = true; requestFocus() }
-            true
-        } catch (_: WindowManager.BadTokenException) {
-            recordingPrompt = null
-            openPrompt = null
-            false
+    /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
+    private fun openFinishingChoice() {
+        if (choice != null || !takeActive || !finishing || interruptedView) return
+        if (take?.holdDelivery() != true) return
+        choice = PanelChoice.FINISHING
+        showStatus(R.string.status_finishing_choice)
+        renderChoice()
+    }
+
+    /** Continue recording (resumes the same take) or Keep finishing. Also system Back and the Back arrow. */
+    private fun chooseSafe() {
+        when (choice) {
+            PanelChoice.RECORDING -> {
+                choice = null
+                if (take?.resume() != true) { renderChoice(); interruptTake(); return }
+                rotationTrace?.event(RotationEvent.CAPTURE_RESUMED, take = rotationTake)
+                showStatus(R.string.status_recording)
+                setMicrophone(true, R.string.stop_recording)
+                if (!holding) ring?.follow(feedback)
+                renderChoice()
+            }
+            PanelChoice.FINISHING -> {
+                choice = null
+                showStatus(R.string.status_finishing)
+                renderChoice()
+                // A rotation that still holds the result releases it once the panel has settled.
+                if (!deliveryHeldForRotation) take?.resumeDelivery()
+            }
+            null -> Unit
         }
     }
 
-    /**
-     * Holds the result before dispatch while open. [reopen]: shown again after a rotation; if it
-     * cannot be attached, the safe default applies (Keep finishing), never an interruption.
-     */
-    private fun showFinishingPrompt(reopen: Boolean = false) {
-        if (recordingPrompt?.isShowing == true || !takeActive) return
+    /** Stop and insert: exactly Stop, from the paused take. */
+    private fun chooseStop() {
+        if (choice != PanelChoice.RECORDING) return
+        choice = null
+        renderChoice()
+        if (captureEnded()) interruptTake() else stopAndInsert()
+    }
+
+    /** Discard take: revokes insertion, removes the take's checkpoints and returns to the keyboard. */
+    private fun chooseDiscard() {
         val current = take ?: return
-        val token = panel?.windowToken ?: return
-        if (!current.holdDelivery()) return
+        if (choice == null) return
+        choice = null
+        renderChoice()
         val generation = takeGeneration
-        var discarded = false
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.discard_transcript_title)
-            .setNegativeButton(R.string.keep_finishing) { _, _ -> }
-            .setPositiveButton(R.string.discard_take) { _, _ ->
-                if (generation == takeGeneration && take === current) {
-                    discarded = true
-                    val editor = recordingToken
-                    current.cancel(onDiscarded = { deleted ->
-                        if (generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
-                    })
-                    showIdle()
-                }
-            }.create()
-        dialog.setOnDismissListener {
-            if (recordingPrompt === dialog) { recordingPrompt = null; openPrompt = null }
-            // Closed for a rotation, or the rotation still holds the result: nothing is released.
-            val moved = movedPrompt === dialog
-            if (moved) movedPrompt = null
-            if (!discarded && !moved && !(take === current && deliveryHeldForRotation)) current.resumeDelivery()
-        }
-        if (!attachPrompt(dialog, token, Prompt.FINISHING) && !reopen) interruptTake()
+        val editor = recordingToken
+        current.cancel(onDiscarded = { deleted ->
+            if (generation == takeGeneration && deleted && session.matches(editor)) returnToKeyboard()
+        })
+        showIdle()
+    }
+
+    /** The way back after a take ended without insertion. */
+    private fun leaveEndedTake() {
+        endedNotInserted = false
+        renderChoice()
+        returnToKeyboard()
+    }
+
+    /** Renders the open choice (or none) and the state-correct Back label on the current panel. */
+    private fun renderChoice() {
+        val view = panel ?: return
+        val open = choice
+        renderPanelChoice(view, open, endedNotInserted && !takeActive, when {
+            open == PanelChoice.RECORDING -> R.string.continue_recording
+            open == PanelChoice.FINISHING -> R.string.keep_finishing
+            takeActive && !interruptedView -> R.string.discard_recording
+            else -> R.string.back_to_keyboard
+        })
     }
 
     private fun cancelAndReturn() {
-        if (takeActive) { if (finishing) showFinishingPrompt() else showRecordingPrompt(); return }
+        if (choice != null) { chooseSafe(); return }
+        if (takeActive && !interruptedView) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
+        endedNotInserted = false
+        renderChoice()
+        // An interrupted take keeps finishing into History; Back only leaves.
+        if (takeActive) { returnToKeyboard(); return }
         // Idle (no take, or it already ended): Back belongs to the live editor session.
         val token = recordingToken ?: session.token()
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
@@ -1122,6 +1126,7 @@ class DictationImeService : InputMethodService() {
                 setMicrophone(true, R.string.start_recording)
             }
         }
+        renderChoice()
     }
 
     private fun updateSharedMicrophone() {

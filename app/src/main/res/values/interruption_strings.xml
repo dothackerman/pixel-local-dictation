@@ -1,10 +1,14 @@
 <resources>
     <string name="status_stopping_recording">Stopping recording</string>
-    <string name="status_stopped_finishing_history">Recording stopped — finishing for History</string>
-    <string name="status_stopped_recovery_unavailable">Recording stopped — recovery unavailable</string>
-    <string name="status_transcription_incomplete">Recording stopped — transcription incomplete</string>
-    <string name="status_saved_history">Saved to History</string>
-    <string name="status_recording_stopped">Recording stopped</string>
-    <string name="discard_transcript_title">Discard this transcript?</string>
+    <string name="status_stopped_finishing_history">Stopped · not inserted · finishing for History</string>
+    <string name="status_stopped_recovery_unavailable">Stopped · not inserted · History off for this field</string>
+    <string name="status_transcription_incomplete">Stopped · not inserted · may be incomplete</string>
+    <string name="status_saved_history">Not inserted · saved to History</string>
+    <string name="status_recording_stopped">Stopped · not inserted</string>
     <string name="keep_finishing">Keep finishing</string>
+    <!-- Inline Cancel choice on the recording panel (#61). One noun: take; verbs: Stop, Discard. -->
+    <string name="status_paused">Paused · choose</string>
+    <string name="status_finishing_choice">Finishing · insertion held · choose</string>
+    <string name="choice_title">Cancel take</string>
+    <string name="back_to_keyboard">Back to keyboard</string>
 </resources>

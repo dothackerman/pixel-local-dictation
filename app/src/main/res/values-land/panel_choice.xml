@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Landscape: the Cancel choice replaces the preview; the stage keeps a dimmed microphone. -->
+    <bool name="panel_choice_over_stage">false</bool>
+</resources>

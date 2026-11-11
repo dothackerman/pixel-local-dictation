@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Inline Cancel choice, rendered inside the recording panel from take state (no window of its
+     own, so no focus change and nothing to re-attach after a rotation). Safe action first and
+     primary; Discard last, destructive and set apart by a gap. PanelChoiceLayout lays the
+     actions in one row when they fit at their natural width, otherwise stacks them. -->
+<ch.og.dictation.PanelChoiceLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/choice"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:accessibilityPaneTitle="@string/choice_title"
+    android:gravity="center_vertical"
+    android:visibility="gone">
+    <Button
+        android:id="@+id/choice_safe"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:minWidth="88dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:background="@drawable/choice_primary"
+        android:stateListAnimator="@null"
+        android:fontFamily="sans-serif-medium"
+        android:textAllCaps="false"
+        android:textColor="@color/panel_on_container"
+        android:textSize="14sp"
+        android:text="@string/continue_recording" />
+    <Button
+        android:id="@+id/choice_stop"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="8dp"
+        android:minHeight="48dp"
+        android:minWidth="88dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:background="@drawable/choice_outlined"
+        android:stateListAnimator="@null"
+        android:fontFamily="sans-serif-medium"
+        android:textAllCaps="false"
+        android:textColor="@color/panel_on_surface"
+        android:textSize="14sp"
+        android:text="@string/finish_transcription" />
+    <View
+        android:id="@+id/choice_gap"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:importantForAccessibility="no" />
+    <Button
+        android:id="@+id/choice_discard"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:minWidth="88dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:background="@drawable/choice_text"
+        android:stateListAnimator="@null"
+        android:fontFamily="sans-serif-medium"
+        android:textAllCaps="false"
+        android:textColor="@color/panel_destructive"
+        android:textSize="14sp"
+        android:text="@string/discard_take" />
+</ch.og.dictation.PanelChoiceLayout>

@@ -77,15 +77,21 @@ class RotationFinishingDemoTest {
         bound("stillOneCommit", count("COMMIT_ACCEPTED") == 1)
     }
 
-    /** Back during recording, rotate: the choice comes back; Continue keeps the same take. */
+    /**
+     * Back during recording pauses the take; rotate: the recreated panel renders the same inline
+     * choice, still paused; Continue resumes the same take (one recorder, two platform starts).
+     */
     @Test fun recordingChoiceOpenThroughRotationContinues() = demo("demo53-hidden-recording-choice") {
         keys.clickOurs(R.id.back)
         until(5_000, "recording choice") { keys.ourButton(R.string.continue_recording) != null }
+        bound("paused", count("CAPTURE_PAUSED") == 1)
         rotate()
-        awaitPanelBack(R.string.status_recording)
-        until(ROTATION_SETTLE_MS + 3_000, "recording choice shown again") { keys.ourButton(R.string.continue_recording) != null }
-        bound("choiceNotMade", rows().none { it.getString("event") in setOf("STOP_REQUESTED", "CANCEL_REQUESTED") })
+        awaitPanelBack(R.string.status_paused)
+        until(ROTATION_SETTLE_MS + 3_000, "recording choice rendered again") { keys.ourButton(R.string.continue_recording) != null }
+        Thread.sleep(ROTATION_SETTLE_MS)
+        bound("choiceNotMade", rows().none { it.getString("event") in setOf("STOP_REQUESTED", "CANCEL_REQUESTED", "CAPTURE_RESUMED") })
         click(keys.ourButton(R.string.continue_recording))
+        until(5_000, "resumed") { count("CAPTURE_RESUMED") == 1 }
         Thread.sleep(3_000)
         stop()
         expectInsertion()
@@ -160,8 +166,8 @@ class RotationFinishingDemoTest {
         current!!.panelBackMs = SystemClock.uptimeMillis() - current!!.rotatedAt
     }
     private fun keepFinishingAfterRotation() {
-        awaitPanelBack(R.string.status_finishing)
-        until(ROTATION_SETTLE_MS + 3_000, "finishing choice shown again") { keys.ourButton(R.string.keep_finishing) != null }
+        awaitPanelBack(R.string.status_finishing_choice)
+        until(ROTATION_SETTLE_MS + 3_000, "finishing choice rendered again") { keys.ourButton(R.string.keep_finishing) != null }
         until(30_000, "final decode") { count("FINAL_READY") == 1 }
         Thread.sleep(1_000)
         bound("nothingDispatchedUnderChoice", count("COMMIT_ATTEMPT") == 0)
@@ -189,7 +195,8 @@ class RotationFinishingDemoTest {
         private val stopped = AtomicBoolean(false)
         private var offset = 0
         private var startedNs = 0L
-        override fun start() { starts.incrementAndGet(); startedNs = System.nanoTime() }
+        // A restart after the inline choice's pause continues the fixture where it stopped.
+        override fun start() { starts.incrementAndGet(); stopped.set(false); startedNs = System.nanoTime() - offset * 1_000_000_000L / SAMPLE_RATE }
         override fun read(buffer: ShortArray): Int {
             if (stopped.get()) return -1
             val due = startedNs + (offset + buffer.size) * 1_000_000_000L / SAMPLE_RATE
