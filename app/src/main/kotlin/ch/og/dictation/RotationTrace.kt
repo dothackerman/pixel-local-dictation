@@ -37,7 +37,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         private val terminal = mutableSetOf<Pair<Long, Long>>()
 
         val allowedCases = setOf("signal-capture-rotation", "signal-finishing-rotation", "app-capture-rotation", "app-finishing-rotation",
-            "app-restart", "app-focus", "app-hide", "app-lock")
+            "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls")
 
         fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
             require(caseName in allowedCases)

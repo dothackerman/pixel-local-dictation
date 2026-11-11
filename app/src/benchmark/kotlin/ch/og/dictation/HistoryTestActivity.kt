@@ -2,6 +2,7 @@ package ch.og.dictation
 
 import android.content.Context
 import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatDelegate
 import java.io.File
 
 /** Isolated synthetic History for instrumentation. */
@@ -12,10 +13,16 @@ class HistoryTestActivity : HistoryActivity() {
         @Volatile var historyRootSuffix: String? = null
     }
     override fun attachBaseContext(base: Context) {
+        nightMode?.let {
+            delegate.localNightMode = if (it == Configuration.UI_MODE_NIGHT_YES) {
+                AppCompatDelegate.MODE_NIGHT_YES
+            } else {
+                AppCompatDelegate.MODE_NIGHT_NO
+            }
+        }
         val themed = if (largeTextPreview) {
             val configuration = Configuration(base.resources.configuration).apply {
                 fontScale = 2f
-                nightMode?.let { uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or it }
             }
             base.createConfigurationContext(configuration)
         } else base

@@ -14,7 +14,7 @@
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".RotationProbeActivity" android:exported="false"
-            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize" />
+            android:excludeFromRecents="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HistoryTestActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
         <activity android:name=".SettingsLargeTextPreviewActivity" android:exported="false"

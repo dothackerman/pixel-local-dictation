@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.view.inspector.WindowInspector
 import android.widget.TextView
 import android.widget.ScrollView
+import android.widget.AdapterView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -77,9 +78,17 @@ class HistoryClearTest {
             assertTrue(toolbar.showOverflowMenu())
         }
         val item = awaitText(context.getString(R.string.history_clear), exact = true)
-        val minimum = (48 * context.resources.displayMetrics.density).toInt()
-        assertTrue(maxOf(item.height, item.minimumHeight) >= minimum)
-        instrumentation.runOnMainSync { item.performClick() }
+        instrumentation.runOnMainSync {
+            val row = generateSequence(item as View) { it.parent as? View }
+                .firstOrNull { it.parent is AdapterView<*> } ?: error("Overflow menu row missing")
+            val minimum = (48 * context.resources.displayMetrics.density).toInt()
+            assertTrue("Overflow row is too short", row.height >= minimum)
+            assertTrue("Overflow row is not visible", row.isShown)
+            val menu = row.parent as AdapterView<*>
+            val position = menu.getPositionForView(row)
+            assertTrue(position != AdapterView.INVALID_POSITION)
+            assertTrue(menu.performItemClick(row, position, menu.getItemIdAtPosition(position)))
+        }
     }
 
     private fun awaitClearStatus(status: HistoryClearStatus) {
