@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -63,7 +64,11 @@ class RotationProbeActivity : Activity() {
             "privacy-password" -> "Start dictation in the password field, speak a harmless test phrase, tap Stop, and wait for completion. Tap Done."
             else -> "Start dictation in the no-learning field, speak a harmless test phrase, tap Stop, and wait for completion. Tap Done."
         }
-        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // An autofill suggestion can replace the keyboard's pinned mic. These fields use synthetic input.
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+        }
         val cue = when {
             !guided -> instruction
             caseName.endsWith("capture-rotation") ->
@@ -78,7 +83,12 @@ class RotationProbeActivity : Activity() {
             text = (if (guided) "${selected + 1}/${cases.size}  " else "") + title + "\n" + host + cue +
                 "\nHide the keyboard before recording your observation."
         })
-        val ordinary = if (!caseName.startsWith("signal-") && !caseName.startsWith("history-") && caseName != "accessibility") List(2) { index ->
+        val ordinaryCount = when {
+            caseName == "app-focus" -> 2
+            caseName.startsWith("app-") || caseName == "privacy-ordinary" -> 1
+            else -> 0
+        }
+        val ordinary = List(ordinaryCount) { index ->
             object : EditText(this) {
                 override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? =
                     super.onCreateInputConnection(outAttrs).also {
@@ -92,19 +102,18 @@ class RotationProbeActivity : Activity() {
                 column.addView(this)
             }
         }
-        else emptyList()
-        if (ordinary.isNotEmpty()) column.addView(EditText(this).apply {
+        if (caseName == "privacy-password") column.addView(EditText(this).apply {
             id = R.id.probe_password
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             hint = "Password field"
         })
-        if (ordinary.isNotEmpty()) column.addView(EditText(this).apply {
+        if (caseName == "privacy-no-learning") column.addView(EditText(this).apply {
             id = R.id.probe_no_learning
             inputType = InputType.TYPE_CLASS_TEXT
             imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             hint = "No-learning field"
         })
-        if (ordinary.isNotEmpty()) column.addView(Button(this).apply {
+        if (caseName == "app-restart") column.addView(Button(this).apply {
             text = "Restart focused input"
             setOnClickListener {
                 ordinary.firstOrNull { it.hasFocus() }?.let { field ->
