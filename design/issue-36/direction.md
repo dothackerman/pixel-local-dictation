@@ -35,7 +35,7 @@ WCAG contrast: every pair passes. The page lists all of them.
   - Stop and insert: outlined.
   - Discard take: dashed, set 40dp apart.
   - Tooltips and TalkBack labels carry the words.
-- **Recording ring:** a concentric ribbon of even thickness; loudness grows its radius and thickness uniformly, never its shape.
+- **Recording ring:** soft ink in red-orange; loudness pushes it outward unevenly and thickens it, and the shape drifts slowly (the pre-B2 motion, kept on the owner's word).
 - **Preparing text…:** an animated arc. With animations off it becomes a static segmented ring.
 - **Unable to insert text:** the status plus its marker. Back exits and the mic stays.
 - **Preview:** always 3 lines, newest last.

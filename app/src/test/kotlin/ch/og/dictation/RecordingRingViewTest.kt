@@ -17,12 +17,12 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** #36 critique: the recording ribbon follows loudness by growing evenly; it stays a concentric ring of even thickness. */
+/** #36: the recording ring is soft ink — loudness pushes it outward unevenly and thickens it (owner decision, 2026-11-11). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-port-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RecordingRingViewTest {
-    @Test fun loudestRibbonStaysAConcentricRingOfEvenThickness() {
+    @Test fun loudRingReachesOutwardAndChangesShape() {
         val context = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_Dictation)
         val ring = RecordingRingView(context)
         val size = (200 * context.resources.displayMetrics.density).toInt()
@@ -61,9 +61,9 @@ class RecordingRingViewTest {
             widest = maxOf(widest, thickness.max() - thickness.min())
         }
         val resting = 70 * context.resources.displayMetrics.density * 70f / 94f
-        assertTrue("the ribbon still grows with loudness: $largestMean vs $resting", largestMean > resting * 1.08)
-        assertTrue("radial deviation ${"%.3f".format(worst)} of the radius", worst <= 0.015)
-        assertTrue("thickness varies by $widest px around the ring", widest <= 2.5)
+        assertTrue("the ring grows with loudness: $largestMean vs $resting", largestMean > resting * 1.08)
+        assertTrue("the ring keeps a round shape under loudness: deviation ${"%.3f".format(worst)}", worst >= 0.05)
+        assertTrue("the ink has even thickness under loudness: $widest px", widest >= 3.0)
     }
 
     /** A short stage (landscape) shrinks the growth so the loudest ring never touches the edge. */

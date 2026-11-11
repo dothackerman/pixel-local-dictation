@@ -185,7 +185,7 @@ Status block (both orientations): Back (48dp, labelled by state), status (titleM
 | State | Status | Stage | Back label |
 |---|---|---|---|
 | Idle | Tap the microphone to record | red-orange 70dp disk, 28dp mic glyph, hairline ring around a pale field | Back to keyboard |
-| Recording | Recording | same disk, Stop square; thick red-orange ribbon following loudness: a concentric ring of even thickness whose radius and thickness grow uniformly with loudness; its shape never changes (static thick ring with animations off) | Pause and choose |
+| Recording | Recording | same disk, Stop square; red-orange soft ink following loudness: it reaches outward unevenly, thickens and drifts in shape (static ring that only thickens with animations off) | Pause and choose |
 | Paused | Paused | three icon buttons in one row at one height, each drawn 64×56dp (26dp glyph) inside a 76×68dp target: Continue (filled, fixed 3dp selected ring 3dp outside the fill, focused), Stop and insert (outlined, 16dp after it), Discard take (dashed error, drawn 72dp from Stop; 52dp in the landscape stage); tooltips and content descriptions carry the words | Continue recording |
 | Preparing text… | Preparing text… | no disk: a 64dp red-orange arc (5dp stroke) on an outline-variant track; with animations off a static segmented ring | Hold text and choose |
 | Still preparing text | Still preparing text | Keep preparing text (filled, `hourglass_top` glyph, not play) and Discard take | Keep preparing text |
@@ -216,7 +216,7 @@ Same toolbar and rule; explanation, a square search field (surfaceContainerHigh 
 
 ## Elevation and motion
 
-Flat card: no shadows beyond Material's own sheet/Snackbar scrim. Motion is functional only: the recording ribbon follows loudness, the Preparing arc turns. With animations off both have a still form that reads correctly (thick static ring; segmented ring).
+Flat card: no shadows beyond Material's own sheet/Snackbar scrim. Motion is functional only: the recording ribbon follows loudness, the Preparing arc turns. With animations off both have a still form that reads correctly (static ring; segmented ring).
 
 ## Do's and Don'ts
 
@@ -234,4 +234,4 @@ Flat card: no shadows beyond Material's own sheet/Snackbar scrim. Motion is func
 - **Don't** put more than one mark on a row, or put transport glyphs in a mark slot.
 - **Don't** add a global Save step to the per-entry editor or promise accuracy gains for new terms.
 
-Verification: host — `ThemeContrastTest`, `HistoryRowsTest`, `HistoryScreenTest`, `SettingsScreenTest`, `DictationProductionLifecycleTest` (panel states, Undo exit paths and spoken seconds, choice layout at font 2 portrait/landscape, landscape choice and Undo in the stage, mark after the status, private-field line in landscape at font 2); device — `RecordingPanelTest.captureEveryPanelStateAtBothFontScales` (`files/lab/issue36/b2-panel`), `SettingsHistoryScreenshotTest` (`files/lab/settings-history`: switch off/on, overflow menu, one detail per mark, marks sheet, clear dialog, warning dismissed through its button), `HistoryLayoutTest`, `DictionarySettingsTest` (`files/lab/dictionary-settings`, including `phone-land-font2-*`: the add sheet in landscape at 2× with the keyboard's place drawn as a labelled block). Host: `RecordingRingViewTest` (concentric ribbon of even thickness), `DictionaryEditorRecoveryTest` (landscape sheet row and error, landscape list header and Add term, search hint and error inset at font 1.3×). Private captures: `corpus/lab/issue36/b2/`.
+Verification: host — `ThemeContrastTest`, `HistoryRowsTest`, `HistoryScreenTest`, `SettingsScreenTest`, `DictationProductionLifecycleTest` (panel states, Undo exit paths and spoken seconds, choice layout at font 2 portrait/landscape, landscape choice and Undo in the stage, mark after the status, private-field line in landscape at font 2); device — `RecordingPanelTest.captureEveryPanelStateAtBothFontScales` (`files/lab/issue36/b2-panel`), `SettingsHistoryScreenshotTest` (`files/lab/settings-history`: switch off/on, overflow menu, one detail per mark, marks sheet, clear dialog, warning dismissed through its button), `HistoryLayoutTest`, `DictionarySettingsTest` (`files/lab/dictionary-settings`, including `phone-land-font2-*`: the add sheet in landscape at 2× with the keyboard's place drawn as a labelled block). Host: `RecordingRingViewTest` (soft ink reaches outward and changes shape; stays inside a short stage), `DictionaryEditorRecoveryTest` (landscape sheet row and error, landscape list header and Add term, search hint and error inset at font 1.3×). Private captures: `corpus/lab/issue36/b2/`.
