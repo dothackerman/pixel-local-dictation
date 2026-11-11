@@ -1,0 +1,8 @@
+<resources>
+    <string name="status_stopping_recording">Stopping recording</string>
+    <string name="status_stopped_finishing_history">Recording stopped — finishing for History</string>
+    <string name="status_stopped_recovery_unavailable">Recording stopped — recovery unavailable</string>
+    <string name="status_transcription_incomplete">Recording stopped — transcription incomplete</string>
+    <string name="status_saved_history">Saved to History</string>
+    <string name="status_recording_stopped">Recording stopped</string>
+</resources>

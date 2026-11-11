@@ -7,6 +7,8 @@ import java.nio.file.Files
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,5 +36,24 @@ class BenchmarkStoreTest {
         assertEquals("{}", File(dir, "a.json").readText()); assertEquals(48L, File(dir, "a.wav").length())
         assertTrue(store.deleteAll())
         assertFalse(dir.exists()); assertEquals(0, store.takeCount())
+    }
+
+    @Test fun regressionInterruptedResultsNeverCreateBenchmarkArtifacts() {
+        val dir = File(Files.createTempDirectory("bench-interrupted").toFile(), "benchmark")
+        val store = BenchmarkStore(dir)
+        val completed = TakeResult(TakeOutcome.COMPLETED, "ordinary result", emptyMap(), retentionEligible = true)
+
+        for (outcome in listOf(TakeOutcome.COMPLETED, TakeOutcome.FAILED)) {
+            val recovered = TakeResult(outcome, "accepted prefix", emptyMap(),
+                retentionEligible = true, interrupted = true, interruptedSaved = true)
+            for (enabled in listOf(false, true)) {
+                assertNull(store.saveIfEligible(enabled, recovered, ByteArray(4), 16_000, "recovery text"))
+                assertFalse(dir.exists())
+            }
+        }
+        assertNotNull(store.saveIfEligible(true, completed, ByteArray(4), 16_000, "ordinary text"))
+        assertEquals(setOf("json", "wav"), dir.listFiles()!!.map { it.extension }.toSet())
+        assertFalse(BenchmarkStore.recordingEnabled(true, liveReceipt = true))
+        dir.parentFile?.deleteRecursively()
     }
 }

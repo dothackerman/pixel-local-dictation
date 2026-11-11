@@ -94,6 +94,16 @@ class TakeTranscriberTest {
         assertEquals("eins zwei vier", done!!.getOrThrow())
     }
 
+    @Test fun delayedOlderPreviewCannotReplaceNewerCumulativeText() {
+        val delivery = Queue()
+        val previews = ArrayList<String>()
+        val take = TakeTranscriber({ bySample }, ChunkSegmenter(), direct, delivery) { previews.add(it) }
+        take.feed(seg(1)); take.feed(seg(2))
+        delivery.jobs.removeLast().run()
+        delivery.jobs.removeFirst().run()
+        assertEquals(listOf("eins zwei"), previews)
+    }
+
     @Test fun cancelStopsAllCallbacksEvenForQueuedWork() {
         val queue = Queue(); val previews = ArrayList<String>(); var done: Result<String>? = null
         val take = TakeTranscriber({ bySample }, ChunkSegmenter(), queue, direct) { previews.add(it) }

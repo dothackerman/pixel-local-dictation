@@ -10,9 +10,10 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.LinearLayout
 
 /** Reached from Android's keyboard list (method.xml settingsActivity). */
-class SettingsActivity : AppCompatActivity() {
+open class SettingsActivity : AppCompatActivity() {
     private val store by lazy { BenchmarkStore.of(this) }
     private var stored: TextView? = null
 
@@ -28,6 +29,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.open_dictionary).setOnClickListener {
             startActivity(Intent(this, DictionaryActivity::class.java))
+        }
+        findViewById<Button>(R.id.open_history).setOnClickListener {
+            startActivity(Intent(this, HistoryActivity::class.java))
         }
         stored = findViewById(R.id.benchmark_stored)
         findViewById<Switch>(R.id.benchmark_switch).apply {
@@ -45,7 +49,25 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); showStored() }
+    override fun onResume() { super.onResume(); showStored(); showHistoryNotices() }
+
+    private fun showHistoryNotices() {
+        val container = findViewById<LinearLayout>(R.id.history_notices)
+        container.removeAllViews()
+        val notices = historyNotices(this)
+        notices.pending().forEach { notice ->
+            container.addView(TextView(this).apply {
+                setText(notice.message())
+                accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
+            })
+            container.addView(Button(this).apply {
+                setText(R.string.history_notice_dismiss)
+                contentDescription = getString(R.string.history_notice_dismiss) + ": " + getString(notice.message())
+                minHeight = (48 * resources.displayMetrics.density).toInt()
+                setOnClickListener { notices.dismiss(notice); showHistoryNotices() }
+            })
+        }
+    }
 
     private fun showStored() {
         stored?.text = getString(R.string.benchmark_stored, store.takeCount())

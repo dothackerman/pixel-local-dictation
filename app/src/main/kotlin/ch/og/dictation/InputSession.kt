@@ -29,3 +29,17 @@ class InputSession {
 
     private fun open() { current++; live = true }
 }
+
+/** Null means no editor call was made; callbacks may synchronously invalidate the input. */
+fun <C : Any> commitToInput(
+    session: InputSession, token: Long?, connection: C?, current: () -> C?,
+    allowed: () -> Boolean, before: (C) -> CharSequence?, write: (C, String) -> Boolean,
+    text: String,
+): Boolean? {
+    if (!allowed() || !session.matches(token) || connection == null) return null
+    val preceding = before(connection)
+    val currentConnection = current()
+    if (!allowed() || !session.matches(token) || currentConnection !== connection) return null
+    val lead = if (!preceding.isNullOrEmpty() && !preceding[0].isWhitespace()) " " else ""
+    return write(connection, lead + text)
+}

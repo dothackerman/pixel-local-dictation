@@ -2,6 +2,7 @@ package ch.og.dictation
 
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Timing metadata only; never audio or recognition text. Clock: CLOCK_MONOTONIC. */
 data class TimelineEvent(
@@ -40,6 +41,7 @@ class TakeTranscriber(
     private var active = false
     private var queued = 0
     private var nextChunk = 0
+    private val deliveredChunk = AtomicInteger(-1)
     private var usablePreview = false // delivery thread only
 
     fun timelineSnapshot(phase: String, scheduledNs: Long? = null) = synchronized(stateLock) {
@@ -107,7 +109,7 @@ class TakeTranscriber(
                 if (text.isEmpty()) return@enqueue
                 texts.add(text)
                 val joined = joinChunks(texts, post.seamCapitalize)
-                deliver.execute { if (!cancelled) {
+                deliver.execute { if (!cancelled && deliveredChunk.getAndUpdate { previous -> maxOf(previous, id) } < id) {
                     if (!usablePreview) { usablePreview = true; timeline?.emit(TimelineEvent("firstUsablePreview", chunkId = id)) }
                     onPreview(joined)
                 } }

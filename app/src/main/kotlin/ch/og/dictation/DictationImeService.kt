@@ -3,6 +3,8 @@ package ch.og.dictation
 import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.res.Configuration
+import java.io.File
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -25,6 +27,10 @@ import org.json.JSONObject
  * the previous keyboard. Nothing is written to a field before Stop.
  */
 class DictationImeService : InputMethodService() {
+    companion object {
+        internal var recorderFactory: () -> Recorder = ::Recorder
+        internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
+    }
     private val tag = "DictationIme"
     private var status: TextView? = null
     private var preview: TextView? = null
@@ -37,6 +43,10 @@ class DictationImeService : InputMethodService() {
     private var microphoneEnabled = false
     private var microphoneLabel = R.string.status_opening
     private var banner: View? = null
+    private var retentionNotice: TextView? = null
+    private var editorRetentionEligible = false
+    /** Kept for panel recreation throughout this take; never recomputed from later focus. */
+    private var takeRetentionEligible: Boolean? = null
     /** Only saving audio needs a banner; experiment receipts remain out of the normal panel. */
     private var saveTake = false
     private val session = InputSession()
@@ -47,6 +57,18 @@ class DictationImeService : InputMethodService() {
     /** Session that started the current take; text goes there or nowhere. */
     private var recordingToken: Long? = null
     private var take: TakeSession? = null
+    private var takeGeneration = 0L
+    private var interruptedView = false
+    private var releaseRetry = false
+    private var previewAllowed = false
+    private var destroyed = false
+    private val microphoneOwnerListener: (MicrophoneOwner.State) -> Unit = {
+        mainHandler.post { if (!destroyed) updateSharedMicrophone() }
+    }
+    private var inputViewVisible = false
+    private var rotationTrace: RotationTrace? = null
+    private var rotationView = 0L
+    private var rotationTake = 0L
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
@@ -65,7 +87,10 @@ class DictationImeService : InputMethodService() {
     /** A locked phone must not keep listening. */
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (takeActive) discardAndReturn("screen off")
+            rotationEvent(RotationEvent.SCREEN_OFF)
+            previewAllowed = false
+            showPreview("")
+            if (takeActive) interruptTake()
         }
     }
 
@@ -76,6 +101,10 @@ class DictationImeService : InputMethodService() {
         val superReturnedNs = System.nanoTime()
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
+            if (RotationTrace.probeActive()) {
+                rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+                rotationEvent(RotationEvent.SERVICE_CREATE)
+            }
             startup = StartupTrace(applicationContext).also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
                 it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
@@ -83,6 +112,7 @@ class DictationImeService : InputMethodService() {
             observeGeometry()
         }
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
+        MicrophoneOwner.observe(microphoneOwnerListener)
         val ready = Engine.warmUp(this)
         startup?.event("warmUpReturned")
         ready.whenComplete { _, failure ->
@@ -93,6 +123,8 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        rotationView++
+        rotationEvent(RotationEvent.VIEW_CREATE)
         startup?.event("inputViewCreateBegin")
         val v = layoutInflater.inflate(R.layout.ime, null)
         startup?.event("inputViewInflated")
@@ -117,9 +149,19 @@ class DictationImeService : InputMethodService() {
         preview = v.findViewById<TextView>(R.id.preview).apply { text = previewText }
         showStatus(statusText)
         banner = v.findViewById(R.id.benchmark_banner)
+        retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
+        showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else if (takeRetentionEligible == true) R.string.history_disclosure else null)
         ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
         microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
-            setOnClickListener { if (takeActive) stopAndInsert() else startRecording() }
+            setOnClickListener {
+                if (MicrophoneOwner.state().releaseFailed) {
+                    releaseRetry = false
+                    showStatus(R.string.status_stopping_recording)
+                    setMicrophone(false, R.string.status_stopping_recording)
+                    MicrophoneOwner.retryRelease()
+                } else if (takeActive) stopAndInsert() else startRecording()
+            }
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
@@ -128,32 +170,68 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        attachRotationTrace()
+        rotationEvent(RotationEvent.INPUT_START, restarting)
         super.onStartInput(attribute, restarting)
         observeGeometry()
-        Log.i(tag, "input start: restarting=$restarting take=$takeActive " +
-            "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
+        Log.i(tag, "input start: restarting=$restarting take=$takeActive")
+        editorRetentionEligible = EditorRetentionPolicy.isEligible(attribute)
+        previewAllowed = false
+        showPreview("")
         // Any input start during a take ends that take's session (InputSession.start).
         session.start()
-        if (takeActive) discardAndReturn("input restarted")
+        if (takeActive && !returning) interruptTake()
+        rotationEvent(RotationEvent.INPUT_START_DONE, restarting)
+    }
+
+    private fun attachRotationTrace() {
+        if ((rotationTrace == null || rotationTrace?.closed == true) && resources.getBoolean(R.bool.benchmark_receipts) &&
+            RotationTrace.probeActive()) {
+            rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+            rotationEvent(RotationEvent.SERVICE_ATTACH)
+        }
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        attachRotationTrace()
+        rotationEvent(RotationEvent.INPUT_VIEW_START, restarting)
         super.onStartInputView(info, restarting)
+        inputViewVisible = true
         session.resume()
-        if (returning) return
+        if (returning) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
         if (takeActive) {
             // The view can be restarted without a new input start; keep that take.
-            if (session.matches(recordingToken)) return
-            discardTake("input session changed")
+            if (session.matches(recordingToken)) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
+            interruptTake()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
         }
+        if (MicrophoneOwner.state().occupied) {
+            interruptedView = true
+            updateSharedMicrophone()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        if (MicrophoneOwner.state().explicitStartRequired) {
+            interruptedView = true
+            showIdle()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        if (interruptedView) {
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        takeRetentionEligible = null
         val liveCheck = Engine.liveReceipt() != null
         // The supervised live check stores timing/identity receipts only, never new recordings.
-        saveTake = !liveCheck && BenchmarkStore.isEnabled(this)
+        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         observeGeometry(startupTake)
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
+        rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
     }
 
     override fun onComputeInsets(outInsets: Insets) {
@@ -211,27 +289,66 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        rotationEvent(RotationEvent.INPUT_VIEW_FINISH, finishingInput)
+        inputViewVisible = false
         ring?.follow(null)
         geometryTake = null
         geometryUntilNs = 0L
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
+        previewAllowed = false
+        showPreview("")
         Log.i(tag, "input view finished: finishingInput=$finishingInput take=$takeActive")
-        if (takeActive) discardAndReturn("input view finished")
+        if (takeActive && !returning) interruptTake()
         super.onFinishInputView(finishingInput)
+        rotationEvent(RotationEvent.INPUT_VIEW_FINISH_DONE, finishingInput)
     }
 
     override fun onFinishInput() {
+        rotationEvent(RotationEvent.INPUT_FINISH)
         geometryTake = null
         geometryUntilNs = 0L
         session.invalidate()
-        if (takeActive) discardAndReturn("input finished")
+        previewAllowed = false
+        showPreview("")
+        if (takeActive && !returning) interruptTake()
         super.onFinishInput()
+        rotationEvent(RotationEvent.INPUT_FINISH_DONE)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        rotationEvent(RotationEvent.CONFIGURATION)
+        super.onConfigurationChanged(newConfig)
+        rotationEvent(RotationEvent.CONFIGURATION_DONE)
+    }
+
+    override fun onWindowShown() {
+        rotationEvent(RotationEvent.WINDOW_SHOWN)
+        super.onWindowShown()
+    }
+
+    override fun onWindowHidden() {
+        rotationEvent(RotationEvent.WINDOW_HIDDEN)
+        previewAllowed = false
+        showPreview("")
+        session.invalidate()
+        if (takeActive && !returning) interruptTake()
+        super.onWindowHidden()
+    }
+
+    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null) {
+        rotationTrace?.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
+            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 })
     }
 
     override fun onDestroy() {
+        rotationEvent(RotationEvent.SERVICE_DESTROY)
+        destroyed = true
+        MicrophoneOwner.remove(microphoneOwnerListener)
         unregisterReceiver(screenOff)
-        discardTake("service destroyed")
+        session.invalidate()
+        if (takeActive) interruptTake()
+        if (releaseRetry) MicrophoneOwner.retryRelease()
         feedback?.stop()
         ring?.follow(null)
         super.onDestroy()
@@ -239,22 +356,47 @@ class DictationImeService : InputMethodService() {
 
     private fun startRecording() {
         if (takeActive) return
+        if (MicrophoneOwner.state().occupied) {
+            interruptedView = true
+            updateSharedMicrophone()
+            return
+        }
+        MicrophoneOwner.acceptExplicitStart()
+        interruptedView = false
+        previewAllowed = true
         if (!hasMicPermission()) {
             showStatus(R.string.status_no_permission)
             setMicrophone(false, R.string.status_no_permission)
             return
         }
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
+        rotationTake++
+        rotationEvent(RotationEvent.CAPTURE_START)
         try {
             val liveTakeId = startupTake
+            val generation = ++takeGeneration
+            val currentRotationTake = rotationTake
             val token = session.token()
             recordingToken = token
             val save = saveTake
+            val retentionEligible = editorRetentionEligible
+            takeRetentionEligible = retentionEligible
+            showPanelDisclosure(if (retentionEligible) R.string.history_disclosure else R.string.retention_field_off)
             var identity: () -> org.json.JSONObject? = { null }
+            var attempted = false
             val output = object : TakeOutput {
-                override fun preview(text: String) = showPreview(text)
-                override fun commit(text: String) = commitForSession(token, text)
+                override fun preview(text: String) = publishPreview(generation, text)
+                override fun captureReleaseFailed() {
+                    if (generation != takeGeneration) return
+                    releaseRetry = true
+                    showStatus(R.string.status_release_failed)
+                    setMicrophone(true, R.string.retry_release)
+                }
+                override fun commit(text: String) = commitForSession(token, text) { attempted = true }
+                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(token, text, allowed) { attempted = true }
+                override fun commitAttempted() = attempted
                 override fun returnToKeyboard(): Boolean {
+                    if (!session.matches(token)) return false
                     // Switching the IME can synchronously invalidate input. The result has
                     // already been submitted; do not turn that hand-back into cancellation.
                     returning = true
@@ -262,18 +404,37 @@ class DictationImeService : InputMethodService() {
                     finally { mainHandler.post { returning = false } }
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
+                    rotationTrace?.event(when (result.outcome) {
+                        TakeOutcome.COMPLETED -> RotationEvent.TERMINAL_COMPLETED
+                        TakeOutcome.CANCELLED -> RotationEvent.TERMINAL_CANCELLED
+                        TakeOutcome.INPUT_CHANGED -> RotationEvent.TERMINAL_INPUT_CHANGED
+                        TakeOutcome.FAILED -> RotationEvent.TERMINAL_FAILED
+                        TakeOutcome.COMMIT_REJECTED -> RotationEvent.TERMINAL_COMMIT_REJECTED
+                    }, take = currentRotationTake)
                     identity()?.let { startup?.liveResult(liveTakeId, it, result) }
-                    if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
-                        saveBenchmarkTake(pcm, result)
-                    }
+                    if (!result.interrupted) saveBenchmarkTake(save && !RotationTrace.probeActive(), pcm, result)
+                    if (generation != takeGeneration) return
                     recordingToken = null
                     startupTake = null
+                    if (result.interrupted) {
+                        take = null
+                        finishing = false
+                        showStatus(if (!inputViewVisible) R.string.status_recording_stopped else when {
+                            result.interruptedSaved -> R.string.status_saved_history
+                            result.failure != null -> R.string.status_transcription_incomplete
+                            !result.retentionEligible -> R.string.status_stopped_recovery_unavailable
+                            else -> R.string.status_recording_stopped
+                        })
+                        setMicrophone(true, R.string.start_recording)
+                        return
+                    }
                     showIdle()
                     if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
-                        Log.e(tag, "take failed: ${result.outcome}", result.failure)
+                        Log.e(tag, "take failed: ${result.outcome}")
                         showStatus(R.string.status_failed)
                         setMicrophone(true, R.string.retry_recording)
                     }
+                    if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
                 }
             }
             showStatus(R.string.status_opening)
@@ -286,7 +447,10 @@ class DictationImeService : InputMethodService() {
             ring?.follow(currentFeedback)
             val trace = startup
             val traceTake = startupTake
-            val capture = MicrophoneCapture(onStarted = {
+            val traceRotation = rotationTrace
+            val traceRotationTake = rotationTake
+            val microphoneCapture = MicrophoneCapture(onStarted = {
+                traceRotation?.event(RotationEvent.CAPTURE_STARTED, take = traceRotationTake)
                 trace?.event("recordingStarted", traceTake)
                 mainHandler.post {
                     if (feedback === currentFeedback && takeActive && !finishing) {
@@ -296,33 +460,80 @@ class DictationImeService : InputMethodService() {
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
-                mainHandler.post {
-                    if (feedback === currentFeedback && takeActive && !finishing) {
-                        // Preserve the existing ability to finish the audio captured before interruption.
-                        showStatus(R.string.status_capture_ended)
-                        setMicrophone(true, R.string.finish_transcription)
-                        ring?.follow(null)
+                traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
+                postCaptureEnd(mainHandler, Runnable {
+                    if (feedback === currentFeedback && takeActive) {
+                        // Unexpected capture end is a system interruption: revoke insertion,
+                        // release capture, then finish only the audio already accepted.
+                        interruptTake()
+                    }
+                })
+            }, recorder = recorderFactory())
+            val capture = object : TakeCapture {
+                override fun start(accept: (FloatArray) -> Unit) {
+                    try { microphoneCapture.start(accept) }
+                    catch (failure: Throwable) {
+                        traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        throw failure
                     }
                 }
-            })
-            val observer = if (trace == null) null else TimelineObserver { event ->
-                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
-                    trace.event(event.phase, traceTake, event.ns)
+                override fun stop(done: (Result<ByteArray>) -> Unit) {
+                    microphoneCapture.stop { result ->
+                        if (result.isFailure) traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        else traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
+                        done(result)
+                    }
+                }
+                override fun cancel(done: () -> Unit) {
+                    microphoneCapture.cancel {
+                        traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
+                        done()
+                    }
+                }
+                override fun cancelWithResult(done: (Result<Unit>) -> Unit) {
+                    microphoneCapture.cancelWithResult { result ->
+                        traceRotation?.event(if (result.isSuccess) RotationEvent.CAPTURE_RELEASED else RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        done(result)
+                    }
                 }
             }
-            take = Engine.openTake(this) { runtime, receipt ->
-                identity = receipt
-                runtime.open(capture, output, mainExecutor, observer).also { it.start() }
+            val observer = if (trace == null && traceRotation == null) null else TimelineObserver { event ->
+                val rotationEvent = when (event.phase) {
+                    "stopRequested" -> RotationEvent.STOP_REQUESTED
+                    "captureStopped" -> RotationEvent.CAPTURE_STOPPED
+                    "takeEnded" -> RotationEvent.TAKE_ENDED
+                    else -> null
+                }
+                if (rotationEvent != null) traceRotation?.event(rotationEvent, take = traceRotationTake)
+                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
+                    trace?.event(event.phase, traceTake, event.ns)
+                }
             }
+            val startedTake = Engine.openTake(this) { runtime, receipt ->
+                identity = receipt
+                runtime.open(capture, HistoryTakeOutput(output,
+                    { HistoryIo.store(java.io.File(noBackupFilesDir, "history")) }, HistoryIo.executor,
+                    { recordHistoryNotice(HistoryNotice.SAVE) }, delivery = mainExecutor,
+                    onDeleteFailure = { recordHistoryNotice(HistoryNotice.DELETE) },
+                    onReceiptFailure = { recordHistoryNotice(HistoryNotice.RECEIPT) },
+                    onTakeFailure = { hasPrefix -> if (hasPrefix) recordHistoryNotice(HistoryNotice.INCOMPLETE) }), mainExecutor, observer,
+                    retentionEligible = retentionEligible).also { it.start() }
+            }
+            take = startedTake
+            microphoneCapture.setReleaseRetry { startedTake.retryCaptureRelease() }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
+            rotationEvent(RotationEvent.CAPTURE_FAILED)
+            rotationEvent(RotationEvent.CAPTURE_NOT_ACQUIRED)
+            rotationEvent(RotationEvent.TERMINAL_FAILED)
             startup?.event("recordingFailed", startupTake)
             startupTake = null
             feedback?.stop()
             showIdle()
-            Log.e(tag, "start failed", e)
+            Log.e(tag, "start failed")
             showStatus(R.string.status_failed)
             setMicrophone(true, R.string.retry_recording)
+            if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
         }
     }
 
@@ -340,18 +551,18 @@ class DictationImeService : InputMethodService() {
      * The only path that writes to a field. Commits on the main thread and only
      * while the session that started the take is still the live one.
      */
-    private fun commitForSession(token: Long?, text: String): Boolean {
+    private fun commitForSession(token: Long?, text: String, allowed: () -> Boolean = { true }, onAttempt: () -> Unit): Boolean {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
-        if (!session.matches(token)) { Log.w(tag, "input session changed; dropping result"); return false }
-        val ic = currentInputConnection
-        if (ic == null) { Log.w(tag, "no input connection; dropping result"); return false }
-        // Dictating after existing text: separate with a space unless there is one already.
-        val before = ic.getTextBeforeCursor(1, 0)
-        val lead = if (!before.isNullOrEmpty() && !before[0].isWhitespace()) " " else ""
-        return ic.commitText(lead + text, 1)
+        rotationEvent(RotationEvent.COMMIT_ATTEMPT)
+        val result = commitToInput(session, token, currentInputConnection, { currentInputConnection }, allowed,
+            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); ic.commitText(content, 1) }, text)
+        if (result == null) return false
+        return result.also {
+            rotationEvent(if (it) RotationEvent.COMMIT_ACCEPTED else RotationEvent.COMMIT_REJECTED)
+        }
     }
 
-    private fun saveBenchmarkTake(pcm: ByteArray, result: TakeResult) {
+    private fun saveBenchmarkTake(enabled: Boolean, pcm: ByteArray, result: TakeResult) {
         fun ms(from: String, to: String): Long {
             val start = result.eventsNs[from]
             val end = result.eventsNs[to]
@@ -370,15 +581,46 @@ class DictationImeService : InputMethodService() {
                 .put("outcome", result.outcome.name)
                 .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
                 .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
-            val name = BenchmarkStore.of(this).save(pcm, SAMPLE_RATE, json.toString(2))
-            Log.i(tag, "benchmark take saved: $name")
+            val name = BenchmarkStore.of(this).saveIfEligible(enabled, result, pcm, SAMPLE_RATE, json.toString(2))
+            if (name != null) Log.i(tag, "benchmark take saved: $name")
         } catch (e: Exception) {
             Log.e(tag, "benchmark save failed", e)
         }
     }
 
+    /** System interruption revokes insertion before requesting capture release. */
+    private fun interruptTake() {
+        val old = take ?: return
+        MicrophoneOwner.requireExplicitStart()
+        previewAllowed = false
+        showPreview("")
+        if (interruptedView) return
+        interruptedView = true
+        val generation = takeGeneration
+        session.invalidate()
+        finishing = true
+        feedback?.stop()
+        ring?.follow(null)
+        showStatus(R.string.status_stopping_recording)
+        setMicrophone(false, R.string.status_stopping_recording)
+        old.interrupt {
+            if (generation == takeGeneration) {
+                // Decode and History may continue, but capture ownership has ended.
+                releaseRetry = false
+                take = null
+                recordingToken = null
+                startupTake = null
+                showStatus(if (!inputViewVisible) R.string.status_recording_stopped else
+                    if (takeRetentionEligible == true) R.string.status_stopped_finishing_history
+                    else R.string.status_stopped_recovery_unavailable)
+                setMicrophone(true, R.string.start_recording)
+            }
+        }
+    }
+
     private fun discardTake(reason: String) {
         if (!takeActive) return
+        rotationEvent(RotationEvent.CANCEL_REQUESTED)
         take?.cancel(inputChanged = reason != "by user")
         Log.i(tag, "cancelled: $reason")
     }
@@ -389,14 +631,17 @@ class DictationImeService : InputMethodService() {
      */
     private fun discardAndReturn(reason: String) {
         if (returning) return
+        val token = recordingToken
         discardTake(reason)
         showIdle()
+        if (!session.matches(token)) return
         returning = true
-        mainHandler.post { returnToKeyboard(); returning = false }
+        mainHandler.post { if (session.matches(token)) returnToKeyboard(); returning = false }
     }
 
     private fun cancelAndReturn() {
-        discardTake("by user"); showIdle(); returnToKeyboard()
+        val token = recordingToken
+        discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }
 
     private fun returnToKeyboard(): Boolean {
@@ -412,9 +657,57 @@ class DictationImeService : InputMethodService() {
         feedback = null
         ring?.follow(null)
         finishing = false
-        showStatus(R.string.status_idle)
         showPreview("")
-        setMicrophone(true, R.string.start_recording)
+        if (!takeActive) releaseRetry = false
+        when {
+            releaseRetry && takeActive -> {
+                showStatus(R.string.status_release_failed)
+                setMicrophone(true, R.string.retry_release)
+            }
+            takeActive -> {
+                showStatus(R.string.status_stopping_recording)
+                setMicrophone(false, R.string.status_stopping_recording)
+            }
+            MicrophoneOwner.state().occupied -> updateSharedMicrophone()
+            else -> {
+                showStatus(R.string.status_idle)
+                setMicrophone(true, R.string.start_recording)
+            }
+        }
+    }
+
+    private fun updateSharedMicrophone() {
+        val owner = MicrophoneOwner.state()
+        if (takeActive) return
+        if (owner.occupied) {
+            interruptedView = true
+            if (owner.releaseFailed) {
+                showStatus(R.string.status_release_failed)
+                setMicrophone(true, R.string.retry_release)
+            } else {
+                showStatus(R.string.status_stopping_recording)
+                setMicrophone(false, R.string.status_stopping_recording)
+            }
+        } else if (interruptedView) showIdle()
+    }
+
+    /** Secondary disclosure has its own view so recording/finishing status stays truthful. */
+    private fun showPanelDisclosure(message: Int?) {
+        val warning = historyNotices(this).pending().firstOrNull()?.message()
+        retentionNotice?.let {
+            PanelDisclosure.bind(it, message ?: warning)
+            if (warning != null && message != null && warning != message) {
+                it.text = getString(message) + "\n" + getString(warning)
+            }
+        }
+    }
+
+    private fun recordHistoryNotice(notice: HistoryNotice) {
+        historyNotices(this).record(notice)
+        mainHandler.post {
+            showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off
+                else if (takeRetentionEligible == true) R.string.history_disclosure else null)
+        }
     }
 
     private fun showStatus(label: Int) {
@@ -433,6 +726,10 @@ class DictationImeService : InputMethodService() {
     }
 
     /** The end of the text so far; the view is a few lines high. */
+    private fun publishPreview(generation: Long, text: String) {
+        if (generation == takeGeneration && previewAllowed && !interruptedView) showPreview(text)
+    }
+
     private fun showPreview(text: String) {
         previewText = text.takeLast(240)
         preview?.text = previewText

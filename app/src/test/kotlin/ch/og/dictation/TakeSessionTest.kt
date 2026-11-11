@@ -44,6 +44,52 @@ class TakeSessionTest {
         }
     }
 
+    @Test fun unconfirmedReleaseKeepsTakeActiveUntilRetryAcknowledges() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        var released = false
+        session.interrupt { released = true }
+        capture.drained(Result.failure(CaptureReleaseUnconfirmed()))
+        assertTrue(session.active)
+        assertFalse(released)
+        assertTrue(output.results.isEmpty())
+        session.retryCaptureRelease()
+        capture.released!!()
+        assertTrue(released)
+        assertFalse(session.active)
+        assertEquals(TakeOutcome.FAILED, output.results.single().outcome)
+    }
+
+    @Test fun failedReleaseRetryKeepsLeaseAndRejectsCompletionUntilConfirmed() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        var drained: ((Result<ByteArray>) -> Unit)? = null
+        var retry: ((Result<Unit>) -> Unit)? = null
+        val capture = object : TakeCapture {
+            override fun start(accept: (FloatArray) -> Unit) {}
+            override fun stop(done: (Result<ByteArray>) -> Unit) { drained = done }
+            override fun cancel(done: () -> Unit) {}
+            override fun cancelWithResult(done: (Result<Unit>) -> Unit) { retry = done }
+        }
+        val output = Output()
+        val take = runtime.open(capture, output, direct)
+        take.start()
+        take.stop()
+        drained!!(Result.failure(CaptureReleaseUnconfirmed()))
+        take.retryCaptureRelease()
+        retry!!(Result.failure(CaptureReleaseUnconfirmed()))
+        assertTrue(take.active)
+        assertTrue(output.results.isEmpty())
+        assertThrows(IllegalStateException::class.java) { runtime.close() }
+        take.retryCaptureRelease()
+        retry!!(Result.success(Unit))
+        assertFalse(take.active)
+        assertEquals(TakeOutcome.FAILED, output.results.single().outcome)
+        runtime.close()
+    }
+
     @Test fun startupReceiptsDistinguishCaptureRequestFromFirstAudio() {
         val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
@@ -60,6 +106,37 @@ class TakeSessionTest {
         val events = output.results.single().eventsNs
         assertEquals(10L, events["captureStart"])
         assertEquals(30L, events["firstAudio"])
+    }
+
+    @Test fun excludedRetentionDecisionIsLatchedIntoCompletedTakeWithoutBlockingDictation() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "private words" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct, retentionEligible = false)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        capture.drained(Result.success(byteArrayOf(1, 2)))
+
+        assertEquals(listOf("private words"), output.inserted)
+        assertFalse(output.results.single().retentionEligible)
+        assertFalse(BenchmarkStore.shouldSave(enabled = true, output.results.single()))
+        assertFalse(BenchmarkStore.shouldSave(enabled = false, output.results.single()))
+    }
+
+    @Test fun ordinaryOptInBenchmarkEligibilityIsPreserved() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "ordinary words" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct, retentionEligible = true)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        capture.drained(Result.success(byteArrayOf(1, 2)))
+
+        assertEquals(listOf("ordinary words"), output.inserted)
+        assertTrue(BenchmarkStore.shouldSave(enabled = true, output.results.single()))
+        assertFalse(BenchmarkStore.shouldSave(enabled = false, output.results.single()))
     }
 
     @Test fun stopWaitsForCaptureDrainAndInsertsOnce() {
@@ -162,4 +239,118 @@ class TakeSessionTest {
         assertEquals(TakeOutcome.CANCELLED, output.results.single().outcome)
         runtime.close().join()
     }
+    @Test fun interruptionFreezesAudioAndReleasesBeforeQueuedDecode() {
+        val queue = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        var released = false
+        session.interrupt { released = true }
+        capture.feed(floatArrayOf(2f))
+        assertFalse(released)
+        capture.drained(Result.success(byteArrayOf(1)))
+        assertTrue(released)
+        assertTrue(output.results.isEmpty())
+        queue.drain()
+        assertTrue(output.inserted.isEmpty())
+        assertEquals(0, output.returns)
+        assertEquals("word", output.results.single().text)
+        assertEquals(TakeOutcome.INPUT_CHANGED, output.results.single().outcome)
+        assertTrue(output.results.single().interrupted)
+    }
+
+    @Test fun interruptionDuringStopDoesNotInsertAndCannotBeBenchmarkedOnFailure() {
+        val queue = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { throw IllegalStateException("decode") } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        var released = false
+        session.interrupt { released = true }
+        capture.feed(floatArrayOf(2f))
+        capture.drained(Result.success(byteArrayOf(1)))
+        assertTrue(released)
+        queue.drain()
+        val result = output.results.single()
+        assertEquals(TakeOutcome.FAILED, result.outcome)
+        assertFalse(BenchmarkStore.shouldSave(true, result))
+        assertTrue(output.inserted.isEmpty())
+        assertEquals(0, output.returns)
+    }
+
+    @Test fun interruptionStillFlushesAcceptedAudioWhenCaptureStopReportsFailure() {
+        val queue = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output()
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.interrupt()
+        capture.drained(Result.failure(IllegalStateException("stop")))
+        queue.drain()
+        assertEquals("word", output.results.single().text)
+        assertEquals(TakeOutcome.FAILED, output.results.single().outcome)
+        assertTrue(output.inserted.isEmpty())
+    }
+
+    @Test fun newTakeCanCaptureAfterOldReleaseWhileOldDecodeKeepsLease() {
+        val queue = Queue()
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { Recognizer { "word" } }, segments)
+        val oldCapture = Capture()
+        val oldOutput = Output()
+        val old = runtime.open(oldCapture, oldOutput, direct)
+        old.start()
+        oldCapture.feed(floatArrayOf(1f))
+        old.interrupt()
+        oldCapture.drained(Result.success(byteArrayOf()))
+        val newCapture = Capture()
+        val newOutput = Output()
+        val current = runtime.open(newCapture, newOutput, direct)
+        current.start()
+        newCapture.feed(floatArrayOf(2f))
+        current.stop()
+        newCapture.drained(Result.success(byteArrayOf()))
+        assertThrows(IllegalStateException::class.java) { runtime.close() }
+        queue.drain()
+        assertTrue(oldOutput.inserted.isEmpty())
+        assertEquals(0, oldOutput.returns)
+        assertEquals(listOf("word"), newOutput.inserted)
+        runtime.close()
+        queue.drain()
+    }
+
+    @Test fun interruptionWhileFinalSaveWaitsNeverDispatchesToEditor() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        lateinit var stageReady: () -> Unit
+        var commits = 0
+        var result: TakeResult? = null
+        val output = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) { stageReady = ready }
+            override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) { done(true) }
+            override fun commit(text: String): Boolean { commits++; return true }
+            override fun returnToKeyboard(): Boolean { fail("must not return"); return false }
+            override fun finished(value: TakeResult, pcm: ByteArray) { result = value }
+        }
+        val take = runtime.open(capture, output, direct)
+        take.start()
+        capture.feed(floatArrayOf(1f))
+        take.stop()
+        capture.drained(Result.success(byteArrayOf()))
+        var released = false
+        take.interrupt { released = true }
+        assertTrue(released)
+        stageReady()
+        assertEquals(0, commits)
+        assertTrue(result!!.interruptedSaved)
+    }
+
 }
