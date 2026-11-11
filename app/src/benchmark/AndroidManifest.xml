@@ -5,6 +5,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application>
+        <service android:name=".CheckpointProducerService" android:exported="false" android:process=":checkpoint_producer" />
         <!-- Test-owned editor; no launcher/export in either APK. Release excludes it. -->
         <activity
             android:name=".EditorProbeActivity"
@@ -12,6 +13,12 @@
             android:excludeFromRecents="true"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".RotationProbeActivity" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HistoryTestActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
+        <activity android:name=".SettingsLargeTextPreviewActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings" />
         <activity android:name=".DictionaryLargeTextPreviewActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings"
             android:windowSoftInputMode="adjustResize" />

@@ -42,6 +42,29 @@ class RecordingPanelTest {
         }
     }
 
+    @Test fun privacyDisclosureIsSecondaryAndOrdinaryHistoryDisclosureStartsHidden() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val panel = LayoutInflater.from(instrumentation.targetContext).inflate(R.layout.ime, null)
+            val status = panel.findViewById<TextView>(R.id.status)
+            val disclosure = panel.findViewById<TextView>(R.id.retention_notice)
+            status.setText(R.string.status_finishing)
+            assertEquals(View.GONE, disclosure.visibility)
+            assertFalse(instrumentation.targetContext.getString(R.string.history_disclosure) in status.text)
+
+            // Rebind the same latched decision after the system recreates the panel.
+            val latchedEligible = false
+            PanelDisclosure.bind(disclosure, if (latchedEligible) null else R.string.retention_field_off)
+            val recreated = LayoutInflater.from(instrumentation.targetContext).inflate(R.layout.ime, null)
+            val recreatedNotice = recreated.findViewById<TextView>(R.id.retention_notice)
+            PanelDisclosure.bind(recreatedNotice, if (latchedEligible) null else R.string.retention_field_off)
+            assertEquals(View.VISIBLE, recreatedNotice.visibility)
+            assertEquals(disclosure.text.toString(), recreatedNotice.text.toString())
+            assertEquals(instrumentation.targetContext.getString(R.string.status_finishing), status.text.toString())
+            assertEquals(instrumentation.targetContext.getString(R.string.retention_field_off), disclosure.text.toString())
+        }
+    }
+
     @Test fun compactPanelKeepsControlsAndPreviewAtLargeFontSizes() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext
@@ -54,6 +77,8 @@ class RecordingPanelTest {
                 val status = panel.findViewById<TextView>(R.id.status)
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 status.setText(R.string.status_capture_ended)
+                val notice = panel.findViewById<TextView>(R.id.retention_notice)
+                PanelDisclosure.bind(notice, R.string.retention_field_off)
                 preview.text = "An invented preview sentence for checking larger text. ".repeat(8)
                 val width = (320 * density).toInt()
                 panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -64,6 +89,9 @@ class RecordingPanelTest {
                 assertEquals((70 * density).roundToInt(), mic.width)
                 assertEquals((48 * density).roundToInt(), back.width)
                 assertTrue(preview.textSize <= status.textSize)
+                assertEquals(View.VISIBLE, notice.visibility)
+                assertTrue("notice clipped at fontScale=$fontScale",
+                    notice.height >= notice.layout.height + notice.compoundPaddingTop + notice.compoundPaddingBottom)
                 assertTrue("status clipped at fontScale=$fontScale",
                     status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
                 // The gap after the last visible line is not clipped text.
@@ -72,6 +100,15 @@ class RecordingPanelTest {
                 val stage = mic.parent as ViewGroup
                 assertTrue(mic.left >= 0 && mic.right <= stage.width && mic.bottom <= stage.height)
                 assertEquals(2, actions(panel))
+                for (message in listOf(R.string.status_stopping_recording,
+                    R.string.status_stopped_finishing_history, R.string.status_stopped_recovery_unavailable, R.string.status_transcription_incomplete, R.string.status_saved_history)) {
+                    status.setText(message)
+                    panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                    panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+                    assertTrue("interruption status clipped at fontScale=$fontScale",
+                        status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                }
             }
             val metrics = app.resources.displayMetrics
             instrumentation.sendStatus(0, Bundle().apply {
