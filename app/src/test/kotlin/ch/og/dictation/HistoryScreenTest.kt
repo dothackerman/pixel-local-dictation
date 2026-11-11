@@ -118,16 +118,51 @@ class HistoryScreenTest {
         assertEquals(View.GONE, page.findViewById<View>(R.id.history_list_pane).visibility)
     }
 
+    private fun slot(page: Page) = page.findViewById<View>(R.id.history_status)
+    private fun slotText(page: Page) = page.findViewById<TextView>(R.id.history_status_text).text.toString()
+    private fun slotAction(page: Page) = page.findViewById<TextView>(R.id.history_status_action)
+    private fun liveRegions(view: View): Int =
+        (if (view.isShown && view.accessibilityLiveRegion != View.ACCESSIBILITY_LIVE_REGION_NONE) 1 else 0) +
+            if (view is ViewGroup) (0 until view.childCount).sumOf { liveRegions(view.getChildAt(it)) } else 0
+
     @Test fun pendingWarningIsOneInlineRowWithADismissAction() {
         historyNotices(app).record(HistoryNotice.SAVE)
         historyNotices(app).record(HistoryNotice.DELETE)
         val page = open()
-        assertEquals(View.VISIBLE, page.findViewById<View>(R.id.history_notice).visibility)
-        assertEquals(app.getString(R.string.history_save_error), page.findViewById<TextView>(R.id.history_notice_text).text.toString())
-        page.findViewById<View>(R.id.history_notice_dismiss).performClick()
-        assertEquals(app.getString(R.string.history_cancel_delete_error), page.findViewById<TextView>(R.id.history_notice_text).text.toString())
-        page.findViewById<View>(R.id.history_notice_dismiss).performClick()
-        assertEquals(View.GONE, page.findViewById<View>(R.id.history_notice).visibility)
+        assertEquals(View.VISIBLE, slot(page).visibility)
+        assertEquals(app.getString(R.string.history_save_error), slotText(page))
+        val dismiss = slotAction(page)
+        assertEquals(app.getString(R.string.history_notice_dismiss), dismiss.text.toString())
+        assertTrue(dismiss.minimumHeight >= (48 * app.resources.displayMetrics.density).toInt())
+        assertTrue(dismiss.minimumWidth >= (48 * app.resources.displayMetrics.density).toInt())
+        dismiss.performClick()
+        assertEquals(app.getString(R.string.history_cancel_delete_error), slotText(page))
+        dismiss.performClick()
+        assertEquals(View.GONE, slot(page).visibility)
+        assertTrue(historyNotices(app).pending().isEmpty())
+    }
+
+    /** The page's own state comes first; a pending warning waits for the same slot, never a second row. */
+    @Test fun pageStateAndPendingWarningShareOneStatusSlot() {
+        historyNotices(app).record(HistoryNotice.SAVE)
+        root.deleteRecursively()
+        root.writeText("not a directory")
+        val page = Robolectric.buildActivity(Page::class.java).create().start().resume().visible().get()
+        settle { slotText(page) == app.getString(R.string.history_read_error) }
+        assertEquals(app.getString(R.string.history_retry), slotAction(page).text.toString())
+        assertFalse(shown(page, app.getString(R.string.history_save_error)))
+        assertEquals(1, liveRegions(page.window.decorView))
+
+        root.delete()
+        HistoryStore(root).save(HistoryEntry(a, 200, "First synthetic transcript", HistoryDelivery.ACCEPTED))
+        slotAction(page).performClick()
+        settle { shown(page, "First synthetic transcript") }
+        assertEquals(app.getString(R.string.history_save_error), slotText(page))
+        assertEquals(app.getString(R.string.history_notice_dismiss), slotAction(page).text.toString())
+        assertFalse(shown(page, app.getString(R.string.history_read_error)))
+        assertEquals(1, liveRegions(page.window.decorView))
+        slotAction(page).performClick()
+        assertEquals(View.GONE, slot(page).visibility)
         assertTrue(historyNotices(app).pending().isEmpty())
     }
 }

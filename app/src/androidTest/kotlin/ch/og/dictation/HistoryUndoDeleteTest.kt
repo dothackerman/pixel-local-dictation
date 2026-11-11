@@ -186,7 +186,8 @@ class HistoryUndoDeleteTest {
             var loadingShown = false
             var after = -1
             scenario.onActivity {
-                loadingShown = it.findViewById<TextView>(R.id.history_state).let { s -> s.visibility == View.VISIBLE && s.text.toString() == context.getString(R.string.history_loading) }
+                loadingShown = it.findViewById<View>(R.id.history_status).visibility == View.VISIBLE &&
+                    it.findViewById<TextView>(R.id.history_status_text).text.toString() == context.getString(R.string.history_loading)
                 after = (it.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list).layoutManager as androidx.recyclerview.widget.LinearLayoutManager).findFirstVisibleItemPosition()
             }
             assertFalse(loadingShown)

@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -32,10 +33,10 @@ open class HistoryActivity : AppCompatActivity() {
     private lateinit var listPane: View
     private lateinit var list: RecyclerView
     private lateinit var empty: View
-    private lateinit var state: TextView
-    private lateinit var stateAction: MaterialButton
-    private lateinit var notice: View
-    private lateinit var noticeText: TextView
+    /** One status slot: the page's own state, else the first pending warning. */
+    private lateinit var status: com.google.android.material.card.MaterialCardView
+    private lateinit var statusText: TextView
+    private lateinit var statusAction: MaterialButton
     private lateinit var detailContainer: ViewGroup
     private val rows = RowsAdapter()
     private val undo = HistoryUndo()
@@ -68,10 +69,9 @@ open class HistoryActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.history_toolbar)
         listPane = findViewById(R.id.history_list_pane)
         empty = findViewById(R.id.history_empty)
-        state = findViewById(R.id.history_state)
-        stateAction = findViewById(R.id.history_state_action)
-        notice = findViewById(R.id.history_notice)
-        noticeText = findViewById(R.id.history_notice_text)
+        status = findViewById(R.id.history_status)
+        statusText = findViewById(R.id.history_status_text)
+        statusAction = findViewById(R.id.history_status_action)
         detailContainer = findViewById(R.id.history_detail_container)
         list = findViewById<RecyclerView>(R.id.history_list).apply {
             layoutManager = LinearLayoutManager(this@HistoryActivity)
@@ -86,10 +86,6 @@ open class HistoryActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener { back() }
         toolbar.setOnMenuItemClickListener { item: MenuItem ->
             if (item.itemId == R.id.history_clear_item) { onClearMenu(); true } else false
-        }
-        findViewById<View>(R.id.history_notice_dismiss).setOnClickListener {
-            notices.pending().firstOrNull()?.let(notices::dismiss)
-            renderStatus()
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -196,18 +192,25 @@ open class HistoryActivity : AppCompatActivity() {
             missing -> R.string.history_missing
             else -> null
         }
-        state.visibility = if (message == null) View.GONE else View.VISIBLE
-        message?.let(state::setText)
-        stateAction.visibility = if (action == null) View.GONE else View.VISIBLE
-        action?.let { (label, run) -> stateAction.setText(label); stateAction.setOnClickListener { run() } }
         empty.visibility = if (message == null && loadedOnce && visibleEntries().isEmpty() && detail == null) View.VISIBLE else View.GONE
-        val pending = notices.pending().firstOrNull()
-        notice.visibility = if (pending == null || detail != null) View.GONE else View.VISIBLE
-        if (pending != null) {
-            noticeText.setText(pending.message())
-            findViewById<View>(R.id.history_notice_dismiss).contentDescription =
-                getString(R.string.history_notice_dismiss) + ": " + getString(pending.message())
+        // The page's own state comes first (it says what the list shows now); a warning waits for the slot.
+        val warning = if (message == null && detail == null) notices.pending().firstOrNull() else null
+        status.visibility = if (message == null && warning == null) View.GONE else View.VISIBLE
+        // A page state reads as a plain line; only a warning is a filled row.
+        status.setCardBackgroundColor(if (warning != null) MaterialColors.getColor(status, com.google.android.material.R.attr.colorSurfaceVariant)
+            else android.graphics.Color.TRANSPARENT)
+        statusText.text = when {
+            message != null -> getString(message)
+            warning != null -> getString(warning.message())
+            else -> ""
         }
+        if (warning != null) action = R.string.history_notice_dismiss to {
+            notices.dismiss(warning)
+            renderStatus()
+        }
+        statusAction.visibility = if (action == null) View.GONE else View.VISIBLE
+        statusAction.contentDescription = if (warning != null) getString(R.string.history_notice_dismiss) + ": " + getString(warning.message()) else null
+        action?.let { (label, run) -> statusAction.setText(label); statusAction.setOnClickListener { run() } }
     }
 
     private fun removeDetail() {
