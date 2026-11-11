@@ -74,17 +74,19 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
             canvas.drawCircle(cx, cy, 70 * scale, hairline)
             return
         }
-        // Loudness motion shrinks to fit a short stage (landscape) so the loudest ring is never
-        // clipped; the resting ring around the microphone keeps its size. Portrait has room for 1.
+        // Loudness grows the ring evenly and thickens it; the contour only ripples by a few units,
+        // so the outer edge stays within about 8% of a circle and reads crisp (#36 critique).
+        // The motion shrinks to fit a short stage (landscape) so the loudest ring is never clipped;
+        // the resting ring around the microphone keeps its size. Portrait has room for all of it.
         val room = minOf(width, height) / 2f / scale
-        val reach = ((room - 73.1f) / 69.72f).coerceIn(0f, 1f)
+        val reach = ((room - REST_OUTER) / (GROWTH + THICKENING / 2 + RIPPLE)).coerceIn(0f, 1f)
+        val amount = if (animated) reach * level else 0f
         for (k in outerX.indices) {
             val a = 2 * PI * k / outerX.size - PI / 2
             val organic = 0.55 * sin(a * 3 + motion * 0.52) + 0.28 * sin(a * 5 - motion * 0.7) +
                 0.17 * sin(a * 2 + motion * 0.26)
-            val radius = (70 + if (animated) reach * level * 2.4 * (12 + 13 * organic) else 0.0) * scale
-            val weight = (if (animated) 6.0 + reach * level * 2.4 * (4.3 + 2.7 * sin(a * 2 - motion * 0.48) +
-                1.1 * sin(a * 3 + motion * 0.31)) else 6.0 + level * 2) * scale
+            val radius = (70 + amount * (GROWTH + RIPPLE * organic)) * scale
+            val weight = (if (animated) 6.0 + amount * THICKENING else 6.0 + level * 2) * scale
             outerX[k] = (cx + cos(a) * (radius + weight / 2)).toFloat()
             outerY[k] = (cy + sin(a) * (radius + weight / 2)).toFloat()
             innerX[k] = (cx + cos(a) * (radius - weight / 2)).toFloat()
@@ -109,6 +111,17 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
             path.quadTo(x[k], y[k], (x[k] + x[next]) / 2, (y[k] + y[next]) / 2)
         }
         path.close()
+    }
+
+    private companion object {
+        /** Mock units (the 70dp disk is 94): the resting ribbon's outer edge, plus a hair. */
+        const val REST_OUTER = 73.1f
+        /** Even growth of the radius at full loudness. */
+        const val GROWTH = 28f
+        /** Extra ribbon thickness at full loudness. */
+        const val THICKENING = 12f
+        /** Largest ripple of the contour: under 8% of the loud outer radius (73 + 28 + 6 ≈ 107). */
+        const val RIPPLE = 5.5f
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {

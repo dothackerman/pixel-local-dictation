@@ -78,7 +78,7 @@
     <string name="history_empty">No saved transcripts.</string>
     <string name="history_retry">Retry</string>
     <string name="history_read_error">Couldn’t open History.</string>
-    <string name="history_save_error">Couldn’t save this History update. Recovery may be incomplete; unsaved speech cannot be recovered.</string>
+    <string name="history_save_error">Couldn’t save the last change to History. Some text may be missing.</string>
     <string name="history_recovery_incomplete">Recovery may be incomplete. History contains only speech saved before the failure; later speech may be missing.</string>
     <string name="history_delivery_rejected">Unable to insert text</string>
     <string name="history_cancel_delete_error">Couldn’t delete a transcript. It is still listed; delete it again.</string>

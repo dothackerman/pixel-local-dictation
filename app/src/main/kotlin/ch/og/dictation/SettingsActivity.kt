@@ -45,7 +45,7 @@ open class SettingsActivity : AppCompatActivity() {
                 it.setSpan(UnderlineSpan(), 0, it.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             setOnClickListener {
-                MaterialAlertDialogBuilder(this@SettingsActivity)
+                MaterialAlertDialogBuilder(this@SettingsActivity, R.style.ThemeOverlay_Dictation_Dialog_Destructive)
                     .setTitle(R.string.benchmark_delete_title)
                     .setMessage(R.string.benchmark_delete_confirm)
                     .setNegativeButton(R.string.cancel, null)

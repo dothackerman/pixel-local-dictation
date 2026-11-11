@@ -68,12 +68,13 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
     <!-- The preview's place; the Undo timer rule sits at its top while the preview is hidden, so
-         the panel keeps its height. -->
+         the panel keeps its height. The preview's measure stops at 28em (about 70 characters,
+         PreviewTextView), which only the wide landscape column reaches. -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="56dp">
-        <TextView
+        <ch.og.dictation.PreviewTextView
             android:id="@+id/preview"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

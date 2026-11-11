@@ -1837,6 +1837,48 @@ class DictationProductionLifecycleTest {
         await { decode.drain(); settleHistory(); commits == 1 }
     }
 
+    private val longPreview = "zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on " +
+        "Saturday, because the market closes early and we still need lime, garlic and a bunch of spring onions for the soup."
+
+    /** Landscape preview (#36 critique P3): lines stop near 70 characters instead of running across the panel. */
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun landscapePreviewKeepsAReadableMeasure() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+        val preview = view.findViewById<TextView>(R.id.preview)
+        preview.text = longPreview
+        layOut(view, 960)
+        val layout = preview.layout
+        val longest = (0 until layout.lineCount).maxOf { layout.getLineEnd(it) - layout.getLineStart(it) }
+        assertTrue("longest preview line has $longest characters", longest <= 75)
+        button(view).performClick()
+        await { decode.drain(); settleHistory(); commits == 1 }
+    }
+
+    /** Landscape at font 2× (#36 critique P3): the last preview line keeps clear room above the panel's bottom edge. */
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun landscapePreviewKeepsRoomBelowAtLargeText() {
+        RuntimeEnvironment.setFontScale(2f)
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+        val preview = view.findViewById<TextView>(R.id.preview)
+        preview.text = longPreview
+        layOut(view, 960)
+        val bounds = android.graphics.Rect(0, 0, preview.width, preview.height)
+        (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(preview, bounds)
+        val lastLine = bounds.top + preview.totalPaddingTop + preview.layout.getLineBottom(preview.layout.lineCount - 1)
+        val density = view.resources.displayMetrics.density
+        assertTrue("last line ${(view.height - lastLine) / density}dp above the bottom edge", view.height - lastLine >= 16 * density)
+        button(view).performClick()
+        await { decode.drain(); settleHistory(); commits == 1 }
+    }
+
     /**
      * Landscape on the phone (#36 critique P1): the choice and Undo sit in the stage under the
      * right thumb, where the microphone was; the preview stays readable while Stop or Discard is

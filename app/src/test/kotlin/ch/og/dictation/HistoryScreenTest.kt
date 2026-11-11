@@ -183,6 +183,48 @@ class HistoryScreenTest {
         assertTrue(texts(selected.single()).any { it.text.toString() == app.getString(R.string.marker_not_inserted_sentence) })
     }
 
+    private fun pixels(view: View): android.graphics.Bitmap =
+        android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888).also { view.draw(android.graphics.Canvas(it)) }
+    private fun role(view: View, attr: Int) = Integer.toHexString(com.google.android.material.color.MaterialColors.getColor(view, attr))
+
+    /** #36 critique: sheets sit on the kraft surface (no elevation tint); the named mark carries an ink start bar. */
+    @Test @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    fun marksSheetIsOnTheSurfaceAndTheNamedMarkHasAStartBar() {
+        val page = open()
+        rowAt(page, 1).findViewById<View>(R.id.history_row_body).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        page.findViewById<View>(R.id.history_detail_marker).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val sheet = org.robolectric.shadows.ShadowDialog.getLatestDialog() as com.google.android.material.bottomsheet.BottomSheetDialog
+        val ground = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)!!
+        val surface = role(ground, com.google.android.material.R.attr.colorSurface)
+        assertEquals("sheet ground", surface, Integer.toHexString(pixels(ground).getPixel(ground.width / 2, 2)))
+        val marks = sheet.findViewById<ViewGroup>(R.id.history_marks_rows)!!
+        val body = (0 until marks.childCount).map { marks.getChildAt(it).findViewById<View>(R.id.history_mark_body) }.single { it.isSelected }
+        val drawn = pixels(body)
+        val dp = app.resources.displayMetrics.density
+        assertEquals("start bar", role(body, com.google.android.material.R.attr.colorOnSurface), Integer.toHexString(drawn.getPixel((2 * dp).toInt(), body.height / 2)))
+    }
+
+    /** #36 critique: the Clear confirmation is on the surface; Clear is error-coloured, Cancel stays neutral. */
+    @Test @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    fun clearDialogMarksOnlyTheDestructiveButton() {
+        val page = open()
+        toolbar(page).menu.performIdentifierAction(R.id.history_clear_item, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val clear = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+        val cancel = dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE)
+        val error = role(clear, androidx.appcompat.R.attr.colorError)
+        assertEquals(error, Integer.toHexString(clear.currentTextColor))
+        assertNotEquals(error, Integer.toHexString(cancel.currentTextColor))
+        val decor = dialog.window!!.decorView
+        val content = decor.findViewById<View>(android.R.id.content)
+        val at = IntArray(2).also(content::getLocationInWindow)
+        assertEquals("dialog ground", role(clear, com.google.android.material.R.attr.colorSurface),
+            Integer.toHexString(pixels(decor).getPixel(at[0] + content.width / 2, at[1] + 4)))
+    }
+
     @Test fun listHidesTheDetailActionsAndShowsClear() {
         val page = open()
         val toolbar = toolbar(page)
@@ -313,7 +355,8 @@ class HistoryScreenTest {
         historyNotices(app).record(HistoryNotice.DELETE)
         val page = open()
         assertEquals(View.VISIBLE, slot(page).visibility)
-        assertEquals(app.getString(R.string.history_save_error), slotText(page))
+        // Plain words: what happened, then what may be missing (#36 critique).
+        assertEquals("Couldn’t save the last change to History. Some text may be missing.", slotText(page))
         val dismiss = slotAction(page)
         assertEquals(app.getString(R.string.history_notice_dismiss), dismiss.text.toString())
         assertTrue(dismiss.minimumHeight >= (48 * app.resources.displayMetrics.density).toInt())

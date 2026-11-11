@@ -360,7 +360,7 @@ open class HistoryActivity : AppCompatActivity() {
         }
         val activeCount = HistoryProcess.owner.activeIds().size
         if (visibleSavedCount == 0 && !hasStoredHistoryCopies && HistoryProcess.owner.activeIds().isEmpty()) { updateClearMenu(); return }
-        MaterialAlertDialogBuilder(this)
+        MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_Dictation_Dialog_Destructive)
             .setTitle(R.string.history_clear_title)
             .setMessage(getString(R.string.history_clear_confirmation, visibleSavedCount, activeCount))
             .setNegativeButton(R.string.cancel, null)
@@ -435,7 +435,7 @@ open class HistoryActivity : AppCompatActivity() {
             row.findViewById<TextView>(R.id.history_mark_sentence).setText(mark?.sentence ?: R.string.marker_none_sentence)
             val body = row.findViewById<View>(R.id.history_mark_body)
             if (mark != null && mark == highlight) {
-                body.setBackgroundColor(MaterialColors.getColor(body, com.google.android.material.R.attr.colorSurfaceContainer))
+                body.setBackgroundResource(R.drawable.mark_highlight)
                 body.isSelected = true
                 focus = body
             }

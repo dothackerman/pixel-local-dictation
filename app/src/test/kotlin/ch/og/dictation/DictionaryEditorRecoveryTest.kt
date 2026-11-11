@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Looper
 import android.widget.TextView
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.button.MaterialButton
 import org.robolectric.Robolectric
 import org.robolectric.shadows.ShadowDialog
@@ -146,6 +147,59 @@ class DictionaryEditorRecoveryTest {
             editor = ShadowDialog.getLatestDialog()
             assertEquals("Unfinished draft", editor.findViewById<TextInputEditText>(R.id.dictionary_entry).text.toString())
             assertNull(after.consumeCompletion())
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    private fun shownText(root: android.view.View, value: String): Boolean = when (root) {
+        is TextView -> root.isShown && root.text.toString() == value
+        is android.view.ViewGroup -> (0 until root.childCount).any { shownText(root.getChildAt(it), value) }
+        else -> false
+    }
+
+    /** #36 critique: an empty dictionary is its state line alone; no search, no orphaned languages. */
+    @Test fun emptyDictionaryShowsOnlyItsStateLine() {
+        val clearing = model()
+        clearing.save(emptyList(), "delete")
+        idle(clearing)
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            assertTrue(shownText(page.window.decorView, app.getString(R.string.dictionary_empty)))
+            assertFalse(page.findViewById<android.view.View>(R.id.dictionary_search).isShown)
+            assertFalse(shownText(page.window.decorView, app.getString(R.string.dictionary_languages)))
+        } finally { controller.pause().stop().destroy() }
+        val filled = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = filled.get()
+            val model = ViewModelProvider(page)[DictionaryModel::class.java]
+            idle(model)
+            model.save(listOf("Bärlauch"), "add")
+            idle(model)
+            assertTrue(page.findViewById<android.view.View>(R.id.dictionary_search).isShown)
+            assertTrue(shownText(page.window.decorView, app.getString(R.string.dictionary_languages)))
+        } finally { filled.pause().stop().destroy() }
+    }
+
+    /** #36 critique: Add term is filled primary like every other commit; the search hint is centred on its icon. */
+    @Test fun addIsAFilledCommitAndTheSearchHintSitsOnTheIconLine() {
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            val add = page.findViewById<com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton>(R.id.dictionary_add)
+            fun role(attr: Int) = com.google.android.material.color.MaterialColors.getColor(add, attr)
+            assertEquals(role(androidx.appcompat.R.attr.colorPrimary), add.backgroundTintList!!.getColorForState(add.drawableState, 0))
+            assertEquals(role(com.google.android.material.R.attr.colorOnPrimary), add.currentTextColor)
+            val search = page.findViewById<TextInputEditText>(R.id.dictionary_search)
+            assertEquals("hint centred in the field", search.paddingTop, search.paddingBottom)
+            page.findViewById<android.view.View>(R.id.dictionary_add).performClick()
+            val editor = ShadowDialog.getLatestDialog()
+            val layout = editor.findViewById<TextInputLayout>(R.id.dictionary_entry_layout)
+            val helper = layout.findViewById<TextView>(com.google.android.material.R.id.textinput_helper_text)
+            val feedback = editor.findViewById<TextView>(R.id.dictionary_editor_feedback)
+            fun left(view: android.view.View): Int { val at = IntArray(2); view.getLocationInWindow(at); return at[0] + view.paddingLeft }
+            assertEquals("helper and feedback share one inset", left(helper), left(feedback))
         } finally { controller.pause().stop().destroy() }
     }
 

@@ -41,6 +41,8 @@
         <item name="colorOutline">@color/b2_outline</item>
         <item name="colorOutlineVariant">@color/b2_outline_variant</item>
         <item name="android:textColorHighlight">@color/b2_primary_container</item>
+        <!-- Flat kraft card: no primary elevation tint on sheets, dialogs or menus (critique P2). -->
+        <item name="elevationOverlayEnabled">false</item>
 
         <!-- Default face through the default text appearance (a theme-level fontFamily would
              override every role's face). -->
@@ -128,11 +130,18 @@
         <item name="android:textColor">?attr/colorError</item>
         <item name="iconTint">?attr/colorError</item>
     </style>
+    <style name="Widget.Dictation.Button.Text.Neutral">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
     <style name="Widget.Dictation.Button.Icon" parent="Widget.Material3.Button.IconButton">
         <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
     </style>
     <style name="Widget.Dictation.ExtendedFab" parent="Widget.Material3.ExtendedFloatingActionButton.Icon.Primary">
         <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <!-- Filled primary like the sheet's Add and the panel's Continue, not the peach container. -->
+        <item name="backgroundTint">@color/commit_container</item>
+        <item name="android:textColor">@color/commit_content</item>
+        <item name="iconTint">@color/commit_content</item>
         <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
     </style>
 
@@ -164,6 +173,7 @@
 
     <style name="ThemeOverlay.Dictation.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/Widget.Dictation.BottomSheet</item>
+        <item name="elevationOverlayEnabled">false</item>
         <item name="android:windowSoftInputMode">adjustResize</item>
     </style>
     <style name="Widget.Dictation.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
@@ -177,6 +187,13 @@
         <item name="materialAlertDialogTitleTextStyle">@style/Dictation.Dialog.Title</item>
         <item name="buttonBarPositiveButtonStyle">@style/Widget.Dictation.Button.Text</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.Dictation.Button.Text</item>
+        <item name="elevationOverlayEnabled">false</item>
+    </style>
+    <!-- Confirmation of an irreversible delete (Clear History, Delete benchmark data): the confirm
+         is error-coloured, Cancel stays neutral ink. -->
+    <style name="ThemeOverlay.Dictation.Dialog.Destructive">
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Dictation.Button.Text.Destructive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Dictation.Button.Text.Neutral</item>
     </style>
     <style name="Dictation.Dialog.Title" parent="MaterialAlertDialog.Material3.Title.Text">
         <item name="android:textAppearance">@style/TextAppearance.Dictation.TitleLarge</item>

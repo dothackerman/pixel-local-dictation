@@ -88,13 +88,15 @@ Rules:
 
 - **Continue's ring** is a fixed state drawable (a `LayerDrawable` stroke), not focus. Real keyboard focus still uses the system focus highlight.
 - **Dashed Discard border:** `GradientDrawable` with `setStroke(width, color, dashWidth, dashGap)`.
-- **Square switch:** `MaterialSwitch` with custom track and thumb drawables (0dp rectangles), a track tint list for on/off, and a thumb that moves.
+- **Square switch:** `MaterialSwitch` with custom track and thumb drawables (0dp rectangles), a track tint list for on/off, and a thumb that moves. Sizes sit on `<layer-list>` items (track 52×32dp, thumb cell 32dp holding a 20dp on / 16dp off square): a bare selector has no size until its state is set, and the switch then measured about 29×16dp on the device.
 - **Underlined text button** (Delete benchmark data): an `UnderlineSpan` on a `MaterialButton.TextButton`.
 - **Panel Undo:** a filled `MaterialButton` (primary, 0dp corners, at least 56dp tall), not a span.
 - **Line breaking:** `breakStrategy="high_quality"` and `hyphenationFrequency="normal"` on transcripts. For German compounds at 2×, check the panel status with `lineBreakWordStyle="phrase"`.
 - **Preview clipped to the newest 3 lines:** `maxLines=3` with `ellipsize=start`, plus `gravity=bottom`. This keeps the current 240-character whole-word tail.
 - **Markers:** `ic_marker_*.xml` vector drawables. Each row puts one `ImageView` in its slot, with `importantForAccessibility=no`; the words go into the row's content description.
-- **Sheet:** `BottomSheetDialog` with a ShapeAppearance at 0dp.
+- **Sheet:** `BottomSheetDialog` with a ShapeAppearance at 0dp, on the plain surface (`elevationOverlayEnabled=false`; Material's elevation tint otherwise turns it primary-warm). The highlighted mark gets a 4dp ink start bar.
+- **Destructive dialogs** (Clear History, Delete benchmark data): `ThemeOverlay.Dictation.Dialog.Destructive`, the confirm in error colour, Cancel in onSurface.
+- **Preview measure:** at most 28em (about 70 characters) in the wide landscape column (`PreviewTextView`).
 
 ## Files
 

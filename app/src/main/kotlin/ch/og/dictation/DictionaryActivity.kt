@@ -109,6 +109,10 @@ open class DictionaryActivity : AppCompatActivity() {
         // An empty dictionary says so in the state line; no "0 terms" above it (same pattern as History).
         findViewById<TextView>(R.id.dictionary_count).text =
             if (all.isEmpty()) "" else resources.getQuantityString(R.plurals.dictionary_count, all.size, all.size)
+        // An empty dictionary is its state line alone: nothing to search, no languages to summarise.
+        val summary = if (all.isEmpty()) View.GONE else View.VISIBLE
+        for (id in intArrayOf(R.id.dictionary_search_layout, R.id.dictionary_summary, R.id.dictionary_summary_rule)) findViewById<View>(id).visibility = summary
+        if (all.isEmpty() && !search.text.isNullOrEmpty()) { search.setText(""); return } // the watcher renders again
         val query = search.text?.toString().orEmpty().trim()
         terms.items = all.filter { it.contains(query, ignoreCase = true) }.sortedWith(Collator.getInstance(Locale.GERMAN))
         terms.enabled = !state.busy

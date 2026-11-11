@@ -1,5 +1,6 @@
 <!-- Add/edit term sheet (#36): the commit button sits in the header next to Close, so it stays
-     reachable above the keyboard in landscape and at font scale 2; the rest scrolls. -->
+     reachable above the keyboard in landscape and at font scale 2; the rest scrolls. The feedback
+     line shares the helper text's inset (24dp + the field's 16dp text inset). -->
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent" android:layout_height="wrap_content" android:fillViewport="true">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="8dp" android:paddingBottom="24dp">
@@ -21,7 +22,7 @@
                 android:inputType="textCapSentences|textNoSuggestions" android:imeOptions="actionDone|flagNoPersonalizedLearning|flagNoExtractUi" android:singleLine="true" android:maxLength="200" android:importantForAutofill="no" />
         </com.google.android.material.textfield.TextInputLayout>
         <TextView android:id="@+id/dictionary_editor_feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp" android:layout_marginTop="4dp"
+            android:layout_marginStart="40dp" android:layout_marginEnd="24dp" android:layout_marginTop="4dp"
             android:text="@string/dictionary_private" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" android:accessibilityLiveRegion="polite" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

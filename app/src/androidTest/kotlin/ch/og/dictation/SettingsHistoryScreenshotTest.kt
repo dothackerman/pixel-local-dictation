@@ -21,8 +21,9 @@ import org.junit.runner.RunWith
 /**
  * Captures app-owned windows into app-private files (pull with `phone pull files/lab/settings-history/<name>.png`).
  * History uses separate stores containing only synthetic text. Names: <screen>-<light|dark>-<font1|font2>.png
- * for Settings, list (trash icons), copied (after long-press; system confirmation only), detail (toolbar icon actions), empty state,
- * warning row and clear dialog.
+ * for Settings with the switch off and on, list (trash icons), overflow menu, detail (toolbar icon actions), one detail per
+ * mark (detail-<mark>), empty state, warning row, marks sheet and clear dialog. Long-press copy has no capture: the
+ * confirmation is the system's, outside our windows.
  */
 @RunWith(AndroidJUnit4::class)
 class SettingsHistoryScreenshotTest {
@@ -46,6 +47,15 @@ class SettingsHistoryScreenshotTest {
             HistoryEntry(UUID.randomUUID().toString(), now - 172_800_000, "Remind me to call the dentist about the appointment next week.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED, 1),
         )
         entries.forEach { HistoryStore(full).save(it) }
+        val marks = File(context.noBackupFilesDir, "history-ui-test-shots-marks").apply { deleteRecursively() }
+        val markEntries = linkedMapOf(
+            HistoryMarker.RECORDING to HistoryEntry(UUID.randomUUID().toString(), now - 30_000, "Still talking about the garden plan and the new", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.RECORDING),
+            HistoryMarker.PREPARING to HistoryEntry(UUID.randomUUID().toString(), now - 90_000, "Book the train to Bern for Friday morning.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.FINISHING),
+            HistoryMarker.CUT_SHORT to HistoryEntry(UUID.randomUUID().toString(), now - 600_000, "Notes for the call: budget, timeline and the", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED),
+            HistoryMarker.NOT_INSERTED to HistoryEntry(UUID.randomUUID().toString(), now - 1_200_000, "Bitte bring morgen das Ladekabel mit.", HistoryDelivery.REJECTED),
+            HistoryMarker.UNCERTAIN to HistoryEntry(UUID.randomUUID().toString(), now - 1_800_000, "See you at the station at seven.", HistoryDelivery.UNKNOWN),
+        )
+        markEntries.values.forEach { HistoryStore(marks).save(it) }
         try {
             for (night in listOf(Configuration.UI_MODE_NIGHT_NO)) { // One fixed light scheme (#36).
                 for (scale in listOf(1f, 2f)) {
@@ -60,20 +70,34 @@ class SettingsHistoryScreenshotTest {
                     val settings = instrumentation.startActivitySync(Intent(context, SettingsLargeTextPreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
                     try {
                         settle()
-                        instrumentation.runOnMainSync { capture(settings.window.decorView, File(output, "settings-$tag.png")) }
+                        // Both switch states, drawn without touching the stored benchmark setting.
+                        val switch = settings.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.benchmark_switch)
+                        for (on in listOf(false, true)) {
+                            instrumentation.runOnMainSync { switch.setOnCheckedChangeListener(null); switch.isChecked = on; switch.jumpDrawablesToCurrentState() }
+                            settle()
+                            instrumentation.runOnMainSync { capture(settings.window.decorView, File(output, "settings-switch-${if (on) "on" else "off"}-$tag.png")) }
+                        }
                     } finally { instrumentation.runOnMainSync { settings.finish() } }
 
                     val activity = launchHistory()
                     try {
-                        val row = await(activity, entries.first().text)
+                        await(activity, entries.first().text)
                         await(activity, entries.last().text)
                         settle()
                         instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-list-$tag.png")) }
 
-                        // Long-press copies; the system confirms the copy (no Snackbar of ours).
-                        instrumentation.runOnMainSync { HistoryUi.target(row).performLongClick() }
+                        // The overflow menu: what the marks mean, then Clear History… in the error colour.
+                        instrumentation.runOnMainSync {
+                            requireNotNull(HistoryUi.find(activity.window.decorView) { it is MaterialToolbar } as MaterialToolbar).showOverflowMenu()
+                        }
                         settle()
-                        instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-copied-$tag.png")) }
+                        instrumentation.runOnMainSync {
+                            val menu = WindowInspector.getGlobalWindowViews().last()
+                            check(menu.rootView !== activity.window.decorView) { "overflow menu did not open" }
+                            capture(menu, File(output, "history-menu-$tag.png"), activity.window.decorView)
+                            requireNotNull(HistoryUi.find(activity.window.decorView) { it is MaterialToolbar } as MaterialToolbar).hideOverflowMenu()
+                        }
+                        settle()
 
                         // Warning row on the History page.
                         notices.record(HistoryNotice.SAVE)
@@ -83,7 +107,10 @@ class SettingsHistoryScreenshotTest {
                         await(warned, context.getString(R.string.history_save_error))
                         settle()
                         instrumentation.runOnMainSync { capture(warned.window.decorView, File(output, "history-warning-$tag.png")) }
-                        notices.dismiss(HistoryNotice.SAVE)
+                        // Dismiss through the row's own button, as the owner would; the page redraws without it.
+                        instrumentation.runOnMainSync { warned.findViewById<View>(R.id.history_status_action).performClick() }
+                        settle()
+                        instrumentation.runOnMainSync { assertEquals(View.GONE, warned.findViewById<View>(R.id.history_status).visibility) }
 
                         val page = currentHistory(warned)
                         // What the marks mean, from the overflow menu.
@@ -145,6 +172,27 @@ class SettingsHistoryScreenshotTest {
                         await(page, entries.first().text)
                     } finally { instrumentation.runOnMainSync { currentHistoryOrNull()?.finish() } }
 
+                    // One detail per mark: the mark's sentence under the meta line.
+                    HistoryTestActivity.historyRootSuffix = "shots-marks"
+                    // In-progress marks need a live take in this process; the registrations end below and in finally.
+                    HistoryProcess.owner.register(markEntries.getValue(HistoryMarker.RECORDING).id)
+                    markEntries.getValue(HistoryMarker.PREPARING).id.let { HistoryProcess.owner.register(it); HistoryProcess.owner.finishing(it) }
+                    val markedPage = launchHistory()
+                    try {
+                        for ((mark, entry) in markEntries) {
+                            val rowText = await(markedPage, entry.text)
+                            instrumentation.runOnMainSync { HistoryUi.click(rowText) }
+                            await(markedPage, context.getString(mark.line))
+                            settle()
+                            instrumentation.runOnMainSync { capture(markedPage.window.decorView, File(output, "history-detail-${mark.name.lowercase().replace('_', '-')}-$tag.png")) }
+                            instrumentation.runOnMainSync { markedPage.onBackPressedDispatcher.onBackPressed() }
+                            settle()
+                        }
+                    } finally {
+                        instrumentation.runOnMainSync { markedPage.finish() }
+                        markEntries.values.forEach { HistoryProcess.owner.remove(it.id) }
+                    }
+
                     HistoryTestActivity.historyRootSuffix = "shots-empty"
                     val blank = launchHistory()
                     try {
@@ -163,7 +211,8 @@ class SettingsHistoryScreenshotTest {
             SettingsLargeTextPreviewActivity.historyRootSuffix = null
             HistoryNotice.entries.forEach { if (it in originalNotices) notices.record(it) else notices.dismiss(it) }
             (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).clearPrimaryClip()
-            full.deleteRecursively(); empty.deleteRecursively()
+            markEntries.values.forEach { HistoryProcess.owner.remove(it.id) }
+            full.deleteRecursively(); empty.deleteRecursively(); marks.deleteRecursively()
         }
     }
 
