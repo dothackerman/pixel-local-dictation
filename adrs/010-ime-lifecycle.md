@@ -145,3 +145,31 @@ Evidence: host lifecycle tests (pause/resume, Back = safe default, Stop and inse
 the Signal order, self-restart after Stop, rotation with each choice open, lock and hide over
 an open choice, History-only end, layout at font 2 portrait/landscape light/dark).
 
+
+## Amendment — Undo after Discard take (#36)
+
+The owner approved the Crate B2 direction's Undo window. **Discard take no longer discards at
+once.** It opens an 8 s Undo window (`DISCARD_UNDO_MS`) in the panel: status "Take discarded",
+a shrinking timer rule, a filled Undo button and Back; no microphone, so nothing ends the window
+by accident. During the window nothing is inserted (the recording choice's take stays paused,
+the Stop-wait choice keeps its delivery hold), the microphone does not record (the paused
+recorder stays stopped and owned) and the take is not listed in History: its saved file is
+deleted at once and its latest text stays in memory only (`TakeOutput.suspendHistory`).
+
+**Undo** restores the same take at the choice it came from (Paused · choose, or Preparing text ·
+choose): History saves its latest text again under a new id (the old id keeps its deletion
+marker, so a late write can never revive it) and later checkpoints follow
+(`resumeHistory`). **The discard becomes final** — exactly the pre-#36 discard: insertion
+revoked, saved text removed, capture released, later decoder callbacks suppressed — when the
+window ends (then the panel returns to the keyboard), on Back (system or arrow; also returns),
+on any system interruption (hide, lock, focus change, microphone loss, the rotation gap
+expiring, service destroyed: these never route a pending discard to History) or when the panel
+is hidden. A rotation inside the window is not an interruption: the recreated panel renders the
+same Undo state and the window keeps its original deadline. Process death inside the window
+leaves nothing in History (the file was already deleted).
+
+After a History-only end the panel now says only "Unable to insert text" with its marker (no
+Back to keyboard button, no detail line); the back arrow is the way out and the microphone stays
+for a new take. Evidence: host lifecycle tests for each exit path (window end, arrow Back,
+system Back, hide, lock, destroy), rotation inside the window (Undo after it, and the window
+ending after it), late decoder output during the window, and Undo from both choices.
