@@ -57,6 +57,17 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(out, ['A2: no trace rows (traceComplete false)'])
         self.assertEqual(summarize([visit_row('A1', 'r1', ['passed'])], [])['rotations'], [])
 
+    def test_editor_retention_classes_seen_after_each_rotation(self):
+        def start(ns, retention):
+            row = ev(ns, 'INPUT_START_DONE')
+            row['retention'] = retention
+            return row
+        trace = [ev(0, 'DISPLAY_CHANGED', rotations=1), start(2, 'ELIGIBLE'), start(170, 'NO_EDITOR'),
+                 start(185, 'ELIGIBLE'), ev(190, 'WINDOW_SHOWN'), ev(1190, 'HOLD_SETTLED')]
+        out = summarize([visit_row('A2', 'r2', ['passed'], case='signal-capture-rotation')], trace)['rotations']
+        self.assertEqual(out, ['A2 rotation 1: panel shown +190 ms, late hide none, capture silenced: no, hold: settled +1190 ms, '
+                               'editors: ELIGIBLE > NO_EDITOR > ELIGIBLE'])
+
     def test_gap_expiry_and_no_panel(self):
         trace = [ev(0, 'DISPLAY_CHANGED', rotations=1), ev(3000, 'HOLD_GAP_EXPIRED')]
         out = summarize([visit_row('A3', 'r2', ['passed'], case='signal-finishing-rotation')], trace)['rotations']

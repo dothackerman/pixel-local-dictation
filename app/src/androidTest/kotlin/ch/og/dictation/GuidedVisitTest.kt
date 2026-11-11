@@ -13,7 +13,8 @@ import org.junit.runner.RunWith
 
 /**
  * Owner visit (ticket #61): one screen per step. Each attempt has its own run ID; failures and skips
- * do not discard other observations. `extended=true` runs the whole script; the default runs A2 only.
+ * do not discard other observations. `extended=true` runs the whole script; the default runs A2 only;
+ * `steps=A2,A3,A7,A8,B9` runs only those steps and `start=A7` starts at one (no welcome screen).
  */
 @RunWith(AndroidJUnit4::class)
 class GuidedVisitTest {
@@ -29,11 +30,16 @@ class GuidedVisitTest {
             instrumentation.startActivitySync(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return RotationProbeActivity.done.await(minutes, TimeUnit.MINUTES)
         }
-        val extended = InstrumentationRegistry.getArguments().getString("extended") == "true"
-        val steps = if (extended) GuidedVisit.script else GuidedVisit.defaultScript
-        if (extended && (!show(Intent(context, RotationProbeActivity::class.java).putExtra("welcome", true), 30) ||
+        val arguments = InstrumentationRegistry.getArguments()
+        val extended = arguments.getString("extended") == "true"
+        // Re-visit: `steps=A2,A3,A7,A8,B9` runs only those; `start=A7` starts there.
+        val chosen = arguments.getString("steps")
+        val start = arguments.getString("start")
+        val steps = GuidedVisit.select(chosen, start, extended)
+        val welcome = extended && chosen == null && start == null
+        if (welcome && (!show(Intent(context, RotationProbeActivity::class.java).putExtra("welcome", true), 30) ||
                 RotationProbeActivity.result != "start")) return
-        val progress = GuidedVisitProgress(steps, if (extended) RotationProbeActivity.selected else 0)
+        val progress = GuidedVisitProgress(steps, if (welcome) RotationProbeActivity.selected else 0)
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
         while (true) {

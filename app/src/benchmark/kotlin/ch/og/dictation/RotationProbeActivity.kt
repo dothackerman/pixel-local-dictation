@@ -102,7 +102,7 @@ class RotationProbeActivity : Activity() {
     private fun welcome() {
         val column = page()
         column.addView(text("Guided visit", 24f, bold = true))
-        column.addView(text("Thirteen short steps, one per screen. Use non-sensitive speech only. Your answers are saved as metadata only, never text you dictated.", 18f, top = 8))
+        column.addView(text("${GuidedVisit.script.size} short steps, one per screen. Use non-sensitive speech only. Your answers are saved as metadata only, never text you dictated.", 18f, top = 8))
         val picker = Spinner(this).apply {
             minimumHeight = dp(48)
             adapter = ArrayAdapter(this@RotationProbeActivity, android.R.layout.simple_spinner_dropdown_item,
@@ -139,16 +139,21 @@ class RotationProbeActivity : Activity() {
             column.addView(text(expectation.text, 18f, top = 12))
             column.addView(RadioGroup(this).apply {
                 orientation = RadioGroup.VERTICAL
+                // RadioGroup keeps one answer only for children with ids that it checks itself:
+                // a child added already checked without an id stayed checked (#61 visit).
                 Answer.entries.forEach { answer ->
                     addView(RadioButton(this@RotationProbeActivity).apply {
+                        id = View.generateViewId()
+                        isSaveEnabled = false
                         text = answer.label
                         tag = "${expectation.id}:${answer.code}"
                         minimumHeight = dp(48)
                         minHeight = dp(48)
-                        isChecked = answers[i] == answer.code
                         setOnClickListener { answers[i] = answer.code }
                     })
                 }
+                isSaveEnabled = false
+                Answer.entries.indexOfFirst { it.code == answers[i] }.takeIf { it >= 0 }?.let { check(getChildAt(it).id) }
             })
         }
         fun finishWith(outcome: Outcome) {

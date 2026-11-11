@@ -21,7 +21,7 @@ ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease
 Enable the app’s input method, grant microphone permission, and enable FUTO Keyboard’s **Disable built-in voice input** setting. Then use FUTO’s microphone key:
 
 - **Stop** finishes transcription and inserts once if the original field is still available.
-- **Cancel** opens a choice. While recording, choose **Continue recording**, **Finish transcription**, or **Discard**. After Stop, choose **Keep finishing** or **Discard** while insertion is pending.
+- **Cancel** opens a choice inside the panel. While recording, the take pauses (the microphone stops) and you choose **Continue recording** (resumes the same take), **Stop and insert**, or **Discard take**. After Stop, choose **Keep finishing** or **Discard take** while insertion is pending. Back means Continue / Keep finishing.
 - If the keyboard disappears, the phone locks, or the microphone stops unexpectedly, capture ends. Open **Settings → History** to copy recoverable text. If insertion is uncertain, check the original field before pasting.
 - Open the app’s **Settings → Dictionary** to edit vocabulary. Changes apply to later takes, not a recording already in progress.
 

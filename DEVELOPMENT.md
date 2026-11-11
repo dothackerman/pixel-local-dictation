@@ -184,7 +184,8 @@ the benchmark build is debuggable.
   drive the keyboard use `KeyboardHandoff`: our controls plus one FUTO voice-key tap, bounded
   waits, FUTO restored in `finally`.
 - Owner visit (#61): `phone run ch.og.dictation.GuidedVisitTest extended=true` shows one step per
-  screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). Rotation and
+  screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). A re-visit runs only
+  chosen steps with `steps=A2,A3,A7,A8,B9` or starts at one with `start=A7`. Rotation and
   Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
   and `phone pull files/lab/rotation-probe.jsonl`, then
   `python3 tools/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and

@@ -62,43 +62,57 @@ object GuidedVisit {
     private const val SETTINGS = "Open Settings from the button below; return here through Recents."
     private const val MIC = "Tap FUTO's microphone key."
     private const val BACK_ARROW = "Tap the back arrow (Cancel) on our panel."
+    private const val FIELD = "appears in the message field, not duplicated."
+    /** Every Signal take starts with its step, so History (B9) can be checked take by take. */
+    private fun say(step: String, rest: String = "then one sentence") = "Say \"step $step\", $rest."
 
+    /**
+     * #61 re-visit changes: A4 is system Back (it opens the choice; a real hide has no separate
+     * control in Signal: the navigation bar's keyboard-down chevron sends the same Back), C12b
+     * (password field) is gone because FUTO shows no microphone key there; the password path is
+     * covered by host tests and the automated privacy probe.
+     */
     val script = listOf(
         VisitStep("A1", "Ordinary Stop", SIGNAL,
-            listOf("Tap the message field in the Signal draft.", MIC, "Say one sentence.", "Tap Stop."),
-            listOf("The sentence appears once in the draft.", "FUTO's keyboard is back.")),
+            listOf("Tap the message field in the Signal draft.", MIC, say("A1"), "Tap Stop."),
+            listOf("The sentence $FIELD", "FUTO's keyboard is back.")),
         VisitStep("A2", "Rotate while recording", SIGNAL,
-            listOf(MIC, "Say \"one\".", "Rotate to landscape.", "Say \"two\".", "Rotate back to portrait.", "Say \"three\".", "Tap Stop."),
-            listOf("After each rotation our panel comes back and is still recording.", "\"One two three\" appears once in the draft.", "FUTO's keyboard is back."),
+            listOf(MIC, say("A2", "then \"one\""), "Rotate to landscape.", "Say \"two\".", "Rotate back to portrait.", "Say \"three\".", "Tap Stop."),
+            listOf("After each rotation our panel comes back and is still recording.", "\"Step A2 one two three\" $FIELD",
+                "The panel never shows \"History off for this field\".", "FUTO's keyboard is back."),
             traceCase = "signal-capture-rotation", traceMinutes = 8),
         VisitStep("A3", "Stop, then rotate", SIGNAL,
-            listOf(MIC, "Speak for about 10 seconds.", "Tap Stop.", "Rotate the phone right away."),
-            listOf("Our panel comes back showing Finishing.", "The text appears once in the draft.", "FUTO's keyboard is back."),
+            listOf(MIC, say("A3", "then speak for about 10 seconds"), "Tap Stop.", "Rotate the phone right away."),
+            listOf("Our panel comes back showing Finishing.", "The text $FIELD", "FUTO's keyboard is back."),
             traceCase = "signal-finishing-rotation", traceMinutes = 8),
-        VisitStep("A4", "Hide the keyboard", SIGNAL,
-            listOf(MIC, "Say a sentence.", "Hide the keyboard with the system Back."),
-            listOf("The microphone stops at once.", "Nothing is inserted.")),
-        VisitStep("A5", "Tap another field", SIGNAL,
-            listOf(MIC, "Say a sentence.", "Tap Signal's search field."),
+        VisitStep("A4", "System Back while recording", SIGNAL,
+            listOf(MIC, say("A4"), "Press system Back (or the keyboard-down arrow in the navigation bar).",
+                "Choose Continue recording.", "Say one more sentence, then tap Stop."),
+            listOf("The Continue / Stop / Discard choice opens in our panel and it says Paused.",
+                "Continue: recording goes on, and Stop inserts the text.", "The text $FIELD")),
+        VisitStep("A5", "Leave the field", SIGNAL,
+            listOf(MIC, say("A5"), "Tap Signal's search field, or leave Signal with Home."),
             listOf("The microphone stops.", "Nothing is inserted.")),
         VisitStep("A6", "Lock and unlock", SIGNAL,
-            listOf(MIC, "Say a sentence.", "Lock the phone.", "Unlock it."),
+            listOf(MIC, say("A6"), "Lock the phone.", "Unlock it."),
             listOf("The microphone is stopped.", "Recording does not resume.")),
         VisitStep("A7", "Cancel while recording", SIGNAL,
-            listOf("Take 1: $MIC", "Say a sentence.", BACK_ARROW, "Choose Continue recording.", "Say more, then tap Stop.",
-                "Take 2: $MIC", "Say a sentence.", BACK_ARROW, "Choose Finish transcription.",
-                "Take 3: $MIC", "Say a sentence.", BACK_ARROW, "Choose Discard."),
-            listOf("Continue: the take goes on, and Stop inserts the text.", "Finish: the text is inserted once.", "Discard: nothing is inserted."),
+            listOf("Take 1: $MIC", say("A7 continue"), BACK_ARROW, "Look at the status bar's microphone dot.", "Choose Continue recording.", "Say more, then tap Stop.",
+                "Take 2: $MIC", say("A7 stop"), BACK_ARROW, "Choose Stop and insert.",
+                "Take 3: $MIC", say("A7 discard"), BACK_ARROW, "Choose Discard take."),
+            listOf("While the choice is open the panel says Paused and the microphone dot goes away.",
+                "Continue: the take goes on, and Stop inserts the text.", "Stop and insert: the text $FIELD",
+                "Stop and insert: FUTO's keyboard is back.", "Discard: nothing is inserted."),
             traceCase = "signal-cancel-recording", traceMinutes = 12),
         VisitStep("A8", "Cancel during the Stop wait", SIGNAL,
-            listOf("Take 1: $MIC", "Speak for about 10 seconds.", "Tap Stop.", "While it says Finishing, tap the back arrow (Cancel).", "Choose Keep finishing.",
-                "Take 2: $MIC", "Speak for about 10 seconds.", "Tap Stop.", "While it says Finishing, tap the back arrow (Cancel).", "Choose Discard."),
-            listOf("Keep finishing: the text is inserted once.", "Discard: nothing is inserted."),
+            listOf("Take 1: $MIC", say("A8 keep", "then speak for about 10 seconds"), "Tap Stop.", "While it says Finishing, tap the back arrow (Cancel).", "Choose Keep finishing.",
+                "Take 2: $MIC", say("A8 discard", "then speak for about 10 seconds"), "Tap Stop.", "While it says Finishing, tap the back arrow (Cancel).", "Choose Discard take."),
+            listOf("Keep finishing: the text $FIELD", "Discard: nothing is inserted."),
             traceCase = "signal-cancel-finishing", traceMinutes = 12),
         VisitStep("B9", "History shows the right statuses", SETTINGS,
-            listOf("Tap Open Settings below.", "Tap History.", "Look at the takes from steps A1 to A8."),
-            listOf("Takes that inserted text (A1, A2, A3, A7 Continue and Finish, A8 Keep finishing) show as inserted.",
-                "The takes from A4, A5 and A6 show \"Not inserted\".", "The two Discard takes are not listed."),
+            listOf("Tap Open Settings below.", "Tap History.", "Find each take by the step it starts with."),
+            listOf("Takes starting with step A1, A2, A3, A4, A7 continue, A7 stop and A8 keep show no status (inserted).",
+                "Takes starting with step A5 and A6 show \"Not inserted\".", "No take starts with step A7 discard or A8 discard."),
             aid = Aid.SETTINGS),
         VisitStep("B10", "Copy and delete", SETTINGS,
             listOf("Tap Open Settings below, then History.", "Open one take and tap Copy.", "Go back.", "Delete one take.", "Tap Undo.",
@@ -110,18 +124,32 @@ object GuidedVisit {
                 "Read the dialog, then confirm.", "Make one new take in Signal and tap Stop.", "Open History again."),
             listOf("The dialog names the number of saved transcripts.", "History is empty right after the clear.", "The new take is listed after the clear."),
             aid = Aid.SETTINGS),
-        VisitStep("C12a", "No-learning field", APP,
+        VisitStep("C12", "No-learning field", APP,
             listOf("Tap the field below.", MIC, "Say a harmless phrase.", "Tap Stop."),
             listOf("The text is inserted into the field.", "The panel showed \"History off for this field\"."),
             aid = Aid.NO_LEARNING_FIELD),
-        VisitStep("C12b", "Password field", APP,
-            listOf("Tap the field below.", MIC, "Say a harmless phrase.", "Tap Stop."),
-            listOf("The text is inserted into the field.", "The panel showed \"History off for this field\"."),
-            aid = Aid.PASSWORD_FIELD),
     )
 
     /** The default run: one traced rotation step. */
     val defaultScript = script.filter { it.id == "A2" }
+
+    /**
+     * The steps a run shows: [steps] (comma-separated ids, kept in script order) or the whole
+     * script ([extended]) or the default; then from [start] on. Unknown ids are refused.
+     */
+    fun select(steps: String?, start: String?, extended: Boolean): List<VisitStep> {
+        val chosen = steps?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+        chosen?.forEach { id -> require(script.any { it.id == id }) { "unknown step $id" } }
+        val base = when {
+            chosen != null -> script.filter { it.id in chosen }
+            extended || start != null -> script
+            else -> defaultScript
+        }
+        if (start == null) return base
+        require(script.any { it.id == start }) { "unknown step $start" }
+        val from = script.indexOfFirst { it.id == start }
+        return base.filter { script.indexOf(it) >= from }
+    }
 
     fun row(visit: String, run: String, step: VisitStep, result: StepResult, traceComplete: Boolean): JSONObject {
         val answers = JSONArray()

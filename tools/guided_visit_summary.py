@@ -29,6 +29,15 @@ def checks(rows):
     return lines
 
 
+RETENTION = {'ELIGIBLE', 'PASSWORD', 'NO_LEARNING', 'UNCLASSIFIABLE', 'NO_EDITOR'}
+
+
+def editors(window):
+    """Fixed retention classes of the editors that started input in this window (#61)."""
+    seen = [e['retention'] for e in window if e['event'] == 'INPUT_START_DONE' and e.get('retention') in RETENTION]
+    return ', editors: ' + ' > '.join(seen) if seen else ''
+
+
 def rotations(rows, trace):
     final = {r['step']: r for r in rows if r['observation'] != 'retry'}
     out = []
@@ -64,7 +73,7 @@ def rotations(rows, trace):
                 hold_text = f'{hold[1]} +{ms(hold[0])} ms'
             out.append(f"{step} rotation {n}: panel shown " + (f'+{ms(shown)} ms' if shown else 'never') +
                        ', late hide ' + (f'+{round((hidden["ns"] - shown["ns"]) / 1_000_000)} ms after shown' if hidden else 'none') +
-                       f", capture silenced: {'yes' if silenced else 'no'}, hold: {hold_text}")
+                       f", capture silenced: {'yes' if silenced else 'no'}, hold: {hold_text}" + editors(window))
     return out
 
 
