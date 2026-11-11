@@ -64,7 +64,7 @@ alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 
 | Concern | Where | Decision |
 |---|---|---|
-| IME lifecycle: record on open; Cancel, Keyboard, any input restart, hide or lock discard | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md) |
+| IME lifecycle: record on initial open; deliberate Cancel/Keyboard discard; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md), amendment for #36 |
 | Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](adrs/017-shared-take-experiments.md) |
 | Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
 | Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
@@ -78,7 +78,9 @@ Not visible in the code:
   fail verification. Restart after changing them. Selection ignores `variant.json`;
   the benchmark-only `files/lab/live.json` override is retired. A future candidate is
   live-checked by packaging its acceptance record.
-- An input restart with identical attributes still discards the take (ADR-010).
+- An input restart with identical attributes still revokes insertion and stops capture;
+  available eligible text finishes into History. Reattachment does not resume recording
+  automatically. Rotation continuity is unverified (ADR-010 amendment).
 - Old takes keep their dictionary lease until queued work ends; later takes use the
   saved revision. Edited receipts carry their own configuration hash; the frozen
   acceptance record stays intact (ADR-027).
@@ -153,8 +155,10 @@ with `--staged`: tracked edits and new source, test and build inputs must be sta
 
 Enable the IME, grant microphone permission, enable FUTO’s “Disable built-in voice input”.
 Roll back by disabling that toggle before removing the app. Production audio stays in
-memory and is discarded; benchmark storage is opt-in, visibly marked and deletable
-(ADR-010). The first take loads the model. Release and benchmark builds share signing;
+memory and is discarded; eligible transcripts stay in no-backup History until deletion.
+Private/no-learning/unclassifiable editors exclude both History and benchmark content.
+Benchmark storage is opt-in, visibly marked and deletable (ADR-010). The first take loads
+the model. Release and benchmark builds share signing;
 the benchmark build is debuggable.
 
 ## Phone lab operations
