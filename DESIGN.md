@@ -148,6 +148,17 @@ History is a sibling of Dictionary, not a variant. Source: `layout/{history,hist
 - **Warning row.** History warnings (save failure, incomplete recovery, delete failure, receipt failure) are one inline row (filled card, `colorSecondaryContainer`, polite live region) in the slot Dictionary uses for its state line, with a 48dp Dismiss action. One at a time; dismissing shows the next. Each message names only actions that exist on the page. They never appear on the recording panel, and Settings shows at most a saved-count on its History row.
 - **Feedback.** Inline status or a Snackbar on the page; no Toasts.
 
+### Recording panel: landscape
+
+The recording panel's design is otherwise outside this document (#30); only its landscape form is recorded here. Source: `layout-land/ime.xml`, `RecordingRingView.kt`, `PanelPreview.kt`.
+
+- **Same panel, side by side.** Same views, ids, colors and copy as portrait; no extra controls. Start side: Back (48dp) and status, the private-field line, then the three-line preview, both indented to the status text. End side: a 232×148dp stage with the 70dp microphone and ring, under the right thumb.
+- **Compact.** The editor stays visible above: on the Pixel 10 Pro XL the panel is 156dp tall at default font and 196dp at 2× with the private-field line (of 443dp). The input method never uses fullscreen extract mode.
+- **Ring.** The resting ring keeps its portrait size; loudness motion scales to the shorter stage so the loudest ring is never clipped.
+- **Preview.** In both orientations the preview shows the newest line when the text needs more lines than it shows.
+- **Rotation.** Rotating rebuilds the panel for the new orientation from the current take; it never starts, stops or interrupts recording.
+- Verification: `RecordingPanelTest` on the Pixel (landscape controls, 48dp targets, height, unclipped text and ring at fontScale 1 and 2); private captures in `corpus/lab/issue36/56-panel-*/` (light and dark, default and large font). The panel keeps its fixed light palette in dark mode (not yet themed).
+
 Dictionary semantics the UI must respect: [PRODUCT.md](PRODUCT.md).
 
 ## Do's and Don'ts

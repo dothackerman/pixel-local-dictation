@@ -137,8 +137,9 @@ class RecordingPanelTest {
         val metrics = app.resources.displayMetrics
         val width = maxOf(metrics.widthPixels, metrics.heightPixels)
         panel.findViewById<TextView>(R.id.status).setText(R.string.status_recording)
-        panel.findViewById<TextView>(R.id.preview).text =
-            "An invented preview sentence for checking the landscape panel. ".repeat(6)
+        // As the service shows it: the last 240 characters, newest line in view.
+        PanelPreview.bind(panel.findViewById(R.id.preview),
+            "An invented preview sentence for checking the landscape panel. ".repeat(6).trim().takeLast(240))
         panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
