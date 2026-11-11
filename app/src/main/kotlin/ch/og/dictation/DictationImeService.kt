@@ -101,6 +101,12 @@ class DictationImeService : InputMethodService() {
         if (holding) { Log.i(tag, "rotation hold: panel did not return"); interruptTake() }
         else rotationSettled()
     }
+    /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
+    private val recordingCallback = object : android.media.AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
+            if (holding && configs.orEmpty().any { it.isClientSilenced }) silencedDuringHold()
+        }
+    }
     private val panelSettled = Runnable {
         if (!holding && inputViewVisible && session.matches(recordingToken)) rotationSettled()
     }
@@ -154,6 +160,7 @@ class DictationImeService : InputMethodService() {
         listenToDisplay()
         observeRotation()
         configurationOrientation = resources.configuration.orientation
+        getSystemService(android.media.AudioManager::class.java)?.registerAudioRecordingCallback(recordingCallback, mainHandler)
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         MicrophoneOwner.observe(microphoneOwnerListener)
         val ready = Engine.warmUp(this)
@@ -435,10 +442,19 @@ class DictationImeService : InputMethodService() {
             rotationEpisode = true
             mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
         }
+        val silenced = runCatching {
+            getSystemService(android.media.AudioManager::class.java)?.activeRecordingConfigurations.orEmpty().any { it.isClientSilenced }
+        }.getOrDefault(false)
+        if (silenced) { silencedDuringHold(); return }
         // A new editor took input without showing the keyboard: ask for our own panel.
         if (event == EditorEvent.INPUT_START) mainHandler.post {
             if (holding && !inputViewVisible && !destroyed) requestPanel(this)
         }
+    }
+
+    private fun silencedDuringHold() {
+        Log.i(tag, "rotation hold: capture silenced")
+        interruptTake()
     }
 
     /** Ends hold, gap and settling without deciding anything about the take. */
@@ -462,6 +478,12 @@ class DictationImeService : InputMethodService() {
      */
     private fun panelVisible() {
         recordingToken = session.token()
+        // Retention stays latched from the starting editor and only tightens for a rebound one.
+        if (!editorRetentionEligible && takeRetentionEligible == true) {
+            takeRetentionEligible = false
+            take?.excludeFromHistory()
+            showPanelDisclosure(R.string.retention_field_off)
+        }
         if (holding) {
             holding = false
             if (!interruptedView) {
@@ -532,6 +554,7 @@ class DictationImeService : InputMethodService() {
         if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
         destroyed = true
         endHold()
+        getSystemService(android.media.AudioManager::class.java)?.unregisterAudioRecordingCallback(recordingCallback)
         MicrophoneOwner.remove(microphoneOwnerListener)
         unregisterReceiver(screenOff)
         session.invalidate()

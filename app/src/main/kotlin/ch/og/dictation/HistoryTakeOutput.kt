@@ -160,6 +160,14 @@ class HistoryTakeOutput(
             try { if (saved) store().updateDelivery(id, status) } catch (_: Exception) { onReceiptFailure() }
         }
     }
+    override fun excludeHistory() {
+        if (!eligible) return
+        eligible = false
+        synchronized(lock) { suppressed = true; pending = null; pendingAfterTerminal = null }
+        HistoryProcess.owner.remove(id)
+        // Serial I/O: runs after any checkpoint already being written.
+        io.execute { try { store().delete(id) } catch (_: Exception) { onDeleteFailure() } }
+    }
     override fun discardStaged(done: (Boolean) -> Unit) {
         if (eligible) {
             synchronized(lock) { suppressed = true; pending = null }

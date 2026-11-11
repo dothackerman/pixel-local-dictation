@@ -29,6 +29,8 @@ interface TakeOutput {
         stage(text, retentionEligible, ready)
     fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) = done(false)
     fun receipt(status: HistoryDelivery) {}
+    /** Stop keeping this take and remove what was kept (the take continues). */
+    fun excludeHistory() {}
     fun discardStaged(done: (Boolean) -> Unit = {}) { done(true) }
     fun returnToKeyboard(): Boolean
     /** PCM is borrowed for this callback only and wiped immediately afterwards. */
@@ -63,9 +65,11 @@ class TakeSession internal constructor(
     private val transcribe: (Executor, TimelineObserver?, (String, Long?) -> Unit) -> TakeTranscriber,
     private val timeline: TimelineObserver?,
     private val clock: () -> Long,
-    private val retentionEligible: Boolean,
+    retentionEligible: Boolean,
     private val releaseSegmenter: () -> Unit,
 ) {
+    /** Latched from the starting editor; only [excludeFromHistory] changes it, and only to false. */
+    private var retentionEligible = retentionEligible
     private enum class State { NEW, RECORDING, DRAINING, FINISHING, COMPLETING, ENDED }
     @Volatile private var state = State.NEW
     private var take: TakeTranscriber? = null
@@ -181,6 +185,16 @@ class TakeSession internal constructor(
             cancelCapture()
             finish(TakeOutcome.FAILED, failure = failure)
         }
+    }
+
+    /**
+     * The take moved to an editor that excludes retention: keep nothing of it from now on and
+     * remove what was saved. Retention never loosens.
+     */
+    fun excludeFromHistory() {
+        if (!retentionEligible || state == State.ENDED) return
+        retentionEligible = false
+        output.excludeHistory()
     }
 
     /** Hold only before dispatch; once a commit starts it cannot be retracted. */

@@ -261,6 +261,10 @@ class DictationProductionLifecycleTest {
         return showPanel(service, info)
     }
 
+    /** Late decode and the History save run after the release; keep draining while waiting. */
+    private fun awaitInterruptedInHistory() =
+        await { decode.drain(); settleHistory(); rows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
+
     private fun advance(ms: Long) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms)) }
 
     @Test fun rotationWithHiddenKeyboardKeepsTheTakeAndStopInsertsIntoTheReturnedField() {
@@ -312,8 +316,7 @@ class DictationProductionLifecycleTest {
         assertEquals(0, input.releases.get())
         advance(100)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals("old speech", rows().single().text)
         assertEquals(0, commits)
         // A late panel cannot revive the take or start another microphone.
@@ -333,8 +336,7 @@ class DictationProductionLifecycleTest {
         advance(ROTATION_SETTLE_MS)
         service.onFinishInputView(true)
         await { input.releases.get() == 1 } // No further clock advance: no hold after a plain hide.
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
@@ -347,8 +349,7 @@ class DictationProductionLifecycleTest {
         advance(ROTATION_SETTLE_MS)
         service.onFinishInputView(true)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
@@ -413,8 +414,7 @@ class DictationProductionLifecycleTest {
         service.onFinishInputView(true) // Cannot be told apart from the editor reacting to rotation.
         advance(ROTATION_HOLD_GAP_MS)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
@@ -460,8 +460,7 @@ class DictationProductionLifecycleTest {
         rotateHidden(service, android.view.Surface.ROTATION_90)
         screenOff()
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
@@ -475,11 +474,80 @@ class DictationProductionLifecycleTest {
         input.endUnexpectedly()
         await { input.releases.get() == 1 }
         await { flushes.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         showPanel(service)
         assertEquals(0, commits)
         assertEquals(1, input.starts.get())
+    }
+
+    @Test fun reboundPrivateEditorExcludesTheTakeFromHistory() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); settleHistory()
+        assertEquals(1, rows().size) // Checkpointed while the starting editor allowed it.
+        val next = rotateHidden(service, android.view.Surface.ROTATION_90, editor(privateField = true))
+        val returned = showPanel(service, editor(privateField = true))!!
+        settleHistory()
+        assertTrue(rows().isEmpty())
+        val notice = returned.findViewById<TextView>(R.id.retention_notice)
+        assertEquals(View.VISIBLE, notice.visibility)
+        assertEquals(service.getString(R.string.retention_field_off), notice.text.toString())
+        feed(input, 20000, 2)
+        decode.drain(); settleHistory()
+        assertTrue(rows().isEmpty())
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech"), next.inserted)
+        assertTrue(rows().isEmpty())
+    }
+
+    @Test fun privateStartingEditorStaysExcludedAfterReboundToOrdinaryField() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor(privateField = true))
+        feed(input, 1000, 1)
+        val next = rotateHidden(service, android.view.Surface.ROTATION_90, editor())
+        val returned = showPanel(service, editor())!!
+        assertEquals(service.getString(R.string.retention_field_off), returned.findViewById<TextView>(R.id.retention_notice).text.toString())
+        feed(input, 20000, 2)
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(1, next.inserted.size)
+        assertTrue(rows().isEmpty())
+    }
+
+    /** Android reports this app's recording as silenced (for example, a hidden client). */
+    private fun reportSilenced(silenced: Boolean) {
+        val audio = RuntimeEnvironment.getApplication().getSystemService(android.media.AudioManager::class.java)
+        val shadow = shadowOf(audio)
+        val config = shadow.createActiveRecordingConfiguration(1, android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION, "ch.og.dictation")
+        android.media.AudioRecordingConfiguration::class.java.getDeclaredField("mClientSilenced")
+            .apply { isAccessible = true }.setBoolean(config, silenced)
+        shadow.setActiveRecordingConfigurations(listOf(config), true)
+        pump()
+    }
+
+    @Test fun silencedCaptureDuringRotationHoldEndsInHistory() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        reportSilenced(false)
+        rotateHidden(service, android.view.Surface.ROTATION_90)
+        assertEquals(0, input.releases.get())
+        reportSilenced(true)
+        await { input.releases.get() == 1 } // No clock advance: at once, not at the gap.
+        await { decode.drain(); settleHistory(); rows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
+        assertEquals(0, commits)
     }
 
     @Test fun focusChangeToAnotherFieldWithoutRotationStopsAtOnce() {
@@ -492,8 +560,7 @@ class DictationProductionLifecycleTest {
         service.onCreateInputMethodInterface().startInput(other, editor())
         showPanel(service)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertTrue(other.inserted.isEmpty())
         assertEquals(0, commits)
         assertEquals(1, input.starts.get())
@@ -506,8 +573,7 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         service.onStartInput(editor(), true)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
@@ -708,8 +774,7 @@ class DictationProductionLifecycleTest {
         service.onFinishInputView(true)
         assertFalse(dialog.isShowing)
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
+        awaitInterruptedInHistory()
         assertEquals(0, commits)
     }
 
