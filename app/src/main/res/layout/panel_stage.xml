@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The stage's contents in both orientations: the ring, the Preparing text arc and the microphone
      disk (one colour in every state; its glyph is the mic or the Stop square). -->
-<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <ch.og.dictation.RecordingRingView
         android:id="@+id/recording_ring"
         android:layout_width="match_parent"
@@ -21,7 +21,8 @@
         android:layout_gravity="center"
         android:background="@drawable/mic_disk"
         android:src="@drawable/ic_mic"
-        app:tint="?attr/colorOnPrimary"
+        android:tint="?attr/colorOnPrimary"
+        tools:ignore="UseAppTint"
         android:scaleType="centerInside"
         android:padding="23dp"
         android:contentDescription="@string/stop_recording" />

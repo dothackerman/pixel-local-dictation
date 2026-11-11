@@ -397,7 +397,10 @@ class RecordingPanelTest {
                 assertNotEquals("no microphone disk while preparing", View.VISIBLE, mic.visibility)
                 state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
+                // As the service draws it 3 s into the 8 s window.
+                panel.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.undo_timer).progress = 625
                 state("discarded-undo", R.string.status_discarded, PanelFrame(undo = true))
+                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.undo_timer).visibility)
                 val undo = panel.findViewById<View>(R.id.undo_discard)
                 assertTrue("Undo below 56dp ($suffix)", undo.height >= 56 * density - 1)
                 assertEquals("no microphone during the Undo window", false, mic.visibility == View.VISIBLE)

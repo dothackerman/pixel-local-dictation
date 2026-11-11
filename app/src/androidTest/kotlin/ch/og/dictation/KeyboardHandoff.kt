@@ -82,13 +82,15 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
     /** A visible, clickable button of ours by its label (the Cancel choice is inline in the panel). */
     fun ourButton(label: Int): AccessibilityNodeInfo? {
         val text = context.getString(label)
-        return ourNodes().firstOrNull { it.isClickable && it.isVisibleToUser && it.text?.toString().equals(text, ignoreCase = true) }
+        // Icon-only panel buttons (#36) carry their words as the content description.
+        return ourNodes().firstOrNull { it.isClickable && it.isVisibleToUser &&
+            ((it.text ?: it.contentDescription)?.toString().equals(text, ignoreCase = true)) }
     }
 
     /** The inline Cancel choice's Discard action, if the choice is open. */
     private fun ourPromptDiscard(): AccessibilityNodeInfo? {
         val label = context.getString(R.string.discard_take)
-        return ourNodes().firstOrNull { it.viewIdResourceName == context.resources.getResourceName(R.id.choice_discard) && it.isVisibleToUser && it.text?.toString() == label }
+        return ourNodes().firstOrNull { it.viewIdResourceName == context.resources.getResourceName(R.id.choice_discard) && it.isVisibleToUser && (it.text ?: it.contentDescription)?.toString() == label }
     }
 
     fun clickOurs(id: Int) {
@@ -174,6 +176,9 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
                 discard != null -> {
                     status("hand-back $attempt: our prompt up, Discard")
                     discard.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    // Discard opens an Undo window (#36); our Back makes it final and hands back.
+                    waitFor(1_000) { futoSelected() || ourNode(R.id.undo_discard) != null }
+                    if (!futoSelected()) runCatching { clickOurs(R.id.back) }.onFailure { status("hand-back $attempt: ${it.message}") }
                     waitFor(4_000) { futoSelected() }
                 }
                 shown() == Shown.OURS -> {

@@ -42,8 +42,9 @@
         <item name="colorOutlineVariant">@color/b2_outline_variant</item>
         <item name="android:textColorHighlight">@color/b2_primary_container</item>
 
-        <item name="fontFamily">@font/public_sans</item>
-        <item name="android:fontFamily">@font/public_sans</item>
+        <!-- Default face through the default text appearance (a theme-level fontFamily would
+             override every role's face). -->
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.BodyMedium</item>
         <item name="textAppearanceDisplaySmall">@style/TextAppearance.Dictation.TitleLarge</item>
         <item name="textAppearanceHeadlineSmall">@style/TextAppearance.Dictation.TitleLarge</item>
         <item name="textAppearanceTitleLarge">@style/TextAppearance.Dictation.TitleLarge</item>

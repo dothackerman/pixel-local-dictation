@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The panel's status block, shared by both orientations: Back, status and its marker slot, the
      Undo timer rule, the private-field line and the preview (newest of three lines last). -->
-<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -41,23 +42,6 @@
             android:importantForAccessibility="no"
             android:visibility="gone" />
     </LinearLayout>
-    <!-- Take discarded: what is left of the Undo window, as a 2dp rule (same model as History delete). -->
-    <com.google.android.material.progressindicator.LinearProgressIndicator
-        android:id="@+id/undo_timer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="56dp"
-        android:layout_marginEnd="12dp"
-        android:layout_marginBottom="8dp"
-        android:max="1000"
-        android:importantForAccessibility="no"
-        android:visibility="gone"
-        app:trackThickness="2dp"
-        app:trackCornerRadius="0dp"
-        app:indicatorTrackGapSize="0dp"
-        app:trackStopIndicatorSize="0dp"
-        app:indicatorColor="?attr/colorOnSurface"
-        app:trackColor="?attr/colorOutlineVariant" />
     <TextView
         android:id="@+id/retention_notice"
         android:layout_width="match_parent"
@@ -65,24 +49,50 @@
         android:layout_marginStart="56dp"
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="4dp"
-        app:drawableStartCompat="@drawable/ic_lock"
+        android:drawableStart="@drawable/ic_lock"
+        tools:ignore="UseCompatTextViewDrawableXml"
         android:drawablePadding="6dp"
         android:gravity="center_vertical"
         android:textAppearance="?attr/textAppearanceLabelMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
-    <TextView
-        android:id="@+id/preview"
+    <!-- The preview's place; the Undo timer rule sits at its top while the preview is hidden, so
+         the panel keeps its height. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="56dp"
-        android:paddingEnd="12dp"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:minLines="3"
-        android:maxLines="3"
-        android:ellipsize="start"
-        android:gravity="bottom"
-        android:breakStrategy="high_quality"
-        android:hyphenationFrequency="normal" />
+        android:layout_marginStart="56dp">
+        <TextView
+            android:id="@+id/preview"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingEnd="12dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:minLines="3"
+            android:maxLines="3"
+            android:ellipsize="start"
+            android:gravity="bottom"
+            android:breakStrategy="high_quality"
+            android:hyphenationFrequency="normal" />
+        <!-- Take discarded: what is left of the Undo window, as a 2dp rule (same model as History delete). -->
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/undo_timer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="12dp"
+            android:max="1000"
+            android:importantForAccessibility="no"
+            android:visibility="gone"
+            app:showAnimationBehavior="none"
+            app:hideAnimationBehavior="none"
+            app:trackThickness="2dp"
+            app:trackCornerRadius="0dp"
+            app:indicatorTrackGapSize="0dp"
+            app:trackStopIndicatorSize="0dp"
+            app:indicatorColor="?attr/colorOnSurface"
+            app:trackColor="?attr/colorOutlineVariant" />
+    </FrameLayout>
 </merge>
