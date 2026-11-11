@@ -518,11 +518,11 @@ class DictationImeService : InputMethodService() {
                     trace?.event(event.phase, traceTake, event.ns)
                 }
                 if (event.phase in setOf("scenario", "captureStart", "captureSampleAnchor", "captureStopAnchor", "chunkReady", "chunkEnqueue",
-                        "chunkWorkerStart", "chunkWorkerEnd", "checkpointQueued", "checkpointDurable",
+                        "chunkWorkerStart", "chunkWorkerEnd", "checkpointQueued", "checkpointDurable", "checkpointFailed",
                         "stopRequested", "producerStop", "captureStopped", "finishCall", "finishEnqueue",
                         "finishWorkerStart", "finishWorkerEnd", "finalReady", "commitAccepted", "commitRejected",
                         "returnRequested", "takeEnded")) {
-                    startup?.timing(startupTake, event)
+                    startup?.timing(traceTake, event)
                 }
             }
             val startedTake = Engine.openTake(this) { runtime, receipt ->

@@ -17,9 +17,11 @@ class RecoveryTimingTests(unittest.TestCase):
             dict(phase="checkpointQueued", ns=1_200_000_000, revision=1, sampleEnd=16000),
             dict(phase="checkpointDurable", ns=1_300_000_000, revision=1, sampleEnd=16000),
             dict(phase="captureSampleAnchor", ns=2_000_000_000, sampleEnd=32000),
-            dict(phase="stopRequested", ns=2_050_000_000),
+            dict(phase="stopRequested", ns=2_050_000_000, sampleEnd=32000),
             dict(phase="producerStop", ns=2_051_000_000, active=True, queued=1),
             dict(phase="captureStopAnchor", ns=2_060_000_000, sampleEnd=32000),
+            dict(phase="checkpointDurable", ns=2_200_000_000, revision=2, sampleEnd=32000),
+            dict(phase="checkpointDurable", ns=2_300_000_000, revision=3, sampleEnd=32000),
             dict(phase="finalReady", ns=2_400_000_000),
             dict(phase="takeEnded", ns=2_500_000_000),
         ]
@@ -31,7 +33,7 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertEqual("complete", result["status"])
         self.assertEqual("fixture-c", result["fixtureId"])
         self.assertFalse(result["zeroCheckpoint"])
-        self.assertEqual(1, result["oldestNewlyDurableAudioLagMs"]["count"])
+        self.assertEqual(2, result["oldestNewlyDurableAudioLagMs"]["count"])
         self.assertEqual(1300.0, result["initialZeroCheckpointIntervalMs"])
         self.assertEqual(300.0, result["newestNewlyDurableAudioLagMs"]["max"])
         self.assertEqual(1.0, result["atRiskBacklogAtStopSec"])

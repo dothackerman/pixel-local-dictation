@@ -135,7 +135,11 @@ class TakeSession internal constructor(
         if (state != State.RECORDING) return
         state = State.DRAINING
         output.finishingHistory()
-        mark("stopRequested")
+        synchronized(audioLock) {
+            val now = clock()
+            synchronized(events) { events["stopRequested"] = now }
+            timeline?.emit(TimelineEvent("stopRequested", ns = now, sampleEnd = capturedSamples))
+        }
         take?.timelineSnapshot("producerStop")
         try {
             capture.stop { result ->

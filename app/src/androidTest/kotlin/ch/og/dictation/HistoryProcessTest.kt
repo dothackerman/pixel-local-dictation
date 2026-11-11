@@ -17,22 +17,22 @@ import org.junit.runner.RunWith
 class HistoryProcessTest {
     @Test fun continuousAndPausedSyntheticSpeechExerciseRestartZeroCheckpointAndLaterFailure() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val zero = runScenario(context, "continuous-zero-${UUID.randomUUID()}", "fixture-zero", "continuous")
+        val zero = runScenario(context, UUID.randomUUID().toString(), "fixture-zero", "continuous")
         try { assertTrue("continuous pre-checkpoint death invented recovery text", HistoryStore(zero.root, HistoryOwner()).list().isEmpty()) }
         finally { zero.root.deleteRecursively() }
 
-        val restart = runScenario(context, "paused-restart-${UUID.randomUUID()}", "fixture-checkpoint-restart", "paused")
+        val restart = runScenario(context, UUID.randomUUID().toString(), "fixture-checkpoint-restart", "paused")
         try {
             val recovered = HistoryStore(restart.root, HistoryOwner()).list().singleOrNull()
             assertTrue("paused checkpoint did not survive producer death", restart.prefixBeforeDeath != null && restart.prefixBeforeDeath == recovered?.text)
-            assertEquals(HistoryCompletion.RECORDING, recovered?.completion)
+            assertEquals(HistoryCompletion.INTERRUPTED, recovered?.completion)
         } finally { restart.root.deleteRecursively() }
 
-        val failure = runScenario(context, "paused-late-failure-${UUID.randomUUID()}", "fixture-later-failure", "paused")
+        val failure = runScenario(context, UUID.randomUUID().toString(), "fixture-later-failure", "paused")
         try {
             val recovered = HistoryStore(failure.root, HistoryOwner()).list().singleOrNull()
             assertTrue("later failed write replaced the known good prefix", failure.prefixBeforeDeath != null && failure.prefixBeforeDeath == recovered?.text)
-            assertEquals(HistoryCompletion.RECORDING, recovered?.completion)
+            assertEquals(HistoryCompletion.INTERRUPTED, recovered?.completion)
         } finally { failure.root.deleteRecursively() }
     }
 
@@ -43,6 +43,7 @@ class HistoryProcessTest {
         root.deleteRecursively()
         val intent = Intent().setClassName(context, "ch.og.dictation.CheckpointProducerService")
             .putExtra("mode", mode).putExtra("case_id", id).putExtra("fixture_id", fixtureId)
+        try {
         context.startService(intent)
         val deadline = SystemClock.uptimeMillis() + TimeUnit.MINUTES.toMillis(3)
         var prefixBeforeDeath: String? = null
@@ -63,6 +64,19 @@ class HistoryProcessTest {
         while (manager.runningAppProcesses.orEmpty().any { it.pid == pid } && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(20)
         assertFalse("producer process remained alive", manager.runningAppProcesses.orEmpty().any { it.pid == pid })
         return ScenarioResult(root, prefixBeforeDeath)
+        } catch (failure: Throwable) {
+            root.mkdirs()
+            File(root, "prefix-ack").writeText("ack")
+            val ready = File(root, "producer-ready")
+            val pid = ready.takeIf { it.exists() }?.readText()?.toIntOrNull()
+            if (pid != null) {
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                val cleanupDeadline = SystemClock.uptimeMillis() + 20_000
+                while (manager.runningAppProcesses.orEmpty().any { it.pid == pid } && SystemClock.uptimeMillis() < cleanupDeadline) SystemClock.sleep(20)
+            }
+            root.deleteRecursively()
+            throw failure
+        }
     }
 
     @Test fun unboundProducerDeathWithNoCheckpointLeavesNoRecoverableText() {

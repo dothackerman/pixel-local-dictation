@@ -89,17 +89,21 @@ def analyze(path: Path) -> dict:
         checkpoint_queue_lags = []
         chunk_to_durable_lags = []
         max_risk_samples = 0
+        stop_backlog = None
         for event in events:
             if event["phase"] in ("captureSampleAnchor", "captureStopAnchor") and "sampleEnd" in event:
                 captured_end = max(captured_end, event["sampleEnd"])
                 max_risk_samples = max(max_risk_samples, captured_end - latest_frontier)
+            elif event["phase"] == "stopRequested":
+                stop_backlog = max(0, event.get("sampleEnd", captured_end) - latest_frontier)
+                max_risk_samples = max(max_risk_samples, stop_backlog)
             elif event["phase"] == "checkpointDurable" and "sampleEnd" in event:
                 offset = event["sampleEnd"]
                 oldest_time = _sample_time(latest_frontier, source_anchors)
                 newest_time = _sample_time(offset, source_anchors)
-                if oldest_time is not None:
+                if offset > latest_frontier and oldest_time is not None:
                     newly_oldest_lags.append((event["ns"] - oldest_time) / 1e6)
-                if newest_time is not None:
+                if offset > latest_frontier and newest_time is not None:
                     newly_newest_lags.append((event["ns"] - newest_time) / 1e6)
                 request = queued.get(event.get("revision"))
                 if request is not None:
@@ -136,7 +140,7 @@ def analyze(path: Path) -> dict:
             "zeroCheckpoint": not durable if complete else None,
             "durableSourceFrontierSec": round(latest_frontier / SAMPLE_RATE, 3),
             "atRiskBacklogMaxSec": round(max_risk_samples / SAMPLE_RATE, 3) if complete else None,
-            "atRiskBacklogAtStopSec": round(max(0, (captured_end - latest_frontier) / SAMPLE_RATE), 3) if complete else None,
+            "atRiskBacklogAtStopSec": round(stop_backlog / SAMPLE_RATE, 3) if complete and stop_backlog is not None else None,
             "decodeStopWaitMs": round((final_ns - stop_ns) / 1e6, 2) if final_ns is not None and stop_ns is not None else None,
             "terminalStopWaitMs": round((terminal_ns - stop_ns) / 1e6, 2) if terminal_ns is not None and stop_ns is not None else None,
             "maxDecodeQueue": max((e.get("queued", 0) for e in events if e["phase"] in ("chunkEnqueue", "finishEnqueue")), default=0),
