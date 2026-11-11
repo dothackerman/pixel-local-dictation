@@ -20,6 +20,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
 import android.widget.TextView
 import java.util.concurrent.Executor
@@ -116,6 +117,7 @@ class DictationImeService : InputMethodService() {
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
             if (RotationTrace.probeActive()) {
                 rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+                lastConfiguration = Configuration(resources.configuration)
                 rotationEvent(RotationEvent.SERVICE_CREATE)
                 listenToDisplay()
             }
@@ -346,7 +348,15 @@ class DictationImeService : InputMethodService() {
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         observeRotation()
-        rotationEvent(RotationEvent.CONFIGURATION)
+        rotationTrace?.let { trace ->
+            val diff = lastConfiguration?.diff(newConfig)
+            val handled = runCatching {
+                getSystemService(InputMethodManager::class.java)?.inputMethodList
+                    ?.firstOrNull { it.packageName == packageName }?.configChanges
+            }.getOrNull()
+            rotationEvent(RotationEvent.CONFIGURATION, configDiff = diff, handledConfig = handled)
+        }
+        lastConfiguration = Configuration(newConfig)
         super.onConfigurationChanged(newConfig)
         val layoutChanged = panelConfiguration?.let {
             it.orientation != newConfig.orientation || it.screenWidthDp != newConfig.screenWidthDp ||
@@ -376,12 +386,16 @@ class DictationImeService : InputMethodService() {
         super.onWindowHidden()
     }
 
-    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null) {
+    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null) {
         val trace = rotationTrace ?: return
         val rotation = observeRotation()
         trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
-            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges)
+            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges,
+            configDiff, handledConfig)
     }
+
+    /** Trace only: the configuration this service last saw, to report what a change differs in. */
+    private var lastConfiguration: Configuration? = null
 
     /**
      * Reads the default display's rotation and counts every change this service observes.
@@ -823,7 +837,8 @@ class DictationImeService : InputMethodService() {
 
     private fun cancelAndReturn() {
         if (takeActive) { if (finishing) showFinishingPrompt() else showRecordingPrompt(); return }
-        val token = recordingToken
+        // Idle (no take, or it already ended): Back belongs to the live editor session.
+        val token = recordingToken ?: session.token()
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }
 
