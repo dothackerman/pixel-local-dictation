@@ -11,7 +11,10 @@ import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Each attempt has its own run ID; failures and skips do not discard other observations. */
+/**
+ * Owner visit (ticket #61): one screen per step. Each attempt has its own run ID; failures and skips
+ * do not discard other observations. `extended=true` runs the whole script; the default runs A2 only.
+ */
 @RunWith(AndroidJUnit4::class)
 class GuidedVisitTest {
     @Test fun ownerVisit() {
@@ -27,16 +30,16 @@ class GuidedVisitTest {
             return RotationProbeActivity.done.await(minutes, TimeUnit.MINUTES)
         }
         val extended = InstrumentationRegistry.getArguments().getString("extended") == "true"
-        val cases = if (extended) RotationProbeActivity.cases else listOf("signal-capture-rotation")
+        val steps = if (extended) GuidedVisit.script else GuidedVisit.defaultScript
         if (extended && (!show(Intent(context, RotationProbeActivity::class.java).putExtra("welcome", true), 30) ||
                 RotationProbeActivity.result != "start")) return
-        var index = if (extended) RotationProbeActivity.selected else 0
+        val progress = GuidedVisitProgress(steps, if (extended) RotationProbeActivity.selected else 0)
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
-        while (index < cases.size) {
-            val name = cases[index]
+        while (true) {
+            val step = progress.current ?: break
             val run = UUID.randomUUID().toString()
-            val traced = name in RotationTrace.allowedCases
+            val traceCase = step.traceCase
             HistoryIo.executor.submit {}.get()
             val history = File(context.noBackupFilesDir, "history")
             val benchmark = File(context.filesDir, "benchmark")
@@ -44,17 +47,18 @@ class GuidedVisitTest {
             val beforeBenchmark = inventory(benchmark)
             var traceComplete = false
             try {
-                if (traced) RotationTrace.beginProbe(name, run)
-                RotationProbeActivity.selected = index
-                val finished = show(Intent(context, RotationProbeActivity::class.java).putExtra("case", name).putExtra("guided", true)
-                    .putExtra("stepCount", cases.size), 30)
-                if (traced && finished && RotationProbeActivity.result !in setOf("skipped", "retry", "interrupted")) traceComplete = RotationTrace.finishProbe(10_000)
+                if (traceCase != null) RotationTrace.beginProbe(traceCase, run, step.traceMinutes.toLong())
+                val finished = show(Intent(context, RotationProbeActivity::class.java).putExtra("step", step.id)
+                    .putExtra("position", steps.indexOf(step) + 1).putExtra("stepCount", steps.size),
+                    (step.traceMinutes + 5).toLong().coerceAtLeast(30))
+                val result = StepResult.parse(step, RotationProbeActivity.result)
+                val outcome = if (finished) result.outcome else Outcome.INTERRUPTED
+                if (traceCase != null && finished && outcome in setOf(Outcome.DONE, Outcome.END)) traceComplete = RotationTrace.finishProbe(10_000)
                 HistoryIo.executor.submit {}.get()
                 val afterHistory = inventory(history)
                 val afterBenchmark = inventory(benchmark)
-                val row = JSONObject().put("visit", visit).put("run", run).put("case", name)
-                    .put("observation", RotationProbeActivity.result).put("traceComplete", traceComplete)
-                if (name.startsWith("privacy-")) {
+                val row = GuidedVisit.row(visit, run, step, result.copy(outcome = outcome), traceComplete)
+                if (step.privacyCheck) {
                     row.put("historyChanged", beforeHistory != afterHistory)
                         .put("benchmarkChanged", beforeBenchmark != afterBenchmark)
                         .put("historyAdded", afterHistory.keys.any { it.endsWith(".history") && it !in beforeHistory })
@@ -62,14 +66,13 @@ class GuidedVisitTest {
                         .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null))
                 }
                 output.appendText(row.toString() + "\n")
-                if (!finished || RotationProbeActivity.result.substringBefore(':') == "end") return
-                if (!RotationProbeActivity.result.startsWith("retry")) index++
+                progress.record(outcome)
             } catch (e: Exception) {
-                output.appendText(JSONObject().put("visit", visit).put("run", run).put("case", name)
+                output.appendText(JSONObject().put("visit", visit).put("run", run).put("step", step.id).put("case", traceCase ?: step.id)
                     .put("observation", "error").put("errorType", e.javaClass.simpleName).toString() + "\n")
-                index++
+                progress.record(Outcome.SKIPPED)
             } finally {
-                if (traced) RotationTrace.abortProbe()
+                if (traceCase != null) RotationTrace.abortProbe()
             }
         }
     }

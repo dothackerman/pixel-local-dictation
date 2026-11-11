@@ -111,7 +111,7 @@ class DictationImeService : InputMethodService() {
     private var movedPrompt: AlertDialog? = null
     private val gapExpired = Runnable {
         if (!rotationEpisode) return@Runnable
-        if (holding) { Log.i(tag, "rotation hold: panel did not return"); interruptTake() }
+        if (holding) { Log.i(tag, "rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
         else rotationSettled()
     }
     /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
@@ -464,6 +464,7 @@ class DictationImeService : InputMethodService() {
         mainHandler.removeCallbacks(panelSettled)
         if (!holding) {
             holding = true
+            rotationEvent(RotationEvent.HOLD_ENTERED)
             Log.i(tag, "rotation hold")
             ring?.follow(null)
         }
@@ -518,6 +519,7 @@ class DictationImeService : InputMethodService() {
 
     private fun silencedDuringHold() {
         Log.i(tag, "rotation hold: capture silenced")
+        rotationEvent(RotationEvent.HOLD_SILENCED)
         interruptTake()
     }
 
@@ -531,6 +533,7 @@ class DictationImeService : InputMethodService() {
 
     /** The panel stayed visible after the rotation: later editor events are judged without it. */
     private fun rotationSettled() {
+        if (rotationEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
         endHold()
         rotationsWhenVisible = rotationChanges
         authorityMoves = false

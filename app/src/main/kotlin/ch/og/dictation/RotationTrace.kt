@@ -25,6 +25,14 @@ enum class RotationEvent {
     PROBE_RECORDING_STATE,
     /** The take's final text is decoded (before History staging and dispatch); no text is traced. */
     FINAL_READY,
+    /** A rotation hold began (the editor lost the panel without the owner leaving). */
+    HOLD_ENTERED,
+    /** The hold ended because Android silenced the capture while the panel was away. */
+    HOLD_SILENCED,
+    /** The hold ended because the panel did not return within the gap. */
+    HOLD_GAP_EXPIRED,
+    /** The panel stayed visible after the rotation; the hold is over and the take goes on. */
+    HOLD_SETTLED,
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */
@@ -49,13 +57,15 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         val allowedCases = setOf("signal-capture-rotation", "signal-finishing-rotation", "app-capture-rotation", "app-finishing-rotation",
             "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls",
             "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing",
+            "signal-cancel-recording", "signal-cancel-finishing",
             "demo52-keep", "demo52-hidden",
             "demo53-hidden-before-decode", "demo53-keep-before-decode", "demo53-hidden-before-save",
             "demo53-hidden-after-commit", "demo53-hidden-recording-choice",
             "demo53-hidden-finishing-choice-before-decode", "demo53-hidden-finishing-choice-after-save")
 
-        fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
+        fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString(), minutes: Long = 6) {
             require(caseName in allowedCases)
+            require(minutes in 1..15)
             require(runId.matches(Regex("[A-Za-z0-9-]{1,64}")))
             synchronized(probeLock) {
                 check(deadline == 0L || System.nanoTime() >= deadline) { "probe already active" }
@@ -63,7 +73,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
             }
             closeTraces()
             synchronized(probeLock) {
-                deadline = System.nanoTime() + 6L * 60 * 1_000_000_000
+                deadline = System.nanoTime() + minutes * 60 * 1_000_000_000
                 viewStarted = false
                 viewFinished = false
                 captureStarted = false

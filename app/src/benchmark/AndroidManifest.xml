@@ -14,6 +14,7 @@
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".RotationProbeActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.DayNight"
             android:excludeFromRecents="false" android:windowSoftInputMode="adjustResize" />
         <!-- Self-rotating probe editors (#56): recreated with the keyboard left hidden, like
              Signal; and one that handles rotation itself and shows the keyboard again. -->

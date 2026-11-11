@@ -150,4 +150,21 @@ class RotationProbeCompletionTest {
         assertThrows(IllegalArgumentException::class.java) { RotationTrace.beginProbe("unknown") }
     }
 
+    @Test fun guidedControlCasesAreAllowedWithBoundedLongerDeadlines() {
+        for (name in listOf("signal-cancel-recording", "signal-cancel-finishing")) {
+            RotationTrace.beginProbe(name, "run-1", minutes = 12)
+            assertTrue(RotationTrace.probeActive())
+            RotationTrace.abortProbe()
+        }
+        assertThrows(IllegalArgumentException::class.java) { RotationTrace.beginProbe("signal-cancel-recording", minutes = 0) }
+        assertThrows(IllegalArgumentException::class.java) { RotationTrace.beginProbe("signal-cancel-recording", minutes = 16) }
+    }
+
+    @Test fun holdOutcomesAreFixedEventNames() {
+        val file = Files.createTempDirectory("rotation-trace").resolve("trace.jsonl").toFile()
+        val trace = RotationTrace(file)
+        for (e in listOf(RotationEvent.HOLD_ENTERED, RotationEvent.HOLD_SILENCED, RotationEvent.HOLD_GAP_EXPIRED, RotationEvent.HOLD_SETTLED)) trace.event(e)
+        trace.close()
+        assertEquals(listOf("HOLD_ENTERED", "HOLD_SILENCED", "HOLD_GAP_EXPIRED", "HOLD_SETTLED"), file.readLines().map { JSONObject(it).getString("event") })
+    }
 }

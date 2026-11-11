@@ -183,6 +183,12 @@ the benchmark build is debuggable.
   Test-owned windows keep the screen on while shown (no wake lock, no setting). Tests that
   drive the keyboard use `KeyboardHandoff`: our controls plus one FUTO voice-key tap, bounded
   waits, FUTO restored in `finally`.
+- Owner visit (#61): `phone run ch.og.dictation.GuidedVisitTest extended=true` shows one step per
+  screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). Rotation and
+  Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
+  and `phone pull files/lab/rotation-probe.jsonl`, then
+  `python3 tools/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
+  per-rotation panel/hide/silenced/hold timings).
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
   `bash tools/gate/apply.sh`. Then, in a fresh unescalated agent session, run
   `python3 tools/gate/check_installation.py` and `python3 tools/quality.py`. The installer
