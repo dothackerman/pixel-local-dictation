@@ -42,7 +42,7 @@ on the Pixel for this handoff. No continuous-rotation or recovery-window claim.
 
 ## Amendment — rotation continuity (#52)
 
-2026-11-11 · Branch implementation for #36; host-tested, Pixel evidence partial.
+2026-11-11 · Branch implementation for #36; host-tested and Pixel-measured (#56, #52).
 
 One editor-event policy decides input start, input view start/finish, input finish,
 window hidden and screen off: nothing, revoke authority, or interrupt (revoke and
@@ -65,12 +65,18 @@ Retention stays latched from the starting editor and only tightens on rebind.
 
 Evidence: host lifecycle tests for both editor modes, the Pixel callback order,
 gap expiry, real hide after rotation, repeated rotation, lock, focus change,
-same-field restart, microphone loss and silencing. Pixel: one #56 trace
-(recreated editor, Stop wait): rotation counted before the first interrupting
-event; Android still restarted input inside the configuration change despite the
-declared `configChanges`; service not destroyed; panel did not return by itself.
-Pending on the Pixel: the other three #56 cases, hidden-client silencing, the
-rotation-to-panel time that sets the gap, and the `RotationContinuityDemoTest` demo.
+same-field restart, microphone loss and silencing. Pixel (#56 probe, 4 cases × 2
+runs; #52 demo, 2 modes): rotation counted at CONFIGURATION +25–51 ms, before the
+first interrupting event in every case; Android restarts input inside the
+configuration change on every rotation, also with `resourcesUnused` declared
+(not preventable from `method.xml`); service not destroyed by rotation. Panel
+visible again +38–45 ms (kept editor) and, for the recreated editor, hidden at
++119–147 ms and back by our request at +160–165 ms (hidden ≤ 46 ms); drawn ≤ 183 ms.
+Capture was never reported silenced (longest hidden interval 46 ms, so silencing
+of a long-hidden client stays untested). Demo: one take, one capture, speech
+before and after the rotation inserted once, FUTO restored, both modes. Rotation
+during the Stop wait still ends in History (#53). Gap 3 s and settle 1 s kept:
+≥ 18× and ≥ 7× the measured times; one probe editor, one device.
 Limits: a hide or focus change within the settle time after a rotation cannot be
 told apart from the editor reacting to it (held, then History at the gap); the
 display callback can still report the old rotation (#56), so a 180° turn without a
