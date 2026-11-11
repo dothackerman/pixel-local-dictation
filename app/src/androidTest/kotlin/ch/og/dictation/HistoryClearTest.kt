@@ -119,6 +119,8 @@ class HistoryClearTest {
             assertEquals("Clear", (dialog.findViewById<View>(android.R.id.button1) as TextView).text.toString())
             dialog.findViewById<View>(if (positive) android.R.id.button1 else android.R.id.button2).performClick()
         }
+        // AlertDialog delivers the button's listener through a posted message; let it run first.
+        instrumentation.waitForIdleSync()
     }
 
     private fun closeAndClean(scenario: ActivityScenario<HistoryTestActivity>) {
