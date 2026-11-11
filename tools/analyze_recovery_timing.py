@@ -80,7 +80,9 @@ def analyze(path: Path) -> dict:
         queued = {e.get("revision"): e for e in phase.get("checkpointQueued", [])}
         durable = phase.get("checkpointDurable", [])
         failed = phase.get("checkpointFailed", [])
-        captured_end = max((e["sampleEnd"] for e in anchors + stop_anchors), default=0)
+        # Reconstruct the frontier in receipt order; preloading the final offset would
+        # falsely attribute future captured audio to earlier backlog measurements.
+        captured_end = 0
         latest_frontier = 0
         newly_oldest_lags = []
         newly_newest_lags = []

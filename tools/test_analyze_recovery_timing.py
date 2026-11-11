@@ -35,6 +35,7 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertEqual(1300.0, result["initialZeroCheckpointIntervalMs"])
         self.assertEqual(300.0, result["newestNewlyDurableAudioLagMs"]["max"])
         self.assertEqual(1.0, result["atRiskBacklogAtStopSec"])
+        self.assertEqual(1.0, result["atRiskBacklogMaxSec"])
         self.assertEqual(350.0, result["decodeStopWaitMs"])
         self.assertEqual(450.0, result["terminalStopWaitMs"])
         self.assertEqual(2, result["maxDecodeQueue"])
