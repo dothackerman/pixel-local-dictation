@@ -31,14 +31,16 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         private var invalid = false
         private var probeCase = "unspecified"
         private var probeRun = "unspecified"
+        private val acquired = mutableSetOf<Pair<Long, Long>>()
         private val pending = mutableSetOf<Pair<Long, Long>>()
         private val released = mutableSetOf<Pair<Long, Long>>()
         private val terminal = mutableSetOf<Pair<Long, Long>>()
 
-        private val allowedCases = setOf("capture-rotation", "finishing-rotation", "restart-focus-hide-lock")
+        val allowedCases = setOf("signal-capture-rotation", "app-capture-rotation", "app-finishing-rotation",
+            "app-restart", "app-focus", "app-hide", "app-lock", "app-password", "app-no-learning")
 
-        fun beginProbe(caseName: String = "unspecified", runId: String = UUID.randomUUID().toString()) {
-            require(caseName == "unspecified" || caseName in allowedCases)
+        fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
+            require(caseName in allowedCases)
             require(runId.matches(Regex("[A-Za-z0-9-]{1,64}")))
             synchronized(probeLock) {
                 check(deadline == 0L || System.nanoTime() >= deadline) { "probe already active" }
@@ -53,6 +55,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                 invalid = false
                 probeCase = caseName
                 probeRun = runId
+                acquired.clear()
                 pending.clear()
                 released.clear()
                 terminal.clear()
@@ -63,14 +66,6 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
             deadline != 0L && System.nanoTime() < deadline
         }
 
-        fun selectProbeCase(caseName: String) = synchronized(probeLock) {
-            require(caseName in allowedCases)
-            check(deadline != 0L && System.nanoTime() < deadline) { "no active probe" }
-            probeCase = caseName
-        }
-
-        fun currentProbeRun(): String = synchronized(probeLock) { probeRun }
-
         private fun observe(service: Long, event: RotationEvent, take: Long?, active: Boolean?) = synchronized(probeLock) {
             if (deadline == 0L) return@synchronized
             when (event) {
@@ -78,16 +73,22 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                 RotationEvent.INPUT_VIEW_FINISH_DONE -> viewFinished = true
                 RotationEvent.SERVICE_ATTACH -> if (active == true) invalid = true
                 RotationEvent.CAPTURE_START -> if (take != null) pending.add(service to take)
-                RotationEvent.CAPTURE_STARTED -> if (take != null && service to take in pending) captureStarted = true
-                RotationEvent.CAPTURE_FAILED, RotationEvent.CAPTURE_NOT_ACQUIRED -> invalid = true
+                RotationEvent.CAPTURE_STARTED -> if (take != null && service to take in pending) { captureStarted = true; acquired.add(service to take) }
+                RotationEvent.CAPTURE_FAILED -> invalid = true
                 RotationEvent.TERMINAL_COMPLETED, RotationEvent.TERMINAL_CANCELLED,
                 RotationEvent.TERMINAL_INPUT_CHANGED, RotationEvent.TERMINAL_FAILED,
                 RotationEvent.TERMINAL_COMMIT_REJECTED -> if (take != null) terminal.add(service to take)
-                RotationEvent.CAPTURE_RELEASED, RotationEvent.CAPTURE_NOT_ACQUIRED ->
+                RotationEvent.CAPTURE_RELEASED -> if (take != null) released.add(service to take)
+                RotationEvent.CAPTURE_NOT_ACQUIRED -> {
+                    invalid = true
                     if (take != null) released.add(service to take)
+                }
                 else -> Unit
             }
-            if (take != null && service to take in terminal && service to take in released) pending.remove(service to take)
+            if (take != null && service to take in terminal && service to take in released) {
+                if (service to take !in acquired) invalid = true
+                pending.remove(service to take)
+            }
             probeLock.notifyAll()
         }
 

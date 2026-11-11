@@ -1,0 +1,6 @@
+<resources>
+    <item name="probe_ordinary_one" type="id" />
+    <item name="probe_ordinary_two" type="id" />
+    <item name="probe_password" type="id" />
+    <item name="probe_no_learning" type="id" />
+</resources>

@@ -45,7 +45,7 @@ class RotationTraceTest {
 class RotationProbeCompletionTest {
     @Test fun completionRequiresViewTeardownAndTerminalAcknowledgement() {
         val file = Files.createTempDirectory("rotation-completion").resolve("trace.jsonl").toFile()
-        RotationTrace.beginProbe()
+        RotationTrace.beginProbe("app-capture-rotation")
         val trace = RotationTrace(file)
         trace.event(RotationEvent.INPUT_VIEW_START)
         trace.event(RotationEvent.CAPTURE_START, take = 1)
@@ -64,7 +64,7 @@ class RotationProbeCompletionTest {
 
     @Test fun attachingToAnAlreadyActiveTakeCannotProduceAValidProbe() {
         val file = Files.createTempDirectory("rotation-active").resolve("trace.jsonl").toFile()
-        RotationTrace.beginProbe()
+        RotationTrace.beginProbe("app-capture-rotation")
         try {
             val trace = RotationTrace(file)
             trace.event(RotationEvent.SERVICE_ATTACH, active = true)
@@ -79,7 +79,7 @@ class RotationProbeCompletionTest {
 
     @Test fun noCaptureCannotProduceAValidProbe() {
         val file = Files.createTempDirectory("rotation-empty").resolve("trace.jsonl").toFile()
-        RotationTrace.beginProbe()
+        RotationTrace.beginProbe("app-capture-rotation")
         try {
             val trace = RotationTrace(file)
             trace.event(RotationEvent.INPUT_VIEW_START)
@@ -90,7 +90,7 @@ class RotationProbeCompletionTest {
 
     @Test fun requestedButNeverAcquiredCaptureCannotPass() {
         val file = Files.createTempDirectory("rotation-no-acquire").resolve("trace.jsonl").toFile()
-        RotationTrace.beginProbe("capture-rotation", "run-123")
+        RotationTrace.beginProbe("app-capture-rotation", "run-123")
         try {
             val trace = RotationTrace(file)
             trace.event(RotationEvent.INPUT_VIEW_START)
@@ -106,16 +106,38 @@ class RotationProbeCompletionTest {
 
     @Test fun rowsIdentifyNamedRunWithoutContentFields() {
         val file = Files.createTempDirectory("rotation-metadata").resolve("trace.jsonl").toFile()
-        RotationTrace.beginProbe("finishing-rotation", "run-123")
+        RotationTrace.beginProbe("app-finishing-rotation", "run-123")
         try {
             val trace = RotationTrace(file)
             trace.event(RotationEvent.INPUT_START)
             assertTrue(trace.flush())
             val row = JSONObject(file.readLines().single())
-            assertEquals("finishing-rotation", row.getString("case"))
+            assertEquals("app-finishing-rotation", row.getString("case"))
             assertEquals("run-123", row.getString("run"))
             assertEquals(setOf("protocol", "process", "service", "sequence", "ns", "event", "case", "run"),
                 row.keys().asSequence().toSet())
         } finally { RotationTrace.abortProbe() }
     }
+    @Test fun everyRequestedTakeMustActuallyStart() {
+        val file = Files.createTempDirectory("rotation-two-takes").resolve("trace.jsonl").toFile()
+        RotationTrace.beginProbe("app-focus")
+        try {
+            val trace = RotationTrace(file)
+            trace.event(RotationEvent.INPUT_VIEW_START)
+            trace.event(RotationEvent.CAPTURE_START, take = 1)
+            trace.event(RotationEvent.CAPTURE_STARTED, take = 1)
+            trace.event(RotationEvent.TERMINAL_CANCELLED, take = 1)
+            trace.event(RotationEvent.CAPTURE_RELEASED, take = 1)
+            trace.event(RotationEvent.CAPTURE_START, take = 2)
+            trace.event(RotationEvent.TERMINAL_CANCELLED, take = 2)
+            trace.event(RotationEvent.CAPTURE_RELEASED, take = 2)
+            trace.event(RotationEvent.INPUT_VIEW_FINISH_DONE)
+            assertFalse(RotationTrace.finishProbe(0))
+        } finally { RotationTrace.abortProbe() }
+    }
+
+    @Test fun rejectsUnknownCase() {
+        assertThrows(IllegalArgumentException::class.java) { RotationTrace.beginProbe("unknown") }
+    }
+
 }
