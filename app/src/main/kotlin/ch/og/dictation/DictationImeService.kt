@@ -1,6 +1,9 @@
 package ch.og.dictation
 
 import android.Manifest
+import android.app.AlertDialog
+import android.view.KeyEvent
+import android.view.WindowManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.res.Configuration
@@ -18,6 +21,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.TextView
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -37,6 +41,8 @@ class DictationImeService : InputMethodService() {
     private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
+    private var recordingPrompt: AlertDialog? = null
+    private var captureEnded: () -> Boolean = { false }
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
@@ -449,6 +455,8 @@ class DictationImeService : InputMethodService() {
             val traceTake = startupTake
             val traceRotation = rotationTrace
             val traceRotationTake = rotationTake
+            val unexpectedEnd = AtomicBoolean(false)
+            captureEnded = { unexpectedEnd.get() }
             val microphoneCapture = MicrophoneCapture(onStarted = {
                 traceRotation?.event(RotationEvent.CAPTURE_STARTED, take = traceRotationTake)
                 trace?.event("recordingStarted", traceTake)
@@ -460,6 +468,7 @@ class DictationImeService : InputMethodService() {
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
+                unexpectedEnd.set(true)
                 traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
                 postCaptureEnd(mainHandler, Runnable {
                     if (feedback === currentFeedback && takeActive) {
@@ -590,6 +599,7 @@ class DictationImeService : InputMethodService() {
 
     /** System interruption revokes insertion before requesting capture release. */
     private fun interruptTake() {
+        dismissRecordingPrompt()
         val old = take ?: return
         MicrophoneOwner.requireExplicitStart()
         previewAllowed = false
@@ -639,7 +649,62 @@ class DictationImeService : InputMethodService() {
         mainHandler.post { if (session.matches(token)) returnToKeyboard(); returning = false }
     }
 
+    private fun dismissRecordingPrompt() {
+        recordingPrompt?.dismiss()
+        recordingPrompt = null
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && takeActive && !finishing) {
+            showRecordingPrompt()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun showRecordingPrompt() {
+        if (recordingPrompt?.isShowing == true || !takeActive || finishing) return
+        if (captureEnded()) { interruptTake(); return }
+        val token = panel?.windowToken ?: return
+        val generation = takeGeneration
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.discard_take_title)
+            .setMessage(R.string.discard_take_recording)
+            .setNegativeButton(R.string.continue_recording) { _, _ -> }
+            .setNeutralButton(R.string.finish_transcription) { _, _ ->
+                if (generation == takeGeneration && takeActive && !finishing) {
+                    if (captureEnded()) interruptTake() else stopAndInsert()
+                }
+            }
+            .setPositiveButton(R.string.discard_take) { _, _ ->
+                if (generation == takeGeneration && takeActive && !finishing) {
+                    if (captureEnded()) { interruptTake(); return@setPositiveButton }
+                    val token = recordingToken
+                    take?.cancel(onDiscarded = { deleted ->
+                        if (generation == takeGeneration && deleted && session.matches(token)) returnToKeyboard()
+                    })
+                    showIdle()
+                }
+            }
+            .create()
+        recordingPrompt = dialog
+        dialog.setOnDismissListener { if (recordingPrompt === dialog) recordingPrompt = null }
+        dialog.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+            attributes = attributes.apply { this.token = token }
+            addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+        try {
+            dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus()
+        } catch (_: WindowManager.BadTokenException) {
+            recordingPrompt = null
+            interruptTake()
+        }
+    }
+
     private fun cancelAndReturn() {
+        if (takeActive && !finishing) { showRecordingPrompt(); return }
         val token = recordingToken
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }

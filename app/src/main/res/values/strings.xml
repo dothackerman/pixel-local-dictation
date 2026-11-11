@@ -91,4 +91,8 @@
     <string name="history_delete">Delete</string>
     <string name="history_delete_confirm">Delete this History copy? This cannot remove copies on the clipboard or separately saved benchmark data.</string>
     <string name="history_missing">This transcript is no longer in History.</string>
+    <string name="discard_take_title">Discard this take?</string>
+    <string name="discard_take_recording">The microphone is still recording.</string>
+    <string name="continue_recording">Continue recording</string>
+    <string name="discard_take">Discard</string>
 </resources>

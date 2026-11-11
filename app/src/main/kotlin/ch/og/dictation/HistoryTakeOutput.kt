@@ -132,12 +132,13 @@ class HistoryTakeOutput(
             try { if (saved) store().updateDelivery(id, status) } catch (_: Exception) { onReceiptFailure() }
         }
     }
-    override fun discardStaged() {
+    override fun discardStaged(done: (Boolean) -> Unit) {
         if (eligible) {
             synchronized(lock) { suppressed = true; pending = null }
             io.execute {
-                try { store().delete(id) } catch (_: Exception) { onDeleteFailure() }
+                val deleted = try { store().delete(id); true } catch (_: Exception) { onDeleteFailure(); false }
+                delivery.execute { done(deleted) }
             }
-        }
+        } else done(true)
     }
 }

@@ -26,7 +26,7 @@ interface TakeOutput {
     fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) = ready()
     fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) = done(false)
     fun receipt(status: HistoryDelivery) {}
-    fun discardStaged() {}
+    fun discardStaged(done: (Boolean) -> Unit = {}) { done(true) }
     fun returnToKeyboard(): Boolean
     /** PCM is borrowed for this callback only and wiped immediately afterwards. */
     fun finished(result: TakeResult, pcm: ByteArray)
@@ -172,19 +172,25 @@ class TakeSession internal constructor(
         if (state == State.RECORDING) stop()
     }
 
-    fun cancel(inputChanged: Boolean = false) {
+    fun cancel(inputChanged: Boolean = false, onDiscarded: (Boolean) -> Unit = {}) {
         if (state == State.ENDED) return
         if (dispatching) {
             invalidatedDuringDispatch = true
             if (!inputChanged) deliberatelyCancelledDuringDispatch = true
             return
         }
+        var cancellationApplied = false
+        var immediateDeletion: Boolean? = null
         if (inputChanged) {
             if (staged) output.receipt(HistoryDelivery.NOT_ATTEMPTED)
-        } else output.discardStaged()
+        } else output.discardStaged { deleted ->
+            if (cancellationApplied) onDiscarded(deleted) else immediateDeletion = deleted
+        }
         take?.cancel()
         cancelCapture()
         finish(if (inputChanged) TakeOutcome.INPUT_CHANGED else TakeOutcome.CANCELLED)
+        cancellationApplied = true
+        immediateDeletion?.let(onDiscarded)
     }
 
     private fun decoded(result: Result<String>) {
