@@ -252,7 +252,8 @@ class DictationProductionLifecycleTest {
         assertEquals(0, input.releases.get())
         button(portrait).performClick()
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
+        await { decode.drain(); commits == 1 }
+        settleHistory()
         assertEquals(1, commits)
         assertEquals(1, input.starts.get())
     }
@@ -271,9 +272,55 @@ class DictationProductionLifecycleTest {
         assertFalse(button(landscape).isEnabled)
         gate.countDown()
         await { input.releases.get() == 1 }
-        decode.drain(); settleHistory()
+        await { decode.drain(); commits == 1 }
+        settleHistory()
         assertEquals(1, commits)
         assertEquals(HistoryCompletion.COMPLETE, rows().single().completion)
+    }
+
+    @Test fun rotationTraceRecordsDisplayRotationAndChangesAtEveryCallback() {
+        val app = RuntimeEnvironment.getApplication()
+        val file = File(app.filesDir, "lab/rotation-probe.jsonl")
+        file.delete()
+        RotationTrace.beginProbe("app-capture-rotation")
+        try {
+            val input = Input()
+            devices.add(input)
+            val (service, view) = service(editor())
+            feed(input, 1000, 1)
+            val display = app.getSystemService(android.hardware.display.DisplayManager::class.java).getDisplay(android.view.Display.DEFAULT_DISPLAY)
+            shadowOf(display).setRotation(android.view.Surface.ROTATION_90)
+            val landscape = rotate(service, "+land")
+            service.onWindowShown()
+            button(landscape).performClick()
+            await { input.releases.get() == 1 }
+            await { decode.drain(); commits == 1 }
+            settleHistory()
+            service.onFinishInputView(true)
+            service.onFinishInput()
+            val controller = opened.single { it.get() === service }
+            opened.remove(controller)
+            controller.destroy()
+            RotationTrace.abortProbe()
+            val rows = file.readLines().map { org.json.JSONObject(it) }
+            fun row(event: RotationEvent) = rows.first { it.getString("event") == event.name }
+            val lifecycle = setOf(RotationEvent.SERVICE_CREATE, RotationEvent.SERVICE_DESTROY, RotationEvent.INPUT_START,
+                RotationEvent.INPUT_VIEW_START, RotationEvent.INPUT_VIEW_FINISH, RotationEvent.INPUT_FINISH,
+                RotationEvent.CONFIGURATION, RotationEvent.CONFIGURATION_DONE, RotationEvent.WINDOW_SHOWN,
+                RotationEvent.VIEW_CREATE, RotationEvent.CAPTURE_START).map { it.name }.toSet()
+            assertEquals(lifecycle, rows.map { it.getString("event") }.filter { it in lifecycle }.toSet())
+            for (r in rows.filter { it.getString("event") in lifecycle }) {
+                assertTrue("rotation missing on $r", r.has("rotation") && r.has("rotations"))
+            }
+            assertEquals(0, row(RotationEvent.CAPTURE_START).getInt("rotation"))
+            assertEquals(0L, row(RotationEvent.CAPTURE_START).getLong("rotations"))
+            assertEquals(1, row(RotationEvent.CONFIGURATION).getInt("rotation"))
+            assertEquals(1L, row(RotationEvent.CONFIGURATION).getLong("rotations"))
+            assertEquals(1L, row(RotationEvent.SERVICE_DESTROY).getLong("rotations"))
+            val allowed = setOf("protocol", "process", "service", "sequence", "ns", "event", "case", "run",
+                "active", "authority", "flag", "view", "take", "rotation", "rotations")
+            assertTrue(rows.all { allowed.containsAll(it.keys().asSequence().toSet()) })
+        } finally { RotationTrace.abortProbe() }
     }
 
     @Test fun recordingCancelOffersContinueWithoutStoppingTheTake() {

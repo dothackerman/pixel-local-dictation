@@ -23,6 +23,16 @@ class RotationTraceTest {
         trace.close()
     }
 
+    @Test fun rowsCarryDisplayRotationAndRotationChangeCount() {
+        val file = Files.createTempDirectory("rotation-trace").resolve("trace.jsonl").toFile()
+        val trace = RotationTrace(file)
+        trace.event(RotationEvent.CONFIGURATION, rotation = 1, rotations = 2)
+        trace.close()
+        val row = JSONObject(file.readLines().single())
+        assertEquals(1, row.getInt("rotation"))
+        assertEquals(2L, row.getLong("rotations"))
+    }
+
     @Test fun closeFlushesAndIgnoresLaterEvents() {
         val file = Files.createTempDirectory("rotation-trace").resolve("trace.jsonl").toFile()
         val trace = RotationTrace(file)

@@ -14,7 +14,11 @@ enum class RotationEvent {
     CANCEL_REQUESTED, CAPTURE_CANCELLED, TAKE_ENDED, COMMIT_ATTEMPT, COMMIT_ACCEPTED,
     COMMIT_REJECTED, CAPTURE_INTERRUPTED, CAPTURE_FAILED, CAPTURE_RELEASED, CAPTURE_NOT_ACQUIRED,
     TERMINAL_COMPLETED, TERMINAL_CANCELLED, TERMINAL_INPUT_CHANGED, TERMINAL_FAILED,
-    TERMINAL_COMMIT_REJECTED
+    TERMINAL_COMMIT_REJECTED,
+    /** Display listener callback for the default display (trace only). */
+    DISPLAY_CHANGED,
+    /** First draw of a newly created panel view. */
+    PANEL_DRAWN
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */
@@ -130,7 +134,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
 
     @Synchronized fun event(event: RotationEvent, active: Boolean? = null,
                             authority: Boolean? = null, flag: Boolean? = null,
-                            view: Long? = null, take: Long? = null) {
+                            view: Long? = null, take: Long? = null,
+                            rotation: Int? = null, rotations: Long? = null) {
         if (closed || (probeScoped && !probeActive())) return
         observe(service, event, take, active)
         val row = JSONObject().put("protocol", "ime-rotation-v1").put("process", process)
@@ -144,6 +149,9 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         flag?.let { row.put("flag", it) }
         view?.let { row.put("view", it) }
         take?.let { row.put("take", it) }
+        // Display rotation (Surface.ROTATION_*) and how many rotation changes the service has seen.
+        rotation?.let { row.put("rotation", it) }
+        rotations?.let { row.put("rotations", it) }
         val line = row.toString() + "\n"
         writer.execute {
             if (!failed) try {

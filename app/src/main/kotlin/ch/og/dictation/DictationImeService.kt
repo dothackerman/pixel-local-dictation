@@ -3,6 +3,8 @@ package ch.og.dictation
 import android.Manifest
 import android.app.AlertDialog
 import android.view.KeyEvent
+import android.view.Display
+import android.hardware.display.DisplayManager
 import android.view.WindowManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -75,6 +77,9 @@ class DictationImeService : InputMethodService() {
     private var rotationTrace: RotationTrace? = null
     private var rotationView = 0L
     private var rotationTake = 0L
+    /** Last observed display rotation and the number of rotation changes this service saw. */
+    private var displayRotation: Int? = null
+    private var rotationChanges = 0L
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
@@ -112,6 +117,7 @@ class DictationImeService : InputMethodService() {
             if (RotationTrace.probeActive()) {
                 rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
                 rotationEvent(RotationEvent.SERVICE_CREATE)
+                listenToDisplay()
             }
             startup = StartupTrace(applicationContext).also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
@@ -139,6 +145,16 @@ class DictationImeService : InputMethodService() {
         panel = v
         panelConfiguration = Configuration(resources.configuration)
         observeGeometry(startupTake)
+        if (resources.getBoolean(R.bool.benchmark_receipts)) {
+            var drawn = false
+            v.viewTreeObserver.addOnDrawListener {
+                if (!drawn && rotationTrace != null) {
+                    drawn = true
+                    // A draw listener must not change the tree; record after this frame.
+                    mainHandler.post { rotationEvent(RotationEvent.PANEL_DRAWN) }
+                }
+            }
+        }
         if (startup != null) {
             v.viewTreeObserver.addOnPreDrawListener {
                 recordGeometry("preDraw")
@@ -198,6 +214,7 @@ class DictationImeService : InputMethodService() {
             RotationTrace.probeActive()) {
             rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
             rotationEvent(RotationEvent.SERVICE_ATTACH)
+            listenToDisplay()
         }
     }
 
@@ -328,6 +345,7 @@ class DictationImeService : InputMethodService() {
      * interrupts a take.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
+        observeRotation()
         rotationEvent(RotationEvent.CONFIGURATION)
         super.onConfigurationChanged(newConfig)
         val layoutChanged = panelConfiguration?.let {
@@ -359,12 +377,45 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun rotationEvent(event: RotationEvent, flag: Boolean? = null) {
-        rotationTrace?.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
-            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 })
+        val trace = rotationTrace ?: return
+        val rotation = observeRotation()
+        trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
+            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges)
+    }
+
+    /**
+     * Reads the default display's rotation and counts every change this service observes.
+     * Comparing with the take's start rotation would miss rotating there and back.
+     */
+    private fun observeRotation(): Int? {
+        val current = runCatching {
+            getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)?.rotation
+        }.getOrNull() ?: return displayRotation
+        val last = displayRotation
+        if (last != null && last != current) rotationChanges++
+        displayRotation = current
+        return current
+    }
+
+    /** Trace only: shows whether the display reports rotation before the editor's events. */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == Display.DEFAULT_DISPLAY) rotationEvent(RotationEvent.DISPLAY_CHANGED)
+        }
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+    }
+    private var displayListening = false
+
+    private fun listenToDisplay() {
+        if (displayListening || rotationTrace == null) return
+        displayListening = true
+        getSystemService(DisplayManager::class.java)?.registerDisplayListener(displayListener, mainHandler)
     }
 
     override fun onDestroy() {
         rotationEvent(RotationEvent.SERVICE_DESTROY)
+        if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
         destroyed = true
         MicrophoneOwner.remove(microphoneOwnerListener)
         unregisterReceiver(screenOff)
