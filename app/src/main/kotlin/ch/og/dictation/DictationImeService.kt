@@ -171,7 +171,7 @@ class DictationImeService : InputMethodService() {
             }
         }
         status = v.findViewById(R.id.status)
-        preview = v.findViewById<TextView>(R.id.preview).apply { text = previewText }
+        preview = v.findViewById<TextView>(R.id.preview).also { PanelPreview.bind(it, previewText) }
         showStatus(statusText)
         banner = v.findViewById(R.id.benchmark_banner)
         retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
@@ -914,7 +914,7 @@ class DictationImeService : InputMethodService() {
 
     private fun showPreview(text: String) {
         previewText = text.takeLast(240)
-        preview?.text = previewText
+        preview?.let { PanelPreview.bind(it, previewText) }
     }
 
     private fun hasMicPermission() =

@@ -56,12 +56,16 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
         val scale = density * 70f / 94f
         val cx = width / 2f
         val cy = height / 2f
+        // Loudness motion shrinks to fit a short stage (landscape) so the loudest ring is never
+        // clipped; the resting ring around the microphone keeps its size. Portrait has room for 1.
+        val room = minOf(width, height) / 2f / scale
+        val reach = ((room - 73.1f) / 69.72f).coerceIn(0f, 1f)
         for (k in outerX.indices) {
             val a = 2 * PI * k / outerX.size - PI / 2
             val organic = 0.55 * sin(a * 3 + motion * 0.52) + 0.28 * sin(a * 5 - motion * 0.7) +
                 0.17 * sin(a * 2 + motion * 0.26)
-            val radius = (70 + if (animated) level * 2.4 * (12 + 13 * organic) else 0.0) * scale
-            val weight = (if (animated) 2.2 + level * 2.4 * (4.3 + 2.7 * sin(a * 2 - motion * 0.48) +
+            val radius = (70 + if (animated) reach * level * 2.4 * (12 + 13 * organic) else 0.0) * scale
+            val weight = (if (animated) 2.2 + reach * level * 2.4 * (4.3 + 2.7 * sin(a * 2 - motion * 0.48) +
                 1.1 * sin(a * 3 + motion * 0.31)) else 2.0 + level * 2) * scale
             outerX[k] = (cx + cos(a) * (radius + weight / 2)).toFloat()
             outerY[k] = (cy + sin(a) * (radius + weight / 2)).toFloat()

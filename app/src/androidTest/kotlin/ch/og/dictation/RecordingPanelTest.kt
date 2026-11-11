@@ -1,9 +1,12 @@
 package ch.og.dictation
 
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
+import java.io.File
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -113,6 +116,172 @@ class RecordingPanelTest {
             instrumentation.sendStatus(0, Bundle().apply {
                 putString("stream", "Panel metrics: density=${metrics.density}, screenWidthDp=${app.resources.configuration.screenWidthDp}, micPx=${(70 * metrics.density).roundToInt()}\n")
             })
+        }
+    }
+
+    /** Inflates the panel as the input method would on this phone held sideways. */
+    private fun landscapePanel(fontScale: Float, night: Boolean): Pair<View, Context> {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val base = app.resources.configuration
+        val config = Configuration(base).apply {
+            orientation = Configuration.ORIENTATION_LANDSCAPE
+            screenWidthDp = maxOf(base.screenWidthDp, base.screenHeightDp)
+            screenHeightDp = minOf(base.screenWidthDp, base.screenHeightDp)
+            this.fontScale = fontScale
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        }
+        val context = app.createConfigurationContext(config)
+        val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+        val density = context.resources.displayMetrics.density
+        val metrics = app.resources.displayMetrics
+        val width = maxOf(metrics.widthPixels, metrics.heightPixels)
+        panel.findViewById<TextView>(R.id.status).setText(R.string.status_recording)
+        panel.findViewById<TextView>(R.id.preview).text =
+            "An invented preview sentence for checking the landscape panel. ".repeat(6)
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+        assertTrue(density > 0)
+        return panel to context
+    }
+
+    private fun bounds(view: View, root: View): Rect {
+        val r = Rect(0, 0, view.width, view.height)
+        (root as ViewGroup).offsetDescendantRectToMyCoords(view, r)
+        return r
+    }
+
+    @Test fun landscapePanelIsCompactAndKeepsEveryControl() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext
+        instrumentation.runOnMainSync {
+            for (fontScale in listOf(1f, 2f)) {
+                val (panel, context) = landscapePanel(fontScale, night = false)
+                val density = context.resources.displayMetrics.density
+                PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), R.string.retention_field_off)
+                panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+                val shortSide = minOf(app.resources.displayMetrics.widthPixels, app.resources.displayMetrics.heightPixels)
+                // The editor stays visible above: the panel takes well under half the sideways height.
+                assertTrue("panel ${panel.height}px too tall at fontScale=$fontScale for $shortSide px",
+                    panel.height <= shortSide * 0.45f)
+                val back = panel.findViewById<ImageButton>(R.id.back)
+                val mic = panel.findViewById<ImageButton>(R.id.microphone)
+                val status = panel.findViewById<TextView>(R.id.status)
+                val preview = panel.findViewById<TextView>(R.id.preview)
+                val notice = panel.findViewById<TextView>(R.id.retention_notice)
+                val ring = panel.findViewById<View>(R.id.recording_ring)
+                val whole = Rect(0, 0, panel.width, panel.height)
+                for (view in listOf(back, mic, status, preview, notice, ring)) {
+                    assertEquals(View.VISIBLE, view.visibility)
+                    assertTrue("${view.id} empty", view.width > 0 && view.height > 0)
+                    assertTrue("${view.id} outside panel", whole.contains(bounds(view, panel)))
+                }
+                for (target in listOf(back, mic)) {
+                    assertTrue(target.width >= (48 * density).roundToInt() && target.height >= (48 * density).roundToInt())
+                }
+                assertTrue("ring does not surround microphone", bounds(ring, panel).contains(bounds(mic, panel)))
+                assertTrue("status clipped at fontScale=$fontScale",
+                    status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                assertTrue("notice clipped at fontScale=$fontScale",
+                    notice.height >= notice.layout.height + notice.compoundPaddingTop + notice.compoundPaddingBottom)
+                assertTrue("preview clipped at fontScale=$fontScale",
+                    preview.height >= preview.layout.getLineBottom(preview.maxLines - 1, false) + preview.compoundPaddingTop + preview.compoundPaddingBottom)
+                assertEquals(2, actions(panel))
+            }
+        }
+    }
+
+    @Test fun overflowingPreviewShowsTheNewestWords() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            for (landscape in listOf(false, true)) for (fontScale in listOf(1f, 2f)) {
+                val app = instrumentation.targetContext
+                val base = app.resources.configuration
+                val config = Configuration(base).apply {
+                    this.fontScale = fontScale
+                    if (landscape) {
+                        orientation = Configuration.ORIENTATION_LANDSCAPE
+                        screenWidthDp = maxOf(base.screenWidthDp, base.screenHeightDp)
+                        screenHeightDp = minOf(base.screenWidthDp, base.screenHeightDp)
+                    }
+                }
+                val context = app.createConfigurationContext(config)
+                val panel = LayoutInflater.from(context).inflate(R.layout.ime, null)
+                val preview = panel.findViewById<TextView>(R.id.preview)
+                val words = (1..60).joinToString(" ") { "word$it" }
+                PanelPreview.bind(preview, words.takeLast(240))
+                val metrics = app.resources.displayMetrics
+                val width = if (landscape) maxOf(metrics.widthPixels, metrics.heightPixels) else minOf(metrics.widthPixels, metrics.heightPixels)
+                panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+                val layout = preview.layout
+                val box = preview.height - preview.compoundPaddingTop - preview.compoundPaddingBottom
+                val lastLine = layout.lineCount - 1
+                assertTrue("newest words hidden (landscape=$landscape fontScale=$fontScale)",
+                    layout.getLineBottom(lastLine) - preview.scrollY <= box + 1)
+                assertTrue("newest words above the box (landscape=$landscape fontScale=$fontScale)",
+                    layout.getLineTop(lastLine) - preview.scrollY >= 0)
+            }
+        }
+    }
+
+    /** Draws the ring until its smoothed loudness has settled at the given synthetic sample amplitude. */
+    private fun settledRing(ring: RecordingRingView, amplitude: Float): Bitmap {
+        val feedback = RecordingFeedback().apply { start() }
+        ring.follow(feedback)
+        val image = Bitmap.createBitmap(ring.width, ring.height, Bitmap.Config.ARGB_8888)
+        repeat(12) {
+            feedback.accept(FloatArray(256) { amplitude })
+            image.eraseColor(Color.TRANSPARENT)
+            ring.draw(Canvas(image))
+            Thread.sleep(40)
+        }
+        return image
+    }
+
+    @Test fun loudRingStaysInsideTheLandscapeStage() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val (panel, _) = landscapePanel(1f, night = false)
+            val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
+            val image = settledRing(ring, 1f)
+            try {
+                val w = image.width; val h = image.height
+                val edge = (0 until w).flatMap { listOf(image.getPixel(it, 0), image.getPixel(it, h - 1)) } +
+                    (0 until h).flatMap { listOf(image.getPixel(0, it), image.getPixel(w - 1, it)) }
+                assertTrue("loud ring clipped at the stage edge", edge.all { Color.alpha(it) < 16 })
+                val row = IntArray(w)
+                image.getPixels(row, 0, w, 0, h / 2, w, 1)
+                assertTrue("ring outline was not drawn", row.any { Color.alpha(it) > 200 })
+            } finally { image.recycle() }
+        }
+    }
+
+    /** Pixel captures for review; synthetic text only. Kept in files/lab/issue56, pulled into corpus/. */
+    @Test fun captureLandscapePanel() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val out = File(instrumentation.targetContext.filesDir, "lab/issue56").apply { mkdirs() }
+        instrumentation.runOnMainSync {
+            for (night in listOf(false, true)) for (fontScale in listOf(1f, 2f)) for (privateField in listOf(false, true)) {
+                val (panel, _) = landscapePanel(fontScale, night)
+                PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
+                panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
+                // Mid-loudness speech, so the capture shows the ring as it looks while talking.
+                settledRing(panel.findViewById(R.id.recording_ring), 0.05f).recycle()
+                val image = Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888)
+                try {
+                    panel.draw(Canvas(image))
+                    val name = "panel-land-${if (night) "dark" else "light"}-font${if (fontScale > 1f) "large" else "default"}" +
+                        (if (privateField) "-private" else "") + ".png"
+                    File(out, name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                } finally { image.recycle() }
+            }
         }
     }
 
