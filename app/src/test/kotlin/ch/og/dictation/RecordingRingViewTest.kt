@@ -65,4 +65,22 @@ class RecordingRingViewTest {
         assertTrue("radial deviation ${"%.3f".format(worst)} of the radius", worst <= 0.015)
         assertTrue("thickness varies by $widest px around the ring", widest <= 2.5)
     }
+
+    /** A short stage (landscape) shrinks the growth so the loudest ring never touches the edge. */
+    @Test fun loudestRibbonStaysInsideAShortStage() {
+        val context = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_Dictation)
+        val ring = RecordingRingView(context)
+        val size = (120 * context.resources.displayMetrics.density).toInt()
+        ring.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY))
+        ring.layout(0, 0, size, size)
+        ring.follow(RecordingFeedback().apply { start(); accept(FloatArray(1600) { if (it % 2 == 0) 0.9f else -0.9f }) })
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        repeat(30) {
+            Thread.sleep(25)
+            bitmap.eraseColor(0)
+            ring.draw(Canvas(bitmap))
+        }
+        val edge = (0 until size).flatMap { listOf(bitmap.getPixel(it, 0), bitmap.getPixel(it, size - 1), bitmap.getPixel(0, it), bitmap.getPixel(size - 1, it)) }
+        assertTrue("loud ring touches the stage edge", edge.all { android.graphics.Color.alpha(it) < 16 })
+    }
 }

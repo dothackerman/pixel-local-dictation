@@ -66,7 +66,8 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
         // even thickness, so only its size answers the voice, never its shape (#36 critique).
         // The growth shrinks to fit a short stage (landscape) so the loudest ring is never clipped;
         // the resting ring around the microphone keeps its size. Portrait has room for all of it.
-        val room = minOf(width, height) / 2f / scale
+        // One dp short of the edge, so the antialiased rim is never clipped.
+        val room = (minOf(width, height) / 2f - density) / scale
         val reach = ((room - REST_OUTER) / (GROWTH + THICKENING / 2)).coerceIn(0f, 1f)
         val amount = if (animated) reach * level else 0f
         val radius = (70 + amount * GROWTH) * scale
