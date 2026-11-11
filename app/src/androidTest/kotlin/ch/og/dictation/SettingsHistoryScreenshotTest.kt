@@ -129,9 +129,13 @@ class SettingsHistoryScreenshotTest {
     /** After recreate() the instance changes; find the resumed one. */
     private fun currentHistory(previous: HistoryActivity): HistoryActivity {
         repeat(100) {
-            val resumed = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<HistoryActivity>().firstOrNull()
-            if (resumed != null) { latest = resumed; return resumed }
+            var resumed: HistoryActivity? = null
+            // The lifecycle monitor may only be queried on the main thread.
+            instrumentation.runOnMainSync {
+                resumed = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<HistoryActivity>().firstOrNull()
+            }
+            resumed?.let { latest = it; return it }
             Thread.sleep(50)
         }
         return previous

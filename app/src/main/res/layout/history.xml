@@ -15,15 +15,15 @@
                     style="@style/Widget.Material3.CardView.Filled" android:visibility="gone"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginHorizontal="16dp" android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="?attr/colorSecondaryContainer">
+                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="16dp" android:paddingEnd="4dp">
                         <TextView android:id="@+id/history_notice_text" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-                            android:paddingVertical="12dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSecondaryContainer"
+                            android:paddingVertical="12dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface"
                             android:accessibilityLiveRegion="polite" />
                         <com.google.android.material.button.MaterialButton android:id="@+id/history_notice_dismiss"
                             style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:minHeight="48dp" android:minWidth="48dp" android:text="@string/history_notice_dismiss" android:textColor="?attr/colorOnSecondaryContainer" />
+                            android:minHeight="48dp" android:minWidth="48dp" android:text="@string/history_notice_dismiss" android:textColor="?attr/colorPrimary" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
                 <TextView android:id="@+id/history_state" android:layout_width="match_parent" android:layout_height="wrap_content"
