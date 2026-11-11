@@ -29,7 +29,8 @@ data class TakeFacts(
 
 /**
  * Longest time the microphone may stay on without a visible panel, and only after an identified
- * rotation. Start value from #36; to be replaced by the #56 Pixel measurement. Never extended.
+ * rotation. Never extended. Kept at 3 s on purpose (ADR-010): ≥ 16× the measured Pixel
+ * rotation→panel time (≤ 183 ms), one probe editor on one device.
  */
 const val ROTATION_HOLD_GAP_MS = 3_000L
 

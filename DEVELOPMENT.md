@@ -80,7 +80,8 @@ Not visible in the code:
   live-checked by packaging its acceptance record.
 - An input restart with identical attributes still revokes insertion and stops capture;
   available eligible text finishes into History. Reattachment does not resume recording
-  automatically. Rotation continuity is unverified (ADR-010 amendment).
+  automatically. An identified rotation is the one exception: the rotation hold keeps the
+  take (Pixel-measured, ADR-010 amendment #52/#53).
 - Old takes keep their dictionary lease until queued work ends; later takes use the
   saved revision. Edited receipts carry their own configuration hash; the frozen
   acceptance record stays intact (ADR-027).

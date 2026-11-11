@@ -383,10 +383,11 @@ class DictationImeService : InputMethodService() {
     }
 
     /**
-     * method.xml declares orientation and screen-size changes as handled, so Android neither
-     * resets the views nor restarts input for them. Rebuild only our panel for the new layout;
-     * the take lives in this service and the panel renders its state. Never starts, cancels or
-     * interrupts a take.
+     * method.xml declares orientation and screen-size changes as handled; rebuild only our panel
+     * for the new layout, the take lives in this service and the panel renders its state. Android
+     * may still restart input inside super.onConfigurationChanged (measured on the Pixel on every
+     * rotation, ADR-010); the rotation counted here identifies that restart for the rotation hold.
+     * Never starts, cancels or interrupts a take by itself.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         observeRotation()

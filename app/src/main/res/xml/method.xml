@@ -3,8 +3,11 @@
      decides the language per recording (R2). overridesImplicitlyEnabledSubtype makes
      Android count this subtype as enabled although it has no locale (SubtypeUtils
      .getImplicitlyApplicableSubtypesImpl); without it FUTO's shortcut lookup finds nothing.
-     configChanges: rotation and resizing must not reset the views and restart input (which
-     the service treats as an interruption); the service rebuilds its own panel instead. -->
+     configChanges: lets the service rebuild its own panel for a rotation or resize
+     (onConfigurationChanged) instead of having the views reset. It does NOT stop Android
+     restarting input: on the Pixel the platform restarts input inside every rotation's
+     configuration change anyway, also with resourcesUnused declared (ADR-010, #56). The
+     rotation hold absorbs that restart; see EditorEventPolicy. -->
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
     android:isDefault="false"

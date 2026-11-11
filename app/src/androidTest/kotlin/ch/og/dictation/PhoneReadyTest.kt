@@ -13,7 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Seconds-long gate that starts every device session (DEVELOPMENT.md, "Pixel session"). Reads
+ * Seconds-long gate that starts every device session (DEVELOPMENT.md, "Phone lab operations"). Reads
  * state only: never unlocks, wakes, selects a keyboard or changes a setting. Prints one line per
  * unmet precondition so the owner knows exactly what to do before the batched run.
  */
