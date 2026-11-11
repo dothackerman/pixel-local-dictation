@@ -8,6 +8,22 @@ import android.widget.TextView
  * bottom; TextView alone would show the oldest lines.
  */
 object PanelPreview {
+    /**
+     * The end of [text], at most [limit] characters, starting at a whole word: a cut inside a
+     * word drops that fragment, and no leading space is shown. A single word longer than the
+     * limit is kept cut rather than showing nothing.
+     */
+    fun tail(text: String, limit: Int = 240): String {
+        if (text.length <= limit) return text
+        val start = text.length - limit
+        var tail = text.substring(start)
+        if (!text[start - 1].isWhitespace()) {
+            val space = tail.indexOfFirst { it.isWhitespace() }
+            if (space >= 0) tail = tail.substring(space)
+        }
+        return tail.trimStart()
+    }
+
     fun bind(view: TextView, text: CharSequence) {
         if (view.getTag(R.id.preview) == null) {
             view.setTag(R.id.preview, true)

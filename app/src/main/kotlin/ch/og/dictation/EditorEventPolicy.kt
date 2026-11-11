@@ -17,14 +17,14 @@ data class TakeFacts(
     /** The live input session is the one the take's panel is attached to. */
     val sameSession: Boolean,
     /** The microphone is still recording this take (not the Stop wait, not interrupted). */
-    val capturing: Boolean = active,
+    val capturing: Boolean,
     /** Stop was pressed and the take waits for its result (not interrupted). */
-    val finishing: Boolean = false,
+    val finishing: Boolean,
     /**
      * The app itself observed a display-rotation change since the panel was last visible, at or
      * before this event. Never inferred from package, field ID or editor attributes.
      */
-    val rotation: Boolean = false,
+    val rotation: Boolean,
 )
 
 /**

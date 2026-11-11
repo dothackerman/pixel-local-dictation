@@ -9,8 +9,9 @@ import org.junit.Test
 class EditorEventPolicyTest {
     private val ending = listOf(EditorEvent.INPUT_START, EditorEvent.INPUT_VIEW_FINISH, EditorEvent.INPUT_FINISH,
         EditorEvent.WINDOW_HIDDEN, EditorEvent.SCREEN_OFF)
-    private fun take(sameSession: Boolean = true, returning: Boolean = false) =
-        TakeFacts(active = true, returning = returning, sameSession = sameSession)
+    /** A recording take with no rotation; tests vary one fact at a time with copy(). */
+    private fun take(sameSession: Boolean = true, returning: Boolean = false) = TakeFacts(
+        active = true, returning = returning, sameSession = sameSession, capturing = true, finishing = false, rotation = false)
 
     @Test fun everyEndingEventInterruptsATake() {
         for (event in ending) assertEquals(event.name, INTERRUPT, EditorEventPolicy.decide(event, take()))
@@ -70,7 +71,7 @@ class EditorEventPolicyTest {
 
     @Test fun withoutATakeNothingHappens() {
         for (event in EditorEvent.entries) {
-            assertEquals(event.name, NOTHING, EditorEventPolicy.decide(event, TakeFacts(active = false, returning = false, sameSession = false)))
+            assertEquals(event.name, NOTHING, EditorEventPolicy.decide(event, take(sameSession = false).copy(active = false, capturing = false)))
         }
     }
 }

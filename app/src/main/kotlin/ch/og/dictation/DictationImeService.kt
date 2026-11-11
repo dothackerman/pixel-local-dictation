@@ -452,7 +452,7 @@ class DictationImeService : InputMethodService() {
                 revokeAuthority()
                 // A rebound editor's retention applies now, not only if the panel returns.
                 if (event == EditorEvent.INPUT_START) tightenRetentionForReboundEditor()
-                hold(event)
+                enterRotationHold(event)
             }
             EditorDecision.INTERRUPT -> interruptTake()
         }
@@ -460,7 +460,7 @@ class DictationImeService : InputMethodService() {
     }
 
     /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
-    private fun hold(event: EditorEvent) {
+    private fun enterRotationHold(event: EditorEvent) {
         mainHandler.removeCallbacks(panelSettled)
         if (!holding) {
             holding = true
@@ -475,16 +475,16 @@ class DictationImeService : InputMethodService() {
             rotationEpisode = true
             mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
         }
-        if (finishing) { requestPanelAfter(event); return } // The microphone is already off.
+        if (finishing) { requestOwnPanelForNewEditor(event); return } // The microphone is already off.
         val silenced = runCatching {
             getSystemService(android.media.AudioManager::class.java)?.activeRecordingConfigurations.orEmpty().any { it.isClientSilenced }
         }.getOrDefault(false)
         if (silenced) { silencedDuringHold(); return }
-        requestPanelAfter(event)
+        requestOwnPanelForNewEditor(event)
     }
 
     /** A new editor took input without showing the keyboard: ask for our own panel. */
-    private fun requestPanelAfter(event: EditorEvent) {
+    private fun requestOwnPanelForNewEditor(event: EditorEvent) {
         if (event == EditorEvent.INPUT_START) mainHandler.post {
             if (holding && !inputViewVisible && !destroyed) requestPanel(this)
         }
@@ -537,8 +537,13 @@ class DictationImeService : InputMethodService() {
         restoreAfterRotation()
     }
 
-    /** The take ended or was interrupted: nothing of a rotation may decide for it any more. */
-    private fun forgetRotationChoice() {
+    /**
+     * Take start, end or interruption: ends hold, gap and settling, and forgets everything a
+     * rotation decided for the take: moving authority, the moved choice and the rotation's
+     * delivery hold flag (the take itself releases or drops its held result).
+     */
+    private fun endHoldAndClearDeliveryHold() {
+        endHold()
         authorityMoves = false
         deliveryHeldForRotation = false
         pendingPrompt = null
@@ -679,7 +684,7 @@ class DictationImeService : InputMethodService() {
             val currentRotationTake = rotationTake
             recordingToken = session.token()
             authority = null
-            fun granted() = authority.takeIf { generation == takeGeneration }
+            fun authorityForThisTake() = authority.takeIf { generation == takeGeneration }
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
@@ -694,11 +699,11 @@ class DictationImeService : InputMethodService() {
                     showStatus(R.string.status_release_failed)
                     setMicrophone(true, R.string.retry_release)
                 }
-                override fun commit(text: String) = commitForSession(granted(), text) { attempted = true }
-                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(granted(), text, allowed) { attempted = true }
+                override fun commit(text: String) = commitForSession(authorityForThisTake(), text) { attempted = true }
+                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(authorityForThisTake(), text, allowed) { attempted = true }
                 override fun commitAttempted() = attempted
                 override fun returnToKeyboard(): Boolean {
-                    if (!session.matches(granted())) return false
+                    if (!session.matches(authorityForThisTake())) return false
                     // Switching the IME can synchronously invalidate input. The result has
                     // already been submitted; do not turn that hand-back into cancellation.
                     returning = true
@@ -720,8 +725,7 @@ class DictationImeService : InputMethodService() {
                     authority = null
                     startupTake = null
                     latestPreview = ""
-                    endHold()
-                    forgetRotationChoice()
+                    endHoldAndClearDeliveryHold()
                     if (result.interrupted) {
                         take = null
                         finishing = false
@@ -749,8 +753,7 @@ class DictationImeService : InputMethodService() {
             // The panel is visible now; only rotations after this point count for this take.
             observeRotation()
             rotationsWhenVisible = rotationChanges
-            endHold()
-            forgetRotationChoice()
+            endHoldAndClearDeliveryHold()
             finishing = false
             setMicrophone(false, R.string.status_opening)
             val currentFeedback = RecordingFeedback()
@@ -918,9 +921,8 @@ class DictationImeService : InputMethodService() {
     /** System interruption: revokes authority to insert, then stops capture. */
     private fun interruptTake() {
         val old = take ?: return
-        endHold()
         // A system interruption overrides any open or moved choice; the take goes to History.
-        forgetRotationChoice()
+        endHoldAndClearDeliveryHold()
         MicrophoneOwner.requireExplicitStart()
         revokeAuthority()
         if (interruptedView) return
@@ -1158,7 +1160,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun showPreview(text: String) {
-        previewText = text.takeLast(240)
+        previewText = PanelPreview.tail(text)
         preview?.let { PanelPreview.bind(it, previewText) }
     }
 
