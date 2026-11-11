@@ -8,11 +8,15 @@ import java.io.File
 class HistoryTestActivity : HistoryActivity() {
     companion object {
         @Volatile var largeTextPreview = false
+        @Volatile var nightMode: Int? = null
         @Volatile var historyRootSuffix: String? = null
     }
     override fun attachBaseContext(base: Context) {
         val themed = if (largeTextPreview) {
-            val configuration = Configuration(base.resources.configuration).apply { fontScale = 2f }
+            val configuration = Configuration(base.resources.configuration).apply {
+                fontScale = 2f
+                nightMode?.let { uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or it }
+            }
             base.createConfigurationContext(configuration)
         } else base
         super.attachBaseContext(themed)

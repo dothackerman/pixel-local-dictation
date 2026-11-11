@@ -160,7 +160,7 @@ open class HistoryActivity : AppCompatActivity() {
                 if (HistoryIo.currentClear(root)?.status == HistoryClearStatus.FAILED) {
                     content.addView(button(getString(R.string.history_clear_retry)) { retryClear() })
                 }
-                content.setOnClickListener { content.setOnClickListener(null); showList() }
+                content.addView(button(getString(R.string.history_retry)) { showList() })
             })
         }
     }
@@ -186,11 +186,11 @@ open class HistoryActivity : AppCompatActivity() {
                             }
                             (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
                             android.widget.Toast.makeText(this, R.string.history_copied, android.widget.Toast.LENGTH_SHORT).show()
-                        }, { reset(R.string.history_read_error); content.setOnClickListener { showDetail(id) } })
+                        }, { reset(R.string.history_read_error); content.addView(button(getString(R.string.history_retry)) { showDetail(id) }) })
                     }
                 })
                 content.addView(button(getString(R.string.history_delete)) { confirmDelete(id) })
-            }, { reset(R.string.history_read_error); content.setOnClickListener { content.setOnClickListener(null); showDetail(id) } })
+            }, { reset(R.string.history_read_error); content.addView(button(getString(R.string.history_retry)) { showDetail(id) }) })
         }
     }
     private fun confirmDelete(id: String) {

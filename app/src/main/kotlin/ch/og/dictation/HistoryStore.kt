@@ -21,14 +21,19 @@ class HistoryClearOperation internal constructor(val token: Long, val ids: Set<S
 class HistoryOwner {
     private val active = mutableMapOf<String, HistoryCompletion>()
     private val knownIds = mutableSetOf<String>()
+    // Registrations remain targets until a serialized inventory has actually observed them.
+    private val unobservedIds = mutableSetOf<String>()
     /** Eligible take registration is synchronous, before any checkpoint can be queued. */
-    @Synchronized fun register(id: String) { knownIds.add(id); active[id] = HistoryCompletion.RECORDING }
+    @Synchronized fun register(id: String) { knownIds.add(id); unobservedIds.add(id); active[id] = HistoryCompletion.RECORDING }
     @Synchronized fun finishing(id: String) { if (id in active) active[id] = HistoryCompletion.FINISHING }
     @Synchronized fun remove(id: String) { active.remove(id) }
     @Synchronized fun state(id: String): HistoryCompletion? = active[id]
     @Synchronized fun activeIds(): Set<String> = active.keys.toSet()
     /** Refresh the persisted inventory discovered by a serialized History read. */
-    @Synchronized fun remember(ids: Set<String>) { knownIds.clear(); knownIds.addAll(ids) }
+    @Synchronized fun remember(ids: Set<String>) {
+        unobservedIds.removeAll(ids)
+        knownIds.clear(); knownIds.addAll(ids); knownIds.addAll(unobservedIds); knownIds.addAll(active.keys)
+    }
     /** Immutable acceptance-time target snapshot; later registrations do not mutate this set. */
     @Synchronized fun clearSnapshot(): Set<String> = immutableIds(knownIds + active.keys)
 }

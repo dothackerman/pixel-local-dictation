@@ -22,6 +22,38 @@ class HistoryStoreTest {
         assertEquals(setOf(saved, emptyActive, startedAfterAcceptance), owner.clearSnapshot())
     }
 
+    @Test fun clearIncludesTakeFinishedAfterInventoryReadBeforeItsFirstCheckpoint() {
+        val root = Files.createTempDirectory("history-inventory-race").toFile()
+        val owner = HistoryOwner()
+        val saved = "b3de7a72-84ce-4721-8412-497b90c09315"
+        val finishing = "9a67d378-1c8c-405e-bdb1-c113df823988"
+        val store = HistoryStore(root, owner)
+        try {
+            store.save(HistoryEntry(saved, 1, "earlier"))
+            owner.register(finishing)
+            owner.remember(store.clearableIds())
+            store.save(HistoryEntry(finishing, 2, "finished"))
+            owner.remove(finishing)
+
+            store.clear(owner.clearSnapshot())
+            assertTrue(store.list().isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun clearIncludesTakeFinishedAfterInventoryWasReadBeforeItWasRemembered() {
+        val owner = HistoryOwner()
+        val earlier = "b3de7a72-84ce-4721-8412-497b90c09315"
+        val finished = "9a67d378-1c8c-405e-bdb1-c113df823988"
+        owner.register(finished)
+        val inventoryReadBeforeCheckpoint = setOf(earlier)
+        owner.remove(finished)
+        owner.remember(inventoryReadBeforeCheckpoint)
+        assertEquals(setOf(earlier, finished), owner.clearSnapshot())
+        owner.remember(setOf(earlier, finished))
+        owner.remember(setOf(earlier))
+        assertEquals(setOf(earlier), owner.clearSnapshot())
+    }
+
     @Test fun persistedIdInventoryRefreshDropsCopiesThatWereFullyCleared() {
         val owner = HistoryOwner()
         val old = java.util.UUID.randomUUID().toString()
