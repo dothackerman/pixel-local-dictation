@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.graphics.Rect
 import android.os.SystemClock
-import android.provider.Settings
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -19,7 +18,15 @@ import android.view.inputmethod.InputMethodManager
  * started a take, our Back then opened the "discard?" prompt instead of handing back; and after
  * that interrupted take every later panel opened idle (explicit start required), so "panel
  * recording" never came.
+ *
+ * Run output stays free of other apps' data (ADR-024): messages report booleans and counts
+ * ("selected keyboard is FUTO: false", "voice-key matches: 2"), never FUTO's IME id, package or
+ * key labels.
  */
+
+/** Whether an IME id or package name belongs to FUTO Keyboard. */
+fun isFuto(idOrPackage: CharSequence?): Boolean = idOrPackage?.startsWith("org.futo.") == true
+
 class KeyboardHandoff(private val instrumentation: Instrumentation, private val status: (String) -> Unit) {
     private val context = instrumentation.targetContext
     private val ui = instrumentation.uiAutomation.also {
@@ -28,13 +35,21 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
 
     enum class Shown { FUTO, OURS, NONE }
 
-    /** The selected keyboard's id, from the IME service, else the secure setting (read only). */
+    /**
+     * The selected keyboard's id from the IME service only; null when unknown. Compare it or
+     * pass it to [isFuto]; never print it.
+     */
     fun currentIme(): String? =
         runCatching { context.getSystemService(InputMethodManager::class.java).currentInputMethodInfo?.id }.getOrNull()
-            ?: runCatching { Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD) }.getOrNull()
 
-    fun futoSelected() = currentIme()?.startsWith("org.futo.") == true
+    fun futoSelected() = isFuto(currentIme())
     fun oursSelected() = currentIme()?.startsWith(context.packageName + "/") == true
+
+    /** Printable selection state: booleans only. */
+    fun selection(): String {
+        val id = currentIme() ?: return "selected keyboard unknown"
+        return "selected keyboard is FUTO: ${isFuto(id)}, ours: ${id.startsWith(context.packageName + "/")}"
+    }
 
     private fun windows(): List<AccessibilityWindowInfo> = runCatching { ui.windows }.getOrDefault(emptyList())
 
@@ -46,10 +61,14 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
     private fun imeRoots(): List<AccessibilityNodeInfo> =
         windows().filter { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }.mapNotNull { it.root }
 
+    /** Every node in our own windows (the IME window and the prompt attached to it). */
+    private fun ourNodes(): List<AccessibilityNodeInfo> =
+        windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }.flatMap { nodes(it) }
+
     /** Which keyboard window is on screen; ours is identified by our panel's own view ids. */
     fun shown(): Shown {
         val roots = imeRoots()
-        if (roots.any { it.packageName?.toString()?.startsWith("org.futo.") == true }) return Shown.FUTO
+        if (roots.any { isFuto(it.packageName) }) return Shown.FUTO
         if (ourNode(R.id.microphone) != null) return Shown.OURS
         return Shown.NONE
     }
@@ -57,22 +76,19 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
     /** One of our panel's views by id, in any window (the IME window or its attached prompt). */
     fun ourNode(id: Int): AccessibilityNodeInfo? {
         val name = context.resources.getResourceName(id)
-        return windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }
-            .flatMap { nodes(it) }.firstOrNull { it.viewIdResourceName == name && it.isVisibleToUser }
+        return ourNodes().firstOrNull { it.viewIdResourceName == name && it.isVisibleToUser }
     }
 
     /** A visible, clickable button of ours by its label (our prompt is attached to our panel's window). */
     fun ourButton(label: Int): AccessibilityNodeInfo? {
         val text = context.getString(label)
-        return windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }
-            .flatMap { nodes(it) }.firstOrNull { it.isClickable && it.isVisibleToUser && it.text?.toString().equals(text, ignoreCase = true) }
+        return ourNodes().firstOrNull { it.isClickable && it.isVisibleToUser && it.text?.toString().equals(text, ignoreCase = true) }
     }
 
     /** Our recording/finishing prompt's Discard button, if that prompt is up. */
     private fun ourPromptDiscard(): AccessibilityNodeInfo? {
         val label = context.getString(R.string.discard_take)
-        return windows().mapNotNull { it.root }.filter { it.packageName == context.packageName }
-            .flatMap { nodes(it) }.firstOrNull { it.viewIdResourceName == "android:id/button1" && it.text?.toString() == label }
+        return ourNodes().firstOrNull { it.viewIdResourceName == "android:id/button1" && it.text?.toString() == label }
     }
 
     fun clickOurs(id: Int) {
@@ -93,18 +109,18 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
             if (SystemClock.uptimeMillis() - asked > 2_000) { asked = SystemClock.uptimeMillis(); instrumentation.runOnMainSync(showKeyboard) }
             shown() == Shown.FUTO
         }
-        if (!ok) throw AssertionError("timed out: FUTO keyboard (selected=${currentIme()?.substringBefore('/')}, shown=${shown()})")
+        if (!ok) throw AssertionError("timed out: FUTO keyboard (${selection()}, shown=${shown()})")
     }
 
     /** FUTO's voice key, identified by its accessibility label only; refuses if ambiguous. */
     fun tapFutoVoiceKey() {
-        val root = imeRoots().firstOrNull { it.packageName?.toString()?.startsWith("org.futo.") == true }
+        val root = imeRoots().firstOrNull { isFuto(it.packageName) }
             ?: error("no FUTO keyboard window")
         val all = nodes(root)
         val labelled = all.filter { n -> n.isVisibleToUser &&
             Regex("(?i)voice|micro|speech|dictat").containsMatchIn(n.contentDescription?.toString() ?: "") }
         val voice = labelled.filter { it.isClickable }.ifEmpty { labelled }
-        if (voice.size != 1) error("FUTO voice key not identified; ${labelled.size} labelled matches")
+        if (voice.size != 1) error("FUTO voice key not identified; voice-key matches: ${labelled.size}")
         val key = voice.single()
         if (key.isClickable && key.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
         // FUTO's keys are virtual nodes that refuse ACTION_CLICK: tap the key's centre once instead.
@@ -166,7 +182,7 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
                     waitFor(2_000) { futoSelected() || ourPromptDiscard() != null }
                 }
                 else -> {
-                    status("hand-back $attempt: our panel not shown (selected=${currentIme()?.substringBefore('/')}); showing keyboard")
+                    status("hand-back $attempt: our panel not shown (${selection()}); showing keyboard")
                     runCatching { instrumentation.runOnMainSync(showKeyboard) }.onFailure { status("hand-back $attempt: ${it.message}") }
                     waitFor(4_000) { futoSelected() || shown() == Shown.OURS || ourPromptDiscard() != null }
                 }

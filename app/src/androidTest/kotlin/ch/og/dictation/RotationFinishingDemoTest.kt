@@ -249,7 +249,7 @@ class RotationFinishingDemoTest {
             Thread.sleep(500)
         }
         val futo = currentIme()
-        assertTrue("current keyboard must be FUTO before the demo, was $futo", futo?.startsWith("org.futo.") == true)
+        assertTrue("current keyboard must be FUTO before the demo (${keys.selection()})", isFuto(futo))
         val fixture = SyntheticFixtureAudio.file(context.filesDir, "continuous")
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
@@ -321,7 +321,7 @@ class RotationFinishingDemoTest {
                 assertEquals(1, commits)
                 assertTrue("text not inserted exactly once", insertedOnce)
             }
-            assertEquals("keyboard not restored to FUTO", futo, currentIme())
+            assertTrue("keyboard not restored to FUTO (${keys.selection()})", currentIme() == futo)
             passed = true
         } finally {
             heldHistory?.countDown()
@@ -332,7 +332,7 @@ class RotationFinishingDemoTest {
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             runCatching { Thread.sleep(1_000); clearTestHistory() } // Synthetic rows only.
             DictationImeService.historyRootFor = previousHistory
-            if (!passed && currentIme() != futo) status("WARNING: keyboard left on ${currentIme()}")
+            if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
     }
 }

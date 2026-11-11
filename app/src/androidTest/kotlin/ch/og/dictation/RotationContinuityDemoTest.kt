@@ -96,7 +96,7 @@ class RotationContinuityDemoTest {
             Thread.sleep(500)
         }
         val futo = currentIme()
-        assertTrue("current keyboard must be FUTO before the demo, was $futo", futo?.startsWith("org.futo.") == true)
+        assertTrue("current keyboard must be FUTO before the demo (${keys.selection()})", isFuto(futo))
         val fixture = SyntheticFixtureAudio.file(context.filesDir, "continuous")
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
@@ -182,14 +182,14 @@ class RotationContinuityDemoTest {
             assertTrue("speech before rotation not inserted", beforeInserted)
             assertTrue("speech after rotation not inserted", afterInserted)
             assertTrue("text not inserted exactly once", insertedOnce)
-            assertEquals("keyboard not restored to FUTO", futo, currentIme())
+            assertTrue("keyboard not restored to FUTO (${keys.selection()})", currentIme() == futo)
             passed = true
         } finally {
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
             DictationImeService.recorderFactory = previousRecorder
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
-            if (!passed && currentIme() != futo) status("WARNING: keyboard left on ${currentIme()}")
+            if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
     }
 }

@@ -26,7 +26,7 @@ class PhoneReadyTest {
         if (!context.getSystemService(PowerManager::class.java).isInteractive) unmet += "screen off: owner wakes the phone"
         if (context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) unmet += "locked: owner unlocks the phone"
         val ime = KeyboardHandoff(instrumentation) {}
-        if (!ime.futoSelected()) unmet += "FUTO is not the selected keyboard (selected: ${ime.currentIme()?.substringBefore('/') ?: "unknown"})"
+        if (!ime.futoSelected()) unmet += "FUTO is not the selected keyboard (${ime.selection()})"
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             unmet += "microphone permission not granted to the app"
         }

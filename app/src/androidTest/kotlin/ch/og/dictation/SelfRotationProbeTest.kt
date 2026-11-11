@@ -46,7 +46,7 @@ class SelfRotationProbeTest {
     private fun clickOurs(id: Int) = keys.clickOurs(id)
     private val showKeyboard = Runnable { SelfRotationProbeActivity.current?.showKeyboard() }
     private fun handBackToFuto() {
-        if (!keys.handBackToFuto({ showKeyboard.run() })) throw AssertionError("FUTO not restored (selected ${currentIme()?.substringBefore('/')})")
+        if (!keys.handBackToFuto({ showKeyboard.run() })) throw AssertionError("FUTO not restored (${keys.selection()})")
     }
 
     private fun rows(run: String): List<JSONObject> = if (!traceFile.exists()) emptyList() else
@@ -69,7 +69,7 @@ class SelfRotationProbeTest {
             handBackToFuto()
         }
         val futo = currentIme()
-        assertTrue("current keyboard must be FUTO before the probe, was $futo", futo?.startsWith("org.futo.") == true)
+        assertTrue("current keyboard must be FUTO before the probe (${keys.selection()})", isFuto(futo))
         val run = UUID.randomUUID().toString()
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
@@ -125,14 +125,14 @@ class SelfRotationProbeTest {
             File(context.filesDir, "lab/issue56/probe-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertTrue("trace incomplete", complete)
-            assertEquals("keyboard not restored to FUTO", futo, currentIme())
+            assertTrue("keyboard not restored to FUTO (${keys.selection()})", currentIme() == futo)
             passed = true
         } finally {
             polling.set(false)
             RotationTrace.abortProbe()
             if (!passed) runCatching { handBackToFuto() }.onFailure { status("$case: hand-back failed: ${it.message}") }
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
-            if (!passed && currentIme() != futo) status("WARNING: keyboard left on ${currentIme()}")
+            if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
     }
 
