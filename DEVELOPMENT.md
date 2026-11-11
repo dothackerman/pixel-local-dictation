@@ -173,6 +173,15 @@ the benchmark build is debuggable.
   including receipts. Pull receipts before pushing.
 - Mutating verbs and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the
   installed APK and lab hashes; experiments bind their receipts to it.
+- Interactive session (screen on, owner present; phone time is scarce):
+  1. Before asking: build, `check`, `install` (works while locked), `push` fixtures.
+  2. Owner: unlock, leave FUTO selected, keep the screen awake. Nothing else.
+  3. `run ch.og.dictation.PhoneReadyTest` (seconds): one `NOT READY:` line per unmet
+     precondition (screen, lock, FUTO selected, microphone permission, fixtures).
+  4. One batched `run A,B,C` with every suite; analyse and fix afterwards, not between suites.
+  Test-owned windows keep the screen on while shown (no wake lock, no setting). Tests that
+  drive the keyboard use `KeyboardHandoff`: our controls plus one FUTO voice-key tap, bounded
+  waits, FUTO restored in `finally`.
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
   `bash tools/gate/apply.sh`. Then, in a fresh unescalated agent session, run
   `python3 tools/gate/check_installation.py` and `python3 tools/quality.py`. The installer

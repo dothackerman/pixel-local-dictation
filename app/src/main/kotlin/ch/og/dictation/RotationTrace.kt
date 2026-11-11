@@ -46,7 +46,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
 
         val allowedCases = setOf("signal-capture-rotation", "signal-finishing-rotation", "app-capture-rotation", "app-finishing-rotation",
             "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls",
-            "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing")
+            "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing",
+            "demo52-keep", "demo52-hidden")
 
         fun beginProbe(caseName: String, runId: String = UUID.randomUUID().toString()) {
             require(caseName in allowedCases)

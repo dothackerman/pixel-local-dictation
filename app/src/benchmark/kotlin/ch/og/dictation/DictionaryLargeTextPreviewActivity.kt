@@ -3,6 +3,7 @@ package ch.og.dictation
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatDelegate
 
 /** UI verification only: local light/large-text configuration, never device settings. */
@@ -10,6 +11,8 @@ class DictionaryLargeTextPreviewActivity : DictionaryActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_NO
         super.onCreate(savedInstanceState)
+        // Test window only: the screen cannot time out mid-run (no wake lock, no setting).
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     override fun attachBaseContext(base: Context) {
         val preview = Configuration(base.resources.configuration).apply {

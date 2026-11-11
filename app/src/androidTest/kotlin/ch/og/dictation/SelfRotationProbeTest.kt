@@ -1,14 +1,9 @@
 package ch.og.dictation
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
-import android.view.inputmethod.InputMethodManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -31,9 +26,6 @@ import org.junit.runner.RunWith
 class SelfRotationProbeTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val ui = instrumentation.uiAutomation.also {
-        it.serviceInfo = it.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
-    }
     private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
 
     @Test fun keepFocusDuringCapture() = probe("self-keep-capture", keep = true, finishing = false)
@@ -43,71 +35,18 @@ class SelfRotationProbeTest {
 
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
+    private val keys = KeyboardHandoff(instrumentation, ::status)
+
     private fun until(timeoutMs: Long, what: String, condition: () -> Boolean) {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (SystemClock.uptimeMillis() < end) { if (condition()) return; Thread.sleep(50) }
-        throw AssertionError("timed out: $what")
+        if (!keys.waitFor(timeoutMs, condition)) throw AssertionError("timed out: $what")
     }
 
-    private fun imeWindow(): AccessibilityWindowInfo? = ui.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-    private fun imePackage(): String? = imeWindow()?.root?.packageName?.toString()
-    private fun currentIme(): String? = context.getSystemService(InputMethodManager::class.java).currentInputMethodInfo?.id
-
-    private fun nodes(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
-        if (root == null) return emptyList()
-        return listOf(root) + (0 until root.childCount).flatMap { nodes(root.getChild(it)) }
-    }
-
-    /** FUTO's voice key, identified by its accessibility label only; refuses if ambiguous. */
-    private fun clickFutoVoiceKey() {
-        val root = imeWindow()?.root ?: error("no keyboard window")
-        val all = nodes(root)
-        val labelled = all.filter { n -> n.isVisibleToUser &&
-            Regex("(?i)voice|micro|speech|dictat").containsMatchIn(n.contentDescription?.toString() ?: "") }
-        val voice = labelled.filter { it.isClickable }.ifEmpty { labelled }
-        if (voice.size != 1) error("FUTO voice key not identified; matches: " +
-            labelled.joinToString { "${it.contentDescription}/${it.className}/clickable=${it.isClickable}" } + "; labels: " +
-            all.mapNotNull { it.contentDescription?.toString() }.distinct().joinToString())
-        // FUTO's keys are virtual nodes that refuse ACTION_CLICK: tap the key's centre once instead.
-        val key = voice.single()
-        if (key.isClickable && key.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
-        val bounds = android.graphics.Rect().also { key.getBoundsInScreen(it) }
-        check(!bounds.isEmpty) { "FUTO voice key has no bounds" }
-        val at = SystemClock.uptimeMillis()
-        for (action in intArrayOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
-            val event = android.view.MotionEvent.obtain(at, SystemClock.uptimeMillis(), action,
-                bounds.exactCenterX(), bounds.exactCenterY(), 0)
-            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
-            assertTrue(ui.injectInputEvent(event, true))
-            event.recycle()
-            Thread.sleep(40)
-        }
-    }
-
-    private fun clickOurs(id: Int) {
-        val name = context.resources.getResourceName(id)
-        val node = nodes(imeWindow()?.root).singleOrNull { it.viewIdResourceName == name } ?: error("our $name not on screen")
-        assertTrue(node.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-    }
-
-    /**
-     * Shows our idle panel in the probe editor and taps its Back, which hands back to the previous
-     * keyboard. Retries: the editor may be recreated or still settling after a rotation.
-     */
+    private fun currentIme(): String? = keys.currentIme()
+    private fun ourPanelShown() = keys.shown() == KeyboardHandoff.Shown.OURS
+    private fun clickOurs(id: Int) = keys.clickOurs(id)
+    private val showKeyboard = Runnable { SelfRotationProbeActivity.current?.showKeyboard() }
     private fun handBackToFuto() {
-        repeat(4) { attempt ->
-            if (currentIme()?.startsWith("org.futo.") == true) return
-            instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.showKeyboard() }
-            val end = SystemClock.uptimeMillis() + 5_000
-            while (SystemClock.uptimeMillis() < end && imePackage() != context.packageName) Thread.sleep(50)
-            if (imePackage() == context.packageName) {
-                Thread.sleep(500)
-                runCatching { clickOurs(R.id.back) }.onFailure { status("hand-back attempt $attempt: ${it.message}") }
-                val back = SystemClock.uptimeMillis() + 4_000
-                while (SystemClock.uptimeMillis() < back && currentIme()?.startsWith("org.futo.") != true) Thread.sleep(50)
-            } else status("hand-back attempt $attempt: our panel not shown")
-        }
-        until(1_000, "FUTO restored") { currentIme()?.startsWith("org.futo.") == true }
+        if (!keys.handBackToFuto({ showKeyboard.run() })) throw AssertionError("FUTO not restored (selected ${currentIme()?.substringBefore('/')})")
     }
 
     private fun rows(run: String): List<JSONObject> = if (!traceFile.exists()) emptyList() else
@@ -125,7 +64,7 @@ class SelfRotationProbeTest {
         instrumentation.startActivitySync(Intent(context, kind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         Thread.sleep(600)
         // An earlier case may have left our IME selected: hand back through our own panel's Back.
-        if (currentIme()?.startsWith(context.packageName + "/") == true) {
+        if (!keys.futoSelected()) {
             status("$case: our keyboard still selected, handing back with our Back")
             handBackToFuto()
         }
@@ -150,26 +89,18 @@ class SelfRotationProbeTest {
             }
         }.apply { isDaemon = true; start() }
         var passed = false
+        var explicitStart = false
         try {
-            var asked = 0L
-            until(12_000, "FUTO keyboard") {
-                if (SystemClock.uptimeMillis() - asked > 2_000) {
-                    asked = SystemClock.uptimeMillis()
-                    instrumentation.runOnMainSync { activity().showKeyboard() }
-                }
-                imePackage()?.startsWith("org.futo.") == true
-            }
+            keys.openFuto({ activity().showKeyboard() })
             Thread.sleep(400)
-            clickFutoVoiceKey()
-            until(10_000, "our panel recording") {
-                imePackage() == context.packageName && rows(run).any { it.getString("event") == "CAPTURE_STARTED" }
-            }
+            keys.tapFutoVoiceKey()
+            explicitStart = keys.awaitOurPanelRecording({ rows(run).any { it.getString("event") == "CAPTURE_STARTED" } })
             Thread.sleep(1_500)
             if (finishing) clickOurs(R.id.microphone)
             marks.event(RotationEvent.PROBE_ROTATE_REQUESTED, flag = true)
             instrumentation.runOnMainSync { activity().rotate(landscape = true) }
             Thread.sleep(4_000)
-            val panelBack = imePackage() == context.packageName
+            val panelBack = ourPanelShown()
             var editorVisible = false
             instrumentation.runOnMainSync { editorVisible = SelfRotationProbeActivity.current?.editorVisibleAboveKeyboard() == true }
             status("$case: panelVisibleAfterRotation=$panelBack editorVisibleAbovePanel=$editorVisible")
@@ -189,7 +120,7 @@ class SelfRotationProbeTest {
             polling.set(false); poller.join(1_000)
             marks.close()
             val complete = RotationTrace.finishProbe(10_000)
-            val summary = summarize(rows(run), panelBack, editorVisible)
+            val summary = summarize(rows(run), panelBack, editorVisible).put("explicitStartTapped", explicitStart)
             File(context.filesDir, "lab/issue56").mkdirs()
             File(context.filesDir, "lab/issue56/probe-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
@@ -217,6 +148,8 @@ class SelfRotationProbeTest {
         val firstInterrupt = window.firstOrNull { it.getString("event") in interrupting }
         val drawn = window.firstOrNull { it.getString("event") == "PANEL_DRAWN" }
         val configuration = window.firstOrNull { it.getString("event") == "CONFIGURATION" }
+        val states = window.filter { it.getString("event") == "PROBE_RECORDING_STATE" }.map {
+            "${ms(it)}:" + (if (!it.optBoolean("active")) "none" else if (it.optBoolean("flag")) "silenced" else "active") }
         val silenced = ordered.any { it.getString("event") == "PROBE_RECORDING_STATE" && it.optBoolean("flag") }
         return JSONObject()
             .put("callbackOrder", org.json.JSONArray(window.map { it.getString("event") }.filter { !it.startsWith("PROBE_RECORDING") }))
@@ -236,6 +169,7 @@ class SelfRotationProbeTest {
             .put("commitAccepted", ordered.any { it.getString("event") == "COMMIT_ACCEPTED" })
             .put("captureStarts", ordered.count { it.getString("event") == "CAPTURE_STARTED" })
             .put("recordingSilencedObserved", silenced)
+            .put("recordingStates", org.json.JSONArray(states))
             .put("configDiff", configuration?.opt("configDiff") ?: JSONObject.NULL)
             .put("handledConfig", configuration?.opt("handledConfig") ?: JSONObject.NULL)
             .put("restartInsideConfiguration", configuration?.let { c ->

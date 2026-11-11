@@ -1,13 +1,10 @@
 package ch.og.dictation
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
-import android.view.inputmethod.InputMethodManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -33,9 +30,6 @@ import org.junit.runner.RunWith
 class RotationContinuityDemoTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val ui = instrumentation.uiAutomation.also {
-        it.serviceInfo = it.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
-    }
     private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
 
     @Test fun keptEditorKeepsTakeAndStopInsertsOnce() = demo("demo52-keep", keep = true)
@@ -43,35 +37,14 @@ class RotationContinuityDemoTest {
 
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
+    private val keys = KeyboardHandoff(instrumentation, ::status)
+
     private fun until(timeoutMs: Long, what: String, condition: () -> Boolean) {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (SystemClock.uptimeMillis() < end) { if (condition()) return; Thread.sleep(50) }
-        throw AssertionError("timed out: $what")
+        if (!keys.waitFor(timeoutMs, condition)) throw AssertionError("timed out: $what")
     }
 
-    private fun imeWindow(): AccessibilityWindowInfo? = ui.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-    private fun imePackage(): String? = imeWindow()?.root?.packageName?.toString()
-    private fun currentIme(): String? = context.getSystemService(InputMethodManager::class.java).currentInputMethodInfo?.id
-
-    private fun nodes(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
-        if (root == null) return emptyList()
-        return listOf(root) + (0 until root.childCount).flatMap { nodes(root.getChild(it)) }
-    }
-
-    private fun clickFutoVoiceKey() {
-        val all = nodes(imeWindow()?.root ?: error("no keyboard window"))
-        val voice = all.filter { n -> n.isClickable && n.isVisibleToUser &&
-            Regex("(?i)voice|micro|speech|dictat").containsMatchIn(n.contentDescription?.toString() ?: "") }
-        if (voice.size != 1) error("FUTO voice key not identified; labels: " +
-            all.mapNotNull { it.contentDescription?.toString() }.distinct().joinToString())
-        assertTrue(voice.single().performAction(AccessibilityNodeInfo.ACTION_CLICK))
-    }
-
-    private fun ours(id: Int): AccessibilityNodeInfo? {
-        if (imePackage() != context.packageName) return null
-        val name = context.resources.getResourceName(id)
-        return nodes(imeWindow()?.root).singleOrNull { it.viewIdResourceName == name }
-    }
+    private fun currentIme(): String? = keys.currentIme()
+    private fun ours(id: Int): AccessibilityNodeInfo? = keys.ourNode(id)
 
     /** In memory only; never logged or written. */
     private fun previewText(): String = ours(R.id.preview)?.text?.toString().orEmpty()
@@ -112,6 +85,16 @@ class RotationContinuityDemoTest {
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         assertTrue("phone must be unlocked with the screen on (owner step); the demo never unlocks it",
             power.isInteractive && !keyguard.isKeyguardLocked)
+        val showKeyboard = { SelfRotationProbeActivity.current?.showKeyboard(); Unit }
+        if (!keys.futoSelected()) {
+            // An earlier test may have left our keyboard selected: hand back with our own controls.
+            instrumentation.startActivitySync(Intent(context, SelfRotationProbeActivity.Keep::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            Thread.sleep(600)
+            status("$case: our keyboard still selected, handing back")
+            keys.handBackToFuto(showKeyboard)
+            instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
+            Thread.sleep(500)
+        }
         val futo = currentIme()
         assertTrue("current keyboard must be FUTO before the demo, was $futo", futo?.startsWith("org.futo.") == true)
         val fixture = SyntheticFixtureAudio.file(context.filesDir, "continuous")
@@ -128,11 +111,11 @@ class RotationContinuityDemoTest {
         try {
             instrumentation.startActivitySync(Intent(context, kind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             Thread.sleep(600)
-            instrumentation.runOnMainSync { activity().showKeyboard() }
-            until(5_000, "FUTO keyboard") { imePackage()?.startsWith("org.futo.") == true }
+            keys.openFuto({ activity().showKeyboard() })
             Thread.sleep(400)
-            clickFutoVoiceKey()
-            until(10_000, "our panel recording") { count(run, "CAPTURE_STARTED") == 1 && ours(R.id.microphone) != null }
+            keys.tapFutoVoiceKey()
+            val explicitStart = keys.awaitOurPanelRecording({ count(run, "CAPTURE_STARTED") == 1 })
+            if (explicitStart) status("$case: explicit start was needed")
             // Continuous speech yields its first chunk after about 26 s (#54).
             until(45_000, "speech before rotation in the preview") { previewText().isNotBlank() }
             Thread.sleep(1_000)
@@ -148,7 +131,9 @@ class RotationContinuityDemoTest {
             val panelBackMs = SystemClock.uptimeMillis() - rotatedAt
             assertTrue("take ended during rotation", rows(run).none { it.getString("event").startsWith("TERMINAL_") })
             until(45_000, "speech after rotation in the preview") {
-                previewText().trim().let { it != before && it.contains(before.takeLast(20)) && !it.endsWith(before.takeLast(20)) }
+                // The preview keeps only the newest ~240 characters, so a long second chunk can push the
+                // first one out (Pixel run 20261111T131042): any new text after the restored preview counts.
+                previewText().trim().let { it.isNotBlank() && it != before }
             }
             Thread.sleep(1_500)
             assertTrue("panel lost before Stop", ours(R.id.microphone) != null)
@@ -200,8 +185,9 @@ class RotationContinuityDemoTest {
             assertEquals("keyboard not restored to FUTO", futo, currentIme())
             passed = true
         } finally {
-            DictationImeService.recorderFactory = previousRecorder
             RotationTrace.abortProbe()
+            if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
+            DictationImeService.recorderFactory = previousRecorder
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             if (!passed && currentIme() != futo) status("WARNING: keyboard left on ${currentIme()}")
         }
