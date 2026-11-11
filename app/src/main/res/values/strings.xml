@@ -70,9 +70,7 @@
     <string name="history_clear_pending">Included in the pending clear. Retry to finish.</string>
     <string name="history_recording">Recording</string>
     <string name="history_finishing">Finishing</string>
-    <string name="history_explanation">Transcripts stay on this device until you delete them; audio is not stored.</string>
-    <string name="history_hint">Touch and hold a transcript to copy it.</string>
-    <string name="history_hint_dismiss">Got it</string>
+    <string name="history_explanation">Audio is not stored.</string>
     <string name="history_loading">Loading history…</string>
     <string name="history_empty">No saved transcripts.</string>
     <string name="history_retry">Retry</string>
@@ -84,7 +82,6 @@
     <string name="history_receipt_error">Couldn’t save an insertion status. Check the field before pasting a copy.</string>
     <string name="history_notice_dismiss">Dismiss</string>
     <string name="history_copy">Copy</string>
-    <string name="history_copied">Copied</string>
     <string name="history_delete">Delete</string>
     <string name="history_copy_transcript">Copy transcript</string>
     <string name="history_delete_transcript">Delete transcript</string>

@@ -144,14 +144,20 @@ class HistoryScreenTest {
         assertTrue(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
     }
 
-    @Test fun detailCopyIconCopiesWithTheSensitiveFlagAndConfirms() {
+    @Test fun detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem() {
         val page = open()
         firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         toolbar(page).menu.performIdentifierAction(R.id.history_copy_item, 0)
         settle { clipText() == "First synthetic transcript" }
-        assertTrue(clipboard().primaryClip!!.description.extras!!.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE))
-        settle { shown(page, app.getString(R.string.history_copied)) }
+        assertNotSensitive()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(shown(page, "Copied"))
+    }
+
+    private fun assertNotSensitive() {
+        val extras = clipboard().primaryClip!!.description.extras
+        assertFalse(extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) ?: false)
     }
 
     @Test fun detailDeleteIconReturnsToTheListWithUndo() {
@@ -167,15 +173,16 @@ class HistoryScreenTest {
         assertTrue(File(root, "$a.history").exists())
     }
 
-    @Test fun longPressOnARowCopiesThatTranscriptAndConfirmsOnTheList() {
+    @Test fun longPressOnARowCopiesThatTranscriptWithoutOurSnackbarOnAndroid13Plus() {
         val page = open()
         // The second row (entry b), not the first: the right transcript is copied.
         val row = rowAt(page, 1).findViewById<View>(R.id.history_row_body)
         assertTrue(row.isLongClickable)
         assertTrue(row.performLongClick())
         settle { clipText() == "Second synthetic transcript" }
-        assertTrue(clipboard().primaryClip!!.description.extras!!.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE))
-        settle { shown(page, app.getString(R.string.history_copied)) }
+        assertNotSensitive()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(shown(page, "Copied"))
         // Still the list: long-press does not open the detail.
         assertEquals(View.VISIBLE, page.findViewById<View>(R.id.history_list_pane).visibility)
         assertNull(page.findViewById<View>(R.id.history_detail_text))
@@ -221,25 +228,12 @@ class HistoryScreenTest {
 
     @Test fun explanationIsOneShortLineAndScrollsAwayAsTheFirstListItem() {
         val page = open()
-        assertTrue(app.getString(R.string.history_explanation).length <= 80)
+        assertEquals("Audio is not stored.", app.getString(R.string.history_explanation))
         val list = page.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.history_list)
         val header = list.getChildAt(0)
         assertSame(page.findViewById<View>(R.id.history_explanation).parent, header)
         assertEquals(0, list.getChildAdapterPosition(header))
         assertEquals(1, list.getChildAdapterPosition(firstRow(page)))
-    }
-
-    @Test fun oneTimeHintNamesTheLongPressAndStaysDismissed() {
-        val prefs = app.getSharedPreferences("history_ui", android.content.Context.MODE_PRIVATE)
-        prefs.edit().clear().commit()
-        val hint = app.getString(R.string.history_hint)
-        assertTrue(hint.contains("hold", ignoreCase = true) && hint.contains("copy", ignoreCase = true))
-        val page = open()
-        assertTrue(shown(page, hint))
-        page.findViewById<View>(R.id.history_hint_dismiss).performClick()
-        assertFalse(shown(page, hint))
-        val again = open()
-        assertFalse(shown(again, hint))
     }
 
     @Test fun detailMetadataIsTheSameLineAsTheListRowAndTextIsSelectable() {

@@ -16,8 +16,6 @@ class HistoryLayoutTest {
         val context = instrumentation.targetContext
         val root = java.io.File(context.noBackupFilesDir, "history-ui-test-layout")
         root.deleteRecursively()
-        // Worst case for the first-row check: the one-time hint is still showing.
-        context.getSharedPreferences("history_ui", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         val entry = HistoryEntry(java.util.UUID.randomUUID().toString(), 1, "Synthetic layout transcript")
         HistoryStore(root).save(entry)
         HistoryTestActivity.largeTextPreview = true

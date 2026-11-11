@@ -157,11 +157,17 @@ class HistoryActivityTest {
         }
     }
 
+    /** minSdk 36: the system confirms the copy; the page shows no "Copied" Snackbar. */
+    private fun assertCopyConfirmation(scenario: ActivityScenario<HistoryTestActivity>) {
+        Thread.sleep(600)
+        scenario.onActivity { assertNull(HistoryUi.findText(it.window.decorView, "Copied", exact = true)) }
+    }
+
     private fun assertCopied(text: String) {
         repeat(100) {
             val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
             if (clip?.getItemAt(0)?.text.toString() == text) {
-                assertTrue(clip!!.description.extras!!.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE))
+                assertFalse(clip!!.description.extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) ?: false)
                 return
             }
             Thread.sleep(50)
@@ -184,7 +190,7 @@ class HistoryActivityTest {
                 assertTrue(labels.contains(context.getString(R.string.history_delete_transcript)))
             }
             assertCopied(text)
-            scenario.awaitText(context.getString(R.string.history_copied))
+            assertCopyConfirmation(scenario)
             scenario.onActivity { assertNull(it.findViewById<View>(R.id.history_detail_text)) }
         } finally {
             (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).clearPrimaryClip()
@@ -216,7 +222,7 @@ class HistoryActivityTest {
                 copy.performClick()
             }
             assertCopied(text)
-            scenario.awaitText(context.getString(R.string.history_copied))
+            assertCopyConfirmation(scenario)
             scenario.onActivity { delete.performClick() }
             repeat(100) { if (store.get(id) == null) return@repeat; Thread.sleep(50) }
             assertNull(store.get(id))

@@ -1,7 +1,6 @@
 package ch.og.dictation
 
 import android.content.ClipData
-import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
@@ -123,7 +122,6 @@ open class HistoryActivity : AppCompatActivity() {
     private companion object {
         const val SELECTED_ID = "history_selected_id"
         const val SAVED_COUNT = "history_visible_count"
-        const val HINT_DISMISSED = "copy_hint_dismissed"
     }
 
     private fun back() { if (selected != null) showList() else finish() }
@@ -268,13 +266,8 @@ open class HistoryActivity : AppCompatActivity() {
         load({ it.get(id) }) { current ->
             current.fold({ saved ->
                 if (saved == null || isClearTarget(id)) { leaveDetailMissing(); return@fold }
-                val clip = ClipData.newPlainText("Transcript", saved.text)
-                clip.description.extras = android.os.PersistableBundle().apply {
-                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                }
-                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
-                snackbar?.dismiss()
-                snackbar = Snackbar.make(root, R.string.history_copied, Snackbar.LENGTH_SHORT).also { it.show() }
+                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Transcript", saved.text))
+                // minSdk is 36: the system shows its own copy confirmation, so no Snackbar of ours.
             }, { selected = null; readError = true; removeDetail(); renderList() })
         }
     }
@@ -385,10 +378,7 @@ open class HistoryActivity : AppCompatActivity() {
         HistoryRowStatus.INSERTION_UNCERTAIN -> R.string.history_status_uncertain
     })
 
-    private val hintPrefs by lazy { getSharedPreferences("history_ui", Context.MODE_PRIVATE) }
-    private fun hintShown() = !hintPrefs.getBoolean(HINT_DISMISSED, false)
-
-    /** Item 0 is the explanation and the one-time hint, so both scroll away and the first row is on screen at large font. */
+    /** Item 0 is the explanation, so it scrolls away and the first row is on screen at large font. */
     private inner class RowsAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         var items = emptyList<HistoryEntry>()
         var pendingClear = emptySet<String>()
@@ -405,15 +395,7 @@ open class HistoryActivity : AppCompatActivity() {
             else Holder(layoutInflater.inflate(R.layout.history_row, parent, false))
         override fun getItemCount() = items.size + 1
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            if (holder is Header) {
-                val hint = holder.itemView.findViewById<View>(R.id.history_hint)
-                hint.visibility = if (hintShown()) View.VISIBLE else View.GONE
-                holder.itemView.findViewById<View>(R.id.history_hint_dismiss).setOnClickListener {
-                    hintPrefs.edit().putBoolean(HINT_DISMISSED, true).apply()
-                    hint.visibility = View.GONE
-                }
-                return
-            }
+            if (holder is Header) return
             holder as Holder
             val entry = items[position - 1]
             val clearPending = entry.id in pendingClear

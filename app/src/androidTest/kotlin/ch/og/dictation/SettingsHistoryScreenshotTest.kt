@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 /**
  * Captures app-owned windows into app-private files (pull with `phone pull files/lab/settings-history/<name>.png`).
  * History uses separate stores containing only synthetic text. Names: <screen>-<light|dark>-<font1|font2>.png
- * for Settings, list (trash icons), copied (long-press Snackbar), detail (toolbar icon actions), empty state,
+ * for Settings, list (trash icons), copied (after long-press; system confirmation only), detail (toolbar icon actions), empty state,
  * warning row and clear dialog.
  */
 @RunWith(AndroidJUnit4::class)
@@ -32,8 +32,6 @@ class SettingsHistoryScreenshotTest {
 
     @Test fun settingsAndHistory() {
         val output = File(context.filesDir, "lab/settings-history").apply { mkdirs() }
-        // The list is captured with the one-time hint showing.
-        context.getSharedPreferences("history_ui", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         val notices = historyNotices(context)
         val originalNotices = notices.pending()
         HistoryNotice.entries.forEach(notices::dismiss)
@@ -70,9 +68,8 @@ class SettingsHistoryScreenshotTest {
                         settle()
                         instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-list-$tag.png")) }
 
-                        // Long-press copies; the anchored "Copied" confirmation is captured on the list.
+                        // Long-press copies; the system confirms the copy (no Snackbar of ours).
                         instrumentation.runOnMainSync { HistoryUi.target(row).performLongClick() }
-                        await(activity, context.getString(R.string.history_copied))
                         settle()
                         instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-copied-$tag.png")) }
 
