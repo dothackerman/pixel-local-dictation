@@ -273,7 +273,7 @@ class TakeSession internal constructor(
             finish(TakeOutcome.COMPLETED, text, accepted, returned)
         } catch (failure: Throwable) {
             if (text.isNotEmpty() && accepted == null && deliberatelyCancelledDuringDispatch && !output.commitAttempted()) {
-                output.discardStaged()
+                output.discardStaged { deferredDiscard?.invoke(it); deferredDiscard = null }
                 finish(TakeOutcome.CANCELLED)
                 return
             }
