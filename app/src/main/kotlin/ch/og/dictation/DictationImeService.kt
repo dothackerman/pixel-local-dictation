@@ -62,8 +62,10 @@ class DictationImeService : InputMethodService() {
     private val mainExecutor = Executor { mainHandler.post(it) }
     /** Set while a hand-back to the keyboard is pending, so the panel does not start a new take. */
     private var returning = false
-    /** Session that started the current take; text goes there or nowhere. */
+    /** Input session the current take's panel is attached to. */
     private var recordingToken: Long? = null
+    /** Authority to insert: granted by Stop to the panel's session; text goes there or nowhere. */
+    private var authority: Long? = null
     private var take: TakeSession? = null
     private var takeGeneration = 0L
     private var interruptedView = false
@@ -103,7 +105,7 @@ class DictationImeService : InputMethodService() {
             rotationEvent(RotationEvent.SCREEN_OFF)
             previewAllowed = false
             showPreview("")
-            if (takeActive) interruptTake()
+            editorEvent(EditorEvent.SCREEN_OFF)
         }
     }
 
@@ -203,9 +205,9 @@ class DictationImeService : InputMethodService() {
         editorRetentionEligible = EditorRetentionPolicy.isEligible(attribute)
         previewAllowed = false
         showPreview("")
-        // Any input start during a take ends that take's session (InputSession.start).
+        // Any input start ends the previous session (InputSession.start).
         session.start()
-        if (takeActive && !returning) interruptTake()
+        editorEvent(EditorEvent.INPUT_START)
         rotationEvent(RotationEvent.INPUT_START_DONE, restarting)
     }
 
@@ -224,14 +226,8 @@ class DictationImeService : InputMethodService() {
         super.onStartInputView(info, restarting)
         inputViewVisible = true
         session.resume()
-        if (returning) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
-        if (takeActive) {
-            // The view can be restarted without a new input start; keep that take.
-            if (session.matches(recordingToken)) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
-            interruptTake()
-            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
-            return
-        }
+        editorEvent(EditorEvent.INPUT_VIEW_START)
+        if (returning || takeActive) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
         if (MicrophoneOwner.state().occupied) {
             interruptedView = true
             updateSharedMicrophone()
@@ -321,7 +317,7 @@ class DictationImeService : InputMethodService() {
         previewAllowed = false
         showPreview("")
         Log.i(tag, "input view finished: finishingInput=$finishingInput take=$takeActive")
-        if (takeActive && !returning) interruptTake()
+        editorEvent(EditorEvent.INPUT_VIEW_FINISH)
         super.onFinishInputView(finishingInput)
         rotationEvent(RotationEvent.INPUT_VIEW_FINISH_DONE, finishingInput)
     }
@@ -333,7 +329,7 @@ class DictationImeService : InputMethodService() {
         session.invalidate()
         previewAllowed = false
         showPreview("")
-        if (takeActive && !returning) interruptTake()
+        editorEvent(EditorEvent.INPUT_FINISH)
         super.onFinishInput()
         rotationEvent(RotationEvent.INPUT_FINISH_DONE)
     }
@@ -372,8 +368,27 @@ class DictationImeService : InputMethodService() {
         previewAllowed = false
         showPreview("")
         session.invalidate()
-        if (takeActive && !returning) interruptTake()
+        editorEvent(EditorEvent.WINDOW_HIDDEN)
         super.onWindowHidden()
+    }
+
+    /** The six editor-event callbacks decide the take's fate here and nowhere else. */
+    private fun editorEvent(event: EditorEvent): EditorDecision {
+        val decision = EditorEventPolicy.decide(event,
+            TakeFacts(active = takeActive, returning = returning, sameSession = session.matches(recordingToken)))
+        when (decision) {
+            EditorDecision.NOTHING -> Unit
+            EditorDecision.REVOKE_AUTHORITY -> revokeAuthority()
+            EditorDecision.INTERRUPT -> interruptTake()
+        }
+        return decision
+    }
+
+    /** No text may be written for this take until Stop grants authority again; capture is untouched. */
+    private fun revokeAuthority() {
+        authority = null
+        previewAllowed = false
+        showPreview("")
     }
 
     private fun rotationEvent(event: RotationEvent, flag: Boolean? = null) {
@@ -453,8 +468,9 @@ class DictationImeService : InputMethodService() {
             val liveTakeId = startupTake
             val generation = ++takeGeneration
             val currentRotationTake = rotationTake
-            val token = session.token()
-            recordingToken = token
+            recordingToken = session.token()
+            authority = null
+            fun granted() = authority.takeIf { generation == takeGeneration }
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
@@ -469,11 +485,11 @@ class DictationImeService : InputMethodService() {
                     showStatus(R.string.status_release_failed)
                     setMicrophone(true, R.string.retry_release)
                 }
-                override fun commit(text: String) = commitForSession(token, text) { attempted = true }
-                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(token, text, allowed) { attempted = true }
+                override fun commit(text: String) = commitForSession(granted(), text) { attempted = true }
+                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(granted(), text, allowed) { attempted = true }
                 override fun commitAttempted() = attempted
                 override fun returnToKeyboard(): Boolean {
-                    if (!session.matches(token)) return false
+                    if (!session.matches(granted())) return false
                     // Switching the IME can synchronously invalidate input. The result has
                     // already been submitted; do not turn that hand-back into cancellation.
                     returning = true
@@ -492,6 +508,7 @@ class DictationImeService : InputMethodService() {
                     if (!result.interrupted) saveBenchmarkTake(save && !RotationTrace.probeActive(), pcm, result)
                     if (generation != takeGeneration) return
                     recordingToken = null
+                    authority = null
                     startupTake = null
                     if (result.interrupted) {
                         take = null
@@ -627,6 +644,8 @@ class DictationImeService : InputMethodService() {
 
     private fun stopAndInsert() {
         if (!takeActive || finishing) return
+        // Stop grants authority to the input session the visible panel is attached to.
+        authority = recordingToken?.takeIf { session.matches(it) }
         finishing = true
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
@@ -676,12 +695,11 @@ class DictationImeService : InputMethodService() {
         }
     }
 
-    /** System interruption revokes insertion before requesting capture release. */
+    /** System interruption: revokes authority to insert, then stops capture. */
     private fun interruptTake() {
         val old = take ?: return
         MicrophoneOwner.requireExplicitStart()
-        previewAllowed = false
-        showPreview("")
+        revokeAuthority()
         if (interruptedView) return
         interruptedView = true
         val generation = takeGeneration
@@ -697,6 +715,7 @@ class DictationImeService : InputMethodService() {
                 releaseRetry = false
                 take = null
                 recordingToken = null
+                authority = null
                 startupTake = null
                 showStatus(if (!inputViewVisible) R.string.status_recording_stopped else
                     if (takeRetentionEligible == true) R.string.status_stopped_finishing_history
