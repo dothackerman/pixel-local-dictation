@@ -120,7 +120,7 @@ components:
 
 Approved direction and frames: [design/issue-36/direction.md](design/issue-36/direction.md), `direction.html` (#36; both proposals in it — Undo after Discard, "What the marks mean" — are approved).
 
-Source of truth: `app/src/main/res/values/{colors,themes,type}.xml`, `res/font/*`, `res/drawable/ic_*.xml`, the layouts named below, `RecordingPanel.kt` (`renderPanel`), `RecordingRingView.kt`, `PreparingArcView.kt`, `HistoryRows.kt` (`HistoryMarker`). Frontmatter keeps Android dp/sp.
+Source of truth: `app/src/main/res/values/{colors,themes,type}.xml`, `res/font/*`, `res/drawable/ic_*.xml`, the layouts named below, `RecordingPanel.kt` (`renderPanel`), `PanelDisclosure.kt`, `RecordingRingView.kt`, `PreparingArcView.kt`, `UndoTimerView.kt`, `HistoryRows.kt` (`HistoryMarker`). Frontmatter keeps Android dp/sp.
 
 ## Colors
 
@@ -160,11 +160,11 @@ Bundled in `res/font` (SIL OFL 1.1, `licenses/`): **Big Shoulders Display** 700/
 
 ## Shape and rules
 
-Corners are 0dp everywhere (`ShapeAppearance.Dictation.Square` on every corner family, buttons, FAB, fields, sheets, dialogs, Snackbars, switch) except the microphone disk and its ring. A 2dp onSurface rule closes every toolbar and the panel's top edge (outline); 1dp hairlines separate rows. Targets are at least 48dp; 56dp on the panel (status row, Undo), 64×56dp for the paused buttons. The switch is square: rind-green track and a white thumb at the end when on, a smaller outline-ink thumb at the start when off (position and colour differ).
+Corners are 0dp everywhere (`ShapeAppearance.Dictation.Square` on every corner family, buttons, FAB, fields, sheets, dialogs, Snackbars, switch) except the microphone disk and its ring. A 2dp onSurface rule closes every toolbar and the panel's top edge (outline); 1dp hairlines separate rows. Targets are at least 48dp; 56dp on the panel (status row, Undo); the paused buttons draw 64×56dp inside 76×68dp targets. The switch is square: rind-green track and a white thumb at the end when on, a smaller outline-ink thumb at the start when off (position and colour differ).
 
 ## Glyphs and markers
 
-Material Symbols Sharp (FILL 0, wght 400, opsz 24; Apache 2.0) as vector drawables, plus two custom glyphs on the same 24dp grid. Actions: `ic_arrow_back`, `ic_mic`, `ic_stop` and `ic_play_arrow` (transport, FILL 1), `ic_delete`, `ic_content_copy`, `ic_history`, `ic_lock`, `ic_info`, `ic_more_vert`, `ic_chevron_right`, `ic_close`, `ic_add`, `ic_search`. No two glyphs share a silhouette; pause, play and stop never appear in a marker slot.
+Material Symbols Sharp (FILL 0, wght 400, opsz 24; Apache 2.0) as vector drawables, plus two custom glyphs on the same 24dp grid. Actions: `ic_arrow_back`, `ic_mic`, `ic_stop` and `ic_play_arrow` (transport, FILL 1), `ic_delete`, `ic_content_copy`, `ic_history`, `ic_lock`, `ic_info`, `ic_more_vert`, `ic_chevron_right`, `ic_close`, `ic_add`, `ic_search`. No two glyphs share a silhouette; pause, play and stop never appear in a marker slot. Play means only Continue recording: Keep preparing text carries the preparing mark's `hourglass_top`.
 
 | Mark (`HistoryMarker`) | Glyph | Sentence (detail line, TalkBack, sheet) |
 |---|---|---|
@@ -178,21 +178,21 @@ Material Symbols Sharp (FILL 0, wght 400, opsz 24; Apache 2.0) as vector drawabl
 
 ## Components
 
-### Recording panel (`layout/ime.xml`, `layout-land/ime.xml`, `panel_status.xml`, `panel_stage.xml`, `panel_choice.xml`, `panel_undo.xml`)
+### Recording panel (`layout/ime.xml`, `layout-w600dp-land/ime.xml`, `layout-land/ime.xml`, `panel_status.xml`, `panel_stage.xml`, `panel_choice.xml`, `panel_undo.xml`)
 
-Status block (both orientations): Back (48dp, labelled by state), status (titleMedium, polite live region) with its trailing mark slot, the private-field line (lock glyph + labelMedium, plain, no box) and the preview (bodyMedium, always three lines, newest last, `PanelPreview`: the last 240 characters from a whole word; at 2× older lines clip at the top), all indented to the status (56dp). The Undo timer rule (2dp, onSurface on outlineVariant) sits at the top of the preview's place while the preview is hidden, so the panel keeps its height. The panel inflates without AppCompat's view factory, so its layouts use platform `android:tint` and `android:drawableStart`. Portrait: a 200dp stage under it. Landscape: the stage sits under the right thumb (232×148dp, square 148dp under 600dp); the panel is compact so the editor stays visible; extract mode is never used.
+Status block (both orientations): Back (48dp, labelled by state), status (titleMedium, polite live region) with its mark slot directly after the words, the private-field line (lock glyph at 16/14 of the label size, so it scales with the font, + labelMedium, plain, no box) and the preview (bodyMedium, three lines (two beside the private-field line in landscape, so a private field costs the editor no height), newest last, `PanelPreview`: the last 240 characters from a whole word; at 2× older lines clip at the top), all indented to the status (56dp). The Undo timer rule (`UndoTimerView`, 2dp, onSurface on outlineVariant, square ends) sits at the top of the preview's place while the preview is hidden, so the panel keeps its height. The panel inflates without AppCompat's view factory, so its layouts use platform `android:tint` and `android:drawableStart`. Portrait: a 200dp stage under it. Landscape: the stage sits under the right thumb (272×148dp on the phone, wide enough for the trio; square 148dp under 600dp); the panel is compact so the editor stays visible; extract mode is never used.
 
 | State | Status | Stage | Back label |
 |---|---|---|---|
-| Idle | Tap the microphone to record | red-orange disk, mic glyph, hairline ring around a pale field | Back to keyboard |
-| Recording | Recording… | same disk, Stop square; thick red-orange ribbon following loudness (static thick ring with animations off) | Pause and choose |
-| Paused · choose | Paused · choose | three icon buttons in one row at one height: Continue (filled, fixed selected ring, focused), Stop and insert (outlined), Discard take (dashed error, 40dp apart); tooltips and content descriptions carry the words | Continue recording |
-| Preparing text… | Preparing text… | no disk: a small red-orange arc on an outline-variant track; with animations off a static segmented ring | Hold text and choose |
-| Preparing text · choose | Preparing text · choose | Keep preparing text (filled) and Discard take | Keep preparing text |
-| Take discarded | Take discarded + 2dp timer rule | only Undo (filled, ≥56dp); no microphone | Back to keyboard |
-| Unable to insert text | Unable to insert text + `edit_off` mark | disk with mic glyph (a new take can start) | Back to keyboard |
+| Idle | Tap the microphone to record | red-orange 70dp disk, 28dp mic glyph, hairline ring around a pale field | Back to keyboard |
+| Recording | Recording | same disk, Stop square; thick red-orange ribbon following loudness (static thick ring with animations off) | Pause and choose |
+| Paused · choose | Paused · choose | three icon buttons in one row at one height, each drawn 64×56dp (26dp glyph) inside a 76×68dp target: Continue (filled, fixed 3dp selected ring 3dp outside the fill, focused), Stop and insert (outlined, 16dp after it), Discard take (dashed error, drawn 72dp from Stop; 52dp in the landscape stage); tooltips and content descriptions carry the words | Continue recording |
+| Preparing text… | Preparing text… | no disk: a 64dp red-orange arc (5dp stroke) on an outline-variant track; with animations off a static segmented ring | Hold text and choose |
+| Preparing text · choose | Preparing text · choose | Keep preparing text (filled, `hourglass_top` glyph, not play) and Discard take | Keep preparing text |
+| Take discarded | Take discarded + 2dp timer rule | only Undo (filled, 128×56dp, 18sp label; its spoken words carry the seconds left, read when TalkBack reaches it, no live region); no microphone | Back to keyboard |
+| Unable to insert text | Unable to insert text + `edit_off` mark right after the words; nothing more | disk with mic glyph (a new take can start) | Back to keyboard |
 
-The disk is one colour in every state; the glyph and status say what it does. Portrait: the choice and Undo take the stage's place (panel height unchanged). Landscape: they take the preview's place in the status column and the stage stays empty. Rotation rebuilds the panel from the take's state (choice, Undo window, Preparing) and never starts, stops, chooses or discards. The benchmark banner is errorContainer.
+The disk is one colour in every state; the glyph and status say what it does. Portrait and the phone's landscape (`layout-w600dp-land`): the choice and Undo take the stage's place, under the thumb that held the microphone; the preview stays readable while Stop or Discard is decided and the panel height is unchanged. A narrower landscape window (`layout-land`) falls back to the status column, with the stage left empty. Rotation rebuilds the panel from the take's state (choice, Undo window, Preparing) and never starts, stops, chooses or discards. The benchmark banner is errorContainer.
 
 **Undo after Discard take.** 8 s (`DISCARD_UNDO_MS`), the History-delete model. Nothing is inserted, the microphone is not recording and the take is not listed in History during the window. Undo restores the same take at its choice; the window ending, Back, a system interruption or hiding the panel makes the discard final and (window end, Back) returns to the keyboard. Lifecycle rules: [ADR-010](adrs/010-ime-lifecycle.md).
 
@@ -234,4 +234,4 @@ Flat card: no shadows beyond Material's own sheet/Snackbar scrim. Motion is func
 - **Don't** put more than one mark on a row, or put transport glyphs in a mark slot.
 - **Don't** add a global Save step to the per-entry editor or promise accuracy gains for new terms.
 
-Verification: host — `ThemeContrastTest`, `HistoryRowsTest`, `HistoryScreenTest`, `SettingsScreenTest`, `DictationProductionLifecycleTest` (panel states, Undo exit paths, choice layout at font 2 portrait/landscape); device — `RecordingPanelTest.captureEveryPanelStateAtBothFontScales` (`files/lab/issue36/b2-panel`), `SettingsHistoryScreenshotTest` (`files/lab/settings-history`), `HistoryLayoutTest`, `DictionarySettingsTest`. Private captures: `corpus/lab/issue36/b2/`.
+Verification: host — `ThemeContrastTest`, `HistoryRowsTest`, `HistoryScreenTest`, `SettingsScreenTest`, `DictationProductionLifecycleTest` (panel states, Undo exit paths and spoken seconds, choice layout at font 2 portrait/landscape, landscape choice and Undo in the stage, mark after the status, private-field line in landscape at font 2); device — `RecordingPanelTest.captureEveryPanelStateAtBothFontScales` (`files/lab/issue36/b2-panel`), `SettingsHistoryScreenshotTest` (`files/lab/settings-history`), `HistoryLayoutTest`, `DictionarySettingsTest`. Private captures: `corpus/lab/issue36/b2/`.

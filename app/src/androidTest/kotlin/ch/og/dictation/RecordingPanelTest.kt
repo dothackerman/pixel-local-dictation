@@ -158,8 +158,9 @@ class RecordingPanelTest {
         return panel to context
     }
 
+    /** The view's box in [root]'s coordinates; its own scroll (the preview shows its newest lines) does not move it. */
     private fun bounds(view: View, root: View): Rect {
-        val r = Rect(0, 0, view.width, view.height)
+        val r = Rect(view.scrollX, view.scrollY, view.scrollX + view.width, view.scrollY + view.height)
         (root as ViewGroup).offsetDescendantRectToMyCoords(view, r)
         return r
     }
@@ -257,6 +258,16 @@ class RecordingPanelTest {
         return image
     }
 
+    /** Detaches the feedback and draws until the ribbon has decayed to the resting hairline, as on the panel. */
+    private fun restedRing(ring: RecordingRingView) {
+        ring.follow(null)
+        if (ring.width == 0 || ring.height == 0) return
+        val image = Bitmap.createBitmap(ring.width, ring.height, Bitmap.Config.ARGB_8888)
+        try {
+            repeat(25) { ring.draw(Canvas(image)); Thread.sleep(40) }
+        } finally { image.recycle() }
+    }
+
     @Test fun loudRingStaysInsideTheLandscapeStage() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
@@ -335,7 +346,8 @@ class RecordingPanelTest {
      * and 2×, through the service's own renderer. Offscreen; synthetic text only; no window,
      * microphone or setting is touched. Every target ≥ 48dp (≥ 52dp for the paused buttons, ≥ 56dp
      * for Undo), inside the panel and on one row; status never clipped; the preview keeps three
-     * lines; portrait keeps one panel height in every state.
+     * lines (two beside the private-field line in landscape); portrait keeps one panel height in
+     * every state. The recording frame draws the ribbon from synthetic loudness.
      */
     @Test fun captureEveryPanelStateAtBothFontScales() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -352,17 +364,21 @@ class RecordingPanelTest {
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 val mic = panel.findViewById<ImageButton>(R.id.microphone)
                 val text = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
+                val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
                 fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false) {
                     status.setText(label)
                     PanelPreview.bind(preview, words)
                     PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
                     renderPanel(panel, frame)
                     layOut(panel, width)
+                    // Recording draws the real ribbon: the service attaches the take's feedback;
+                    // here mid-loudness speech, as it looks while talking. Every other frame rests.
+                    if (frame.stopGlyph) settledRing(ring, 0.05f).recycle() else restedRing(ring)
                     heights[name] = panel.height
                     val whole = Rect(0, 0, panel.width, panel.height)
                     assertTrue("status clipped ($name $suffix)", status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
-                    if (preview.visibility == View.VISIBLE) assertTrue("preview lost its three lines ($name $suffix)",
-                        preview.height >= preview.layout.getLineBottom(minOf(2, preview.layout.lineCount - 1), false))
+                    if (preview.visibility == View.VISIBLE) assertTrue("preview lost its lines ($name $suffix)",
+                        preview.height >= preview.layout.getLineBottom(minOf(preview.maxLines - 1, preview.layout.lineCount - 1), false))
                     val back = panel.findViewById<View>(R.id.back)
                     for (target in listOf(back, mic).filter { it.visibility == View.VISIBLE }) {
                         assertTrue("target below 48dp ($name $suffix)", target.width >= 48 * density - 1 && target.height >= 48 * density - 1)
@@ -388,6 +404,7 @@ class RecordingPanelTest {
                 state("idle", R.string.status_idle, PanelFrame(), words = "")
                 state("private-field", R.string.status_idle, PanelFrame(), words = "", privateField = true)
                 state("recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording))
+                state("private-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), privateField = true)
                 state("paused-choice", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording))
                 oneRow("paused-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))
                 val apart = bounds(panel.findViewById(R.id.choice_discard), panel).left - bounds(panel.findViewById(R.id.choice_stop), panel).right
@@ -398,7 +415,7 @@ class RecordingPanelTest {
                 state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
                 // As the service draws it 3 s into the 8 s window.
-                panel.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.undo_timer).progress = 625
+                panel.findViewById<UndoTimerView>(R.id.undo_timer).fraction = 5f / 8f
                 state("discarded-undo", R.string.status_discarded, PanelFrame(undo = true))
                 assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.undo_timer).visibility)
                 val undo = panel.findViewById<View>(R.id.undo_discard)
@@ -408,7 +425,7 @@ class RecordingPanelTest {
                 assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
                 assertEquals(View.VISIBLE, mic.visibility)
                 if (!landscape) assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
-                    heights.filterKeys { it != "private-field" }.values.toSet().size)
+                    heights.filterKeys { !it.startsWith("private-") }.values.toSet().size)
             }
         }
     }

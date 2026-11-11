@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Phone held sideways (Pixel 10 Pro XL: about 990dp): the wide stage under the right thumb. -->
-    <dimen name="panel_stage_width_land">232dp</dimen>
+    <!-- Phone held sideways (Pixel 10 Pro XL: about 990dp): the wide stage under the right thumb.
+         Wide enough for the paused trio with Discard set apart (layout-w600dp-land/ime.xml). -->
+    <dimen name="panel_stage_width_land">272dp</dimen>
 </resources>

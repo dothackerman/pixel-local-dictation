@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Take discarded · Undo (#36): only Undo (filled) and Back while the window runs; no microphone,
-     so nothing ends the window by accident. -->
+     so nothing ends the window by accident. 128×56dp, label 18sp as in the mock. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/undo_group"
     android:layout_width="wrap_content"
@@ -10,10 +10,11 @@
         android:id="@+id/undo_discard"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:minWidth="112dp"
+        android:minWidth="128dp"
         android:minHeight="56dp"
         android:insetTop="0dp"
         android:insetBottom="0dp"
+        android:textSize="18sp"
         android:contentDescription="@string/undo_discard_description"
         android:text="@string/undo_discard" />
 </FrameLayout>

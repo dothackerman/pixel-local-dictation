@@ -18,11 +18,11 @@ import com.google.android.material.color.MaterialColors
 class PreparingArcView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     private val density = resources.displayMetrics.density
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = 4 * density; strokeCap = Paint.Cap.BUTT
+        style = Paint.Style.STROKE; strokeWidth = 5 * density; strokeCap = Paint.Cap.BUTT
         color = MaterialColors.getColor(this@PreparingArcView, MaterialR.attr.colorOutlineVariant)
     }
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = 4 * density; strokeCap = Paint.Cap.BUTT
+        style = Paint.Style.STROKE; strokeWidth = 5 * density; strokeCap = Paint.Cap.BUTT
         color = MaterialColors.getColor(this@PreparingArcView, androidx.appcompat.R.attr.colorPrimary)
     }
     private val box = RectF()

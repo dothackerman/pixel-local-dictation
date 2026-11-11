@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact landscape panel: the same views, ids and rules as layout/ime.xml, side by side so the
+<!-- Narrow landscape window (under 600dp; the phone uses layout-w600dp-land/ime.xml): the same
+     views, ids and rules as layout/ime.xml, side by side so the
      editor stays visible above. Status column on the start side, the stage under the right thumb;
      under 600dp the stage is square (panel_stage_width_land). The paused choice and Undo take the
      preview's place in the column; the stage is then empty (no microphone to tap by mistake). -->

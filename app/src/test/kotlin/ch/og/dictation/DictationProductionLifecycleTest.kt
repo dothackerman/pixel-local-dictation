@@ -1441,6 +1441,13 @@ class DictationProductionLifecycleTest {
         assertFalse("only Undo and Back while Undo is offered", choiceShown(view))
         assertEquals("no microphone, so nothing ends the window by accident", View.INVISIBLE, button(view).visibility)
         assertEquals(View.VISIBLE, view.findViewById<View>(R.id.undo_timer).visibility)
+        // TalkBack can hear what is left of the window on Undo itself, without a ticking live region.
+        fun spoken() = undoAction(view).createAccessibilityNodeInfo().contentDescription.toString()
+        assertEquals("Undo discard take. 8 seconds left", spoken())
+        advance(3_000)
+        assertEquals("Undo discard take. 5 seconds left", spoken())
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, undoAction(view).accessibilityLiveRegion)
+        assertEquals("the timer rule draws what is left", 5f / 8f, view.findViewById<UndoTimerView>(R.id.undo_timer).fraction, 0.02f)
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
         assertFalse("the microphone is not recording", input.running)
         assertEquals("the take is kept until the window ends", 0, input.releases.get())
@@ -1660,7 +1667,18 @@ class DictationProductionLifecycleTest {
         awaitInterruptedInHistory()
         await { status(view) == service.getString(R.string.status_unable_insert) }
         assertEquals("", preview(view))
-        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.status_marker).visibility)
+        val marker = view.findViewById<View>(R.id.status_marker)
+        assertEquals(View.VISIBLE, marker.visibility)
+        // The mark reads with the words, directly after them; at the far edge it reads as a button.
+        layOut(view, 411)
+        val statusView = view.findViewById<TextView>(R.id.status)
+        val statusBounds = android.graphics.Rect(0, 0, statusView.width, statusView.height)
+        val markerBounds = android.graphics.Rect(0, 0, marker.width, marker.height)
+        (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(statusView, statusBounds)
+        view.offsetDescendantRectToMyCoords(marker, markerBounds)
+        val textEnd = statusBounds.left + statusView.totalPaddingLeft + statusView.layout.getLineWidth(0)
+        assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
+        assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
         assertEquals(View.VISIBLE, button(view).visibility)
         assertTrue("the microphone stays for a new take", button(view).isEnabled)
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
@@ -1764,15 +1782,16 @@ class DictationProductionLifecycleTest {
             assertTrue(safe(view).isFocused)
         }
         check(listOf(safe(view), stopAction(view), discardAction(view)))
-        if (view.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
-            assertEquals("the choice keeps the panel height", recordingHeight, view.height)
-        }
+        assertEquals("Continue recording plays", R.drawable.ic_play_arrow, shadowOf(safe(view).drawable).createdFromResId)
+        assertEquals("the choice keeps the panel height", recordingHeight, view.height)
         if (!finishingToo) return
         stopAction(view).performClick()
         await { input.releases.get() == 1 }
         back(view).performClick()
         layOut(view, widthDp)
         check(listOf(safe(view), discardAction(view)))
+        assertEquals("Keep preparing text shows preparing, not play", R.drawable.ic_marker_preparing,
+            shadowOf(safe(view).drawable).createdFromResId)
         safe(view).performClick()
         await { decode.drain(); settleHistory(); commits == 1 }
     }
@@ -1789,6 +1808,77 @@ class DictationProductionLifecycleTest {
 
     @Test @Config(qualifiers = "w960dp-h440dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun choiceFitsAtLargeTextInLandscapeDark() = choiceFitsAtLargeText(960)
+
+    /**
+     * Private field, landscape, font 2× (#36 critique): the lock line costs the editor almost no
+     * height (the preview yields a line to it), and the lock glyph grows with the text.
+     */
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun privateFieldLineStaysCompactInLandscapeAtLargeText() {
+        RuntimeEnvironment.setFontScale(2f)
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor(privateField = true))
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+        val density = view.resources.displayMetrics.density
+        val notice = view.findViewById<TextView>(R.id.retention_notice)
+        layOut(view, 960)
+        assertEquals(View.VISIBLE, notice.visibility)
+        val withLine = view.height
+        val lock = notice.compoundDrawablesRelative[0]
+        assertTrue("lock ${lock.bounds.height() / density}dp does not scale with the text", lock.bounds.height() >= 24 * density)
+        assertEquals("lock keeps the label's proportion", notice.textSize * 16 / 14, lock.bounds.height().toFloat(), 1.5f)
+        PanelDisclosure.bind(notice, null)
+        layOut(view, 960)
+        assertTrue("private line adds ${(withLine - view.height) / density}dp", withLine - view.height <= 4 * density)
+        PanelDisclosure.bind(notice, R.string.retention_field_off)
+        button(view).performClick()
+        await { decode.drain(); settleHistory(); commits == 1 }
+    }
+
+    /**
+     * Landscape on the phone (#36 critique P1): the choice and Undo sit in the stage under the
+     * right thumb, where the microphone was; the preview stays readable while Stop or Discard is
+     * decided, and the panel keeps its height in every state.
+     */
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun landscapeChoiceAndUndoTakeTheStageAndKeepThePreview() {
+        val input = Input()
+        devices.add(input)
+        val (_, view) = service(editor())
+        feed(input, 1000, 1)
+        decode.drain(); pump()
+        layOut(view, 960)
+        val height = view.height
+        val words = preview(view)
+        assertEquals("old speech", words)
+        fun inStage(id: Int) {
+            val stage = android.graphics.Rect(0, 0, view.findViewById<View>(R.id.stage).width, view.findViewById<View>(R.id.stage).height)
+            (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(view.findViewById(R.id.stage), stage)
+            val target = view.findViewById<View>(id)
+            val bounds = android.graphics.Rect(0, 0, target.width, target.height)
+            view.offsetDescendantRectToMyCoords(target, bounds)
+            assertTrue("${view.resources.getResourceEntryName(id)} $bounds not in the stage $stage", stage.contains(bounds))
+        }
+        back(view).performClick()
+        layOut(view, 960)
+        assertTrue(choiceShown(view))
+        inStage(R.id.choice)
+        assertEquals("the preview stays during the choice", View.VISIBLE, view.findViewById<View>(R.id.preview).visibility)
+        assertEquals(words, preview(view))
+        assertEquals("the choice keeps the panel height", height, view.height)
+        discardAction(view).performClick()
+        settleHistory()
+        layOut(view, 960)
+        assertTrue(undoShown(view))
+        inStage(R.id.undo_group)
+        assertEquals("Undo keeps the panel height", height, view.height)
+        undoAction(view).performClick()
+        settleHistory()
+        stopAction(view).performClick()
+        await { decode.drain(); settleHistory(); commits == 1 }
+    }
 
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
         val gate = CountDownLatch(1)

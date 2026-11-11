@@ -257,7 +257,10 @@ class DictationImeService : InputMethodService() {
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
-        v.findViewById<View>(R.id.undo_discard).setOnClickListener { undoDiscard() }
+        v.findViewById<View>(R.id.undo_discard).also { undo ->
+            undo.setOnClickListener { undoDiscard() }
+            bindUndoSecondsLeft(undo) { ((discardLeftMs() + 999) / 1000).toInt() }
+        }
         v.findViewById<View>(R.id.choice_safe).setOnClickListener { chooseSafe() }
         v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
         v.findViewById<View>(R.id.choice_discard).setOnClickListener { chooseDiscard() }
@@ -1122,10 +1125,10 @@ class DictationImeService : InputMethodService() {
     private fun showDiscardTimer() {
         val view = panel ?: return
         if (discardPending == null) return
-        val left = (discardDeadline - SystemClock.uptimeMillis()).coerceIn(0L, DISCARD_UNDO_MS)
-        view.findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(R.id.undo_timer)?.progress =
-            (left * 1000 / DISCARD_UNDO_MS).toInt()
+        view.findViewById<UndoTimerView>(R.id.undo_timer)?.fraction = discardLeftMs().toFloat() / DISCARD_UNDO_MS
     }
+
+    private fun discardLeftMs() = (discardDeadline - SystemClock.uptimeMillis()).coerceIn(0L, DISCARD_UNDO_MS)
 
     /** Renders the take's state (choice, Undo, Preparing text, marker, glyph, Back label) on the current panel. */
     private fun renderChoice() {

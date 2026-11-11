@@ -10,6 +10,20 @@ const val DISCARD_UNDO_MS = 8_000L
 /** How often the Undo timer rule is redrawn. */
 const val DISCARD_TICK_MS = 100L
 
+/**
+ * Undo's spoken words carry what is left of the window ([secondsLeft]), computed when TalkBack
+ * asks for the node; no live region and no event per tick, so nothing chatters while it runs.
+ */
+fun bindUndoSecondsLeft(undo: View, secondsLeft: () -> Int) {
+    undo.accessibilityDelegate = object : View.AccessibilityDelegate() {
+        override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+            super.onInitializeAccessibilityNodeInfo(host, info)
+            val left = secondsLeft()
+            info.contentDescription = host.resources.getQuantityString(R.plurals.undo_discard_left, left, left)
+        }
+    }
+}
+
 /** The inline Cancel choice a take can have open. RECORDING: the take is paused. FINISHING: delivery held. */
 enum class PanelChoice { RECORDING, FINISHING }
 
@@ -34,9 +48,10 @@ data class PanelFrame(
 )
 
 /**
- * Renders [frame] on [panel] (built from ime.xml, either orientation). Portrait: the choice and
- * Undo take the stage's place, so the panel keeps its height. Landscape: they take the preview's
- * place in the status column and the stage stays empty. The safe action takes focus when a choice
+ * Renders [frame] on [panel] (built from ime.xml, either orientation). Portrait and the phone's
+ * landscape: the choice and Undo take the stage's place, the preview stays and the panel keeps its
+ * height. A narrow landscape window (under 600dp, `panel_choice_over_stage` false): they take the
+ * preview's place in the status column and the stage stays empty. The safe action takes focus when a choice
  * opens, so a hardware key or TalkBack lands on it; one tap still chooses it.
  */
 fun renderPanel(panel: View, frame: PanelFrame) {
@@ -48,6 +63,8 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     val safe = panel.findViewById<ImageButton>(R.id.choice_safe)
     val safeLabel = context.getString(if (open == PanelChoice.FINISHING) R.string.keep_finishing else R.string.continue_recording)
     safe?.contentDescription = safeLabel
+    // Keep preparing text is not "play": it shows the preparing glyph (hourglass), as History does.
+    safe?.setImageResource(if (open == PanelChoice.FINISHING) R.drawable.ic_marker_preparing else R.drawable.ic_play_arrow)
     safe?.let { TooltipCompat.setTooltipText(it, safeLabel) }
     panel.findViewById<View>(R.id.choice_stop)?.let {
         it.visibility = if (open == PanelChoice.RECORDING) View.VISIBLE else View.GONE
