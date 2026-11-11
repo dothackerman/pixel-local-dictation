@@ -67,7 +67,18 @@
     <string name="history_clear_title">Clear History?</string>
     <string name="history_clear_action">Clear</string>
     <string name="history_clear_retry">Retry clear</string>
-    <string name="history_clear_confirmation">Saved transcripts: %1$d. In progress: %2$d. Clipboard copies and benchmark recordings are not affected.</string>
+    <!-- One plain sentence: what Clear deletes (saved transcripts, takes still in progress), then what stays. -->
+    <string name="history_clear_confirmation">Deletes %1$s. Clipboard copies and benchmark recordings stay.</string>
+    <string name="history_clear_both">%1$s and %2$s</string>
+    <string name="history_clear_copies">the History copies left on this device</string>
+    <plurals name="history_clear_saved">
+        <item quantity="one">%d saved transcript</item>
+        <item quantity="other">%d saved transcripts</item>
+    </plurals>
+    <plurals name="history_clear_active">
+        <item quantity="one">%d take in progress</item>
+        <item quantity="other">%d takes in progress</item>
+    </plurals>
     <string name="history_clear_busy">Clearing History…</string>
     <string name="history_clear_error">Couldn’t finish clearing History. Some copies may remain; retry to remove the accepted set.</string>
     <string name="history_clear_pending">Included in the pending clear. Retry to finish.</string>
@@ -98,7 +109,7 @@
     <string name="continue_recording">Continue recording</string>
     <string name="discard_take">Discard take</string>
     <!-- History marks (#36 Crate B2): one glyph and one sentence per mark, shared by the detail
-         line, TalkBack and "What the marks mean". Titles are history_recording, history_finishing,
+         line, TalkBack and "Marks explained". Titles are history_recording, history_finishing,
          history_status_incomplete, history_delivery_rejected, history_status_uncertain. -->
     <string name="marker_recording_sentence">The text so far is saved.</string>
     <string name="marker_preparing_sentence">It appears when ready; open it again in a moment.</string>
@@ -112,9 +123,9 @@
     <string name="marker_uncertain_line">Insertion uncertain. Check the app before you paste.</string>
     <string name="marker_none_title">No mark</string>
     <string name="marker_none_sentence">Finished and inserted.</string>
-    <string name="history_marks">What the marks mean</string>
+    <string name="history_marks">Marks explained</string>
     <string name="history_marks_close">Close</string>
-    <string name="history_marks_open">%1$s Opens what the marks mean.</string>
+    <string name="history_marks_open">%1$s Opens Marks explained.</string>
     <string name="history_today">Today</string>
     <string name="history_yesterday">Yesterday</string>
     <plurals name="history_words"><item quantity="one">%d word</item><item quantity="other">%d words</item></plurals>

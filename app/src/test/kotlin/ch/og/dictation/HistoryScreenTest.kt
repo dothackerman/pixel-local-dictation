@@ -236,6 +236,17 @@ class HistoryScreenTest {
             Integer.toHexString(pixels(decor).getPixel(at[0] + content.width / 2, at[1] + 4)))
     }
 
+    /** #36 critique round 3: the confirmation is one plain sentence, not a ledger of counts. */
+    @Test fun clearDialogSaysWhatItDeletesInOnePlainSentence() {
+        HistoryProcess.owner.activeIds().forEach(HistoryProcess.owner::remove) // takes left by other cases in this process
+        val page = open()
+        toolbar(page).menu.performIdentifierAction(R.id.history_clear_item, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as androidx.appcompat.app.AlertDialog
+        val message = dialog.findViewById<TextView>(android.R.id.message)!!.text.toString()
+        assertEquals("Deletes 2 saved transcripts. Clipboard copies and benchmark recordings stay.", message)
+    }
+
     @Test fun listHidesTheDetailActionsAndShowsClear() {
         val page = open()
         val toolbar = toolbar(page)

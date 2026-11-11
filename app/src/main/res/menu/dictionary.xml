@@ -1,0 +1,6 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Landscape only (#36 critique round 3): Add term moves into the top bar, where it covers no row
+         or trash button; portrait keeps the extended button. -->
+    <item android:id="@+id/dictionary_add_item" android:title="@string/dictionary_add" android:icon="@drawable/ic_add"
+        android:visible="false" app:showAsAction="always" app:tooltipText="@string/dictionary_add" />
+</menu>

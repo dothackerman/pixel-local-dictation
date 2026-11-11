@@ -362,7 +362,7 @@ open class HistoryActivity : AppCompatActivity() {
         if (visibleSavedCount == 0 && !hasStoredHistoryCopies && HistoryProcess.owner.activeIds().isEmpty()) { updateClearMenu(); return }
         MaterialAlertDialogBuilder(this, R.style.ThemeOverlay_Dictation_Dialog_Destructive)
             .setTitle(R.string.history_clear_title)
-            .setMessage(getString(R.string.history_clear_confirmation, visibleSavedCount, activeCount))
+            .setMessage(clearConfirmation(visibleSavedCount, activeCount))
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.history_clear_action) { _, _ ->
                 settleDelete()
@@ -373,6 +373,19 @@ open class HistoryActivity : AppCompatActivity() {
                 val operation = HistoryIo.acceptClear(storeRoot, acceptedIds) ?: return@setPositiveButton
                 executeClear(operation)
             }.show()
+    }
+
+    /** "Deletes 4 saved transcripts and 1 take in progress. Clipboard copies and benchmark recordings stay." */
+    private fun clearConfirmation(saved: Int, active: Int): String {
+        val savedPart = resources.getQuantityString(R.plurals.history_clear_saved, saved, saved)
+        val activePart = resources.getQuantityString(R.plurals.history_clear_active, active, active)
+        val deletes = when {
+            saved > 0 && active > 0 -> getString(R.string.history_clear_both, savedPart, activePart)
+            saved > 0 -> savedPart
+            active > 0 -> activePart
+            else -> getString(R.string.history_clear_copies)
+        }
+        return getString(R.string.history_clear_confirmation, deletes)
     }
 
     private fun retryClear() {
@@ -421,7 +434,7 @@ open class HistoryActivity : AppCompatActivity() {
         it.setSpan(ForegroundColorSpan(MaterialColors.getColor(toolbar, androidx.appcompat.R.attr.colorError)), 0, it.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    /** "What the marks mean": every mark with its one sentence; [highlight] is the mark the detail line named. */
+    /** "Marks explained": every mark with its one sentence; [highlight] is the mark the detail line named. */
     private fun showMarks(highlight: HistoryMarker?) {
         val dialog = BottomSheetDialog(this)
         val sheet = layoutInflater.inflate(R.layout.history_marks, null)

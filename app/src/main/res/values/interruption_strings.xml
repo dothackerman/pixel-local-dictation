@@ -2,8 +2,8 @@
     <string name="status_stopping_recording">Stopping recording</string>
     <string name="keep_finishing">Keep preparing text</string>
     <!-- Inline Cancel choice on the recording panel (#61). One noun: take; verbs: Stop, Discard. -->
-    <string name="status_paused">Paused · choose</string>
-    <string name="status_finishing_choice">Preparing text · choose</string>
+    <string name="status_paused">Paused</string>
+    <string name="status_finishing_choice">Still preparing text</string>
     <string name="choice_title">Cancel take</string>
     <string name="back_to_keyboard">Back to keyboard</string>
     <!-- The take ended without insertion (system interruption); its marker sits in the status row. -->

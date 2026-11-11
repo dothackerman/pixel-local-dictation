@@ -9,7 +9,7 @@ import java.util.TimeZone
 
 /**
  * The one marker a History row carries (#36 Crate B2), with its glyph and its one sentence: the
- * same words in the detail line, in TalkBack and in "What the marks mean". A finished, inserted
+ * same words in the detail line, in TalkBack and in "Marks explained". A finished, inserted
  * take carries none.
  */
 enum class HistoryMarker(val glyph: Int, val title: Int, val sentence: Int, val line: Int) {

@@ -319,7 +319,7 @@
     "motion": [
       {
         "name": "recording-ribbon",
-        "value": "continuous, follows measured loudness",
+        "value": "continuous; radius and thickness follow measured loudness, the ring stays concentric with even thickness",
         "purpose": "Recording ring; a static thick ring when animations are off."
       },
       {

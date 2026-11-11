@@ -138,7 +138,7 @@ class HistoryClearTest {
         try {
             awaitText(context.getString(R.string.history_empty))
             clickClear(scenario)
-            val message = awaitText("Saved transcripts: 0. In progress: 1.")
+            val message = awaitText("Deletes 1 take in progress. Clipboard copies and benchmark recordings stay.")
             assertTrue(message.text.toString().contains("clipboard", ignoreCase = true))
             assertTrue(message.text.toString().contains("benchmark"))
             confirm(positive = false)
@@ -146,7 +146,7 @@ class HistoryClearTest {
             assertEquals(HistoryCompletion.RECORDING, HistoryProcess.owner.state(id))
 
             clickClear(scenario)
-            awaitText("Saved transcripts: 0. In progress: 1.")
+            awaitText("Deletes 1 take in progress. Clipboard copies and benchmark recordings stay.")
             confirm(positive = true)
             awaitClearStatus(HistoryClearStatus.SUCCEEDED)
             assertTrue(root.resolve("$id.deleted").exists())
@@ -172,7 +172,7 @@ class HistoryClearTest {
         try {
             awaitText("Synthetic saved row")
             clickClear(scenario)
-            awaitText("Saved transcripts: 1. In progress: 1.")
+            awaitText("Deletes 1 saved transcript and 1 take in progress.")
 
             HistoryIo.executor.execute { blockerStarted.countDown(); check(releaseBlocker.await(10, TimeUnit.SECONDS)) }
             assertTrue(blockerStarted.await(10, TimeUnit.SECONDS))
@@ -209,7 +209,7 @@ class HistoryClearTest {
         try {
             awaitText("Synthetic row blocked for retry")
             clickClear(scenario)
-            awaitText("Saved transcripts: 1. In progress: 0.")
+            awaitText("Deletes 1 saved transcript. Clipboard copies and benchmark recordings stay.")
             obstruction.apply { mkdir(); resolve("partial").writeText("synthetic") }
             confirm(positive = true)
             awaitText(context.getString(R.string.history_clear_error))

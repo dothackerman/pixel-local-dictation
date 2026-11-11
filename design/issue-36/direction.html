@@ -244,13 +244,13 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
 
 <section class="decide" aria-label="Decisions needed from the owner"><h3>Decisions needed from you</h3><ol>
 <li><b>Undo for about 8 s after "Discard take"</b> (frame "Take discarded · Undo"). If you decline, Discard stays final as it is today. It is protected only by the two-step Back → paused choice, and Error prevention drops by about one point.</li>
-<li><b>The "What the marks mean" sheet</b> (History menu, and a tap on the detail line). If you decline, the markers are explained only by the detail sentence and TalkBack, and the detail line is no longer tappable.</li></ol></section>
+<li><b>The "Marks explained" sheet</b> (History menu, and a tap on the detail line). If you decline, the markers are explained only by the detail sentence and TalkBack, and the detail line is no longer tappable.</li></ol></section>
 <h2>Recording panel</h2>
-<p class="sub">The microphone button looks the same in every state: a red-orange disk with a white glyph. The state shows in the glyph (microphone or Stop), the ring (hairline at rest, moving ribbon while recording) and the status line. The status row's trailing slot carries a History marker only when nothing else on the panel shows the state (today: Unable to insert text). The preview always shows 3 lines, newest last; at 2× older lines clip at the top.</p>
+<p class="sub">The microphone button looks the same in every state: a red-orange disk with a white glyph. The state shows in the glyph (microphone or Stop), the ring (hairline at rest, a concentric ribbon of even thickness while recording, growing evenly with loudness) and the status line. The status row's trailing slot carries a History marker only when nothing else on the panel shows the state (today: Unable to insert text). The preview always shows 3 lines, newest last; at 2× older lines clip at the top.</p>
 <div class="frames" id="panelFrames"></div>
 
 <h2>History and Settings</h2>
-<p class="sub">A take with an exception gets one glyph, in one slot under its time. Rows without an exception carry nothing. The words are in the detail line, in TalkBack, and in "What the marks mean" in the History menu.</p>
+<p class="sub">A take with an exception gets one glyph, in one slot under its time. Rows without an exception carry nothing. The words are in the detail line, in TalkBack, and in "Marks explained" in the History menu.</p>
 <div class="frames" id="screenFrames"></div>
 
 <section class="block">
@@ -286,7 +286,7 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
         <li><b>One slot.</b> Each History row has one 24dp slot under the time. On the panel the same marker goes in the status row's trailing slot, but only when the ring or arc does not already show the state. In the detail it starts the one plain exception line.</li>
         <li><b>At most one marker per row</b>, by priority: in progress, then cut short, then unable to insert, then uncertain. "Not attempted" and "not inserted" share a marker.</li>
         <li><b>Colour.</b> Markers are drawn in onSurface. Only the recording marker is red-orange, and its shape differs too.</li>
-        <li><b>Words.</b> Each marker has exactly one sentence, used for the detail line, TalkBack and the "What the marks mean" sheet.</li>
+        <li><b>Words.</b> Each marker has exactly one sentence, used for the detail line, TalkBack and the "Marks explained" sheet.</li>
         <li><b>A row reads as one node</b>, e.g. "14:05, Reminder to return…, unable to insert text". Tap opens the detail; touch-and-hold copies. TalkBack offers "Copy transcript" and "Delete". The trash icon is the only nested target.</li>
       </ul>
     </div>
@@ -296,7 +296,7 @@ body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:5
 
 <script>
 const P={surface:'#F3E9D4',surfaceContainer:'#E9DCC1',surfaceContainerHigh:'#DDCEAF',onSurface:'#1C1A12',onSurfaceVariant:'#4E4838',primary:'#A52E07',onPrimary:'#FFFFFF',primaryContainer:'#FFD8C6',onPrimaryContainer:'#3A0E00',inversePrimary:'#FFB59A',secondary:'#2E4A21',onSecondary:'#FFFFFF',secondaryContainer:'#CFE0BC',onSecondaryContainer:'#13240A',outline:'#6D6550',outlineVariant:'#C7B999',error:'#8A1145',onError:'#FFFFFF',errorContainer:'#F8D7E3',onErrorContainer:'#3D0019'};
-const USE={surface:'Screen ground (Settings, Dictionary, History), menu, sheet',surfaceContainer:'Recording panel ground',surfaceContainerHigh:'Switch track off, search field, pressed rows',onSurface:'Status, titles, transcripts, markers, Stop outline, selected ring, Snackbar ground',onSurfaceVariant:'Preview, helper line, explanations, time meta, counts, trash icon',primary:'Mic disk (every state), recording ring and marker, preparing arc, Continue fill, panel Undo',onPrimary:'Mic, Stop and Continue glyphs',primaryContainer:'Text selection',onPrimaryContainer:'Text on selection',inversePrimary:'Snackbar Undo',secondary:'Switch on (rind green)',onSecondary:'Switch thumb on',secondaryContainer:'History warning row',onSecondaryContainer:'Text on warning row',outline:'Panel top rule, idle hairline ring, switch edge',outlineVariant:'Row hairlines, arc track, Undo timer track',error:'Discard (dashed), Delete all, Delete benchmark data',onError:'Confirm button in Delete-all dialog',errorContainer:'Benchmark banner, failure rows',onErrorContainer:'Text on errorContainer'};
+const USE={surface:'Screen ground (Settings, Dictionary, History), menu, sheet',surfaceContainer:'Recording panel ground',surfaceContainerHigh:'Switch track off, search field, pressed rows',onSurface:'Status, titles, transcripts, markers, Stop outline, selected ring, Snackbar ground',onSurfaceVariant:'Preview, helper line, explanations, time meta, counts, trash icon',primary:'Mic disk (every state), recording ring and marker, preparing arc, Continue fill, panel Undo',onPrimary:'Mic, Stop and Continue glyphs',primaryContainer:'Text selection',onPrimaryContainer:'Text on selection',inversePrimary:'Snackbar Undo',secondary:'Switch on (rind green)',onSecondary:'Switch thumb on',secondaryContainer:'History warning row',onSecondaryContainer:'Text on warning row',outline:'Panel top rule, idle hairline ring, switch edge',outlineVariant:'Row hairlines, arc track, Undo timer track',error:'Discard (dashed), Clear History, Delete benchmark data',onError:'Confirm button in Clear History dialog',errorContainer:'Benchmark banner, failure rows',onErrorContainer:'Text on errorContainer'};
 const PAIRS=[
  ['onSurface','surface',4.5,'Transcript, row preview on screens'],
  ['onSurface','surfaceContainer',4.5,'Panel status, Stop outline, selected ring'],
@@ -310,7 +310,7 @@ const PAIRS=[
  ['outline','surfaceContainer',3,'Idle hairline ring, panel top rule'],
  ['onSurface','surface',3,'Markers in History rows and sheet'],
  ['error','surfaceContainer',3,'Discard glyph and dashed edge'],
- ['error','surface',4.5,'Delete all, Delete benchmark data (text)'],
+ ['error','surface',4.5,'Clear History, Delete benchmark data (text)'],
  ['secondary','surface',3,'Switch on track'],
  ['outline','surface',3,'Switch off edge'],
  ['error','primary',0,'Error vs brand red-orange (information only)']
@@ -376,15 +376,15 @@ const REVIEW=[
  ['Cut short, may miss words','cut_short','Custom SVG (24dp grid, 2dp, square caps)','content_cut','Material Symbols Sharp','Text lines stopped by a solid vertical bar: the text ends before the line does. The bar survives at 24dp, where the earlier dots vanished. Scissors mean clipboard Cut, and Copy is nearby.'],
  ['Unable to insert text (also "not attempted")','edit_off','Material Symbols Sharp','cursor + slash','Custom (earlier draft)','A struck pencil means "not written". It is unlike the boxed question mark in both silhouette and weight. The earlier cursor-based pair were near-twins.'],
  ['Insertion uncertain','heavy_question','Custom SVG: outlined question mark at 3dp stroke (the one weight exception)','question_mark','Material Symbols Sharp','Outlined like the rest, at a heavier 3dp stroke, so it reads as a sign and not a placeholder. It is unboxed, so it never twins the boxed-i info icon in the menu. A boxed version would twin the info icon; the thin Material question mark looks like a missing glyph.'],
- ['Paused (status)','(none; status text "Paused · choose")','','pause','Material Symbols Sharp','Pause is a transport control, and transport glyphs stay on buttons. The status text and the three buttons already say "paused".'],
+ ['Paused (status)','(none; status text "Paused")','','pause','Material Symbols Sharp','Pause is a transport control, and transport glyphs stay on buttons. The status text and the three buttons already say "paused".'],
  ['Resume (Continue recording)','play_arrow','Material Symbols Sharp','resume','Material Symbols Sharp','The play triangle is the plainest "go on". The bar-plus-triangle of resume is less known and blurs at 24dp.'],
  ['Stop and insert','stop','Material Symbols Sharp','check','Material Symbols Sharp','The same glyph does the same job on the recording disk. A check would add a second sign for one action.'],
  ['Discard take','delete','Material Symbols Sharp','close','Material Symbols Sharp','It throws the take away, like History\'s delete. A close X reads as "close the panel", which is Back\'s job.'],
  ['Copy','content_copy','Material Symbols Sharp','(custom sheets)','Custom','The Android copy glyph users already know. A custom version would only add doubt.'],
- ['Delete','delete','Material Symbols Sharp','(none)','',"One trash glyph for every way to remove a transcript. Delete all lives in the overflow menu."],
+ ['Delete','delete','Material Symbols Sharp','(none)','',"One trash glyph for every way to remove a transcript. Clear History lives in the overflow menu."],
  ['History','history','Material Symbols Sharp','schedule','Material Symbols Sharp','A clock with a back arrow means "earlier". A plain clock means time, or an alarm.'],
  ['Lock (private field)','lock','Material Symbols Sharp','shield','Material Symbols Sharp','"Private" in one shape. A shield suggests security software.'],
- ['What the marks mean','info','Material Symbols Sharp','help','Material Symbols Sharp','"Information" without implying a problem.'],
+ ['Marks explained','info','Material Symbols Sharp','help','Material Symbols Sharp','"Information" without implying a problem.'],
  ['Back','arrow_back','Material Symbols Sharp','chevron_left','Material Symbols Sharp','The standard Android Up/Back glyph. The chevron is the iOS idiom.']
 ];
 
@@ -405,7 +405,7 @@ function panel(st){
   case 'idle': return `<div class="panel">${top('Tap the microphone to record')}<div class="preview none"></div><div class="stage">${ring('idle')}${mic('mic','Start recording')}</div></div>`;
   case 'private': return `<div class="panel">${top('Tap the microphone to record')}<div class="helper">${G.lock}<span>History off for this field</span></div><div class="stage">${ring('idle')}${mic('mic','Start recording')}</div></div>`;
   case 'rec': return `<div class="panel">${top('Recording')}${pv}<div class="stage">${ring('rec')}${mic('stop','Stop and insert')}</div></div>`;
-  case 'paused': return `<div class="panel">${top('Paused · choose')}${pv}<div class="stage"><div class="trio">
+  case 'paused': return `<div class="panel">${top('Paused')}${pv}<div class="stage"><div class="trio">
     <button class="ibtn primary" aria-label="Continue recording">${G.play_arrow}</button>
     <button class="ibtn out" aria-label="Stop and insert">${G.stop}</button>
     <span class="sp"></span>
@@ -435,8 +435,8 @@ const listBody=(skip,gone)=>`<p class="expl">Audio is not stored.</p>
 <div class="day">Mon 9 Nov</div>${hrow(...ROWS.f)}`;
 const listTb=`<div class="tb"><button class="ib" aria-label="Back">${G.arrow_back}</button><h4>History</h4><button class="ib" aria-label="More options">${G.more_vert}</button></div>`;
 const histList=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}</div>${nav}</div>`;
-const histMenu=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}<div class="menu" role="menu"><div role="menuitem">${G.info}What the marks mean</div><div role="menuitem" class="danger">${G.delete}Delete all…</div></div></div>${nav}</div>`;
-const sheet=(hl)=>`<div class="scrim"></div><div class="sheet" role="dialog" aria-label="What the marks mean"><div class="sh"><h5>What the marks mean</h5><button class="ib" aria-label="Close">${G.close}</button></div>
+const histMenu=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}<div class="menu" role="menu"><div role="menuitem">${G.info}Marks explained</div><div role="menuitem" class="danger">${G.delete}Clear History…</div></div></div>${nav}</div>`;
+const sheet=(hl)=>`<div class="scrim"></div><div class="sheet" role="dialog" aria-label="Marks explained"><div class="sh"><h5>Marks explained</h5><button class="ib" aria-label="Close">${G.close}</button></div>
 ${Object.keys(MARK).map(k=>`<div class="li${k===hl?' hl':''}">${mk(k)}<div><b>${MARK[k][1]}</b><span>${MARK[k][2].split('. ').slice(1).join('. ')}</span></div></div>`).join('')}
 <div class="li"><span></span><div><b>No mark</b><span>Finished and inserted.</span></div></div></div>`;
 const histSheet=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}</div>${sheet()}${nav}</div>`;
@@ -444,7 +444,7 @@ const detailSheet=()=>`<div class="phone screen-app">${sb(1)}${detailTb}<div cla
 const rowUndo=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody('c',false)}<div class="snack" role="status"><span>Transcript deleted</span><b>Undo</b></div></div>${nav}</div>`;
 const detailTb=`<div class="tb"><button class="ib" aria-label="Back">${G.arrow_back}</button><h4>Today</h4><button class="ib" aria-label="Copy transcript">${G.content_copy}</button><span style="width:calc(16*var(--u))" aria-hidden="true"></span><button class="ib" aria-label="Delete transcript">${G.delete}</button></div>`;
 const detailBody=`<div class="meta">14:05 · 23 words</div>
-<button class="exc tap" aria-label="${MARK.notIn[2]} Opens What the marks mean">${mk('notIn')}<span>${MARK.notIn[2]}</span>${G.chevron_right}</button>
+<button class="exc tap" aria-label="${MARK.notIn[2]} Opens Marks explained">${mk('notIn')}<span>${MARK.notIn[2]}</span>${G.chevron_right}</button>
 <div class="transcript"><p>Reminder to return the ladder to the neighbours before Friday evening. Die Leiter steht noch hinter der Garage, neben den Gartenstühlen.</p><p>Und die Heckenschere gleich mitnehmen.</p></div>`;
 const histDetail=()=>`<div class="phone screen-app">${sb(1)}${detailTb}<div class="body">${detailBody}</div>${nav}</div>`;
 const detailUndo=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody('b',false)}<div class="snack" role="status"><span>Transcript deleted</span><b>Undo</b></div></div>${nav}</div>`;
@@ -473,7 +473,7 @@ const PANEL=[
  [withKb,'<b>Before: the dark keyboard</b> · a generic dark keyboard stands in for yours. Tapping its microphone key brings up the next frame.'],
  [()=>docked('idle'),'<b>After: idle panel</b> · the light/dark jump you are choosing. A red-orange disk with a mic glyph and a hairline ring. A 2dp rule closes the panel against the host app.'],
  [()=>docked('rec'),'<b>Recording</b> · same disk, now with a Stop square. A thick ring follows loudness. Back pauses and opens the choice. There is no marker in the slot, because the ring already shows the state.'],
- [()=>docked('paused'),'<b>Paused · choose</b> · three icon buttons at one height. Continue is filled and pre-selected, Stop is outlined, Discard is dashed and set apart. Back here means Continue recording.','<div class="callout"><b>Long-press tooltips (TooltipCompat), also the TalkBack labels</b><ol><li>Continue recording</li><li>Stop and insert</li><li>Discard take</li></ol></div>'],
+ [()=>docked('paused'),'<b>Paused</b> · three icon buttons at one height. Continue is filled and pre-selected, Stop is outlined, Discard is dashed and set apart. Back here means Continue recording.','<div class="callout"><b>Long-press tooltips (TooltipCompat), also the TalkBack labels</b><ol><li>Continue recording</li><li>Stop and insert</li><li>Discard take</li></ol></div>'],
  [()=>docked('discarded'),P_+'<b>Take discarded · Undo</b> · while Undo is offered, the panel shows only Undo and Back. No mic, so nothing ends the window by accident. A timer rule shows the 8 s left, the same model as History delete. Then the panel returns to the keyboard. Today a confirmed Discard is final.'],
  [()=>docked('fin'),'<b>Preparing text…</b> · a small red-orange arc and no disk. With animations off it becomes a static segmented ring, so it never reads as a stuck spinner. There is no marker in the slot, because the arc already shows the state.'],
  [()=>docked('saved'),'<b>Unable to insert text</b> · the status line and its marker, nothing more. Back is the way out. The mic stays for a new take.'],
@@ -481,8 +481,8 @@ const PANEL=[
 ];
 const SCREENS=[
  [histList,'<b>History list</b> · "Audio is not stored." Day headers, then rows that lead with the time, one marker slot under the time, and a trailing trash icon.'],
- [histMenu,P_+'<b>Overflow menu</b> · "What the marks mean" comes first. Delete all is second, in error colour, and still asks for confirmation.'],
- [histSheet,P_+'<b>What the marks mean</b> · a real bottom sheet that ships with the app: each mark, its name and its one sentence.'],
+ [histMenu,P_+'<b>Overflow menu</b> · "Marks explained" comes first. Clear History… is second, in error colour, and still asks for confirmation in one plain sentence ("Deletes 4 saved transcripts. Clipboard copies and benchmark recordings stay.").'],
+ [histSheet,P_+'<b>Marks explained</b> · a real bottom sheet that ships with the app: each mark, its name and its one sentence.'],
  [rowUndo,'<b>Deleted from a row</b> · the row is gone and the Snackbar offers Undo for 8 s (current behaviour).'],
  [histDetail,'<b>History detail</b> · Copy and Delete sit at the end of the bar, as Android places actions: both 48dp, with a 16dp gap. Undo after delete is the protection. The exception line is a button: tap it and the marks sheet opens at that mark.'],
  [detailSheet,P_+'<b>Tapped the exception line</b> · the marks sheet opens with that mark highlighted (here: Unable to insert text).'],

@@ -86,7 +86,7 @@ class SettingsHistoryScreenshotTest {
                         settle()
                         instrumentation.runOnMainSync { capture(activity.window.decorView, File(output, "history-list-$tag.png")) }
 
-                        // The overflow menu: what the marks mean, then Clear History… in the error colour.
+                        // The overflow menu: Marks explained, then Clear History… in the error colour.
                         instrumentation.runOnMainSync {
                             requireNotNull(HistoryUi.find(activity.window.decorView) { it is MaterialToolbar } as MaterialToolbar).showOverflowMenu()
                         }
@@ -113,7 +113,7 @@ class SettingsHistoryScreenshotTest {
                         instrumentation.runOnMainSync { assertEquals(View.GONE, warned.findViewById<View>(R.id.history_status).visibility) }
 
                         val page = currentHistory(warned)
-                        // What the marks mean, from the overflow menu.
+                        // Marks explained, from the overflow menu.
                         instrumentation.runOnMainSync {
                             val toolbar = requireNotNull(HistoryUi.find(page.window.decorView) { it is MaterialToolbar } as MaterialToolbar)
                             toolbar.menu.performIdentifierAction(R.id.history_marks_item, 0)

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Paused · choose (#36): three icon-only buttons at one height, inside the panel (no window, so
+<!-- Paused (#36): three icon-only buttons at one height, inside the panel (no window, so
      no focus change and nothing to re-attach after a rotation). Each target is 76×68dp; what is
      drawn is the mock's 64×56dp button, 6dp inside it (choice_*.xml), with a 26dp glyph. Continue
      first, filled, with a fixed 3dp selected ring 3dp outside its fill; Stop and insert outlined,

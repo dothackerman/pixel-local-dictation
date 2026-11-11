@@ -156,8 +156,8 @@ the Stop-wait choice keeps its delivery hold), the microphone does not record (t
 recorder stays stopped and owned) and the take is not listed in History: its saved file is
 deleted at once and its latest text stays in memory only (`TakeOutput.suspendHistory`).
 
-**Undo** restores the same take at the choice it came from (Paused · choose, or Preparing text ·
-choose): History saves its latest text again under a new id (the old id keeps its deletion
+**Undo** restores the same take at the choice it came from (Paused, or Still preparing
+text): History saves its latest text again under a new id (the old id keeps its deletion
 marker, so a late write can never revive it) and later checkpoints follow
 (`resumeHistory`). **The discard becomes final** — exactly the pre-#36 discard: insertion
 revoked, saved text removed, capture released, later decoder callbacks suppressed — when the

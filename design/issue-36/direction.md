@@ -30,11 +30,12 @@ WCAG contrast: every pair passes. The page lists all of them.
 ## Panel
 
 - **Mic disk:** the same red-orange disk in every state; mic becomes Stop. Back is labelled by state: "Pause and choose" while recording, "Continue recording" while paused.
-- **Paused · choose:** three 64×56dp icon buttons:
+- **Paused:** three 64×56dp icon buttons (the status says only "Paused"; while preparing it says "Still preparing text"):
   - Continue: filled and preselected.
   - Stop and insert: outlined.
   - Discard take: dashed, set 40dp apart.
   - Tooltips and TalkBack labels carry the words.
+- **Recording ring:** a concentric ribbon of even thickness; loudness grows its radius and thickness uniformly, never its shape.
 - **Preparing text…:** an animated arc. With animations off it becomes a static segmented ring.
 - **Unable to insert text:** the status plus its marker. Back exits and the mic stays.
 - **Preview:** always 3 lines, newest last.
@@ -72,8 +73,8 @@ Rules:
 
 - The header is only "Audio is not stored."
 - The overflow menu has two items:
-  - **"What the marks mean"** (PROPOSED, needs approval), which opens a bottom sheet listing every mark with its sentence. If declined, the markers are explained only by the detail sentence and TalkBack, and the detail line is no longer tappable.
-  - "Delete all…", which keeps its confirmation.
+  - **"Marks explained"** (approved; first proposed as "What the marks mean", which truncated at 2×), which opens a bottom sheet listing every mark with its sentence.
+  - "Clear History…" (built name; proposed as "Delete all…"), which keeps its confirmation: one plain sentence, e.g. "Deletes 4 saved transcripts. Clipboard copies and benchmark recordings stay." (in-progress takes are named when there are any).
 - In the detail, Copy and Delete sit at the end of the top bar, both 48dp, with a 16dp gap. Undo after delete is the protection.
 - The detail's marker-plus-sentence line is a 48dp button with a chevron. It opens the marks sheet with that mark highlighted.
 - Deleting from a row or from the detail gives an 8 s Undo Snackbar. The row disappears without leaving a gap.
@@ -96,6 +97,7 @@ Rules:
 - **Markers:** `ic_marker_*.xml` vector drawables. Each row puts one `ImageView` in its slot, with `importantForAccessibility=no`; the words go into the row's content description.
 - **Sheet:** `BottomSheetDialog` with a ShapeAppearance at 0dp, on the plain surface (`elevationOverlayEnabled=false`; Material's elevation tint otherwise turns it primary-warm). The highlighted mark gets a 4dp ink start bar.
 - **Destructive dialogs** (Clear History, Delete benchmark data): `ThemeOverlay.Dictation.Dialog.Destructive`, the confirm in error colour, Cancel in onSurface.
+- **Dictionary in landscape:** the explanation, search and count scroll away (`AppBarLayout`, `scroll|enterAlways`); Add term is a top-bar action, not a FAB over the rows. The add/edit sheet is one header row (field with a placeholder, Add, Close) with the error directly under the field. The search field has no Material box mode, so its text stays on the magnifier's line at font 1.3× and 2×.
 - **Preview measure:** at most 28em (about 70 characters) in the wide landscape column (`PreviewTextView`).
 
 ## Files

@@ -64,7 +64,13 @@ class DictionarySettingsTest {
                 activity.findViewById<TextInputEditText>(R.id.dictionary_search).setText("Zür")
                 assertEquals(1, list.adapter!!.itemCount)
                 activity.findViewById<TextInputEditText>(R.id.dictionary_search).setText("")
-                activity.findViewById<View>(R.id.dictionary_add).performClick()
+                // Landscape: Add term is in the top bar and nothing floats over the rows (#36 critique round 3).
+                val toolbar = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.dictionary_toolbar)
+                if (prefix == "phone-land-font2") {
+                    assertFalse(activity.findViewById<View>(R.id.dictionary_add).isShown)
+                    assertTrue(toolbar.menu.findItem(R.id.dictionary_add_item).isVisible)
+                    toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
+                } else activity.findViewById<View>(R.id.dictionary_add).performClick()
             }
             settle()
             lateinit var dialogRoot: View
@@ -78,7 +84,14 @@ class DictionarySettingsTest {
             settle()
             instrumentation.runOnMainSync {
                 assertNotNull(dialogRoot.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.dictionary_entry_layout).error)
-                capture(dialogRoot, File(out, "$prefix-duplicate.png"), activity.window.decorView)
+                // The error itself shows above the keyboard, not only the red mark (#36 critique round 3).
+                val keyboard = dialogRoot.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime()).bottom
+                val error = dialogRoot.findViewById<View>(com.google.android.material.R.id.textinput_error)
+                val at = IntArray(2).also { error.getLocationInWindow(it) }
+                val seen = android.graphics.Rect()
+                assertTrue("error must be wholly visible", error.getGlobalVisibleRect(seen) && seen.height() == error.height)
+                assertTrue("error must stay above the keyboard", at[1] + error.height <= dialogRoot.height - keyboard)
+                capture(dialogRoot, File(out, "$prefix-duplicate.png"), activity.window.decorView, keyboard)
                 dialogRoot.findViewById<TextInputEditText>(R.id.dictionary_entry).setText("Rösti")
             }
             settle()
