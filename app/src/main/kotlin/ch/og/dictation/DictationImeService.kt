@@ -876,20 +876,12 @@ class DictationImeService : InputMethodService() {
 
     /** Secondary disclosure has its own view so recording/finishing status stays truthful. */
     private fun showPanelDisclosure(message: Int?) {
-        val warning = historyNotices(this).pending().firstOrNull()?.message()
-        retentionNotice?.let {
-            PanelDisclosure.bind(it, message ?: warning)
-            if (warning != null && message != null && warning != message) {
-                it.text = getString(message) + "\n" + getString(warning)
-            }
-        }
+        retentionNotice?.let { PanelDisclosure.bind(it, message) }
     }
 
+    /** History warnings are shown on the History page only, never on the recording panel. */
     private fun recordHistoryNotice(notice: HistoryNotice) {
         historyNotices(this).record(notice)
-        mainHandler.post {
-            showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else null)
-        }
     }
 
     private fun showStatus(label: Int) {

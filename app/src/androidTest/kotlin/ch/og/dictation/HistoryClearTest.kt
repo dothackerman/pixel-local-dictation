@@ -115,7 +115,8 @@ class HistoryClearTest {
         instrumentation.waitForIdleSync()
         instrumentation.runOnMainSync {
             val dialog = WindowInspector.getGlobalWindowViews().last()
-            assertNotNull(findText(dialog, "Clear History?"))
+            assertNotNull(findText(dialog, context.getString(R.string.history_clear_title)))
+            assertEquals("Clear", (dialog.findViewById<View>(android.R.id.button1) as TextView).text.toString())
             dialog.findViewById<View>(if (positive) android.R.id.button1 else android.R.id.button2).performClick()
         }
     }
@@ -135,7 +136,7 @@ class HistoryClearTest {
         try {
             awaitText(context.getString(R.string.history_empty))
             clickClear(scenario)
-            val message = awaitText("0 saved, 1 active")
+            val message = awaitText("Saved transcripts: 0. In progress: 1.")
             assertTrue(message.text.toString().contains("clipboard", ignoreCase = true))
             assertTrue(message.text.toString().contains("benchmark"))
             confirm(positive = false)
@@ -143,7 +144,7 @@ class HistoryClearTest {
             assertEquals(HistoryCompletion.RECORDING, HistoryProcess.owner.state(id))
 
             clickClear(scenario)
-            awaitText("0 saved, 1 active")
+            awaitText("Saved transcripts: 0. In progress: 1.")
             confirm(positive = true)
             awaitClearStatus(HistoryClearStatus.SUCCEEDED)
             assertTrue(root.resolve("$id.deleted").exists())
@@ -169,7 +170,7 @@ class HistoryClearTest {
         try {
             awaitText("Synthetic saved row")
             clickClear(scenario)
-            awaitText("1 saved, 1 active")
+            awaitText("Saved transcripts: 1. In progress: 1.")
 
             HistoryIo.executor.execute { blockerStarted.countDown(); check(releaseBlocker.await(10, TimeUnit.SECONDS)) }
             assertTrue(blockerStarted.await(10, TimeUnit.SECONDS))
@@ -206,7 +207,7 @@ class HistoryClearTest {
         try {
             awaitText("Synthetic row blocked for retry")
             clickClear(scenario)
-            awaitText("1 saved, 0 active")
+            awaitText("Saved transcripts: 1. In progress: 0.")
             obstruction.apply { mkdir(); resolve("partial").writeText("synthetic") }
             confirm(positive = true)
             awaitText(context.getString(R.string.history_clear_error))
@@ -249,16 +250,21 @@ class HistoryClearTest {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         try {
             val row = awaitText(transcript)
-            instrumentation.runOnMainSync { row.performClick() }
+            instrumentation.runOnMainSync { HistoryUi.click(row) }
             val staleCopyButton = awaitText(context.getString(R.string.history_copy), exact = true)
+            // The detail page has its own title and no Clear History.
+            scenario.onActivity {
+                assertFalse(it.findViewById<MaterialToolbar>(R.id.history_toolbar).menu.findItem(R.id.history_clear_item).isVisible)
+            }
             clipboard.setPrimaryClip(ClipData.newPlainText("sentinel", "keep existing clipboard"))
-            clickClear(scenario)
-            awaitText("1 saved, 0 active")
-            confirm(positive = true)
-            awaitAbsent(transcript)
-            awaitText(context.getString(R.string.history_empty))
+            // A Clear accepted while the detail is open (the list page's menu is the only entry point).
+            val accepted = HistoryIo.acceptClear(root, setOf(id)) ?: error("clear not accepted")
+            HistoryIo.executor.submit { HistoryIo.store(root).clear(accepted.ids); HistoryIo.finishClear(root, accepted.token, true) }
+                .get(10, TimeUnit.SECONDS)
 
             instrumentation.runOnMainSync { staleCopyButton.performClick() }
+            awaitAbsent(transcript)
+            awaitText(context.getString(R.string.history_empty))
             awaitText(context.getString(R.string.history_missing))
             assertEquals("keep existing clipboard", clipboard.primaryClip?.getItemAt(0)?.text.toString())
             scenario.onActivity { assertNull(findText(it.window.decorView, context.getString(R.string.history_copy), exact = true)) }
@@ -279,19 +285,26 @@ class HistoryClearTest {
             scenario.onActivity { activity ->
                 assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
                 val density = activity.resources.displayMetrics.density
-                val scroll = findScrollView(activity.window.decorView) ?: error("History scroll view missing")
+                val body = HistoryUi.target(row)
                 val width = (320 * density).toInt()
-                val height = (320 * density).toInt()
-                scroll.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
-                scroll.layout(0, 0, width, height)
-                assertTrue(row.minimumHeight >= (48 * density).toInt())
-                assertTrue(scroll.getChildAt(0).measuredHeight > height)
+                body.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                assertTrue(body.measuredHeight >= (64 * density).toInt())
+                assertTrue(body.measuredWidth <= width)
+                val delete = (body.parent as View).findViewById<View>(R.id.history_row_delete)
+                assertTrue(delete.layoutParams.width >= (48 * density).toInt() && delete.layoutParams.height >= (48 * density).toInt())
             }
-            scenario.onActivity { val rowView = findText(it.window.decorView, "Synthetic large-text row")!!; rowView.performClick() }
+            scenario.onActivity { HistoryUi.click(findText(it.window.decorView, "Synthetic large-text row")!!) }
             val copy = awaitText(context.getString(R.string.history_copy), exact = true)
             scenario.onActivity {
-                assertTrue(copy.minimumHeight >= (48 * it.resources.displayMetrics.density).toInt())
+                val density = it.resources.displayMetrics.density
+                assertTrue(copy.minimumHeight >= (48 * density).toInt())
+                val scroll = findScrollView(it.window.decorView) ?: error("History detail scroll view missing")
+                val size = (320 * density).toInt()
+                scroll.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY))
+                scroll.layout(0, 0, size, size)
+                assertTrue(copy.measuredWidth <= size)
             }
+            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             clickClear(scenario)
             val cancel = awaitText(context.getString(R.string.cancel), exact = true)
             assertTrue(cancel.height >= (48 * context.resources.displayMetrics.density).toInt())

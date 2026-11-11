@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.LinearLayout
 
 /** Reached from Android's keyboard list (method.xml settingsActivity). */
 open class SettingsActivity : AppCompatActivity() {
@@ -49,23 +48,21 @@ open class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); showStored(); showHistoryNotices() }
+    override fun onResume() { super.onResume(); showStored(); showHistoryCount() }
 
-    private fun showHistoryNotices() {
-        val container = findViewById<LinearLayout>(R.id.history_notices)
-        container.removeAllViews()
-        val notices = historyNotices(this)
-        notices.pending().forEach { notice ->
-            container.addView(TextView(this).apply {
-                setText(notice.message())
-                accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE
-            })
-            container.addView(Button(this).apply {
-                setText(R.string.history_notice_dismiss)
-                contentDescription = getString(R.string.history_notice_dismiss) + ": " + getString(notice.message())
-                minHeight = (48 * resources.displayMetrics.density).toInt()
-                setOnClickListener { notices.dismiss(notice); showHistoryNotices() }
-            })
+    protected open fun historyRoot() = historyRoot(this)
+
+    /** The History row shows only how many transcripts are saved; warnings live on the History page. */
+    private fun showHistoryCount() {
+        val row = findViewById<Button>(R.id.open_history)
+        val root = historyRoot()
+        HistoryIo.executor.execute {
+            val count = runCatching { HistoryIo.store(root).savedCount() }.getOrDefault(0)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                row.text = if (count > 0) getString(R.string.history_row_with_count, getString(R.string.history_title), count)
+                    else getString(R.string.history_title)
+            }
         }
     }
 

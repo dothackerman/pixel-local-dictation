@@ -40,6 +40,8 @@ class HistoryOwner {
 
 private fun immutableIds(ids: Collection<String>): Set<String> = Collections.unmodifiableSet(LinkedHashSet(ids))
 
+fun historyRoot(context: android.content.Context) = File(context.noBackupFilesDir, "history")
+
 object HistoryProcess { val owner = HistoryOwner() }
 data class HistoryEntry(val id: String, val timestamp: Long, val text: String, val delivery: HistoryDelivery = HistoryDelivery.REJECTED, val completion: HistoryCompletion = HistoryCompletion.COMPLETE, val revision: Long = 0)
 
@@ -142,6 +144,12 @@ class HistoryStore(private val root: File, private val owner: HistoryOwner = His
             val id = candidate.name.removeSuffix(suffix)
             runCatching { file(id) }.getOrNull()?.let { id }
         }
+    }
+
+    /** Visible transcripts, counted without reading them. */
+    fun savedCount(): Int {
+        if (!root.exists()) return 0
+        return (root.listFiles() ?: error("Cannot read history")).count { it.name.endsWith(".history") }
     }
 
     fun get(id: String): HistoryEntry? = file(id).let { if (it.exists()) read(it) else null }

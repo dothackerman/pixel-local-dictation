@@ -41,6 +41,16 @@ class HistoryLayoutTest {
                         error("Missing $text")
                     }
                     val row = await(entry.text)
+                    fun checkRow(text: android.widget.TextView) {
+                        val density = activity.resources.displayMetrics.density
+                        val body = HistoryUi.target(text)
+                        val size = (320 * density).toInt()
+                        body.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                        assertTrue(body.measuredWidth <= size)
+                        assertTrue(body.measuredHeight >= (64 * density).toInt())
+                        // Preview stays within two lines in the primary text role.
+                        assertTrue(text.maxLines <= 2)
+                    }
                     fun checkControl(control: View) {
                         val scroll = generateSequence(control.parent) { it.parent }.filterIsInstance<ScrollView>().first()
                         val density = activity.resources.displayMetrics.density
@@ -58,8 +68,8 @@ class HistoryLayoutTest {
                     instrumentation.runOnMainSync {
                         assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
                         assertEquals(mode, activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                        checkControl(row)
-                        row.performClick()
+                        checkRow(row)
+                        HistoryUi.click(row)
                     }
                     val copy = await(context.getString(R.string.history_copy))
                     val delete = await(context.getString(R.string.history_delete))

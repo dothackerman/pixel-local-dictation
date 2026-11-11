@@ -1,0 +1,50 @@
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/history_root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="?attr/colorSurface">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+        <com.google.android.material.appbar.MaterialToolbar android:id="@+id/history_toolbar"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
+            app:title="@string/history_title" app:menu="@menu/history"
+            app:navigationIcon="@drawable/ic_dictionary_back" app:navigationIconTint="?attr/colorOnSurface" app:navigationContentDescription="@string/history_back" />
+        <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <LinearLayout android:id="@+id/history_list_pane" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+                <TextView android:id="@+id/history_explanation" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp" android:layout_marginBottom="16dp"
+                    android:text="@string/history_explanation" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                <com.google.android.material.card.MaterialCardView android:id="@+id/history_notice"
+                    style="@style/Widget.Material3.CardView.Filled" android:visibility="gone"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp" android:layout_marginBottom="12dp"
+                    app:cardBackgroundColor="?attr/colorSecondaryContainer">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="16dp" android:paddingEnd="4dp">
+                        <TextView android:id="@+id/history_notice_text" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                            android:paddingVertical="12dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSecondaryContainer"
+                            android:accessibilityLiveRegion="polite" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/history_notice_dismiss"
+                            style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:minHeight="48dp" android:minWidth="48dp" android:text="@string/history_notice_dismiss" android:textColor="?attr/colorOnSecondaryContainer" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+                <TextView android:id="@+id/history_state" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingHorizontal="24dp" android:paddingVertical="12dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface" android:accessibilityLiveRegion="polite" android:visibility="gone" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/history_state_action"
+                    style="@style/Widget.Material3.Button.TextButton" android:visibility="gone"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginStart="12dp" />
+                <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+                    <androidx.recyclerview.widget.RecyclerView android:id="@+id/history_list" android:layout_width="match_parent" android:layout_height="match_parent"
+                        android:paddingHorizontal="16dp" android:paddingBottom="24dp" android:clipToPadding="false" />
+                    <LinearLayout android:id="@+id/history_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center"
+                        android:orientation="vertical" android:gravity="center_horizontal" android:paddingHorizontal="40dp" android:paddingVertical="48dp" android:visibility="gone">
+                        <TextView android:id="@+id/history_empty_title" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center"
+                            android:text="@string/history_empty" android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center"
+                            android:text="@string/history_empty_hint" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </FrameLayout>
+            </LinearLayout>
+            <FrameLayout android:id="@+id/history_detail_container" android:layout_width="match_parent" android:layout_height="match_parent" />
+        </FrameLayout>
+    </LinearLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
