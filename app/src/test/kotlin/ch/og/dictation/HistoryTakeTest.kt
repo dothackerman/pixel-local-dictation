@@ -30,6 +30,62 @@ class HistoryTakeTest {
         } finally { dir.deleteRecursively() }
     }
 
+    private fun editor() = object : TakeOutput {
+        override fun preview(text: String) {}
+        override fun commit(text: String) = true
+        override fun returnToKeyboard() = true
+        override fun finished(result: TakeResult, pcm: ByteArray) {}
+    }
+
+    /** #36 Undo after Discard take: the take leaves History at once and comes back with its latest text. */
+    @Test fun suspendedHistoryHidesTheTakeAndResumeSavesItsLatestTextAgain() {
+        val dir = Files.createTempDirectory("history-suspend").toFile()
+        try {
+            val output = HistoryTakeOutput(editor(), { HistoryStore(dir) }, Executor { it.run() }, { fail("save failed") }, delivery = Executor { it.run() })
+            output.startHistory(true)
+            output.preview("private first words", 16_000)
+            val first = HistoryStore(dir).list().single()
+            output.suspendHistory()
+            assertTrue("a pending discard is not listed", HistoryStore(dir).list().isEmpty())
+            output.preview("private first words and later ones", 32_000)
+            assertTrue("late output cannot list it", HistoryStore(dir).list().isEmpty())
+            output.resumeHistory()
+            val back = HistoryStore(dir).list().single()
+            assertEquals("private first words and later ones", back.text)
+            assertEquals(HistoryCompletion.RECORDING, back.completion)
+            assertEquals(first.timestamp, back.timestamp)
+            assertNotEquals("the old id keeps its deletion marker", first.id, back.id)
+            output.preview("private first words and later ones too", 48_000)
+            assertEquals("private first words and later ones too", HistoryStore(dir).list().single().text)
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun aFinalDiscardAfterSuspendLeavesNothingAndAStagedResultComesBackComplete() {
+        val dir = Files.createTempDirectory("history-suspend-final").toFile()
+        try {
+            val output = HistoryTakeOutput(editor(), { HistoryStore(dir) }, Executor { it.run() }, { fail("save failed") }, delivery = Executor { it.run() })
+            output.startHistory(true)
+            output.preview("private words", 16_000)
+            output.suspendHistory()
+            var ready = false
+            output.stage("private final words", true, 32_000) { ready = true }
+            assertTrue("a held result still reaches its delivery hold", ready)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+            output.resumeHistory()
+            val back = HistoryStore(dir).list().single()
+            assertEquals("private final words", back.text)
+            assertEquals(HistoryCompletion.COMPLETE, back.completion)
+            output.receipt(HistoryDelivery.ACCEPTED)
+            assertEquals(HistoryDelivery.ACCEPTED, HistoryStore(dir).list().single().delivery)
+            output.suspendHistory()
+            var deleted: Boolean? = null
+            output.discardStaged { deleted = it }
+            assertEquals(true, deleted)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+            assertTrue(HistoryStore(dir).storedIds().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun aLaterSaveFailureLeavesTheLastDurablePrefixAndReportsNoContent() {
         val dir = Files.createTempDirectory("history-late-failure").toFile()
         try {
