@@ -77,7 +77,7 @@ Native Material3 task UI: familiar controls, readable terms, quiet feedback. Sys
 
 Scope: the Settings/dictionary surface only. The recording panel (#30) is not covered here.
 
-Source of truth: native XML and the resolved runtime theme (`app/src/main/res/values{,-night}/settings_*.xml`, `layout/{settings,dictionary,dictionary_editor,dictionary_row}.xml`, `DictionaryActivity.kt`, `SettingsActivity.kt`). Frontmatter keeps Android dp/sp, not CSS pixels. Verification: `DictionarySettingsTest` (dark, and app-local light at fontScale 1.3); search hint contrast 4.94:1 light / 6.56:1 dark (`c23d2f1`). Private captures: `corpus/lab/dictionary-settings-final-review/` and, for contrast, `corpus/lab/dictionary-settings-contrast-review/`. A successful UI Add is code-reviewed, not automated.
+Source of truth: native XML and the resolved runtime theme (`app/src/main/res/values{,-night}/settings_*.xml`, `layout/{settings,dictionary,dictionary_editor,dictionary_row}.xml`, `DictionaryActivity.kt`, `SettingsActivity.kt`). Frontmatter keeps Android dp/sp, not CSS pixels. Verification: `DictionarySettingsTest` (dark, and app-local light at fontScale 1.3), `SettingsScreenTest` (host: equal rows, aligned inset, quiet delete), `HistoryLayoutTest` (Settings at 320dp, fontScale 2); search hint contrast 4.94:1 light / 6.56:1 dark (`c23d2f1`). Private captures: `corpus/lab/dictionary-settings-final-review/` and, for contrast, `corpus/lab/dictionary-settings-contrast-review/`. A successful UI Add is code-reviewed, not automated.
 
 ## Colors
 
@@ -98,7 +98,7 @@ Near-white or deep green-black surfaces carry content. On-surface is for terms; 
 **Body Font:** Android `sans-serif`.
 **Label Font:** Android `sans-serif-medium`.
 
-The four frontmatter roles resolve the Material3 appearances used by this surface: title-large for the sheet heading, body-large for terms, body-medium for explanation/status, label-medium for counts and inline feedback. Toolbar, inputs and buttons retain their widget appearances. No display role or custom font is introduced. The existing benchmark switch explicitly uses 18sp; it is a legacy control, not a new type scale.
+The four frontmatter roles resolve the Material3 appearances used by this surface: title-large for the sheet heading, body-large for terms, body-medium for explanation/status, label-medium for counts and inline feedback. Toolbar, inputs and buttons retain their widget appearances. No display role or custom font is introduced. The benchmark switch uses body-large like the navigation rows.
 
 **The Native Type Rule.** Use Android text appearances and scalable sp text; preserve the system font.
 
@@ -122,7 +122,7 @@ Rounded filled search field with explicit corner token. Other shapes come from t
 
 ### Settings and navigation
 
-Launcher and Android keyboard settings resolve to the same Settings activity. Settings retains the benchmark switch and deletion controls alongside its dictionary button. Dictionary is a separate internal activity; the toolbar back action returns to Settings, with its icon tinted by `colorOnSurface`. No dictionary management controls belong in recording.
+Launcher and Android keyboard settings resolve to the same Settings activity. Under the toolbar, Dictionary and History are navigation rows of equal weight on the Dictionary row pattern: full-width selectable row, at least 64dp, title in body-large `colorOnSurface`, text on the 24dp inset (the ripple reaches 10dp past it). The History row adds only its saved count, trailing, in label-large `colorOnSurfaceVariant` (spoken as "History · N"); its warnings live on the History page. A divider separates navigation from the benchmark section: switch (body-large), explanation (body-medium, subdued), stored count, and "Delete benchmark data" as a quiet text button under the data it deletes, behind its confirmation dialog. Dictionary is a separate internal activity; the toolbar back action returns to Settings, with its icon tinted by `colorOnSurface`. No dictionary management controls belong in recording.
 
 ### Search and terms
 

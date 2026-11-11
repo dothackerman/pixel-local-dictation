@@ -106,6 +106,12 @@ class HistoryLayoutTest {
                     root.scrollTo(0, rect.top)
                     assertTrue(rect.bottom > root.scrollY && rect.top < root.scrollY + root.height)
                 }
+                // Dictionary and History are navigation rows of equal weight.
+                val dictionary = activity.findViewById<View>(R.id.open_dictionary)
+                val history = activity.findViewById<View>(R.id.open_history)
+                assertFalse(dictionary is android.widget.Button || history is android.widget.Button)
+                assertEquals(dictionary.measuredHeight, history.measuredHeight)
+                assertEquals(dictionary.measuredWidth, history.measuredWidth)
                 assertTrue(root.getChildAt(0).measuredHeight > height)
             }
         } finally { instrumentation.runOnMainSync { activity.finish() } }

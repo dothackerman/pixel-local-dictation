@@ -10,34 +10,59 @@
     <com.google.android.material.appbar.MaterialToolbar
         android:layout_width="match_parent" android:layout_height="wrap_content"
         app:title="@string/settings_label" />
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/open_dictionary" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:minHeight="64dp"
-        android:layout_marginBottom="12dp" android:text="@string/dictionary_title" />
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/open_history" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:minHeight="64dp"
-        android:layout_marginBottom="24dp" android:text="@string/history_title" />
+    <!-- Navigation rows of equal weight (Dictionary row pattern): one tap target each, title in the term role;
+         the negative margin keeps the text on the 24dp inset and lets the ripple reach past it. -->
+    <LinearLayout
+        android:id="@+id/open_dictionary" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:layout_marginStart="-10dp" android:layout_marginEnd="-10dp" android:minHeight="64dp" android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingHorizontal="10dp" android:paddingVertical="18dp"
+        android:background="?android:attr/selectableItemBackground" android:clickable="true" android:focusable="true">
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="@string/dictionary_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/open_history" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginStart="-10dp" android:layout_marginEnd="-10dp" android:minHeight="64dp" android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingHorizontal="10dp" android:paddingVertical="18dp"
+        android:background="?android:attr/selectableItemBackground" android:clickable="true" android:focusable="true">
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:text="@string/history_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
+        <!-- Saved-transcript count only; History warnings live on the History page. -->
+        <TextView android:id="@+id/settings_history_count" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="16dp" android:visibility="gone"
+            android:textAppearance="?attr/textAppearanceLabelLarge" android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+    <com.google.android.material.divider.MaterialDivider
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="16dp" android:layout_marginBottom="24dp" />
     <Switch
         android:id="@+id/benchmark_switch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
-        android:textSize="18sp"
+        android:textAppearance="?attr/textAppearanceBodyLarge"
+        android:textColor="?attr/colorOnSurface"
         android:text="@string/benchmark_switch" />
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"
         android:text="@string/benchmark_explanation" />
     <TextView
         android:id="@+id/benchmark_stored"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="24dp" />
-    <Button
+        android:paddingTop="24dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface" />
+    <!-- Destructive and rare: a quiet text action under the data it deletes, away from navigation. -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/benchmark_delete"
+        style="@style/Widget.Material3.Button.TextButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginStart="-12dp"
+        android:minHeight="48dp"
         android:text="@string/benchmark_delete" />
     </LinearLayout>
 </ScrollView>

@@ -7,6 +7,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.DynamicColors
 import android.app.AlertDialog
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
@@ -26,10 +27,10 @@ open class SettingsActivity : AppCompatActivity() {
             view.setPadding(padding + bars.left, padding + bars.top, padding + bars.right, padding + bars.bottom)
             insets
         }
-        findViewById<Button>(R.id.open_dictionary).setOnClickListener {
+        findViewById<View>(R.id.open_dictionary).setOnClickListener {
             startActivity(Intent(this, DictionaryActivity::class.java))
         }
-        findViewById<Button>(R.id.open_history).setOnClickListener {
+        findViewById<View>(R.id.open_history).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
         stored = findViewById(R.id.benchmark_stored)
@@ -54,13 +55,16 @@ open class SettingsActivity : AppCompatActivity() {
 
     /** The History row shows only how many transcripts are saved; warnings live on the History page. */
     private fun showHistoryCount() {
-        val row = findViewById<Button>(R.id.open_history)
+        val row = findViewById<View>(R.id.open_history)
+        val countView = findViewById<TextView>(R.id.settings_history_count)
         val root = historyRoot()
         HistoryIo.executor.execute {
             val count = runCatching { HistoryIo.store(root).savedCount() }.getOrDefault(0)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
-                row.text = if (count > 0) getString(R.string.history_row_with_count, getString(R.string.history_title), count)
+                countView.text = count.toString()
+                countView.visibility = if (count > 0) View.VISIBLE else View.GONE
+                row.contentDescription = if (count > 0) getString(R.string.history_row_with_count, getString(R.string.history_title), count)
                     else getString(R.string.history_title)
             }
         }
