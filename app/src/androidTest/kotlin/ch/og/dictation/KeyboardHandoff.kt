@@ -196,3 +196,17 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         return futoSelected()
     }
 }
+
+/**
+ * The rotation trace refuses rows beyond its size cap, silently: a full file made every later
+ * probe see no events. Before a probe, a trace past half the cap moves aside (one older
+ * generation kept as rotation-probe.prev.jsonl), so the probe always has room.
+ */
+fun makeRoomForRotationTrace(context: android.content.Context) {
+    val trace = java.io.File(context.filesDir, "lab/rotation-probe.jsonl")
+    if (trace.length() > 1024 * 1024) {
+        val previous = java.io.File(trace.parentFile, "rotation-probe.prev.jsonl")
+        previous.delete()
+        check(trace.renameTo(previous)) { "rotation trace is full and could not be moved aside" }
+    }
+}

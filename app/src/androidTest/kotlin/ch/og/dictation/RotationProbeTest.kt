@@ -16,6 +16,7 @@ class RotationProbeTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val caseName = requireNotNull(InstrumentationRegistry.getArguments().getString("case")) { "case argument required" }
+        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(caseName)
         RotationProbeActivity.done = CountDownLatch(1)
         try {

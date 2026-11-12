@@ -71,6 +71,7 @@ class SelfRotationProbeTest {
         val futo = currentIme()
         assertTrue("current keyboard must be FUTO before the probe (${keys.selection()})", isFuto(futo))
         val run = UUID.randomUUID().toString()
+        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
         val polling = AtomicBoolean(true)

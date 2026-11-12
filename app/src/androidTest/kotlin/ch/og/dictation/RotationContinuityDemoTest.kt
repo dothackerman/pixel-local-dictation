@@ -104,6 +104,7 @@ class RotationContinuityDemoTest {
         val previousRecorder = DictationImeService.recorderFactory
         DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
         val run = UUID.randomUUID().toString()
+        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
         val kind = if (keep) SelfRotationProbeActivity.Keep::class.java else SelfRotationProbeActivity::class.java

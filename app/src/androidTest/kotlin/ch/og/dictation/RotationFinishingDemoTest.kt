@@ -270,6 +270,7 @@ class RotationFinishingDemoTest {
         DictationImeService.historyRootFor = { testHistory }
         clearTestHistory()
         val run = UUID.randomUUID().toString()
+        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val state = Run(case, run, RotationTrace(traceFile))
         current = state

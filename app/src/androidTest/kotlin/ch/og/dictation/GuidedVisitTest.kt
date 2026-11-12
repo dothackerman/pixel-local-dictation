@@ -53,6 +53,7 @@ class GuidedVisitTest {
             val beforeBenchmark = inventory(benchmark)
             var traceComplete = false
             try {
+                if (traceCase != null) makeRoomForRotationTrace(context)
                 if (traceCase != null) RotationTrace.beginProbe(traceCase, run, step.traceMinutes.toLong())
                 val finished = show(Intent(context, RotationProbeActivity::class.java).putExtra("step", step.id)
                     .putExtra("position", steps.indexOf(step) + 1).putExtra("stepCount", steps.size),
