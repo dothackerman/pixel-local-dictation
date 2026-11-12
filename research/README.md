@@ -12,6 +12,7 @@ Research-only terms: *exported model* (runtime-ready representation),
 | [Short encoder probe](issue4-short-encoder-probe.md) | Protocol and frozen identities of the #4 probe and in-pipeline gates (tools retired; historical) |
 | [LiteRT and other alternatives](litert-alternatives.md) | Surveyed non-ONNX routes, ready-made artifacts, LiteRT >2 GiB mechanism |
 | [Linux sandboxes vs Ubuntu userns](linux-sandbox-userns.md) | Why sandboxed Claude commands failed on this host, Codex escalation flood, user-run fixes ([ADR-024](../adrs/024-phone-access-rewrite.md)) |
+| [Spoken numbers to digits](number-itn.md) | sherpa-onnx rule FSTs, NeMo ITN fit, Parakeet number output, Swiss number style, options |
 | [Issue 30 panel performance](issue30-panel-performance.md) | Review, startup and component-replay timings of the recording-panel ring; Signal height trade-off |
 
 Evidence levels are distinct: source support, downloadable binary, successful

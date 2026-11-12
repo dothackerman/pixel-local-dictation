@@ -272,8 +272,9 @@ object Pipeline {
     fun runtime(
         v: Variant, model: ModelFiles, lid: ModelFiles?, vad: ModelFiles,
         queue: java.util.concurrent.Executor, hotwordsPath: String = "", timeline: TimelineObserver? = null,
+        written: (String) -> String = { it },
     ) = DictationRuntime(v, queue, { recognizer(v, model, lid, hotwordsPath, timeline) },
-        { VadSegmenter(v, vad) }, ::release)
+        { VadSegmenter(v, vad) }, written, ::release)
 
     fun recognizer(v: Variant, model: ModelFiles, lid: ModelFiles?, hotwordsPath: String = "", timeline: TimelineObserver? = null): Recognizer {
         fun buildAsr(build: () -> SherpaRecognizer): SherpaRecognizer {
@@ -341,13 +342,13 @@ object Engine {
     private fun build(app: Context, dictionary: DictionarySnapshot): Pair<DictationRuntime, ProvisionalBaseline?> {
         val normal = ProvisionalBaseline.load(lab(app), acceptance(app), dictionary)
             ?: return ModelFiles.asset(app, ASSET_MODEL).let { files ->
-                Pipeline.runtime(Variant.HISTORICAL_INT8, files, null, files, decodeQueue) } to null
+                Pipeline.runtime(Variant.HISTORICAL_INT8, files, null, files, decodeQueue, written = WrittenForm::of) } to null
         return DictationRuntime(normal.variant, decodeQueue, {
             val lease = dictionaryModels.acquire(normal, dictionary, File(app.applicationInfo.sourceDir)) {
                 SherpaRecognizer.parakeet(normal.variant, ModelFiles.dir(normal.modelDirectory), perStreamDictionary = true)
             }
             if (normal.variant.post.swissSs) SwissSpelling(lease) else lease
-        }, { VadSegmenter(normal.variant, ModelFiles.dir(lab(app))) }, Pipeline::release) to normal
+        }, { VadSegmenter(normal.variant, ModelFiles.dir(lab(app))) }, WrittenForm::of, Pipeline::release) to normal
     }
 
     /** Stage/load/verify, then atomically save and publish. A failed refresh preserves the old runtime. */

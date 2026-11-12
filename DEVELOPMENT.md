@@ -33,7 +33,7 @@ parked hypotheses.
 
 ## Requirements
 
-Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)).
+Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)); R9 added 11-12.
 They apply to every engine.
 
 | ID | Requirement |
@@ -46,6 +46,7 @@ They apply to every engine.
 | R6 | Follow the security rules in [AGENTS.md](AGENTS.md). Support return to FUTO and retain its baseline model. |
 | R7 | Use Swiss spelling: replace ß with ss. The scorer treats both forms equally. |
 | R8 | The panel and recording start at once; model loading never delays them. |
+| R9 | Spoken numbers become digits where context makes them unambiguous, Swiss style for German (`WrittenForm`, [research](research/number-itn.md)). Lab replays stay raw. |
 
 A single-language engine is acceptable if routing is automatic. Mixed-language
 conversation and diarization are out of scope. Dialect support, Stop behavior
