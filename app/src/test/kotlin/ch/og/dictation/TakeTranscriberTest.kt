@@ -158,6 +158,15 @@ class TakeTranscriberTest {
         assertEquals("eins zwei vier", open!!.getOrThrow())
     }
 
+    @Test fun previewAndFinalBothCarryTheWrittenForm() {
+        val previews = ArrayList<String>(); var final: String? = null
+        val said = Recognizer { if (it[0] == 0f) "Abfahrt um zwölf Uhr" else "sechsundvierzig, Gleis drei." }
+        val take = TakeTranscriber({ said }, ChunkSegmenter(), direct, direct, written = WrittenForm::of) { previews.add(it) }
+        take.feed(seg(0)); take.feed(seg(1)); take.finish { final = it.getOrThrow() }
+        assertEquals(listOf("Abfahrt um 12 Uhr", "Abfahrt um 12.46 Uhr, Gleis 3."), previews)
+        assertEquals("Abfahrt um 12.46 Uhr, Gleis 3.", final)
+    }
+
     @Test fun swissSpellingReplacesEszett() {
         val r = SwissSpelling(Recognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
         assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))

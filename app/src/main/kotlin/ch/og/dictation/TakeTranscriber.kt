@@ -33,6 +33,8 @@ class TakeTranscriber(
     private val deliver: Executor,
     private val post: Variant.Post = Variant.Post(),
     private val timeline: TimelineObserver? = null,
+    /** Turns the joined text into the take text ([WrittenForm.of] in the daily app); preview and final both pass through it. */
+    private val written: (String) -> String = { it },
     private val onTimedPreview: ((String, Long?) -> Unit)? = null,
     private val onPreview: (String) -> Unit,
 ) {
@@ -69,7 +71,7 @@ class TakeTranscriber(
         enqueue("finish", null) {
             timelineSnapshot("finishDrain")
             if (cancelled) return@enqueue
-            val result = failure?.let { Result.failure(it) } ?: Result.success(joinChunks(texts, post.seamCapitalize))
+            val result = failure?.let { Result.failure(it) } ?: Result.success(written(joinChunks(texts, post.seamCapitalize)))
             deliver.execute { if (!cancelled) { timeline?.emit(TimelineEvent("finalCallback")); onDone(result) } }
         }
     }
@@ -117,7 +119,7 @@ class TakeTranscriber(
                     finally { timeline?.emit(TimelineEvent("recognitionEnd", chunkId = id, samples = chunk.samples.size)) }
                 if (text.isEmpty()) return@enqueue
                 texts.add(text)
-                val joined = joinChunks(texts, post.seamCapitalize)
+                val joined = written(joinChunks(texts, post.seamCapitalize))
                 deliver.execute { if (!cancelled && deliveredChunk.getAndUpdate { previous -> maxOf(previous, id) } < id) {
                     if (!usablePreview) { usablePreview = true; timeline?.emit(TimelineEvent("firstUsablePreview", chunkId = id)) }
                     onPreview(joined)
