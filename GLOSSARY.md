@@ -12,6 +12,10 @@ _Avoid_: session, dictation session, recording session
 The time from pressing Stop until the text is inserted.
 _Avoid_: latency, finalization time
 
+**Rotation hold**:
+The short time after an identified rotation in which the panel is gone but the take keeps recording (or, in the Stop wait, keeps finishing with its result held), nothing is inserted, and the panel is expected back.
+_Avoid_: grace period, decision window
+
 **Chunk**:
 A part of a take, cut at a pause, decoded alone while recording continues.
 _Avoid_: segment, window

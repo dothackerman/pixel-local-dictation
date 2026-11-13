@@ -2,12 +2,15 @@ package ch.og.dictation
 
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Timing metadata only; never audio or recognition text. Clock: CLOCK_MONOTONIC. */
 data class TimelineEvent(
     val phase: String, val ns: Long = System.nanoTime(), val chunkId: Int? = null,
     val samples: Int? = null, val active: Boolean? = null, val queued: Int? = null,
     val scheduledNs: Long? = null, val language: String? = null, val fallback: Boolean? = null,
+    val sampleStart: Long? = null, val sampleEnd: Long? = null, val revision: Long? = null,
+    val fixtureId: String? = null,
 )
 
 fun interface TimelineObserver { fun record(event: TimelineEvent) }
@@ -30,6 +33,9 @@ class TakeTranscriber(
     private val deliver: Executor,
     private val post: Variant.Post = Variant.Post(),
     private val timeline: TimelineObserver? = null,
+    /** Turns the joined text into the take text ([WrittenForm.of] in the daily app); preview and final both pass through it. */
+    private val written: (String) -> String = { it },
+    private val onTimedPreview: ((String, Long?) -> Unit)? = null,
     private val onPreview: (String) -> Unit,
 ) {
     private val texts = ArrayList<String>()   // decode thread only
@@ -40,6 +46,9 @@ class TakeTranscriber(
     private var active = false
     private var queued = 0
     private var nextChunk = 0
+    private var fedSamples = 0L
+    private var fallbackChunkEnd = 0L
+    private val deliveredChunk = AtomicInteger(-1)
     private var usablePreview = false // delivery thread only
 
     fun timelineSnapshot(phase: String, scheduledNs: Long? = null) = synchronized(stateLock) {
@@ -49,6 +58,7 @@ class TakeTranscriber(
     /** Recording thread. */
     fun feed(samples: FloatArray) {
         if (cancelled) return
+        fedSamples += samples.size
         for (c in segmenter.accept(samples)) submit(c)
     }
 
@@ -61,7 +71,7 @@ class TakeTranscriber(
         enqueue("finish", null) {
             timelineSnapshot("finishDrain")
             if (cancelled) return@enqueue
-            val result = failure?.let { Result.failure(it) } ?: Result.success(joinChunks(texts, post.seamCapitalize))
+            val result = failure?.let { Result.failure(it) } ?: Result.success(written(joinChunks(texts, post.seamCapitalize)))
             deliver.execute { if (!cancelled) { timeline?.emit(TimelineEvent("finalCallback")); onDone(result) } }
         }
     }
@@ -93,7 +103,10 @@ class TakeTranscriber(
 
     private fun submit(chunk: Chunk) {
         val id = nextChunk++
-        timeline?.emit(TimelineEvent("chunkReady", chunkId = id, samples = chunk.samples.size))
+        val start = chunk.startSample ?: fallbackChunkEnd
+        val end = chunk.endSample ?: (start + chunk.samples.size)
+        fallbackChunkEnd = maxOf(fallbackChunkEnd, end)
+        timeline?.emit(TimelineEvent("chunkReady", chunkId = id, samples = chunk.samples.size, sampleStart = start, sampleEnd = end))
         enqueue("chunk", id) {
             if (cancelled || failure != null) return@enqueue
             // No-speech gate: a chunk without detected speech is not decoded (keeps models from writing on silence).
@@ -106,10 +119,11 @@ class TakeTranscriber(
                     finally { timeline?.emit(TimelineEvent("recognitionEnd", chunkId = id, samples = chunk.samples.size)) }
                 if (text.isEmpty()) return@enqueue
                 texts.add(text)
-                val joined = joinChunks(texts, post.seamCapitalize)
-                deliver.execute { if (!cancelled) {
+                val joined = written(joinChunks(texts, post.seamCapitalize))
+                deliver.execute { if (!cancelled && deliveredChunk.getAndUpdate { previous -> maxOf(previous, id) } < id) {
                     if (!usablePreview) { usablePreview = true; timeline?.emit(TimelineEvent("firstUsablePreview", chunkId = id)) }
                     onPreview(joined)
+                    onTimedPreview?.invoke(joined, end)
                 } }
             } catch (e: Throwable) {
                 failure = e

@@ -7,11 +7,13 @@
     <permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" tools:node="remove" />
 
     <application
+        android:name=".DictationApplication"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="false">
+        android:fullBackupContent="false"
+        android:theme="@style/Theme.Dictation">
 
         <service
             android:name=".DictationImeService"
@@ -28,14 +30,16 @@
             android:name=".SettingsActivity"
             android:label="@string/settings_label"
             android:exported="true"
-            android:theme="@style/Theme.Dictation.Settings">
+            android:theme="@style/Theme.Dictation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".HistoryActivity" android:exported="false"
+            android:theme="@style/Theme.Dictation" />
         <activity android:name=".DictionaryActivity" android:exported="false"
-            android:theme="@style/Theme.Dictation.Settings" android:windowSoftInputMode="adjustResize" />
+            android:theme="@style/Theme.Dictation" android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".PermissionActivity"
             android:exported="false"

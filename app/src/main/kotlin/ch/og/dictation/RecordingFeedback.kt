@@ -25,6 +25,16 @@ class RecordingFeedback {
         if (!ended) measured = value
     }
 
+    /** Paused take: no loudness, not capturing, but not ended. */
+    fun pause() {
+        isCapturing = false
+        measured = 0f
+    }
+
+    fun resume() {
+        if (!ended) isCapturing = true
+    }
+
     fun stop() {
         ended = true
         isCapturing = false

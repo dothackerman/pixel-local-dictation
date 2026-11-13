@@ -3,30 +3,35 @@ package ch.og.dictation
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
+import com.google.android.material.R as MaterialR
+import com.google.android.material.color.MaterialColors
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
 
-/** Soft ink driven by the current take's measured loudness, independently of model readiness. */
+/**
+ * The ring around the microphone disk (#36 Crate B2). At rest: a hairline in the outline role
+ * around a pale field. Recording: red-orange soft ink whose reach, thickness and shape follow the
+ * take's measured loudness; with animations off it is a static red-orange ring that only thickens. Colours are theme roles resolved from the panel's themed context.
+ */
 class RecordingRingView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
-    private val ink = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val wash = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val field = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val band = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ribbon = Path()
     private val inside = Path()
     private val outerX = FloatArray(128)
     private val outerY = FloatArray(128)
     private val innerX = FloatArray(128)
     private val innerY = FloatArray(128)
+    private var motion = 0.0
     private var source: RecordingFeedback? = null
     private var level = 0f
-    private var motion = 0.0
     private var lastFrame = 0L
     private val density get() = resources.displayMetrics.density
 
@@ -37,11 +42,15 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
         invalidate()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        ink.shader = LinearGradient(w / 2f - 87.5f * density, h / 2f - 87.5f * density,
-            w / 2f + 87.5f * density, h / 2f + 87.5f * density,
-            intArrayOf(0xff789855.toInt(), 0xff506e3c.toInt(), 0xff6f8d50.toInt()), null, Shader.TileMode.CLAMP)
+    init {
+        band.color = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
+        field.color = MaterialColors.getColor(this, MaterialR.attr.colorSurface)
+        hairline.color = MaterialColors.getColor(this, MaterialR.attr.colorOutline)
     }
+
+    /** True when the last frame drew the recording ribbon rather than the resting hairline. */
+    var recording = false
+        private set
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -52,34 +61,45 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
         val animated = ValueAnimator.areAnimatorsEnabled()
         level += ((target - level) * (1 - exp(-dt / if (target > level) 0.03 else 0.13))).toFloat()
         if (level < 0.001f && target == 0f) level = 0f
-        if (animated && target > 0.01f) motion += dt * (0.5 + target * 2)
         val scale = density * 70f / 94f
         val cx = width / 2f
         val cy = height / 2f
+        recording = source?.isCapturing == true
+        if (!recording && level == 0f) {
+            // At rest: a pale field inside a 1dp hairline.
+            canvas.drawCircle(cx, cy, 70 * scale, field)
+            hairline.strokeWidth = density
+            canvas.drawCircle(cx, cy, 70 * scale, hairline)
+            return
+        }
+        // Soft ink: loudness pushes the ring outward unevenly and thickens it, and the shape
+        // drifts slowly, so the ring visibly answers the voice (owner: keep this motion).
+        // The motion shrinks to fit a short stage (landscape) so the loudest ring is never
+        // clipped; the resting ring keeps its size. One dp short of the edge for the antialiased rim.
+        if (animated && target > 0.01f) motion += dt * (0.5 + target * 2)
+        val room = (minOf(width, height) / 2f - density) / scale
+        val reach = ((room - REST_OUTER) / MOTION_REACH).coerceIn(0f, 1f)
         for (k in outerX.indices) {
             val a = 2 * PI * k / outerX.size - PI / 2
             val organic = 0.55 * sin(a * 3 + motion * 0.52) + 0.28 * sin(a * 5 - motion * 0.7) +
                 0.17 * sin(a * 2 + motion * 0.26)
-            val radius = (70 + if (animated) level * 2.4 * (12 + 13 * organic) else 0.0) * scale
-            val weight = (if (animated) 2.2 + level * 2.4 * (4.3 + 2.7 * sin(a * 2 - motion * 0.48) +
-                1.1 * sin(a * 3 + motion * 0.31)) else 2.0 + level * 2) * scale
+            val radius = (70 + if (animated) reach * level * 2.4 * (12 + 13 * organic) else 0.0) * scale
+            val weight = (if (animated) REST_WEIGHT + reach * level * 2.4 * (4.3 + 2.7 * sin(a * 2 - motion * 0.48) +
+                1.1 * sin(a * 3 + motion * 0.31)) else REST_WEIGHT + level * 2) * scale
             outerX[k] = (cx + cos(a) * (radius + weight / 2)).toFloat()
             outerY[k] = (cy + sin(a) * (radius + weight / 2)).toFloat()
             innerX[k] = (cx + cos(a) * (radius - weight / 2)).toFloat()
             innerY[k] = (cy + sin(a) * (radius - weight / 2)).toFloat()
         }
+        inside.rewind()
+        contour(inside, innerX, innerY)
+        canvas.drawPath(inside, field)
         ribbon.rewind()
         // rewind resets the fill rule; keep the centre hollow on every frame.
         ribbon.fillType = Path.FillType.EVEN_ODD
         contour(ribbon, outerX, outerY)
         contour(ribbon, innerX, innerY)
-        ink.alpha = if (source?.isCapturing == true) 255 else 115
-        canvas.drawPath(ribbon, ink)
-        inside.rewind()
-        contour(inside, innerX, innerY)
-        wash.color = 0xff5f7f3e.toInt()
-        wash.alpha = ((0.015 + level * 0.025) * 255).toInt()
-        canvas.drawPath(inside, wash)
+        canvas.drawPath(ribbon, band)
         if (isShown && (source?.isCapturing == true || level > 0f)) postInvalidateOnAnimation()
     }
 
@@ -90,6 +110,15 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
             path.quadTo(x[k], y[k], (x[k] + x[next]) / 2, (y[k] + y[next]) / 2)
         }
         path.close()
+    }
+
+    private companion object {
+        /** Mock units (the 70dp disk is 94): the resting ring's outer edge, plus a hair. */
+        const val REST_OUTER = 75f
+        /** Thickness of the quiet recording ring: thick enough to differ from the resting hairline in a still frame. */
+        const val REST_WEIGHT = 6.0
+        /** How far beyond the resting ring the loudest ink reaches. */
+        const val MOTION_REACH = 69.72f
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {

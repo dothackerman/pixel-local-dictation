@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Landscape microphone stage width. A narrow window (under 600dp) keeps a square stage so
+         the status and preview column keeps room; the ring scales its motion to the stage. -->
+    <dimen name="panel_stage_width_land">148dp</dimen>
+</resources>

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Looper
 import android.widget.TextView
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.button.MaterialButton
 import org.robolectric.Robolectric
 import org.robolectric.shadows.ShadowDialog
@@ -31,7 +32,7 @@ class DictionaryEditorRecoveryTest {
         override val defaultViewModelProviderFactory: ViewModelProvider.Factory
             get() = ViewModelProvider.AndroidViewModelFactory(application)
         override fun onCreate(savedInstanceState: Bundle?) {
-            setTheme(R.style.Theme_Dictation_Settings)
+            setTheme(R.style.Theme_Dictation)
             super.onCreate(savedInstanceState)
         }
     }
@@ -149,6 +150,62 @@ class DictionaryEditorRecoveryTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    private fun shownText(root: android.view.View, value: String): Boolean = when (root) {
+        is TextView -> root.isShown && root.text.toString() == value
+        is android.view.ViewGroup -> (0 until root.childCount).any { shownText(root.getChildAt(it), value) }
+        else -> false
+    }
+
+    /** #36 critique: an empty dictionary is its state line alone; no search, no orphaned languages. */
+    @Test fun emptyDictionaryShowsOnlyItsStateLine() {
+        val clearing = model()
+        clearing.save(emptyList(), "delete")
+        idle(clearing)
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            assertTrue(shownText(page.window.decorView, app.getString(R.string.dictionary_empty)))
+            assertFalse(page.findViewById<android.view.View>(R.id.dictionary_search).isShown)
+            assertFalse(shownText(page.window.decorView, app.getString(R.string.dictionary_languages)))
+        } finally { controller.pause().stop().destroy() }
+        val filled = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = filled.get()
+            val model = ViewModelProvider(page)[DictionaryModel::class.java]
+            idle(model)
+            model.save(listOf("Bärlauch"), "add")
+            idle(model)
+            assertTrue(page.findViewById<android.view.View>(R.id.dictionary_search).isShown)
+            assertTrue(shownText(page.window.decorView, app.getString(R.string.dictionary_languages)))
+        } finally { filled.pause().stop().destroy() }
+    }
+
+    /** #36 critique: Add term is filled primary like every other commit; the search hint is centred on its icon. */
+    @Test fun addIsAFilledCommitAndTheSearchHintSitsOnTheIconLine() {
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            val add = page.findViewById<com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton>(R.id.dictionary_add)
+            fun role(attr: Int) = com.google.android.material.color.MaterialColors.getColor(add, attr)
+            assertEquals(role(androidx.appcompat.R.attr.colorPrimary), add.backgroundTintList!!.getColorForState(add.drawableState, 0))
+            assertEquals(role(com.google.android.material.R.attr.colorOnPrimary), add.currentTextColor)
+            val search = page.findViewById<TextInputEditText>(R.id.dictionary_search)
+            assertEquals("hint centred in the field", search.paddingTop, search.paddingBottom)
+            page.findViewById<android.view.View>(R.id.dictionary_add).performClick()
+            val editor = ShadowDialog.getLatestDialog()
+            val layout = editor.findViewById<TextInputLayout>(R.id.dictionary_entry_layout)
+            val helper = layout.findViewById<TextView>(com.google.android.material.R.id.textinput_helper_text)
+            val feedback = editor.findViewById<TextView>(R.id.dictionary_editor_feedback)
+            fun left(view: android.view.View): Int { val at = IntArray(2); view.getLocationInWindow(at); return at[0] + view.paddingLeft }
+            assertEquals("helper and feedback share one inset", left(helper), left(feedback))
+            // The header never scrolls away: the commit is outside the field's scroller (device capture, landscape 2×).
+            var parent = editor.findViewById<android.view.View>(R.id.dictionary_commit).parent
+            while (parent is android.view.View) { assertFalse("commit scrolls with the field", parent is androidx.core.widget.NestedScrollView); parent = parent.parent }
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun deletedEditTargetKeepsDraftAndRequiresExplicitAddAsNewTerm() {
         val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
         try {
@@ -179,4 +236,86 @@ class DictionaryEditorRecoveryTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+
+    private fun left(view: android.view.View): Int { val at = IntArray(2); view.getLocationInWindow(at); return at[0] + view.paddingLeft }
+
+    private fun <T> withDuplicate(check: (DictionaryActivity, android.app.Dialog) -> T): T {
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            page.findViewById<android.view.View>(R.id.dictionary_add).performClick()
+            val editor = ShadowDialog.getLatestDialog()
+            editor.findViewById<TextInputEditText>(R.id.dictionary_entry).setText("original")
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1)) // the error's entrance animation
+            return check(page, editor)
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    /** #36 critique round 3: at font 1.3× Material moves the filled box's text down; the search hint stays on the icon line. */
+    @Test @Config(fontScale = 1.3f)
+    fun searchHintStaysOnTheIconLineAtLargeFont() {
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val search = controller.get().findViewById<TextInputEditText>(R.id.dictionary_search)
+            assertEquals("hint centred in the field", search.paddingTop, search.paddingBottom)
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    /** #36 critique round 3: at font 1.3× the error line starts where the feedback line does. */
+    @Test @Config(fontScale = 1.3f)
+    fun errorAndFeedbackShareOneInsetAtLargeFont() = withDuplicate { _, editor ->
+        val error = editor.findViewById<TextView>(com.google.android.material.R.id.textinput_error)
+        assertEquals("Already in your dictionary.", error.text.toString())
+        assertEquals("error and feedback share one inset", left(error), left(editor.findViewById<TextView>(R.id.dictionary_editor_feedback)))
+    }
+
+    /** #36 critique round 3: landscape 2×: one header row (field, Add, Close); the error sits right under it, outside the scroller. */
+    @Test @Config(qualifiers = "w891dp-h411dp-land", fontScale = 2f)
+    fun landscapeEditorIsOneRowWithTheErrorDirectlyUnderTheField() = withDuplicate { _, editor ->
+        val layout = editor.findViewById<TextInputLayout>(R.id.dictionary_entry_layout)
+        val commit = editor.findViewById<MaterialButton>(R.id.dictionary_commit)
+        val close = editor.findViewById<android.view.View>(R.id.dictionary_editor_close)
+        assertNull("no separate title", editor.findViewById<android.view.View>(R.id.dictionary_editor_title))
+        assertSame(layout.parent, commit.parent)
+        assertSame(layout.parent, close.parent)
+        assertFalse("label lives in the placeholder", layout.isHintEnabled)
+        assertEquals(app.getString(R.string.dictionary_entry_hint), editor.findViewById<TextInputEditText>(R.id.dictionary_entry).hint.toString())
+        val error = editor.findViewById<TextView>(com.google.android.material.R.id.textinput_error)
+        assertTrue(error.isShown)
+        var parent = error.parent
+        while (parent is android.view.View) { assertFalse("error scrolls away", parent is androidx.core.widget.NestedScrollView); parent = parent.parent }
+        // Directly under the field, inside the header: nothing between the field and its error.
+        val header = editor.findViewById<android.view.View>(R.id.dictionary_editor_header)
+        fun top(view: android.view.View) = IntArray(2).also(view::getLocationInWindow)[1]
+        val field = editor.findViewById<android.view.View>(R.id.dictionary_entry)
+        assertTrue("error inside the header: ${top(error)}+${error.height} ty=${error.translationY} vs ${top(header)}+${header.height}; field ${top(field)}+${field.height} layout ${top(layout)}+${layout.height}", top(error) + error.height <= top(header) + header.height)
+        assertTrue("error right under the field", top(error) - (top(field) + field.height) <= 6 * app.resources.displayMetrics.density)
+    }
+
+    /** #36 critique round 3: landscape 2×: the explanation, search and count scroll away, and Add term sits in the top bar. */
+    @Test @Config(qualifiers = "w891dp-h411dp-land", fontScale = 2f)
+    fun landscapeListScrollsItsHeaderAwayAndAddTermLeavesTheRows() {
+        val controller = Robolectric.buildActivity(EditorActivity::class.java).setup()
+        try {
+            val page = controller.get()
+            idle(ViewModelProvider(page)[DictionaryModel::class.java])
+            shadowOf(Looper.getMainLooper()).idle()
+            for (id in intArrayOf(R.id.dictionary_explanation, R.id.dictionary_search_layout, R.id.dictionary_summary)) {
+                val params = page.findViewById<android.view.View>(id).layoutParams as com.google.android.material.appbar.AppBarLayout.LayoutParams
+                assertTrue("scrolls away", params.scrollFlags and com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL != 0)
+            }
+            assertFalse("no button over the rows", page.findViewById<android.view.View>(R.id.dictionary_add).isShown)
+            val toolbar = page.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.dictionary_toolbar)
+            val item = toolbar.menu.findItem(R.id.dictionary_add_item)
+            assertTrue(item.isVisible && item.isEnabled)
+            assertEquals(app.getString(R.string.dictionary_add), item.title.toString())
+            // Device capture: the shared ic_add carries the FAB's onPrimary tint; on the top bar it is ink.
+            val ink = com.google.android.material.color.MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
+            assertEquals(ink, androidx.core.view.MenuItemCompat.getIconTintList(item)?.defaultColor)
+            toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNotNull(ShadowDialog.getLatestDialog().findViewById<android.view.View>(R.id.dictionary_entry))
+        } finally { controller.pause().stop().destroy() }
+    }
 }

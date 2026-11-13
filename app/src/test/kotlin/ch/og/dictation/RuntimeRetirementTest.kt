@@ -15,7 +15,7 @@ class RuntimeRetirementTest {
             override fun flush() = emptyList<Chunk>()
             override fun reset() {}
         }
-        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { rec }, { segmenter }, { released++ })
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, queue, { rec }, { segmenter }, release = { released++ })
         runtime.warmUp(); jobs.removeFirst().run()
         val capture = object : TakeCapture {
             override fun start(accept: (FloatArray) -> Unit) {}

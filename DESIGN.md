@@ -1,158 +1,230 @@
 ---
 name: Pixel Local Dictation
-description: Native Android settings for private local dictation.
+description: Crate B2 — kraft card printed in two inks, one fixed light scheme for the recording panel and every screen.
 colors:
-  primary: "#426B32"
+  surface: "#F3E9D4"
+  surface-container: "#E9DCC1"
+  surface-container-high: "#DDCEAF"
+  on-surface: "#1C1A12"
+  on-surface-variant: "#4E4838"
+  outline: "#6D6550"
+  outline-variant: "#C7B999"
+  primary: "#A52E07"
   on-primary: "#FFFFFF"
-  primary-container: "#CDEDBA"
-  on-primary-container: "#10200A"
-  surface: "#F8FAF3"
-  on-surface: "#1B211B"
-  surface-variant: "#E1E7DB"
-  on-surface-variant: "#41493D"
-  outline: "#71796B"
-  night-primary: "#ADD994"
-  night-on-primary: "#163908"
-  night-primary-container: "#2D5220"
-  night-on-primary-container: "#CDEDBA"
-  night-surface: "#11150E"
-  night-on-surface: "#E1E5D9"
-  night-surface-variant: "#41493D"
-  night-on-surface-variant: "#C1C9B8"
-  night-outline: "#8B9483"
+  primary-container: "#FFD8C6"
+  on-primary-container: "#3A0E00"
+  inverse-primary: "#FFB59A"
+  secondary: "#2E4A21"
+  on-secondary: "#FFFFFF"
+  secondary-container: "#CFE0BC"
+  on-secondary-container: "#13240A"
+  error: "#8A1145"
+  on-error: "#FFFFFF"
+  error-container: "#F8D7E3"
+  on-error-container: "#3D0019"
 typography:
   title-large:
-    fontFamily: "sans-serif"
-    fontSize: "22sp"
-    lineHeight: "28sp"
-    letterSpacing: "0em"
-  body-large:
-    fontFamily: "sans-serif"
+    fontFamily: "Big Shoulders Display"
+    fontWeight: 800
+    fontSize: "26sp"
+    lineHeight: "30sp"
+  title-medium:
+    fontFamily: "Big Shoulders Display"
+    fontWeight: 800
+    fontSize: "18sp"
+    lineHeight: "22sp"
+  title-small:
+    fontFamily: "Big Shoulders Display"
+    fontWeight: 800
+    fontSize: "15sp"
+    lineHeight: "20sp"
+    letterSpacing: "0.03em"
+  label-large:
+    fontFamily: "Big Shoulders Display"
+    fontWeight: 800
     fontSize: "16sp"
-    lineHeight: "24sp"
-    letterSpacing: "0.03125em"
+    lineHeight: "20sp"
+  label-medium:
+    fontFamily: "Big Shoulders Display"
+    fontWeight: 700
+    fontSize: "14sp"
+    lineHeight: "18sp"
+  body-large:
+    fontFamily: "Public Sans"
+    fontWeight: 400
+    fontSize: "16sp"
+    lineHeight: "25sp"
   body-medium:
-    fontFamily: "sans-serif"
+    fontFamily: "Public Sans"
+    fontWeight: 400
     fontSize: "14sp"
     lineHeight: "20sp"
-    letterSpacing: "0.01785714em"
-  label-medium:
-    fontFamily: "sans-serif-medium"
-    fontSize: "12sp"
-    lineHeight: "16sp"
-    letterSpacing: "0.04166667em"
 rounded:
-  search: "28dp"
+  none: "0dp"
+  disk: "35dp"
 spacing:
-  inset-4: "4dp"
-  inset-8: "8dp"
-  inset-12: "12dp"
-  inset-16: "16dp"
-  inset-20: "20dp"
-  inset-24: "24dp"
-  inset-26: "26dp"
+  inset: "24dp"
+  panel-inset: "12dp"
+  status-indent: "56dp"
+  hairline: "1dp"
+  rule: "2dp"
 components:
   toolbar:
-    height: "64dp"
-  term-row:
-    typography: "{typography.body-large}"
-    padding: "18dp 10dp"
-  icon-button:
-    width: "48dp"
-    height: "48dp"
-  search-field:
-    rounded: "{rounded.search}"
-  editor-title:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
     typography: "{typography.title-large}"
-  feedback:
-    typography: "{typography.label-medium}"
+    height: "64dp"
+  microphone-disk:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.disk}"
+    size: "70dp"
+  paused-continue:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.none}"
+    width: "64dp"
+    height: "56dp"
+  paused-stop:
+    backgroundColor: "{colors.surface-container}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.none}"
+    width: "64dp"
+    height: "56dp"
+  paused-discard:
+    backgroundColor: "{colors.surface-container}"
+    textColor: "{colors.error}"
+    rounded: "{rounded.none}"
+    width: "64dp"
+    height: "56dp"
+  history-row:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
+    typography: "{typography.body-large}"
+    padding: "12dp 24dp"
+  icon-button:
+    textColor: "{colors.on-surface-variant}"
+    size: "48dp"
 ---
-# Design System: Pixel Local Dictation
+# Design System: Pixel Local Dictation — Crate B2
 
 ## Overview
 
-**Creative North Star: "Native Material3 task UI"**
+**Creative North Star: "Kraft card printed in two inks."** Red-orange (primary) and rind green (secondary) on a warm card ground, a condensed display face for everything that is a name, a time or a count, and a plain sans for what the owner reads. One fixed **light** scheme for every surface: the recording panel, inline choice, Settings, Dictionary (list, add/edit sheet, empty state), History (list, detail, empty state, status slot, dialogs, marks sheet) and Snackbars. Benchmark-only guide screens may stay plain. The light panel next to a dark keyboard is deliberate (owner decision).
 
-Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.
+Approved direction and frames: [design/issue-36/direction.md](design/issue-36/direction.md), `direction.html` (#36; its marks sheet proposal, now labelled "Marks explained", is approved; the panel's Undo after Discard was approved, built, then removed by the owner on 2026-11-11: Discard is final at once).
 
-Scope: the Settings/dictionary surface only. The recording panel (#30) is not covered here.
-
-Source of truth: native XML and the resolved runtime theme (`app/src/main/res/values{,-night}/settings_*.xml`, `layout/{settings,dictionary,dictionary_editor,dictionary_row}.xml`, `DictionaryActivity.kt`, `SettingsActivity.kt`). Frontmatter keeps Android dp/sp, not CSS pixels. Verification: `DictionarySettingsTest` (dark, and app-local light at fontScale 1.3); search hint contrast 4.94:1 light / 6.56:1 dark (`c23d2f1`). Private captures: `corpus/lab/dictionary-settings-final-review/` and, for contrast, `corpus/lab/dictionary-settings-contrast-review/`. A successful UI Add is code-reviewed, not automated.
+Source of truth: `app/src/main/res/values/{colors,themes,type}.xml`, `res/font/*`, `res/drawable/ic_*.xml`, the layouts named below, `RecordingPanel.kt` (`renderPanel`), `PanelDisclosure.kt`, `RecordingRingView.kt`, `PreparingArcView.kt`, `HistoryRows.kt` (`HistoryMarker`). Frontmatter keeps Android dp/sp.
 
 ## Colors
 
-Dynamic Material colors apply to both activities when available. The frontmatter records the light fallback and corresponding `night-` tokens. Resolve attributes such as `colorSurface` and `colorOnSurface`, rather than looking up these hex values in components.
+`Theme.Dictation` (parent `Theme.Material3.Light.NoActionBar`) is the only application theme. No DayNight, no `values-night`, no dynamic colour. The panel inflates from a `ContextThemeWrapper` with the same theme (the input method service's own theme is the platform's). Hex values live only in `values/colors.xml`; layouts, drawables and Kotlin resolve roles (`?attr/colorPrimary`, `MaterialColors.getColor`).
 
-### Primary
+| Role | Used for |
+|---|---|
+| surface | Screen ground, menus, sheets, dialogs, the field inside the panel ring |
+| surfaceContainer | Recording panel ground; highlighted mark in the marks sheet (with a 4dp onSurface start bar, since the fill alone barely differs from the sheet) |
+| surfaceContainerHigh | Search field, switch track off |
+| onSurface | Status, titles, transcripts, markers, Stop outline, Continue's selected ring, timer rule, 2dp rules, Snackbar ground (inverse) |
+| onSurfaceVariant | Preview, explanations, times in meta, counts, trash icons |
+| primary | Microphone disk (every state), recording ring, Preparing arc, Continue fill, recording marker |
+| onPrimary | Glyphs on the disk and Continue |
+| inversePrimary | Snackbar Undo |
+| secondary / secondaryContainer | Switch on; History warning row |
+| outline / outlineVariant | Panel top rule, resting ring hairline, switch off edge / row hairlines, arc track, timer track |
+| error / errorContainer | Discard take (dashed), Clear History…, Delete benchmark data, the confirm button of their dialogs (Cancel stays onSurface) / benchmark banner |
 
-Muted green carries primary actions; pale green containers support primary content. Paired on-colors preserve text contrast in each mode.
-
-### Neutral
-
-Near-white or deep green-black surfaces carry content. On-surface is for terms; on-surface-variant is for explanation, metadata and quiet delete icons. Surface-variant and outline belong to native fields and theme chrome. Secondary, tertiary, error and disabled colors remain inherited Material roles; no custom palette is established for them.
-
-**The System Color Rule.** Resolve semantic theme attributes at runtime; static green values are fallbacks, not a forced brand palette.
+Tertiary roles follow secondary so no Material lavender appears. Elevation overlay is off (`elevationOverlayEnabled=false`): sheets, dialogs and menus are the plain surface, never primary-tinted. The toolbar's popup overlay has no Material parent, so the overflow menu keeps the app's roles instead of Material's baseline. Contrast (WCAG 2.x, `ThemeContrastTest` resolves them from the theme): text pairs ≥ 4.5:1 (panel status 12.8, preview 6.7, glyph on disk 7.0, primary on panel 5.17, Snackbar Undo 10.2), essential indicators ≥ 3:1 (resting ring 4.27, markers 14.4, Discard edge 6.89, switch on 8.22). Error and red-orange are close in lightness (1.33:1), so a destructive control is never told apart by colour alone: Discard is the only dashed button, carries the trash glyph and sits apart; with no Undo after it, that is the whole protection against a slip, and the safe action is preselected.
 
 ## Typography
 
-**Body Font:** Android `sans-serif`.
-**Label Font:** Android `sans-serif-medium`.
+Bundled in `res/font` (SIL OFL 1.1, `licenses/`): **Big Shoulders Display** 700/800 and **Public Sans** 400/600, static instances subset to Latin. Public Sans has no capital ẞ; Android falls back to the system face for that one glyph.
 
-The four frontmatter roles resolve the Material3 appearances used by this surface: title-large for the sheet heading, body-large for terms, body-medium for explanation/status, label-medium for counts and inline feedback. Toolbar, inputs and buttons retain their widget appearances. No display role or custom font is introduced. The existing benchmark switch explicitly uses 18sp; it is a legacy control, not a new type scale.
+| Role | Where | Face |
+|---|---|---|
+| titleLarge | Toolbar and sheet titles | Big Shoulders Display 800, 26/30sp |
+| titleMedium | Panel status, empty-state title | Big Shoulders Display 800, 18/22sp |
+| titleSmall | Day headers, row times, detail meta, every count | Big Shoulders Display 800, 15/20sp, +0.03em, tabular figures |
+| labelLarge | Buttons, Undo, Snackbar action | Big Shoulders Display 800, 16/20sp |
+| labelMedium | Private-field line, banner, editor feedback | Big Shoulders Display 700, 14/18sp |
+| bodyLarge | Rows, transcript, Settings rows, menus | Public Sans 400, 16/25sp |
+| bodyMedium | Panel preview, explanations, mark sentences | Public Sans 400, 14/20sp |
 
-**The Native Type Rule.** Use Android text appearances and scalable sp text; preserve the system font.
+**The Display Rule.** Names, times and counts are in the display face; anything the owner reads as prose is Public Sans. Everything is sp and survives font scale 2. Transcripts and the panel status use `breakStrategy="high_quality"` and `hyphenationFrequency="normal"`; the status also `lineBreakWordStyle="phrase"` for German compounds.
 
-## Layout
+## Shape and rules
 
-Single-column, full-width Android screens. Dictionary has a top app bar (minimum 64dp), explanation, search, count/languages, status, then a weighted scrolling list. The extended Add FAB sits bottom-end with 24dp margins. List bottom padding (104dp) leaves room for the FAB. Explanation/editor use 24dp horizontal insets; search uses 20dp, list 16dp and metadata 26dp. These are observed component-specific insets, not a universal grid.
+Corners are 0dp everywhere (`ShapeAppearance.Dictation.Square` on every corner family, buttons, FAB, fields, sheets, dialogs, Snackbars, switch) except the microphone disk and its ring. A 2dp onSurface rule closes every toolbar and the panel's top edge (outline); 1dp hairlines separate rows. Targets are at least 48dp; 56dp on the panel (status row); the paused buttons draw 64×56dp inside 76×68dp targets. The switch is square: a 52×32dp track (layer-sized, `drawable/switch_track.xml`) and a thumb drawn inside a 32dp cell (`switch_thumb.xml`): rind-green track and a white 20dp thumb at the end when on, a surfaceContainerHigh track with an outline edge and a 16dp outline-ink thumb at the start when off (position, size and colour differ). The Settings switch row has 12dp above and below its label.
 
-Root padding accommodates system bars and display cutouts; dictionary also accommodates the keyboard. Settings adds its 24dp inset to system bars. Sheet is wrap-content and expanded on opening. No tablet breakpoint or desktop layout is established.
+## Glyphs and markers
 
-## Elevation & Depth
+Material Symbols Sharp (FILL 0, wght 400, opsz 24; Apache 2.0) as vector drawables, plus two custom glyphs on the same 24dp grid. Actions: `ic_arrow_back`, `ic_mic`, `ic_stop` and `ic_play_arrow` (transport, FILL 1), `ic_delete`, `ic_content_copy`, `ic_history`, `ic_lock`, `ic_info`, `ic_more_vert`, `ic_chevron_right`, `ic_close`, `ic_add`, `ic_search`. No two glyphs share a silhouette; pause, play and stop never appear in a marker slot. Play means only Continue recording: Keep preparing text carries the preparing mark's `hourglass_top`.
 
-Native Material tonal surfaces, FAB, bottom sheet and Snackbar provide depth. No app-defined shadow, blur or motion durations exist. Preserve native ripple, focus, disabled and pressed states.
+| Mark (`HistoryMarker`) | Glyph | Sentence (detail line, TalkBack, sheet) |
+|---|---|---|
+| Still recording | `radio_button_checked`, red-orange | Still recording. The text so far is saved. |
+| Preparing text | `hourglass_top` | Still preparing text. It appears when ready; open it again in a moment. |
+| Cut short | custom: text lines stopped by a solid cut bar | Cut short. Words at the end may be missing. |
+| Unable to insert text (not inserted / not attempted) | `edit_off` | Unable to insert text. Copy it to use it. |
+| Insertion uncertain | custom: outlined, unboxed "?" at 3dp | Insertion uncertain. Check the app before you paste. |
 
-**The Native Depth Rule.** Let Material widgets own elevation, state layers and transitions; do not introduce a separate shadow system.
-
-## Shapes
-
-Rounded filled search field with explicit corner token. Other shapes come from their Material3 widgets: outlined editor field, filled commit button, icon buttons, extended FAB and modal sheet. No custom card or radius scale is established. Icons are 24dp vector resources; close/delete actions have 48dp bounds. Term labels have minimum 64dp height and native selectable backgrounds.
+**The One Mark Rule.** At most one mark per take, by precedence: in progress, cut short, unable to insert, uncertain. A finished, inserted take carries none. Marks are onSurface except the recording mark. On the panel a mark shows only when nothing else shows the state (today: Unable to insert text). The Unable to insert text state is a held-text choice, see the panel table.
 
 ## Components
 
-### Settings and navigation
+### Recording panel (`layout/ime.xml`, `layout-w600dp-land/ime.xml`, `layout-land/ime.xml`, `panel_status.xml`, `panel_stage.xml`, `panel_choice.xml`)
 
-Launcher and Android keyboard settings resolve to the same Settings activity. Settings retains the benchmark switch and deletion controls alongside its dictionary button. Dictionary is a separate internal activity; the toolbar back action returns to Settings, with its icon tinted by `colorOnSurface`. No dictionary management controls belong in recording.
+Status block (both orientations): Back (48dp, labelled by state), status (titleMedium, polite live region) with its mark slot directly after the words, the private-field line (lock glyph at 16/14 of the label size, so it scales with the font, + labelMedium, plain, no box) and the preview (bodyMedium, three lines (two beside the private-field line in landscape, so a private field costs the editor no height), newest last, `PanelPreview`: the last 240 characters from a whole word; at 2× older lines clip at the top), all indented to the status (56dp). The preview's measure stops at 28em of its text size (about 70 characters, `PreviewTextView`), which only the landscape column reaches. Idle keeps the empty preview place: collapsing it would grow the panel (and resize the editor above) at the moment a take starts, or move the microphone under the thumb; a constant height is the better trade. The panel inflates without AppCompat's view factory, so its layouts use platform `android:tint` and `android:drawableStart`. Portrait: a 200dp stage under it. Landscape: the stage sits under the right thumb (272×148dp on the phone, wide enough for the trio; square 148dp under 600dp); the panel is compact so the editor stays visible; extract mode is never used. The status column keeps 8dp of its own below the preview, so at font 2× (when it is taller than the stage) the last line sits 16dp above the panel's edge.
 
-### Search and terms
+| State | Status | Stage | Back label |
+|---|---|---|---|
+| Idle | Tap the microphone to record | red-orange 70dp disk, 28dp mic glyph, hairline ring around a pale field | Back to keyboard |
+| Recording | Recording | same disk, Stop square; red-orange soft ink following loudness: it reaches outward unevenly, thickens and drifts in shape (static ring that only thickens with animations off) | Pause and choose |
+| Paused | Paused | three icon buttons in one row at one height, each drawn 64×56dp (26dp glyph) inside a 76×68dp target: Continue (filled, fixed 3dp selected ring 3dp outside the fill, focused), Stop and insert (outlined, 16dp after it), Discard take (dashed error, drawn 72dp from Stop; 52dp in the landscape stage); tooltips and content descriptions carry the words | Continue recording |
+| Preparing text… | Preparing text… | no disk: a 64dp red-orange arc (5dp stroke) on an outline-variant track; with animations off a static segmented ring | Hold text and choose |
+| Still preparing text | Still preparing text | Keep preparing text (filled, `hourglass_top` glyph, not play) and Discard take | Keep preparing text |
+| Unable to insert text | Held text. Status says what to do and whether the text is safe, wrapping to as many lines as it needs: "Unable to insert text. Copy it, or find it in History." (the take's editor keeps History) or "Unable to insert text. Copy it now. It is not saved." (it does not); the `edit_off` mark sits right after the words in every sub-state except the unconfirmed one. A write after a rotation that the read-back could not confirm says "Could not confirm the insert. Check the field, or copy the text." with the Insertion uncertain mark (not `edit_off`; same controls). After a first Back on held text: "Press Back again to discard the text.". The preview shows the held take text (newest whole lines last, as elsewhere) | no disk, no ring: two framed icon buttons like the paused choice, each 64×56dp inside a 76×68dp target: Copy text (filled primary like Continue, `content_copy`, focused; copies, drops the text and returns to the previous keyboard at once; no tooltip) and Discard text (dashed error). Narrow landscape (`layout-land`): the two buttons stack in the stage (2×68dp in 148dp), the preview stays in the column, so the panel keeps the height of the other states | Back to keyboard. Back never writes to the clipboard: on held text the first Back only shows the warning (the arrow then reads "Discard text and go back"), the second discards the text and leaves |
 
-Filled rounded search with a magnifying start icon and clear action. Hint sits inside the single-line input; floating hint is disabled and both normal/focused box strokes are zero. Search IME action disables personalized learning. Hint text explicitly resolves `colorOnSurfaceVariant`. Filter is trimmed and case-insensitive; displayed entries use German locale collation. Count describes the full dictionary, not just matches. Each row opens editing; its separate delete action has a term-specific accessibility description.
+The disk is one colour in every state; the glyph and status say what it does. Portrait and the phone's landscape (`layout-w600dp-land`): the choice takes the stage's place, under the thumb that held the microphone; the preview stays readable while Stop or Discard is decided and the panel height is unchanged. A narrower landscape window (`layout-land`) falls back to the status column, with the stage left empty. Rotation rebuilds the panel from the take's state (choice, Preparing, held text) and never starts, stops, chooses or discards. Held text (plan B, owner 2026-11-13) lives in memory only while the state shows, and only for the app the take started in and the panel still shows in: Discard text, a second Back on uncopied text (or a first Back after a copy), screen off (a lock during a take also refuses to hold its text, after unlock too) and another app's editor clear or refuse it; a rotation, an input restart and a tap on the field keep it, and a rotation cancels the Back warning. Discard text, like Discard take, leaves Idle with the microphone tap needed. The benchmark banner is errorContainer.
 
-### Add action and editor
+**Discard take is final at once** (owner, 2026-11-11). From either choice: nothing inserted, nothing in History, late output ignored; the panel shows Idle at once and a new take needs the microphone tap (a rotation right after never starts one). No Undo in the panel; History's delete keeps its Undo. Lifecycle rules: [ADR-010](adrs/010-ime-lifecycle.md).
 
-Extended Add FAB opens a native bottom sheet. Sheet contains a title, close action, one outlined Word or phrase field, helper text, quiet feedback and Add/Done button (minimum width 96dp). Field is single-line, maximum 200 characters, without suggestions, autofill or personalized learning. Keyboard opens with focus in the field.
+### Settings (`layout/settings.xml`)
 
-Add saves one entry, clears the field and retains editor focus for repeated additions. Done saves an edit and closes the sheet. Keyboard Done invokes the same valid save action. Close dismisses the unsaved draft. Invalid, unchanged or busy entries disable commit; validation belongs to the field. Busy state disables mutation controls and reports preparation. Cold Settings saves validated text without starting ASR; if a runtime is already loaded, edits reuse its model while preparing the replacement dictionary configuration. Failure retains the previous dictionary and allows retry.
+The shared toolbar structure: MaterialToolbar (64dp, "Dictation", title on the 24dp inset) and its 2dp rule outside the scroll; system bars inset the page. Rows on the 24dp inset, ≥64dp, separated by hairlines: Dictionary (term count) and History (saved count, "N saved", spoken "History · N"), counts in titleSmall before a chevron. A "Benchmark" section header over a 2dp rule, then a MaterialSwitch row, its explanation, "N recordings saved", and "Delete benchmark data" as an underlined error-colour text button with the trash glyph, behind a MaterialAlertDialog with a title.
 
-### Feedback and recovery
+### Dictionary (`layout/dictionary*.xml`)
 
-Counts/language labels and editor feedback use the subdued text role. Status and inline feedback use polite accessibility live regions. Empty, no-match, loading and failed-load states occupy the inline status area; failed load can be tapped to retry. Successful add stays inline. Edit/restore feedback uses anchored native Snackbar. Delete has no confirmation dialog: successful deletion shows an Undo Snackbar for 8000ms, anchored above the FAB.
+Same toolbar and rule; explanation, a square search field (surfaceContainerHigh ground, no box mode, so Material never shifts its text at font 1.3× or 2×; magnifier, clear; the hint centred on the magnifier at every scale), count and languages in titleSmall over a 1dp ink rule; these four scroll away with the list and return on the first scroll up (`AppBarLayout`, `scroll|enterAlways`). Rows on the 24dp inset with hairlines and a 48dp trash. Portrait: a square extended Add term FAB filled primary like every other commit. Landscape: Add term is a top-bar `ic_add` action instead, so nothing covers rows or trash buttons. An empty dictionary shows the explanation and its state line only: no search, count, languages or rule. The add/edit bottom sheet (square, `BottomSheetDialog`). Portrait: the title, the commit button (Add / Done, ≥96dp) and Close in its header row over a 2dp rule; only the field and feedback scroll beneath (`NestedScrollView`, weight 1; the header never scrolls away). Landscape (`layout-land`): one compact header row of field (no floating label; "Word or phrase" is the placeholder and the pane title names the sheet), commit and Close, with the field's error directly under it inside the header, so the error shows above the keyboard at font 2×; feedback and the spelling hint scroll beneath the rule. The feedback line ("Only on this device") shares the helper and error inset (40dp) at every font scale: the app keeps Material's helper inset at 16dp and 4dp above from font 1.3× up. Fields set `flagNoExtractUi`. Semantics are unchanged: per-entry save, Undo Snackbar after delete, validation on the field ([PRODUCT.md](PRODUCT.md)).
 
-Dictionary semantics the UI must respect: [PRODUCT.md](PRODUCT.md).
+### History (`layout/history*.xml`, `menu/history.xml`, `HistoryActivity.kt`, `HistoryRows.kt`)
+
+- **List.** Header item "Audio is not stored." (scrolls away), then day headers (Today, Yesterday, "Mon 9 Nov"; with the year in other years) in titleSmall over a 1dp ink rule. Rows lead with the time (titleSmall), one 24dp mark slot under it, the preview (two lines, bodyLarge), a trailing 48dp trash. No text chips. A row is one accessibility node: "time, preview, mark sentence"; long-click is relabelled "Copy transcript", "Delete transcript" is a named action, the trash ("Delete transcript from <date>: <first words>") is the only nested target. Long-press copies the full transcript (no sensitive flag; the system confirms). Empty state: left-aligned title and hint, the same pattern as Dictionary's state line.
+- **Overflow menu.** "Marks explained" (info glyph; short enough to fit the popup at font 2×) then "Clear History…" (error colour), which keeps its confirmation dialog: a title, one plain sentence ("Deletes 4 saved transcripts and 1 take in progress. Clipboard copies and benchmark recordings stay.", naming only the parts that are non-zero), an error-coloured "Clear" beside a neutral Cancel, no Undo.
+- **Detail.** Title: the day. Meta "14:05 · 23 words" ("12 words so far" while recording). The mark's sentence is a 48dp button with the glyph and a chevron; it opens the marks sheet at that mark (highlighted, selected). Copy and Delete are icon actions at the end of the top bar, 48dp, Delete 16dp after Copy, both with content descriptions and tooltips. The transcript is selectable.
+- **Marks sheet.** A square `BottomSheetDialog` on the plain surface: every mark with its glyph, name and one sentence, and "No mark — Finished and inserted." Opened from a detail line, that mark's row is surfaceContainer with a 4dp ink start bar (`drawable/mark_highlight.xml`).
+- **Delete model** (unchanged): one transcript, no dialog, the row goes at once, Snackbar Undo for 8 s; storage is touched when the window ends or the page is left.
+- **Status slot** (unchanged behaviour): one slot holds the page's own state as a plain line, else one pending warning as a secondaryContainer row with a 48dp Dismiss. Never two.
+- **Privacy** (unchanged): secure window (also the sheet), no transcript text in logs, intents or saved state; no Toasts.
+
+## Elevation and motion
+
+Flat card: no shadows beyond Material's own sheet/Snackbar scrim. Motion is functional only: the recording ribbon follows loudness, the Preparing arc turns. With animations off both have a still form that reads correctly (static ring; segmented ring).
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** use semantic theme colors and DayNight resources.
-- **Do** preserve at least 48dp action targets, system insets and keyboard accommodation.
-- **Do** keep saving feedback close to the field and provide Undo after deletion.
-- **Do** keep dictionary management in Settings and recording focused on recording.
+- **Do** resolve theme roles; hex values only in `values/colors.xml`.
+- **Do** give every state words: status text, content descriptions and tooltips on icon-only buttons, one sentence per mark.
+- **Do** keep 48dp targets (56dp on the panel) and check font scale 2 in portrait and landscape.
+- **Do** keep Undo after deletion in History and Dictionary. **Don't** add an Undo window to the panel's Discard take (removed by the owner, 2026-11-11).
 
 ### Don't:
 
-- **Don't** hardcode the fallback green over dynamic color.
-- **Don't** add a global Save step to the per-entry editor.
-- **Don't** promise measured accuracy gains for arbitrary new terms.
+- **Don't** add DayNight resources, dynamic colour or a second theme.
+- **Don't** round corners (except the microphone disk and ring) or add shadows.
+- **Don't** put more than one mark on a row, or put transport glyphs in a mark slot.
+- **Don't** add a global Save step to the per-entry editor or promise accuracy gains for new terms.
 
-Not canonized: legacy benchmark controls are a mixed platform/Material surface, not a reusable component system. Tablet/landscape and font extremes beyond 1.3 are unverified. The owner smoke test was accepted later ([ADR-027](adrs/027-editable-dictionary.md)).
+Verification: host — `ThemeContrastTest`, `HistoryRowsTest`, `HistoryScreenTest`, `SettingsScreenTest`, `DictationProductionLifecycleTest` (panel states, Discard final at once from both choices and through a rotation, choice layout at font 2 portrait/landscape, landscape choice in the stage, mark after the status, private-field line in landscape at font 2); device — `RecordingPanelTest.captureEveryPanelStateAtBothFontScales` (`files/lab/issue36/b2-panel`), `SettingsHistoryScreenshotTest` (`files/lab/settings-history`: switch off/on, overflow menu, one detail per mark, marks sheet, clear dialog, warning dismissed through its button), `HistoryLayoutTest`, `DictionarySettingsTest` (`files/lab/dictionary-settings`, including `phone-land-font2-*`: the add sheet in landscape at 2× with the keyboard's place drawn as a labelled block). Host: `RecordingRingViewTest` (soft ink reaches outward and changes shape; stays inside a short stage), `DictionaryEditorRecoveryTest` (landscape sheet row and error, landscape list header and Add term, search hint and error inset at font 1.3×). Private captures: `corpus/lab/issue36/b2/`.

@@ -5,6 +5,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application>
+        <service android:name=".CheckpointProducerService" android:exported="false" android:process=":checkpoint_producer" />
         <!-- Test-owned editor; no launcher/export in either APK. Release excludes it. -->
         <activity
             android:name=".EditorProbeActivity"
@@ -12,9 +13,31 @@
             android:excludeFromRecents="true"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".RotationProbeActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.DayNight"
+            android:excludeFromRecents="false" android:windowSoftInputMode="adjustResize" />
+        <!-- Self-rotating probe editors (#56): recreated with the keyboard left hidden, like
+             Signal; and one that handles rotation itself and shows the keyboard again. -->
+        <activity android:name=".SelfRotationProbeActivity" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".SelfRotationProbeActivity$Keep" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateUnchanged"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".SelfRotationProbeActivity$SignalOrder" android:exported="false"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateUnchanged"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".HistoryTestActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
+        <activity android:name=".SettingsLargeTextPreviewActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
         <activity android:name=".DictionaryLargeTextPreviewActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation.Settings"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation"
             android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".DictionaryLargeTextPreviewActivity$Landscape" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation"
+            android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" />
         <!-- Optional vendor drivers for the synthetic accelerator access probe. -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

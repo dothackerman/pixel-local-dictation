@@ -20,6 +20,9 @@ import org.junit.runner.RunWith
 class DictionarySettingsTest {
     @Test fun nativeEditorShowsSearchValidationAndLargeTouchTargets() = preview(DictionaryActivity::class.java, "phone")
     @Test fun nativeEditorSupportsLightThemeAndLargeText() = preview(DictionaryLargeTextPreviewActivity::class.java, "phone-large-light")
+    /** #36 critique: the add sheet held sideways at font 2×, its commit above the keyboard. */
+    @Test fun addSheetKeepsItsCommitAboveTheKeyboardInLandscapeAtLargeText() =
+        preview(DictionaryLargeTextPreviewActivity.Landscape::class.java, "phone-land-font2")
 
     private fun preview(type: Class<out DictionaryActivity>, prefix: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -31,6 +34,10 @@ class DictionarySettingsTest {
                 assertEquals(android.content.res.Configuration.UI_MODE_NIGHT_NO,
                     activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 assertEquals(1.3f, activity.resources.configuration.fontScale, 0.01f)
+            }
+            if (prefix == "phone-land-font2") {
+                assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
+                assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
             }
             val loaded = java.util.concurrent.CountDownLatch(1)
             instrumentation.runOnMainSync {
@@ -57,7 +64,13 @@ class DictionarySettingsTest {
                 activity.findViewById<TextInputEditText>(R.id.dictionary_search).setText("Zür")
                 assertEquals(1, list.adapter!!.itemCount)
                 activity.findViewById<TextInputEditText>(R.id.dictionary_search).setText("")
-                activity.findViewById<View>(R.id.dictionary_add).performClick()
+                // Landscape: Add term is in the top bar and nothing floats over the rows (#36 critique round 3).
+                val toolbar = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.dictionary_toolbar)
+                if (prefix == "phone-land-font2") {
+                    assertFalse(activity.findViewById<View>(R.id.dictionary_add).isShown)
+                    assertTrue(toolbar.menu.findItem(R.id.dictionary_add_item).isVisible)
+                    toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
+                } else activity.findViewById<View>(R.id.dictionary_add).performClick()
             }
             settle()
             lateinit var dialogRoot: View
@@ -71,7 +84,14 @@ class DictionarySettingsTest {
             settle()
             instrumentation.runOnMainSync {
                 assertNotNull(dialogRoot.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.dictionary_entry_layout).error)
-                capture(dialogRoot, File(out, "$prefix-duplicate.png"), activity.window.decorView)
+                // The error itself shows above the keyboard, not only the red mark (#36 critique round 3).
+                val keyboard = dialogRoot.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime()).bottom
+                val error = dialogRoot.findViewById<View>(com.google.android.material.R.id.textinput_error)
+                val at = IntArray(2).also { error.getLocationInWindow(it) }
+                val seen = android.graphics.Rect()
+                assertTrue("error must be wholly visible", error.getGlobalVisibleRect(seen) && seen.height() == error.height)
+                assertTrue("error must stay above the keyboard", at[1] + error.height <= dialogRoot.height - keyboard)
+                capture(dialogRoot, File(out, "$prefix-duplicate.png"), activity.window.decorView, keyboard)
                 dialogRoot.findViewById<TextInputEditText>(R.id.dictionary_entry).setText("Rösti")
             }
             settle()
@@ -85,7 +105,10 @@ class DictionarySettingsTest {
                 assertTrue("editor must open the keyboard", keyboard > 0)
                 val position = IntArray(2).also { button.getLocationInWindow(it) }
                 assertTrue("commit must stay above the keyboard", position[1] + button.height <= dialogRoot.height - keyboard)
-                capture(dialogRoot, File(out, "$prefix-add.png"), activity.window.decorView)
+                assertTrue("commit must not scroll off the top", position[1] >= 0)
+                val shown = android.graphics.Rect()
+                assertTrue("commit must be wholly visible", button.getGlobalVisibleRect(shown) && shown.height() == button.height && shown.width() == button.width)
+                capture(dialogRoot, File(out, "$prefix-add.png"), activity.window.decorView, keyboard)
                 dialogRoot.findViewById<View>(R.id.dictionary_editor_close).performClick()
                 androidx.lifecycle.ViewModelProvider(activity)[DictionaryModel::class.java].state.value =
                     DictionaryModel.State(snapshot.copy(entries = emptyList()), busy = false)
@@ -100,7 +123,7 @@ class DictionarySettingsTest {
     }
 
     /** Draw only this app's own windows. The keyboard and other apps are never captured. */
-    private fun capture(view: View, file: File, underlay: View? = null) {
+    private fun capture(view: View, file: File, underlay: View? = null, keyboard: Int = 0) {
         check(view.width > 0 && view.height > 0)
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         try {
@@ -111,6 +134,14 @@ class DictionarySettingsTest {
                 canvas.drawColor(Color.argb((255 * amount).toInt(), 0, 0, 0))
             }
             view.draw(canvas)
+            // The keyboard is another app's window and is never drawn; a labelled block stands
+            // where it sits, so the capture shows what stays above it.
+            if (keyboard > 0) {
+                val top = (view.height - keyboard).toFloat()
+                canvas.drawRect(0f, top, view.width.toFloat(), view.height.toFloat(), android.graphics.Paint().apply { color = Color.rgb(0x5A, 0x55, 0x48) })
+                canvas.drawText("Keyboard (not captured)", 24f * view.resources.displayMetrics.density, top + 40f * view.resources.displayMetrics.density,
+                    android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 16f * view.resources.displayMetrics.density })
+            }
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally { bitmap.recycle() }
     }

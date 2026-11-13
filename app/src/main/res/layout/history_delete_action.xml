@@ -1,0 +1,8 @@
+<!-- Detail Delete in the top bar, 16dp after Copy (an action view only to keep that gap). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="16dp" android:paddingEnd="4dp">
+    <com.google.android.material.button.MaterialButton android:id="@+id/history_delete_action" style="@style/Widget.Dictation.Button.Icon"
+        android:layout_width="48dp" android:layout_height="48dp" android:layout_gravity="center_vertical"
+        android:contentDescription="@string/history_delete_transcript" android:tooltipText="@string/history_delete_transcript"
+        app:icon="@drawable/ic_delete" app:iconTint="?attr/colorOnSurface" />
+</FrameLayout>

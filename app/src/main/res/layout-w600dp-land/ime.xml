@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Landscape on the phone (window 600dp and wider): the same views, ids and rules as
+     layout/ime.xml, side by side so the editor stays visible above. Status column (status,
+     private-field line, preview) on the start side, the stage under the right thumb. The paused
+     choice takes the microphone's place in the stage, as in portrait; the preview stays
+     in view while Stop or Discard is decided and the panel keeps its height in every state.
+     A narrower landscape window uses layout-land/ime.xml. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/panel"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="?attr/colorSurfaceContainer">
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:background="?attr/colorOutline" />
+    <TextView
+        android:id="@+id/benchmark_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorErrorContainer"
+        android:textColor="?attr/colorOnErrorContainer"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:padding="4dp"
+        android:gravity="center"
+        android:text="@string/benchmark_banner"
+        android:visibility="gone" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
+        <!-- The column's own 8dp below the preview: at large text the column is taller than the
+             stage, and the last line keeps 16dp above the panel's edge. -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:orientation="vertical">
+            <include layout="@layout/panel_status" />
+        </LinearLayout>
+        <FrameLayout
+            android:id="@+id/stage"
+            android:layout_width="@dimen/panel_stage_width_land"
+            android:layout_height="148dp"
+            android:layout_marginStart="12dp">
+            <include layout="@layout/panel_stage" />
+            <include
+                layout="@layout/panel_choice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>

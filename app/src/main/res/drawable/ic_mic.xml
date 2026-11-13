@@ -1,3 +1,10 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="32" android:viewportHeight="32">
-    <path android:pathData="M16,4 C13.8,4 12,5.8 12,8 L12,15 C12,17.2 13.8,19 16,19 C18.2,19 20,17.2 20,15 L20,8 C20,5.8 18.2,4 16,4 Z M8,14 L8,16 C8,20.4 11.6,24 16,24 C20.4,24 24,20.4 24,16 L24,14 M16,24 L16,29 M11,29 L21,29" android:strokeColor="#283B21" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="@android:color/transparent" />
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols Sharp "mic", wght 400, opsz 24. Apache License 2.0 (licenses/Apache-2.0-MaterialSymbols.txt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="960" android:viewportHeight="960"
+    android:tint="?attr/colorOnPrimary">
+    <group android:translateY="960">
+        <path android:fillColor="@android:color/white" android:pathData="M480-400q-50 0-85-35t-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35Zm0-240Zm-40 520v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Zm40-360q17 0 28.5-11.5T520-520v-240q0-17-11.5-28.5T480-800q-17 0-28.5 11.5T440-760v240q0 17 11.5 28.5T480-480Z" />
+    </group>
 </vector>

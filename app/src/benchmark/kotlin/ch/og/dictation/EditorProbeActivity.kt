@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsAnimation
+import android.view.WindowManager
 import android.graphics.Insets
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -52,6 +53,7 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         animationCallback = intent.getBooleanExtra(EXTRA_ANIMATION_CALLBACK, false)
         root = FrameLayout(this)
         if (animationCallback) installAnimationCallback()

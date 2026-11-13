@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crate B2 direction</title>
+<!-- Preview only: the app bundles fonts in res/font and icons as vector drawables. One link per family; offline the fallbacks below apply. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders:opsz,wght@10..72,100..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@100..900&display=swap">
+<style>
+/* ---------- review page chrome (not part of the proposal) ---------- */
+:root{
+  --pg:#E4DED2; --pg-ink:#1C1A12; --pg-sub:#57513F; --pg-rule:#C2B9A6; --pg-card:#EFEADF;
+  --u:0.8px;   /* 1dp in the frames: 330px frame ~ 412dp Pixel 10 Pro XL */
+  --fs:1;      /* Android font scale */
+  --disp:"Big Shoulders Display","Big Shoulders","Arial Narrow","Roboto Condensed",sans-serif;
+  --text:"Public Sans",system-ui,Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --pg:#17160F; --pg-ink:#EDE5D2; --pg-sub:#A8A08C; --pg-rule:#3A372D; --pg-card:#201E17; }
+}
+:root[data-theme="dark"]{ --pg:#17160F; --pg-ink:#EDE5D2; --pg-sub:#A8A08C; --pg-rule:#3A372D; --pg-card:#201E17; }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--pg);color:var(--pg-ink);font:15px/1.5 var(--text)}
+::selection{background:#FFD8C6;color:#3A0E00}
+.wrap{max-width:1500px;margin:0 auto;padding:24px 16px 80px}
+header.top{display:grid;gap:16px;border-bottom:2px solid var(--pg-ink);padding-bottom:16px}
+@media(min-width:900px){header.top{grid-template-columns:1.3fr 1fr;align-items:end}}
+h1{font:800 clamp(34px,5vw,56px)/0.95 var(--disp);margin:0;letter-spacing:0.01em}
+.lede{margin:10px 0 0;color:var(--pg-sub);max-width:66ch}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:flex;border:2px solid var(--pg-ink)}
+.seg button{all:unset;cursor:pointer;padding:10px 14px;font:800 16px/1.1 var(--disp);letter-spacing:.02em;border-right:2px solid var(--pg-ink)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--pg-ink);color:var(--pg)}
+.seg button:focus-visible{outline:3px solid #A52E07;outline-offset:2px}
+h2{font:800 30px/1 var(--disp);margin:32px 0 6px;letter-spacing:.01em}
+.sub{margin:0;color:var(--pg-sub);max-width:80ch}
+.frames{display:flex;gap:20px;overflow-x:auto;padding:16px 0 20px;scroll-snap-type:x proximity;align-items:flex-start}
+.fcol{flex:0 0 auto;scroll-snap-align:start;width:330px}
+.fcap{font:400 13px/1.4 var(--text);margin-top:8px;color:var(--pg-sub)}
+.fcap b{color:var(--pg-ink);font-weight:700}
+.fcap .prop{display:inline-block;font:800 12px/1 var(--disp);letter-spacing:.06em;border:2px solid var(--pg-ink);color:var(--pg-ink);padding:3px 5px;margin-right:6px;vertical-align:1px}
+.decide{margin-top:20px;border:3px solid var(--pg-ink);padding:12px 16px;background:var(--pg-card);max-width:900px}
+.decide h3{font:800 22px/1.1 var(--disp);margin:0 0 6px;letter-spacing:.01em}
+.decide ol{margin:0;padding-left:20px}.decide li{margin:4px 0}
+.callout{margin-top:8px;border:2px solid var(--pg-ink);padding:8px 10px;font:400 12.5px/1.4 var(--text);color:var(--pg-ink);background:var(--pg-card)}
+.callout b{font:800 14px/1.2 var(--disp);letter-spacing:.02em;display:block;margin-bottom:4px}
+.callout ol{margin:0;padding-left:18px}
+section.block{border-top:2px solid var(--pg-ink);margin-top:32px;padding-top:16px}
+section.block h3{font:800 24px/1.1 var(--disp);margin:0 0 12px;letter-spacing:.01em}
+.cols{display:grid;gap:28px}
+@media(min-width:1100px){.cols{grid-template-columns:1.2fr 1fr}}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border-bottom:1px solid var(--pg-rule);padding:6px 8px;text-align:left;vertical-align:top}
+th{font-weight:700;border-bottom:2px solid var(--pg-ink)}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+td.g{width:44px}
+td.g svg{width:24px;height:24px;display:block}
+td.g.lose{opacity:.55}
+.sw{display:inline-block;width:18px;height:18px;border:1px solid var(--pg-ink);vertical-align:-4px;margin-right:6px}
+.ok{font-weight:700}.bad{font-weight:800;color:#8A1145}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+.rules{margin:0;padding-left:18px}.rules li{margin:5px 0}
+.note{color:var(--pg-sub);font-size:13px;max-width:80ch}
+
+/* ---------- B2 tokens (the proposal) ---------- */
+.phone{
+  --surface:#F3E9D4;--surfaceContainer:#E9DCC1;--surfaceContainerHigh:#DDCEAF;
+  --onSurface:#1C1A12;--onSurfaceVariant:#4E4838;
+  --primary:#A52E07;--onPrimary:#FFFFFF;--primaryContainer:#FFD8C6;--onPrimaryContainer:#3A0E00;
+  --secondary:#2E4A21;--onSecondary:#FFFFFF;--secondaryContainer:#CFE0BC;--onSecondaryContainer:#13240A;
+  --outline:#6D6550;--outlineVariant:#C7B999;--inversePrimary:#FFB59A;
+  --error:#8A1145;--onError:#FFFFFF;--errorContainer:#F8D7E3;--onErrorContainer:#3D0019;
+  width:330px;height:700px;border:2px solid var(--pg-ink);background:#000;display:flex;flex-direction:column;overflow:hidden;position:relative;
+}
+.sb{height:calc(28*var(--u));display:flex;align-items:center;justify-content:space-between;padding:0 calc(16*var(--u));font:600 calc(11px*var(--fs)) system-ui,sans-serif;color:#cfcfcf;background:#000;flex:0 0 auto}
+.sb.app{background:var(--surface);color:var(--onSurfaceVariant)}
+.navbar{height:calc(20*var(--u));display:flex;align-items:center;justify-content:center;flex:0 0 auto;background:#000}
+.navbar i{display:block;width:90px;height:4px;background:#bbb}
+.screen-app .navbar{background:var(--surface)} .screen-app .navbar i{background:var(--onSurfaceVariant)}
+
+/* host app: someone else's dark chat, never themed by us */
+.chat{flex:1 1 auto;background:#0B0C0E;color:#E6E6E6;display:flex;flex-direction:column;min-height:0;font-family:system-ui,Roboto,sans-serif}
+.chat .bar{height:44px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #1d1f23;font-size:14px;font-weight:600}
+.chat .av{width:26px;height:26px;border-radius:50%;background:#2B4A63}
+.chat .msgs{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:8px 10px;overflow:hidden;min-height:0}
+.chat .m{max-width:78%;padding:6px 10px;border-radius:14px;font-size:12.5px;line-height:1.35}
+.chat .in{background:#1E2126;align-self:flex-start}.chat .out{background:#2A4E6B;align-self:flex-end}
+.chat .field{margin:6px 8px 8px;border-radius:20px;background:#1A1C20;padding:9px 14px;font-size:12.5px;color:#9a9a9a;display:flex;align-items:center;gap:2px}
+.chat .caret{width:2px;height:15px;background:#7FB2E0}
+/* generic dark keyboard (stand-in for the owner's dark keyboard; not a copy of any product) */
+.kb{background:#16171A;padding:8px 4px 6px;flex:0 0 auto;display:flex;flex-direction:column;gap:7px}
+.kb .sugg{height:30px;display:flex;align-items:center;justify-content:space-around;color:#8d9099;font:500 12px system-ui,sans-serif}
+.kb .sugg svg{width:18px;height:18px;color:#c9ccd3}
+.kb .r{display:flex;gap:5px;justify-content:center}
+.kb .k{flex:0 0 27px;height:38px;background:#2A2C31;border-radius:6px;color:#E4E5E8;font:500 15px/38px system-ui,sans-serif;text-align:center}
+.kb .k.w{flex:0 0 40px;background:#3A3D44}.kb .k.sp{flex:1 1 auto}
+
+/* ---------- recording panel ---------- */
+.panel{background:var(--surfaceContainer);color:var(--onSurface);border-top:calc(2*var(--u)) solid var(--outline);padding:0 calc(12*var(--u)) calc(8*var(--u));flex:0 0 auto;font-family:var(--text)}
+.p-top{display:flex;align-items:center;min-height:calc(56*var(--u));gap:calc(8*var(--u))}
+.ib{all:unset;box-sizing:border-box;width:calc(48*var(--u));height:calc(48*var(--u));display:grid;place-items:center;color:var(--onSurface);flex:0 0 auto;cursor:pointer}
+.ib svg{width:calc(24*var(--u));height:calc(24*var(--u))}
+.status{flex:1;font-family:var(--disp);font-weight:800;font-size:calc(18*var(--u)*var(--fs));line-height:1.2;letter-spacing:.01em}
+.undo{all:unset;cursor:pointer;color:var(--primary);text-decoration:underline;text-decoration-thickness:calc(2*var(--u));text-underline-offset:calc(3*var(--u));display:inline-flex;align-items:center;min-height:calc(48*var(--u));padding:0 calc(4*var(--u))}
+.slot{flex:0 0 auto;width:calc(48*var(--u));height:calc(48*var(--u));display:grid;place-items:center;color:var(--onSurface)}
+.slot svg{width:calc(24*var(--u));height:calc(24*var(--u))}
+.helper{display:flex;gap:calc(6*var(--u));align-items:center;margin:calc(-6*var(--u)) 0 calc(6*var(--u)) calc(56*var(--u));font-family:var(--disp);font-weight:700;letter-spacing:.02em;font-size:calc(14*var(--u)*var(--fs));line-height:1.3;color:var(--onSurfaceVariant)}
+.helper svg{flex:0 0 auto;width:calc(16*var(--u));height:calc(16*var(--u))}
+/* preview: always 3 lines, newest last; older lines clip at the top */
+.preview{padding:0 calc(8*var(--u)) 0 calc(56*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.45;color:var(--onSurfaceVariant);height:calc(3*1.45*14*var(--u)*var(--fs));overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+.preview.none{height:0}
+.stage{height:calc(196*var(--u));position:relative;display:grid;place-items:center;margin-top:calc(8*var(--u))}
+.stage svg.ring{position:absolute;inset:0;width:100%;height:100%}
+.mic{all:unset;box-sizing:border-box;width:calc(72*var(--u));height:calc(72*var(--u));border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;cursor:pointer;background:var(--primary);color:var(--onPrimary)}
+.mic svg{width:calc(28*var(--u));height:calc(28*var(--u))}
+.arc{width:calc(64*var(--u));height:calc(64*var(--u))}
+.arc.move{animation:spin 1.1s linear infinite}
+.arc.rest{display:none}
+body.still .arc.move{display:none} body.still .arc.rest{display:block}
+@media (prefers-reduced-motion: reduce){ .arc.move{display:none} .arc.rest{display:block} }
+@keyframes spin{to{transform:rotate(360deg)}}
+/* paused: three icon buttons, one height */
+.trio{display:flex;align-items:center;gap:calc(16*var(--u))}
+.trio .sp{width:calc(40*var(--u))}
+.ibtn{all:unset;box-sizing:border-box;width:calc(64*var(--u));height:calc(56*var(--u));display:grid;place-items:center;cursor:pointer}
+.ibtn svg{width:calc(26*var(--u));height:calc(26*var(--u))}
+.ibtn.primary{background:var(--primary);color:var(--onPrimary);outline:calc(3*var(--u)) solid var(--onSurface);outline-offset:calc(3*var(--u))}
+.ibtn.out{border:calc(2*var(--u)) solid var(--onSurface);color:var(--onSurface)}
+.ibtn.danger{border:calc(2*var(--u)) dashed var(--error);color:var(--error)}
+
+/* ---------- app screens ---------- */
+.screen-app{background:var(--surface);color:var(--onSurface);font-family:var(--text)}
+.tb{min-height:calc(64*var(--u));display:flex;align-items:center;gap:calc(4*var(--u));padding:0 calc(4*var(--u));border-bottom:calc(2*var(--u)) solid var(--onSurface);flex:0 0 auto}
+.tb h4{margin:0 0 0 calc(4*var(--u));flex:1;font-family:var(--disp);font-weight:800;font-size:calc(26*var(--u)*var(--fs));line-height:1.1;letter-spacing:.01em}
+.body{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;position:relative}
+.body>*{flex-shrink:0}.body>.transcript{flex-shrink:1}
+.expl{margin:0;padding:calc(12*var(--u)) calc(24*var(--u)) calc(4*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.45;color:var(--onSurfaceVariant)}
+.day{padding:calc(16*var(--u)) calc(24*var(--u)) calc(4*var(--u));font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(15*var(--u)*var(--fs));color:var(--onSurface);border-bottom:calc(2*var(--u)) solid var(--onSurface)}
+.row{display:grid;grid-template-columns:calc(52*var(--u)) 1fr calc(48*var(--u));align-items:start;border-bottom:calc(1*var(--u)) solid var(--outlineVariant);padding:calc(12*var(--u)) calc(4*var(--u)) calc(12*var(--u)) calc(24*var(--u));min-height:calc(64*var(--u));column-gap:calc(4*var(--u))}
+.row>div{min-width:0}
+.row .t{font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(15*var(--u)*var(--fs));font-variant-numeric:tabular-nums;line-height:1.3}
+.row .mk{display:block;margin-top:calc(6*var(--u));width:calc(24*var(--u));height:calc(24*var(--u));color:var(--onSurface)}
+.row .mk svg{width:100%;height:100%;display:block}
+.row .p{font-size:calc(16*var(--u)*var(--fs));line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.row .ib{margin-top:calc(-10*var(--u));color:var(--onSurfaceVariant)}
+.row.gone{min-height:0;height:calc(6*var(--u));padding:0;background:var(--surfaceContainer);border-bottom:calc(1*var(--u)) solid var(--outlineVariant)}
+html[data-fs="2"] .row{grid-template-columns:1fr calc(48*var(--u))}
+html[data-fs="2"] .row .lead{grid-column:1;display:flex;gap:calc(8*var(--u));align-items:center}
+html[data-fs="2"] .row .mk{margin-top:0}
+html[data-fs="2"] .row>div:nth-child(2){grid-column:1}
+html[data-fs="2"] .row .ib{grid-column:2;grid-row:1 / span 2}
+.meta{padding:calc(14*var(--u)) calc(24*var(--u)) calc(4*var(--u));font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(15*var(--u)*var(--fs));color:var(--onSurfaceVariant)}
+.exc{display:flex;gap:calc(8*var(--u));align-items:center;padding:calc(4*var(--u)) calc(24*var(--u)) calc(12*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.4;border-bottom:calc(1*var(--u)) solid var(--outlineVariant)}
+.exc.tap{all:unset;box-sizing:border-box;text-align:left;display:flex;width:100%;gap:calc(8*var(--u));align-items:center;min-height:calc(48*var(--u));padding:calc(4*var(--u)) calc(16*var(--u)) calc(8*var(--u)) calc(24*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.4;border-bottom:calc(1*var(--u)) solid var(--outlineVariant);cursor:pointer}
+.exc.tap>span{flex:1}
+.exc.tap>span[role]{flex:0 0 auto;display:block;width:calc(24*var(--u));height:calc(24*var(--u))}
+.exc svg{flex:0 0 auto;width:calc(24*var(--u));height:calc(24*var(--u))}
+.transcript{padding:calc(16*var(--u)) calc(24*var(--u));font-size:calc(16*var(--u)*var(--fs));line-height:1.55;overflow:hidden;flex:1}
+.transcript p{margin:0 0 .7em}
+.snack{position:absolute;left:calc(12*var(--u));right:calc(12*var(--u));bottom:calc(12*var(--u));background:var(--onSurface);color:var(--surface);display:flex;align-items:center;justify-content:space-between;min-height:calc(48*var(--u));padding:0 calc(4*var(--u)) 0 calc(16*var(--u));font-size:calc(14*var(--u)*var(--fs))}
+.snack b{font-family:var(--disp);font-weight:800;letter-spacing:.03em;padding:0 calc(12*var(--u));min-height:calc(48*var(--u));display:grid;place-items:center;font-size:1.15em;color:var(--inversePrimary)}
+.srow{display:flex;align-items:center;min-height:calc(64*var(--u));padding:calc(8*var(--u)) calc(16*var(--u)) calc(8*var(--u)) calc(24*var(--u));border-bottom:calc(1*var(--u)) solid var(--outlineVariant);gap:calc(12*var(--u))}
+.srow .n{flex:1;font-size:calc(16*var(--u)*var(--fs));line-height:1.3}
+.cnt,.srow .c{font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(15*var(--u)*var(--fs));color:var(--onSurfaceVariant);font-variant-numeric:tabular-nums}
+.srow svg{width:calc(24*var(--u));height:calc(24*var(--u));color:var(--onSurfaceVariant)}
+.shead{padding:calc(20*var(--u)) calc(24*var(--u)) calc(4*var(--u));font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(15*var(--u)*var(--fs));border-bottom:calc(2*var(--u)) solid var(--onSurface);margin-top:calc(12*var(--u))}
+.sw2{flex:0 0 auto;width:calc(52*var(--u));height:calc(32*var(--u));border:calc(2*var(--u)) solid var(--outline);background:var(--surfaceContainerHigh);position:relative}
+.sw2::after{content:"";position:absolute;top:calc(4*var(--u));left:calc(4*var(--u));width:calc(20*var(--u));height:calc(20*var(--u));background:var(--outline)}
+.sw2.on{background:var(--secondary);border-color:var(--secondary)}
+.sw2.on::after{left:auto;right:calc(4*var(--u));background:var(--onSecondary)}
+.small{padding:calc(6*var(--u)) calc(24*var(--u)) calc(4*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.45;color:var(--onSurfaceVariant)}
+.small.cnt{font-family:var(--disp)}
+.tbtn{all:unset;margin:calc(4*var(--u)) calc(12*var(--u));min-height:calc(48*var(--u));padding:0 calc(12*var(--u));display:inline-flex;align-items:center;gap:calc(8*var(--u));font-family:var(--disp);font-weight:800;letter-spacing:.02em;font-size:calc(16*var(--u)*var(--fs));color:var(--error);text-decoration:underline;text-underline-offset:3px}
+.tbtn svg{width:calc(20*var(--u));height:calc(20*var(--u))}
+/* menu and sheet */
+.menu{position:absolute;top:calc(4*var(--u));right:calc(8*var(--u));background:var(--surface);border:calc(2*var(--u)) solid var(--onSurface);min-width:calc(220*var(--u));z-index:3}
+.menu div{min-height:calc(48*var(--u));display:flex;align-items:center;gap:calc(12*var(--u));padding:0 calc(16*var(--u));font-size:calc(16*var(--u)*var(--fs))}
+.menu div+div{border-top:calc(1*var(--u)) solid var(--outlineVariant)}
+.menu svg{width:calc(24*var(--u));height:calc(24*var(--u));flex:0 0 auto}
+.menu .danger{color:var(--error)}
+.scrim{position:absolute;inset:0;background:rgba(28,26,18,.5);z-index:2}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:calc(2*var(--u)) solid var(--onSurface);z-index:3;padding-bottom:calc(8*var(--u))}
+.sheet .sh{display:flex;align-items:center;padding:calc(8*var(--u)) calc(4*var(--u)) calc(4*var(--u)) calc(24*var(--u))}
+.sheet .sh h5{flex:1;margin:0;font-family:var(--disp);font-weight:800;font-size:calc(22*var(--u)*var(--fs));line-height:1.15}
+.sheet .li{display:grid;grid-template-columns:calc(24*var(--u)) 1fr;column-gap:calc(16*var(--u));align-items:start;padding:calc(10*var(--u)) calc(24*var(--u));border-top:calc(1*var(--u)) solid var(--outlineVariant)}
+.sheet .li.hl{background:var(--surfaceContainer)}
+.row{position:relative}
+.ttip{position:absolute;left:calc(16*var(--u));top:calc(100% - 4*var(--u));z-index:2;background:var(--onSurface);color:var(--surface);font:400 calc(13*var(--u)*var(--fs))/1.35 var(--text);padding:calc(6*var(--u)) calc(10*var(--u));max-width:calc(260*var(--u))}
+.sheet .li svg{width:calc(24*var(--u));height:calc(24*var(--u));display:block}
+.sheet .li b{display:block;font-family:var(--disp);font-weight:800;font-size:calc(16*var(--u)*var(--fs));line-height:1.2;letter-spacing:.01em}
+.sheet .li span{font-size:calc(14*var(--u)*var(--fs));line-height:1.4;color:var(--onSurfaceVariant)}
+/* detail lines frame */
+.dl{border-bottom:calc(2*var(--u)) solid var(--onSurface)}
+.dl .meta{padding-top:calc(10*var(--u))}
+/* review legend: grows with font scale */
+.phone.legend{height:auto;min-height:700px;background:var(--surface);color:var(--onSurface)}
+.legend .lh{padding:calc(14*var(--u)) calc(20*var(--u));font-size:calc(14*var(--u)*var(--fs));line-height:1.4;color:var(--onSurfaceVariant)}
+.legend .lr{display:grid;grid-template-columns:calc(24*var(--u)) calc(56*var(--u)) calc(32*var(--u)) 1fr calc(32*var(--u));align-items:center;column-gap:calc(12*var(--u));padding:calc(12*var(--u)) calc(20*var(--u));border-bottom:calc(1*var(--u)) solid var(--outlineVariant);min-height:calc(80*var(--u))}
+.legend .lr.headrow{min-height:0;padding-top:calc(6*var(--u));padding-bottom:calc(6*var(--u));border-bottom:calc(2*var(--u)) solid var(--onSurface);font-family:var(--disp);font-weight:800;letter-spacing:.03em;font-size:calc(13*var(--u));color:var(--onSurfaceVariant)}
+.legend .idx{font-family:var(--disp);font-weight:800;font-size:calc(18*var(--u)*var(--fs));color:var(--onSurfaceVariant)}
+.legend .big svg{width:calc(48*var(--u));height:calc(48*var(--u));display:block}
+.legend .real svg{width:calc(24*var(--u));height:calc(24*var(--u));display:block}
+.legend .ru{color:var(--outline)}
+.legend .ru svg{width:calc(24*var(--u));height:calc(24*var(--u));display:block}
+.legend .n{font-family:var(--disp);font-weight:800;font-size:calc(17*var(--u)*var(--fs));line-height:1.15}
+.legend .d{font-size:calc(13*var(--u)*var(--fs));line-height:1.35;color:var(--onSurfaceVariant)}
+.legend .words{min-width:0;position:relative}
+body.hide-words .legend .words>*{visibility:hidden}
+body.hide-words .legend .words::before{content:"";position:absolute;left:0;top:50%;width:calc(28*var(--u));height:calc(3*var(--u));background:var(--outline);transform:translateY(-50%)}
+</style>
+</head>
+<body class="hide-words">
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1>Crate B2</h1>
+    <p class="lede">The approved direction: kraft card printed in two inks, red-orange and rind green, with Big Shoulders Display and Public Sans. It is one fixed light scheme for the panel and every screen. The chat and keyboard belong to other apps and stay dark, so the frames show the light panel against them as it will really look. Two proposals need your decision; they are listed below.</p>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Font scale">
+      <button data-fs="1" aria-pressed="true">Font 1×</button>
+      <button data-fs="2" aria-pressed="false">Font 2×</button>
+    </div>
+    <div class="seg" role="group" aria-label="Motion">
+      <button data-still="0" aria-pressed="true">Motion</button>
+      <button data-still="1" aria-pressed="false">Still frame</button>
+    </div>
+    <div class="seg" role="group" aria-label="Legend words">
+      <button data-words="0" aria-pressed="true">Glyphs only</button>
+      <button data-words="1" aria-pressed="false">Show words</button>
+    </div>
+  </div>
+</header>
+
+<section class="decide" aria-label="Decisions needed from the owner"><h3>Decisions needed from you</h3><ol>
+<li><b>The "Marks explained" sheet</b> (History menu, and a tap on the detail line). If you decline, the markers are explained only by the detail sentence and TalkBack, and the detail line is no longer tappable.</li></ol></section>
+<h2>Recording panel</h2>
+<p class="sub">The microphone button looks the same in every state: a red-orange disk with a white glyph. The state shows in the glyph (microphone or Stop), the ring (hairline at rest, soft red-orange ink while recording, reaching outward unevenly with loudness) and the status line. The status row's trailing slot carries a History marker only when nothing else on the panel shows the state (today: Unable to insert text). The preview always shows 3 lines, newest last; at 2× older lines clip at the top.</p>
+<div class="frames" id="panelFrames"></div>
+
+<h2>History and Settings</h2>
+<p class="sub">A take with an exception gets one glyph, in one slot under its time. Rows without an exception carry nothing. The words are in the detail line, in TalkBack, and in "Marks explained" in the History menu.</p>
+<div class="frames" id="screenFrames"></div>
+
+<section class="block">
+  <h3>Icon review: Material Symbols Sharp or custom</h3>
+  <p class="note">Each glyph was judged without words at 24dp and at font scale 2, against the other glyphs, and against the square-ended B type. The family is <b>Material Symbols Sharp, FILL 0, wght 400, GRAD 0, opsz 24</b> (Apache 2.0), bundled as vector drawables. The transport buttons (play, stop) are solid, as in every Material style. Everything else is outlined at 2dp. The one exception: the uncertain question mark uses a 3dp stroke, because a thin bare question mark reads as a placeholder. Transport glyphs never appear in the status or marker slot. The glyphs on this page are hand-drawn approximations on the 24dp grid. The shipped drawables come from the official set.</p>
+  <div class="tw"><table id="review"><thead><tr><th>State or action</th><th>Chosen</th><th>Source</th><th>Runner-up</th><th>Source</th><th>Why the chosen one wins</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section class="block">
+  <div class="cols">
+    <div>
+      <h3>Colour roles</h3>
+      <table id="tok"><thead><tr><th>Role</th><th>Hex</th><th>Used for</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div>
+      <h3>Measured contrast</h3>
+      <table id="pairs"><thead><tr><th>Pair</th><th class="num">Ratio</th><th class="num">Needs</th><th></th></tr></thead><tbody></tbody></table>
+      <p class="note">These are WCAG 2.x ratios, computed in this page from the colour table. Text needs 4.5:1. Arcs, disks, rings, markers and control edges need 3:1. Error and brand red-orange are close in lightness, so a destructive control is never told apart by colour alone. Discard is the only dashed button, carries the trash glyph, and sits apart from the others; Discard is final at once (owner, 2026-11-11), so these are the protection against a slip.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="cols">
+    <div>
+      <h3>Type roles</h3>
+      <table id="type"><thead><tr><th>Material role</th><th>Where</th><th>Family · weight · size</th></tr></thead><tbody></tbody></table>
+      <p class="note">Fonts load from Google Fonts for this preview only. The app bundles static instances in <span class="mono">res/font</span>. Offline, the page falls back to Arial Narrow / Roboto Condensed and the system sans, so the letterforms are not the proposal.</p>
+    </div>
+    <div>
+      <h3>Marker rules</h3>
+      <ul class="rules">
+        <li><b>One slot.</b> Each History row has one 24dp slot under the time. On the panel the same marker goes in the status row's trailing slot, but only when the ring or arc does not already show the state. In the detail it starts the one plain exception line.</li>
+        <li><b>At most one marker per row</b>, by priority: in progress, then cut short, then unable to insert, then uncertain. "Not attempted" and "not inserted" share a marker.</li>
+        <li><b>Colour.</b> Markers are drawn in onSurface. Only the recording marker is red-orange, and its shape differs too.</li>
+        <li><b>Words.</b> Each marker has exactly one sentence, used for the detail line, TalkBack and the "Marks explained" sheet.</li>
+        <li><b>A row reads as one node</b>, e.g. "14:05, Reminder to return…, unable to insert text". Tap opens the detail; touch-and-hold copies. TalkBack offers "Copy transcript" and "Delete". The trash icon is the only nested target.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+const P={surface:'#F3E9D4',surfaceContainer:'#E9DCC1',surfaceContainerHigh:'#DDCEAF',onSurface:'#1C1A12',onSurfaceVariant:'#4E4838',primary:'#A52E07',onPrimary:'#FFFFFF',primaryContainer:'#FFD8C6',onPrimaryContainer:'#3A0E00',inversePrimary:'#FFB59A',secondary:'#2E4A21',onSecondary:'#FFFFFF',secondaryContainer:'#CFE0BC',onSecondaryContainer:'#13240A',outline:'#6D6550',outlineVariant:'#C7B999',error:'#8A1145',onError:'#FFFFFF',errorContainer:'#F8D7E3',onErrorContainer:'#3D0019'};
+const USE={surface:'Screen ground (Settings, Dictionary, History), menu, sheet',surfaceContainer:'Recording panel ground',surfaceContainerHigh:'Switch track off, search field, pressed rows',onSurface:'Status, titles, transcripts, markers, Stop outline, selected ring, Snackbar ground',onSurfaceVariant:'Preview, helper line, explanations, time meta, counts, trash icon',primary:'Mic disk (every state), recording ring and marker, preparing arc, Continue fill',onPrimary:'Mic, Stop and Continue glyphs',primaryContainer:'Text selection',onPrimaryContainer:'Text on selection',inversePrimary:'Snackbar Undo',secondary:'Switch on (rind green)',onSecondary:'Switch thumb on',secondaryContainer:'History warning row',onSecondaryContainer:'Text on warning row',outline:'Panel top rule, idle hairline ring, switch edge',outlineVariant:'Row hairlines, arc track',error:'Discard (dashed), Clear History, Delete benchmark data',onError:'Confirm button in Clear History dialog',errorContainer:'Benchmark banner, failure rows',onErrorContainer:'Text on errorContainer'};
+const PAIRS=[
+ ['onSurface','surface',4.5,'Transcript, row preview on screens'],
+ ['onSurface','surfaceContainer',4.5,'Panel status, Stop outline, selected ring'],
+ ['onSurfaceVariant','surface',4.5,'Explanation, time meta, counts, trash icon'],
+ ['onSurfaceVariant','surfaceContainer',4.5,'Panel preview and helper line'],
+ ['onPrimary','primary',4.5,'Mic / Stop / Continue glyph on red-orange'],
+ ['primary','surfaceContainer',3,'Arc, disk, ring, Continue fill'],
+ ['primary','surface',3,'Recording marker in History rows'],
+ ['inversePrimary','onSurface',4.5,'Snackbar Undo'],
+ ['surface','onSurface',4.5,'Snackbar text'],
+ ['outline','surfaceContainer',3,'Idle hairline ring, panel top rule'],
+ ['onSurface','surface',3,'Markers in History rows and sheet'],
+ ['error','surfaceContainer',3,'Discard glyph and dashed edge'],
+ ['error','surface',4.5,'Clear History, Delete benchmark data (text)'],
+ ['secondary','surface',3,'Switch on track'],
+ ['outline','surface',3,'Switch off edge'],
+ ['error','primary',0,'Error vs brand red-orange (information only)']
+];
+const TYPE=[
+ ['titleLarge','Toolbar title, sheet title','Big Shoulders Display · 800 · 26sp/30 (sheet 22sp)'],
+ ['titleMedium','Panel status','Big Shoulders Display · 800 · 18sp/22'],
+ ['titleSmall','Day headers, time, detail meta, every count','Big Shoulders Display · 800 · 15sp/20, +0.03em, tabular figures'],
+ ['labelLarge','Undo, text buttons, Snackbar action','Big Shoulders Display · 800 · 16sp/20'],
+ ['labelMedium','Panel helper line (private field)','Big Shoulders Display · 700 · 14sp/18, onSurfaceVariant'],
+ ['bodyLarge','Rows, transcript detail, Settings rows, menu','Public Sans · 400 · 16sp/25'],
+ ['bodyMedium','Panel preview, explanations, exception line','Public Sans · 400 · 14sp/20']
+];
+function lum(h){h=h.replace('#','');const c=[0,2,4].map(i=>parseInt(h.substr(i,2),16)/255).map(v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4));return .2126*c[0]+.7152*c[1]+.0722*c[2]}
+function ratio(a,b){const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+
+/* Glyphs: approximations of Material Symbols Sharp (wght 400 ~ 2dp stroke, square terminals) + one custom. */
+const S='viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"';
+const G={
+ arrow_back:`<svg ${S}><path d="M20 12H5.5M11.5 5.5L5 12l6.5 6.5"/></svg>`,
+ mic:`<svg ${S}><path d="M9 3h6v11H9z"/><path d="M5.5 11v1a6.5 6.5 0 0 0 13 0v-1M12 18.5V21"/></svg>`,
+ play_arrow:`<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>`,
+ stop:`<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z" fill="currentColor"/></svg>`,
+ delete:`<svg ${S}><path d="M4 6h16M9 6V3.5h6V6M6 6v14h12V6M10 10v6M14 10v6"/></svg>`,
+ content_copy:`<svg ${S}><path d="M8 7h11v14H8z"/><path d="M5 17V3h11"/></svg>`,
+ history:`<svg ${S}><path d="M3 4v5h5"/><path d="M4.1 9A8.5 8.5 0 1 1 3.5 12"/><path d="M12 7.5V12l3.5 2"/></svg>`,
+ lock:`<svg ${S}><path d="M5 10h14v11H5z"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg>`,
+ more_vert:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.5 4h3v3h-3zM10.5 10.5h3v3h-3zM10.5 17h3v3h-3z"/></svg>`,
+ chevron_right:`<svg ${S}><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>`,
+ close:`<svg ${S}><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+ info:`<svg ${S}><path d="M3 3h18v18H3z"/><path d="M12 11v6M12 7v.5"/></svg>`,
+ /* state markers (chosen) */
+ radio_button_checked:`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`,
+ hourglass_top:`<svg ${S}><path d="M6 3h12v5l-4 4 4 4v5H6v-5l4-4-4-4z"/><path d="M8.5 5.5h7v1.6L12 10.6 8.5 7.1z" fill="currentColor" stroke="none"/></svg>`,
+ cut_short:`<svg ${S}><path d="M4 6h16M4 11h16M4 16h9"/><path d="M15.5 13.5h3v6h-3z" fill="currentColor" stroke="none"/></svg>`,
+ edit_off:`<svg ${S}><path d="M4 20v-3.5L13.2 7.3l3.5 3.5L7.5 20z"/><path d="M15.4 5.1l1.9-1.9 3.5 3.5-1.9 1.9"/><path d="M3 3l18 18"/></svg>`,
+ heavy_question:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 8.6a4 4 0 1 1 6.1 3.4c-1.5.9-2.1 1.7-2.1 3.1v.6"/><path d="M10.5 18.6h3v3h-3z" fill="currentColor" stroke="none"/></svg>`,
+ /* runner-ups */
+ fiber_manual_record:`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>`,
+ progress_activity:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/></svg>`,
+ content_cut:`<svg ${S}><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="17.5" r="2.5"/><path d="M8.5 8l11 10M8.5 16l11-10"/></svg>`,
+ cursor_slash:`<svg ${S}><path d="M9 4h6M12 4v16M9 20h6"/><path d="M4 20L20 4"/></svg>`,
+ question_mark:`<svg ${S}><path d="M8 8.5a4 4 0 1 1 6 3.5c-1.4.8-2 1.6-2 3v.5"/><path d="M11 19h2v2h-2z" fill="currentColor" stroke="none"/></svg>`,
+ pause:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>`,
+ resume:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5h2.5v14H5zM10 5v14l10-7z"/></svg>`,
+ check:`<svg ${S}><path d="M4.5 12.5l5 5 10-10"/></svg>`,
+ chevron_left:`<svg ${S}><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>`,
+ schedule:`<svg ${S}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>`,
+ shield:`<svg ${S}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>`
+};
+/* states: key -> [glyph, name, the one sentence (detail line, TalkBack, sheet)] */
+const MARK={
+ rec:['radio_button_checked','Still recording','Still recording. The text so far is saved.'],
+ fin:['hourglass_top','Preparing text','Still preparing text. It appears when ready; open it again in a moment.'],
+ cut:['cut_short','Cut short','Cut short. Words at the end may be missing.'],
+ notIn:['edit_off','Unable to insert text','Unable to insert text. Copy it to use it.'],
+ unsure:['heavy_question','Insertion uncertain','Insertion uncertain. Check the app before you paste.']
+};
+const mk=(k,cls='')=>`<span class="${cls}" style="${k==='rec'?'color:var(--primary)':''}" role="img" aria-label="${MARK[k][2]}">${G[MARK[k][0]]}</span>`;
+const REVIEW=[
+ ['Still recording','radio_button_checked','Material Symbols Sharp','fiber_manual_record','Material Symbols Sharp','Reads as the record button on any recorder, and the ring keeps it in the outlined family. A solid dot alone reads as an unread badge or a bullet at 24dp.'],
+ ['Preparing text','hourglass_top','Material Symbols Sharp','progress_activity','Material Symbols Sharp','Reads as "wait" without words, and still reads that way in a still frame. A static spinner arc reads as reload, or as stuck.'],
+ ['Cut short, may miss words','cut_short','Custom SVG (24dp grid, 2dp, square caps)','content_cut','Material Symbols Sharp','Text lines stopped by a solid vertical bar: the text ends before the line does. The bar survives at 24dp, where the earlier dots vanished. Scissors mean clipboard Cut, and Copy is nearby.'],
+ ['Unable to insert text (also "not attempted")','edit_off','Material Symbols Sharp','cursor + slash','Custom (earlier draft)','A struck pencil means "not written". It is unlike the boxed question mark in both silhouette and weight. The earlier cursor-based pair were near-twins.'],
+ ['Insertion uncertain','heavy_question','Custom SVG: outlined question mark at 3dp stroke (the one weight exception)','question_mark','Material Symbols Sharp','Outlined like the rest, at a heavier 3dp stroke, so it reads as a sign and not a placeholder. It is unboxed, so it never twins the boxed-i info icon in the menu. A boxed version would twin the info icon; the thin Material question mark looks like a missing glyph.'],
+ ['Paused (status)','(none; status text "Paused")','','pause','Material Symbols Sharp','Pause is a transport control, and transport glyphs stay on buttons. The status text and the three buttons already say "paused".'],
+ ['Resume (Continue recording)','play_arrow','Material Symbols Sharp','resume','Material Symbols Sharp','The play triangle is the plainest "go on". The bar-plus-triangle of resume is less known and blurs at 24dp.'],
+ ['Stop and insert','stop','Material Symbols Sharp','check','Material Symbols Sharp','The same glyph does the same job on the recording disk. A check would add a second sign for one action.'],
+ ['Discard take','delete','Material Symbols Sharp','close','Material Symbols Sharp','It throws the take away, like History\'s delete. A close X reads as "close the panel", which is Back\'s job.'],
+ ['Copy','content_copy','Material Symbols Sharp','(custom sheets)','Custom','The Android copy glyph users already know. A custom version would only add doubt.'],
+ ['Delete','delete','Material Symbols Sharp','(none)','',"One trash glyph for every way to remove a transcript. Clear History lives in the overflow menu."],
+ ['History','history','Material Symbols Sharp','schedule','Material Symbols Sharp','A clock with a back arrow means "earlier". A plain clock means time, or an alarm.'],
+ ['Lock (private field)','lock','Material Symbols Sharp','shield','Material Symbols Sharp','"Private" in one shape. A shield suggests security software.'],
+ ['Marks explained','info','Material Symbols Sharp','help','Material Symbols Sharp','"Information" without implying a problem.'],
+ ['Back','arrow_back','Material Symbols Sharp','chevron_left','Material Symbols Sharp','The standard Android Up/Back glyph. The chevron is the iOS idiom.']
+];
+
+const PREV='… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday.';
+const chat=()=>`<div class="chat"><div class="bar"><span class="av"></span>Mara</div><div class="msgs"><div class="m in">Soup on Saturday still on?</div><div class="m out">Yes! I'll pick up squash at the market</div><div class="m in">Send me the list</div></div><div class="field"><span>Message</span><span class="caret"></span></div></div>`;
+const sb=a=>`<div class="sb${a?' app':''}"><span>18:42</span><span>82%</span></div>`;
+const nav=`<div class="navbar"><i></i></div>`;
+const kb=()=>{const row=s=>`<div class="r">${[...s].map(c=>`<span class="k">${c}</span>`).join('')}</div>`;
+ return `<div class="kb" aria-label="Dark keyboard (stand-in)"><div class="sugg"><span>Kürbis</span><span>Kürbissuppe</span>${G.mic}</div>${row('qwertzuiopü')}${row('asdfghjklöä')}<div class="r"><span class="k w">⇧</span>${[...'yxcvbnm'].map(c=>`<span class="k">${c}</span>`).join('')}<span class="k w">⌫</span></div><div class="r"><span class="k w">?123</span><span class="k">,</span><span class="k sp"></span><span class="k">.</span><span class="k w">⏎</span></div></div>`};
+
+const BACK={idle:'Back to keyboard',private:'Back to keyboard',rec:'Pause and choose',paused:'Continue recording',fin:'Back to keyboard',saved:'Back to keyboard'};
+function panel(st){
+ const top=(status,m)=>`<div class="p-top"><button class="ib" aria-label="${BACK[st]}">${G.arrow_back}</button><div class="status" role="status">${status}</div>${m?mk(m,'slot'):''}</div>`;
+ const ring=k=>`<svg class="ring" data-ring="${k}" viewBox="0 0 300 196" aria-hidden="true"></svg>`;
+ const mic=(g,l)=>`<button class="mic" aria-label="${l}">${G[g]}</button>`;
+ const pv=`<div class="preview"><span>${PREV}</span></div>`;
+ switch(st){
+  case 'idle': return `<div class="panel">${top('Tap the microphone to record')}<div class="preview none"></div><div class="stage">${ring('idle')}${mic('mic','Start recording')}</div></div>`;
+  case 'private': return `<div class="panel">${top('Tap the microphone to record')}<div class="helper">${G.lock}<span>History off for this field</span></div><div class="stage">${ring('idle')}${mic('mic','Start recording')}</div></div>`;
+  case 'rec': return `<div class="panel">${top('Recording')}${pv}<div class="stage">${ring('rec')}${mic('stop','Stop and insert')}</div></div>`;
+  case 'paused': return `<div class="panel">${top('Paused')}${pv}<div class="stage"><div class="trio">
+    <button class="ibtn primary" aria-label="Continue recording">${G.play_arrow}</button>
+    <button class="ibtn out" aria-label="Stop and insert">${G.stop}</button>
+    <span class="sp"></span>
+    <button class="ibtn danger" aria-label="Discard take">${G.delete}</button></div></div></div>`;
+  case 'fin': return `<div class="panel">${top('Preparing text…')}${pv}<div class="stage">
+    <svg class="arc move" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="var(--outlineVariant)" stroke-width="5"/><path d="M32 5a27 27 0 0 1 27 27" fill="none" stroke="var(--primary)" stroke-width="5"/></svg>
+    <svg class="arc rest" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="var(--primary)" stroke-width="5" stroke-dasharray="11.3 5.67" transform="rotate(-90 32 32)"/></svg></div></div>`;
+  case 'saved': return `<div class="panel">${top('Unable to insert text','notIn')}<div class="preview none"></div><div class="stage">${ring('idle')}${mic('mic','Start recording')}</div></div>`;
+ }
+}
+const docked=st=>`<div class="phone">${sb()}${chat()}${panel(st)}${nav}</div>`;
+const withKb=()=>`<div class="phone">${sb()}${chat()}${kb()}${nav}</div>`;
+
+function hrow(t,p,m){return `<div class="row" aria-label="${t}, ${p}${m?', '+MARK[m][1].toLowerCase():''}"><div class="lead"><div class="t">${t}</div>${m?mk(m,'mk'):''}</div><div><div class="p">${p}</div></div><button class="ib" aria-label="Delete transcript: ${p.slice(0,28)}…">${G.delete}</button></div>`}
+const ROWS={
+ a:['18:42','Kürbissuppe für Samstag: zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch.','fin'],
+ b:['14:05','Reminder to return the ladder to the neighbours before Friday evening.','notIn'],
+ c:['09:17','Grüße an alle, wir kommen etwa um halb acht und bringen Brot mit.',''],
+ d:['21:30','Notes for the bike: chain oil, front light, a new bell for Lisa.','cut'],
+ e:['07:58','Größere Töpfe sind im Keller, das Sieb liegt in der zweiten Schublade.',''],
+ f:['16:20','Can you check if the bakery is open on the holiday?','unsure']
+};
+const listBody=(skip,gone)=>`<p class="expl">Audio is not stored.</p>
+<div class="day">Today</div>${['a','b','c'].map(k=>k===skip?(gone?'<div class="row gone" aria-hidden="true"></div>':''):hrow(...ROWS[k])).join('')}
+<div class="day">Yesterday</div>${['d','e'].map(k=>k===skip?(gone?'<div class="row gone" aria-hidden="true"></div>':''):hrow(...ROWS[k])).join('')}
+<div class="day">Mon 9 Nov</div>${hrow(...ROWS.f)}`;
+const listTb=`<div class="tb"><button class="ib" aria-label="Back">${G.arrow_back}</button><h4>History</h4><button class="ib" aria-label="More options">${G.more_vert}</button></div>`;
+const histList=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}</div>${nav}</div>`;
+const histMenu=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}<div class="menu" role="menu"><div role="menuitem">${G.info}Marks explained</div><div role="menuitem" class="danger">${G.delete}Clear History…</div></div></div>${nav}</div>`;
+const sheet=(hl)=>`<div class="scrim"></div><div class="sheet" role="dialog" aria-label="Marks explained"><div class="sh"><h5>Marks explained</h5><button class="ib" aria-label="Close">${G.close}</button></div>
+${Object.keys(MARK).map(k=>`<div class="li${k===hl?' hl':''}">${mk(k)}<div><b>${MARK[k][1]}</b><span>${MARK[k][2].split('. ').slice(1).join('. ')}</span></div></div>`).join('')}
+<div class="li"><span></span><div><b>No mark</b><span>Finished and inserted.</span></div></div></div>`;
+const histSheet=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody()}</div>${sheet()}${nav}</div>`;
+const detailSheet=()=>`<div class="phone screen-app">${sb(1)}${detailTb}<div class="body">${detailBody}</div>${sheet('notIn')}${nav}</div>`;
+const rowUndo=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody('c',false)}<div class="snack" role="status"><span>Transcript deleted</span><b>Undo</b></div></div>${nav}</div>`;
+const detailTb=`<div class="tb"><button class="ib" aria-label="Back">${G.arrow_back}</button><h4>Today</h4><button class="ib" aria-label="Copy transcript">${G.content_copy}</button><span style="width:calc(16*var(--u))" aria-hidden="true"></span><button class="ib" aria-label="Delete transcript">${G.delete}</button></div>`;
+const detailBody=`<div class="meta">14:05 · 23 words</div>
+<button class="exc tap" aria-label="${MARK.notIn[2]} Opens Marks explained">${mk('notIn')}<span>${MARK.notIn[2]}</span>${G.chevron_right}</button>
+<div class="transcript"><p>Reminder to return the ladder to the neighbours before Friday evening. Die Leiter steht noch hinter der Garage, neben den Gartenstühlen.</p><p>Und die Heckenschere gleich mitnehmen.</p></div>`;
+const histDetail=()=>`<div class="phone screen-app">${sb(1)}${detailTb}<div class="body">${detailBody}</div>${nav}</div>`;
+const detailUndo=()=>`<div class="phone screen-app">${sb(1)}${listTb}<div class="body">${listBody('b',false)}<div class="snack" role="status"><span>Transcript deleted</span><b>Undo</b></div></div>${nav}</div>`;
+const detailLines=()=>`<div class="phone screen-app" style="height:auto;min-height:700px">${sb(1)}<div class="tb"><h4 style="margin-left:calc(20*var(--u))">Detail lines</h4></div><div class="body">
+${[['rec','18:51 · 12 words so far'],['fin','18:42 · 31 words'],['cut','21:30 · 14 words'],['notIn','14:05 · 23 words'],['unsure','16:20 · 11 words']].map(([k,m])=>`<div class="dl"><div class="meta">${m}</div><div class="exc" style="border-bottom:0">${mk(k)}<span>${MARK[k][2]}</span></div></div>`).join('')}
+<div class="dl"><div class="meta">09:17 · 15 words</div><div class="exc" style="border-bottom:0;color:var(--onSurfaceVariant)"><span>No line: finished and inserted.</span></div></div>
+</div></div>`;
+const settings=on=>`<div class="phone screen-app">${sb(1)}<div class="tb"><button class="ib" aria-label="Back">${G.arrow_back}</button><h4>Dictation</h4></div><div class="body">
+<div class="srow"><span class="n">Dictionary</span><span class="c">214 terms</span>${G.chevron_right}</div>
+<div class="srow"><span class="n">History</span><span class="c">6 saved</span>${G.chevron_right}</div>
+<div class="shead">Benchmark</div>
+<div class="srow"><span class="n">Benchmark mode: save recordings</span><span class="sw2${on?' on':''}" role="switch" aria-checked="${on}"></span></div>
+<div class="small">When on, every take is stored on this phone as audio plus its recognition result, until you delete it below. Nothing leaves the phone.</div>
+<div class="small cnt">${on?11:10} recordings saved</div>
+<button class="tbtn">${G.delete}Delete benchmark data</button>
+</div>${nav}</div>`;
+const RU={rec:'fiber_manual_record',fin:'progress_activity',cut:'content_cut',notIn:'cursor_slash',unsure:'question_mark'};
+const legend=()=>`<div class="phone screen-app legend">${sb(1)}<div class="tb"><h4 style="margin-left:calc(20*var(--u))">Marker test</h4></div>
+<div class="lh">Review aid, not app UI. Name each glyph before you switch to "Show words". The 24dp column is row size; the faded glyph is the runner-up.</div>
+<div class="lr headrow"><span>#</span><span>Large</span><span>24dp</span><span>Meaning</span><span>Alt</span></div>
+${Object.keys(MARK).map((k,i)=>`<div class="lr"><span class="idx">${i+1}</span><span class="big" style="${k==='rec'?'color:var(--primary)':''}">${G[MARK[k][0]]}</span><span class="real" style="${k==='rec'?'color:var(--primary)':''}">${G[MARK[k][0]]}</span><span class="words"><span class="n">${MARK[k][1]}</span><br><span class="d">${MARK[k][2]}</span></span><span class="ru">${G[RU[k]]}</span></div>`).join('')}
+</div>`;
+
+const P_='<span class="prop">PROPOSED</span>';
+const PANEL=[
+ [withKb,'<b>Before: the dark keyboard</b> · a generic dark keyboard stands in for yours. Tapping its microphone key brings up the next frame.'],
+ [()=>docked('idle'),'<b>After: idle panel</b> · the light/dark jump you are choosing. A red-orange disk with a mic glyph and a hairline ring. A 2dp rule closes the panel against the host app.'],
+ [()=>docked('rec'),'<b>Recording</b> · same disk, now with a Stop square. A thick ring follows loudness. Back pauses and opens the choice. There is no marker in the slot, because the ring already shows the state.'],
+ [()=>docked('paused'),'<b>Paused</b> · three icon buttons at one height. Continue is filled and pre-selected, Stop is outlined, Discard is dashed and set apart. Back here means Continue recording.','<div class="callout"><b>Long-press tooltips (TooltipCompat), also the TalkBack labels</b><ol><li>Continue recording</li><li>Stop and insert</li><li>Discard take</li></ol></div>'],
+ [()=>docked('fin'),'<b>Preparing text…</b> · a small red-orange arc and no disk. With animations off it becomes a static segmented ring, so it never reads as a stuck spinner. There is no marker in the slot, because the arc already shows the state.'],
+ [()=>docked('saved'),'<b>Unable to insert text</b> · the status line and its marker, nothing more. Back is the way out. The mic stays for a new take.'],
+ [()=>docked('private'),'<b>Private field</b> · a plain lock line in the condensed label face, tucked under the status. It is not in the preview\'s face.']
+];
+const SCREENS=[
+ [histList,'<b>History list</b> · "Audio is not stored." Day headers, then rows that lead with the time, one marker slot under the time, and a trailing trash icon.'],
+ [histMenu,P_+'<b>Overflow menu</b> · "Marks explained" comes first. Clear History… is second, in error colour, and still asks for confirmation in one plain sentence ("Deletes 4 saved transcripts. Clipboard copies and benchmark recordings stay.").'],
+ [histSheet,P_+'<b>Marks explained</b> · a real bottom sheet that ships with the app: each mark, its name and its one sentence.'],
+ [rowUndo,'<b>Deleted from a row</b> · the row is gone and the Snackbar offers Undo for 8 s (current behaviour).'],
+ [histDetail,'<b>History detail</b> · Copy and Delete sit at the end of the bar, as Android places actions: both 48dp, with a 16dp gap. Undo after delete is the protection. The exception line is a button: tap it and the marks sheet opens at that mark.'],
+ [detailSheet,P_+'<b>Tapped the exception line</b> · the marks sheet opens with that mark highlighted (here: Unable to insert text).'],
+ [detailUndo,'<b>Deleted from the detail</b> · back on the list, the row is gone and the Snackbar offers Undo for 8 s (current behaviour).'],
+ [detailLines,'<b>Detail lines for every state</b> · one marker and one sentence each, the same words as TalkBack and the sheet.'],
+ [legend,'<b>Marker test</b> (review aid) · each glyph large and at row size, with its runner-up. The words are masked by a dash until "Show words".'],
+ [()=>settings(false),'<b>Settings, benchmark off</b> · the shared toolbar. Every count uses the same face: "214 terms", "6 saved", "10 recordings saved".'],
+ [()=>settings(true),'<b>Settings, benchmark on</b> · a square switch with a rind-green track and the thumb moved to the end. On and off differ by position as well as colour.']
+];
+function frames(list){return list.map(([f,c,extra])=>`<div class="fcol">${f()}<div class="fcap">${c}</div>${extra||''}</div>`).join('')}
+function render(){
+ document.getElementById('panelFrames').innerHTML=frames(PANEL);
+ document.getElementById('screenFrames').innerHTML=frames(SCREENS);
+ document.querySelector('#tok tbody').innerHTML=Object.keys(P).map(k=>`<tr><td>${k}</td><td class="mono"><span class="sw" style="background:${P[k]}"></span>${P[k]}</td><td>${USE[k]}</td></tr>`).join('');
+ document.querySelector('#pairs tbody').innerHTML=PAIRS.map(([f,b,need,why])=>{const r=ratio(P[f],P[b]);const s=need===0?'info':(r>=need?'pass':'FAIL');return `<tr><td>${why}<br><span class="mono">${f} / ${b}</span></td><td class="num">${r.toFixed(2)}:1</td><td class="num">${need?need+':1':'–'}</td><td class="${s==='FAIL'?'bad':'ok'}">${s}</td></tr>`}).join('');
+ document.querySelector('#type tbody').innerHTML=TYPE.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
+ const alias={'cursor + slash':'cursor_slash'};
+ document.querySelector('#review tbody').innerHTML=REVIEW.map(([s,c,cs,r,rs,why])=>{const cg=G[c];const rg=G[alias[r]||r];return `<tr><td>${s}</td><td class="g">${cg||''}<span class="mono">${c==='cut_short'?'custom':c}</span></td><td>${cs}</td><td class="g lose">${rg||''}<span class="mono">${r}</span></td><td>${rs}</td><td>${why}</td></tr>`}).join('');
+}
+
+/* ring: like RecordingRingView, one ink, no gradient */
+let still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function ringPath(cx,cy,r,w,t,lev,org){const N=96,o=[],i=[];
+ for(let k=0;k<N;k++){const a=2*Math.PI*k/N-Math.PI/2;const g=org?0.55*Math.sin(a*3+t*0.52)+0.28*Math.sin(a*5-t*0.7)+0.17*Math.sin(a*2+t*0.26):0;
+  const rr=r+lev*(8+9*g),ww=w+lev*(3+2*Math.sin(a*2-t*0.48));
+  o.push([cx+Math.cos(a)*(rr+ww/2),cy+Math.sin(a)*(rr+ww/2)]);i.push([cx+Math.cos(a)*(rr-ww/2),cy+Math.sin(a)*(rr-ww/2)]);}
+ const s=p=>'M'+p.map(q=>q[0].toFixed(1)+' '+q[1].toFixed(1)).join('L')+'Z';return s(o)+s(i.reverse());}
+const t0=performance.now();
+function tick(now){const t=(now-t0)/1000;
+ document.querySelectorAll('svg.ring').forEach(svg=>{
+  if(svg.dataset.ring==='idle'){if(!svg.dataset.done){svg.innerHTML='<circle cx="150" cy="98" r="48" fill="none" stroke="var(--outline)" stroke-width="1.5"/>';svg.dataset.done=1}return}
+  const lev=still?0.55:(0.45+0.35*Math.abs(Math.sin(t*1.7))*Math.abs(Math.sin(t*0.63+1)));
+  svg.innerHTML=`<path d="${ringPath(150,98,52,5,still?0:t*1.4,lev,!still)}" fill="var(--primary)" fill-rule="evenodd"/>`;});
+ requestAnimationFrame(tick);}
+
+const press=(sel,b)=>document.querySelectorAll(sel).forEach(x=>x.setAttribute('aria-pressed',x===b));
+document.querySelectorAll('[data-fs]').forEach(b=>b.onclick=()=>{document.documentElement.style.setProperty('--fs',b.dataset.fs);document.documentElement.dataset.fs=b.dataset.fs;press('[data-fs]',b)});
+document.querySelectorAll('[data-still]').forEach(b=>b.onclick=()=>{still=b.dataset.still==='1';document.body.classList.toggle('still',still);press('[data-still]',b)});
+document.querySelectorAll('[data-words]').forEach(b=>b.onclick=()=>{document.body.classList.toggle('hide-words',b.dataset.words==='0');press('[data-words]',b)});
+render(); if(still)document.querySelector('[data-still="1"]').click(); requestAnimationFrame(tick);
+</script>
+</body>
+</html>
