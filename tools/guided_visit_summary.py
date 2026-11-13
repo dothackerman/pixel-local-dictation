@@ -49,11 +49,16 @@ def rotations(rows, trace):
         if not events:
             out.append(f"{step}: no trace rows (traceComplete {str(row['traceComplete']).lower()})")
             continue
-        moments, seen = [], 0
+        moments, last = [], {}
         for i, e in enumerate(events):
-            if e.get('rotations', 0) > seen:
-                seen = e['rotations']
+            if 'rotations' not in e:
+                continue
+            who = (e.get('process'), e.get('service'))
+            if who not in last:  # an attach reports the reused service's cumulative count: baseline, not a rotation
+                last[who] = e['rotations'] if e['event'] == 'SERVICE_ATTACH' else 0
+            if e['rotations'] > last[who]:
                 moments.append(i)
+            last[who] = e['rotations']
         for n, start in enumerate(moments, 1):
             end = moments[n] if n < len(moments) else len(events)
             window = events[start:end]

@@ -82,7 +82,10 @@ class Recorder internal constructor(private val createInput: () -> AudioInput) {
             }
         } catch (_: Throwable) {
             // Capture ended unexpectedly; the owner still releases the device.
-        } finally { if (!paused) onEnded?.let { runCatching(it) } }
+        } finally {
+            // Pause and stop clear `capturing` before stopping the input, so a still-set flag means the end was not requested.
+            if (capturing) onEnded?.let { runCatching(it) }
+        }
     }.also { it.start() }
 
     /**

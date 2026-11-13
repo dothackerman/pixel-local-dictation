@@ -51,12 +51,42 @@ object WrittenForm {
             raw.substring(items[i - 1].end, items[i].start).isBlank()
         fun match(i: Int, end: Int, text: String) = Match(end, items[end - 1].end, text)
 
-        fun at(i: Int): Match? = germanTime(i) ?: englishTime(i) ?: germanDate(i) ?: englishDate(i) ?:
-            money(i) ?: decimal(i) ?: cardinal(i)
+        fun at(i: Int): Match? {
+            // A run of German number words that does not parse whole stays as said, all of it.
+            if (isDeNum(i)) { val r = runEnd(i); if (r - i >= 2 && parseRun(i, r) == null) return unchanged(i, r) }
+            return germanTime(i) ?: englishTime(i) ?: germanDate(i) ?: englishDate(i) ?: money(i) ?: decimal(i) ?: cardinal(i)
+        }
+
+        private fun unchanged(i: Int, end: Int) = Match(end, items[end - 1].end, raw.substring(items[i].start, items[end - 1].end))
+        private fun isDeNum(i: Int): Boolean {
+            val k = key(i) ?: return false
+            return items[i].digits == null && (de(k) != null || k == "ein" || k == "eine" || k == "million" || k == "millionen" ||
+                k.endsWith("hundert") || k.endsWith("tausend"))
+        }
+        /** End (exclusive) of the chain of single-space-separated German number words starting at item i. */
+        private fun runEnd(i: Int): Int { var j = i + 1; while (joined(j) && isDeNum(j)) j++; return j }
+        /** Value of the run [i, end) when every word fits below the last place filled; null leaves it as words. */
+        private fun parseRun(i: Int, end: Int): Int? {
+            var total = 0; var limit = Int.MAX_VALUE
+            for (j in i until end) {
+                val k = key(j)!!
+                val v = de(k) ?: return null
+                if (v == 0 && end - i > 1 || v >= limit) return null
+                total += v
+                limit = if (k.endsWith("tausend")) 1000 else if (k.endsWith("hundert")) 100 else 0
+            }
+            return total
+        }
+        private fun deRun(i: Int): Pair<Int, Int>? {
+            if (!isDeNum(i)) return null
+            val r = runEnd(i)
+            return parseRun(i, r)?.let { it to r - i }
+        }
 
         private fun germanTime(i: Int): Match? {
             val h = deHour(i) ?: return null
             if (!spaced(i + 1) || key(i + 1) != "uhr") return null
+            if (spaced(i + 2) && isDeNum(i + 2) && runEnd(i + 2) - (i + 2) >= 2) return unchanged(i, runEnd(i + 2))
             val m = if (spaced(i + 2)) items[i + 2].digits ?: de(key(i + 2)) else null
             if (m != null && m in 1..59) {
                 val text = "$h.${m.toString().padStart(2, '0')} " + items[i + 1].text
@@ -114,6 +144,7 @@ object WrittenForm {
             var end = c + 1
             var cents: Int? = null
             if (spaced(end)) {
+                if (symbol == null && isDeNum(end) && runEnd(end) - end >= 2) return unchanged(i, runEnd(end))
                 val tail = if (symbol != null) en(end) else de(key(end))?.let { it to 1 }
                 if (tail != null && tail.first in 1..99) { cents = tail.first; end += tail.second }
             }
@@ -130,6 +161,7 @@ object WrittenForm {
             if (!spaced(p)) return null
             return when (key(p)) {
                 "komma" -> {
+                    if (spaced(p + 1) && isDeNum(p + 1) && runEnd(p + 1) - (p + 1) >= 2) return unchanged(i, runEnd(p + 1))
                     val d = if (spaced(p + 1)) de(key(p + 1)) else null
                     d?.let { match(i, p + 2, "$n,$it") }
                 }
@@ -146,8 +178,7 @@ object WrittenForm {
         private fun cardinal(i: Int): Match? {
             if (items[i].digits != null) return null
             val english = en(i)
-            val (n, len) = english ?: de(key(i))?.let { it to deSpan(i) } ?: return null
-            if (len > 1 && english == null) return deCompound(i)
+            val (n, len) = english ?: deRun(i) ?: return null
             // Two English numbers in a row (years, codes) are left as said.
             if (english != null && (joined(i + len) && en(i + len) != null || joined(i) && en(i - 1) != null)) return null
             if (len == 1 && (key(i) in NEVER_ALONE || key(i) in BARE)) return null
@@ -159,16 +190,7 @@ object WrittenForm {
             }
             return match(i, i + len, group(n, english != null))
         }
-        private fun deSpan(i: Int): Int {
-            val k = key(i)!!
-            return if ((k.endsWith("tausend") || k.endsWith("hundert")) && spaced(i + 1) && de(key(i + 1))?.let { it < 1000 } == true) 2 else 1
-        }
-        private fun deCompound(i: Int): Match? {
-            val a = de(key(i))!!; val b = de(key(i + 1))!!
-            val n = if (key(i)!!.endsWith("tausend")) a + b else if (b < 100) a + b else return null
-            return match(i, i + 2, group(n, false))
-        }
-        private fun number(i: Int): Pair<Int, Int>? = items[i].digits?.let { it to 1 } ?: en(i) ?: de(key(i))?.let { it to 1 }
+        private fun number(i: Int): Pair<Int, Int>? = items[i].digits?.let { it to 1 } ?: en(i) ?: deRun(i)
 
         /** English cardinal starting at item i: value and item count. Hyphens and "and" after hundred/thousand join. */
         fun en(i: Int): Pair<Int, Int>? {

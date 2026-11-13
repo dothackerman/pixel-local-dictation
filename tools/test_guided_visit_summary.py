@@ -15,8 +15,12 @@ def visit_row(step, run, answers, observation='done', trace=True, case=None):
             'observation': observation, 'answers': checks, 'traceComplete': trace}
 
 
-def ev(ns_ms, event, run='r2', rotations=None, flag=None):
+def ev(ns_ms, event, run='r2', rotations=None, flag=None, process=None, service=None):
     row = {'run': run, 'event': event, 'ns': ns_ms * 1_000_000, 'case': 'signal-capture-rotation'}
+    if process is not None:
+        row['process'] = process
+    if service is not None:
+        row['service'] = service
     if rotations is not None:
         row['rotations'] = rotations
     if flag is not None:
@@ -72,6 +76,26 @@ class SummaryTests(unittest.TestCase):
         trace = [ev(0, 'DISPLAY_CHANGED', rotations=1), ev(3000, 'HOLD_GAP_EXPIRED')]
         out = summarize([visit_row('A3', 'r2', ['passed'], case='signal-finishing-rotation')], trace)['rotations']
         self.assertEqual(out, ['A3 rotation 1: panel shown never, late hide none, capture silenced: no, hold: gap expired +3000 ms'])
+
+    def test_attach_on_a_reused_service_is_a_baseline_not_a_rotation(self):
+        trace = [ev(0, 'SERVICE_ATTACH', rotations=2, process=1, service=7), ev(5, 'WINDOW_SHOWN', process=1, service=7),
+                 ev(1000, 'DISPLAY_CHANGED', rotations=3, process=1, service=7), ev(1100, 'WINDOW_SHOWN', process=1, service=7),
+                 ev(2000, 'HOLD_SETTLED', process=1, service=7)]
+        out = summarize([visit_row('A2', 'r2', ['passed'])], trace)['rotations']
+        self.assertEqual(out, ['A2 rotation 1: panel shown +100 ms, late hide none, capture silenced: no, hold: settled +1000 ms'])
+
+    def test_a_recreated_service_counts_its_own_rotations(self):
+        trace = [ev(0, 'SERVICE_ATTACH', rotations=0, process=1, service=1), ev(1000, 'DISPLAY_CHANGED', rotations=1, process=1, service=1),
+                 ev(3000, 'SERVICE_ATTACH', rotations=0, process=1, service=2), ev(5000, 'DISPLAY_CHANGED', rotations=1, process=1, service=2)]
+        out = summarize([visit_row('A2', 'r2', ['passed'])], trace)['rotations']
+        self.assertEqual([line.split(':')[0] for line in out], ['A2 rotation 1', 'A2 rotation 2'])
+
+    def test_interleaved_services_are_each_counted_against_their_own_baseline(self):
+        trace = [ev(0, 'SERVICE_ATTACH', rotations=4, process=1, service=1), ev(1, 'SERVICE_ATTACH', rotations=0, process=2, service=1),
+                 ev(1000, 'DISPLAY_CHANGED', rotations=1, process=2, service=1), ev(2000, 'DISPLAY_CHANGED', rotations=5, process=1, service=1),
+                 ev(3000, 'DISPLAY_CHANGED', rotations=2, process=2, service=1), ev(4000, 'DISPLAY_CHANGED', rotations=5, process=1, service=1)]
+        out = summarize([visit_row('A2', 'r2', ['passed'])], trace)['rotations']
+        self.assertEqual([line.split(':')[0] for line in out], ['A2 rotation 1', 'A2 rotation 2', 'A2 rotation 3'])
 
 
 if __name__ == '__main__':

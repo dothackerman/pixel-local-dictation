@@ -67,9 +67,8 @@ class MicrophoneCapture(
             feedback?.start()
             onStarted?.invoke()
         }, {
-            val interrupted = feedback?.isCapturing == true
             feedback?.stop()
-            if (interrupted) onInterrupted?.invoke()
+            onInterrupted?.invoke()
         }) } catch (failure: Throwable) {
             if (!recorder.isRunning) MicrophoneOwner.released(this)
             throw failure

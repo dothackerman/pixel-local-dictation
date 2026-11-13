@@ -136,4 +136,68 @@ class RecorderTest {
         assertTrue(stopReturned.await(2, TimeUnit.SECONDS))
     }
 
+    /** Blocks in read until stop(); after [failFromStart] starts every read throws; unblocked reads return 0. */
+    private class FakeInput(private val failFromStart: Int = Int.MAX_VALUE, private val failAfterFirstChunk: Boolean = false) : Recorder.AudioInput {
+        override val bufferSize = 8
+        @Volatile var starts = 0
+        private var gate = CountDownLatch(1)
+        private var chunks = 0
+        override fun start() { starts++; gate = CountDownLatch(1) }
+        override fun read(buffer: ShortArray): Int {
+            if (starts >= failFromStart) error("lost")
+            if (failAfterFirstChunk) { if (chunks++ == 0) { buffer[0] = 1; return 1 }; error("lost") }
+            gate.await()
+            return -1
+        }
+        override fun stop() { gate.countDown() }
+        override fun release() {}
+    }
+
+    @Test fun lostMicrophoneIsReportedWithoutFeedback() {
+        val interrupted = CountDownLatch(1)
+        val capture = MicrophoneCapture(onInterrupted = { interrupted.countDown() },
+            recorder = Recorder { FakeInput(failAfterFirstChunk = true) })
+        capture.start { }
+        assertTrue(interrupted.await(2, TimeUnit.SECONDS))
+        val done = CountDownLatch(1)
+        capture.cancelWithResult { done.countDown() }
+        assertTrue(done.await(2, TimeUnit.SECONDS))
+    }
+
+    @Test fun readFailureRightAfterResumeInterruptsAndEndsFeedback() {
+        repeat(100) {
+            val feedback = RecordingFeedback()
+            val interrupted = CountDownLatch(1)
+            val capture = MicrophoneCapture(feedback = feedback, onInterrupted = { interrupted.countDown() },
+                recorder = Recorder { FakeInput(failFromStart = 2) })
+            capture.start { }
+            capture.pause()
+            capture.resume()
+            assertTrue("iteration $it", interrupted.await(2, TimeUnit.SECONDS))
+            assertFalse(feedback.isCapturing)
+            val done = CountDownLatch(1)
+            capture.cancelWithResult { done.countDown() }
+            assertTrue(done.await(2, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun requestedStopAndPauseDoNotReportAnEnd() {
+        var ended = 0
+        val recorder = Recorder { FakeInput() }
+        recorder.start(onEnded = { ended++ })
+        recorder.pause()
+        recorder.resume()
+        recorder.stop()
+        assertEquals(0, ended)
+
+        var interrupted = 0
+        val capture = MicrophoneCapture(onInterrupted = { interrupted++ }, recorder = Recorder { FakeInput() })
+        capture.start { }
+        capture.pause()
+        capture.resume()
+        val done = CountDownLatch(1)
+        capture.stop { done.countDown() }
+        assertTrue(done.await(2, TimeUnit.SECONDS))
+        assertEquals(0, interrupted)
+    }
 }

@@ -55,6 +55,28 @@ class WrittenFormTest {
         "Ein Komma fehlt hier." to "Ein Komma fehlt hier.",
     )
 
+    @Test fun germanSpacedCompoundsCombineWhole() = check(
+        "zweitausend dreihundert fünfundvierzig Franken" to "2345 Franken",
+        "dreitausend zweihundert dreissig" to "3230",
+        "dreissigtausend fünfhundert zwanzig" to "30 520",
+        "tausend zweihundert dreissig Komma fünf Volt" to "1230,5 Volt",
+        "zweitausend dreihundert Franken achtzig" to "2300.80 Franken",
+        "dreihundert fünfundvierzig Franken achtzig" to "345.80 Franken",
+        "tausend zwanzig Komma fünf" to "1020,5",
+    )
+
+    @Test fun germanAdjacentNumbersStayWords() = same(
+        "zwanzig drei Leute", "zwanzig zwanzig", "dreitausend dreitausend", "sechzehn zweihundert Franken",
+        "zweihundert zweihundert", "dreizehn vierzehn fünfzehn",
+        "null neunundsiebzig dreihundertvierzig zwölf vierunddreissig",
+        "zwei millionen dreihundert tausend Leute", "neunzehnhundert vierundachtzig",
+        "fünfzehn Franken zwanzig dreissig", "zwanzig Uhr dreissig vierzig", "dreizehn Komma fünf zwei",
+    )
+
+    @Test fun bareHundertTausendNeverBecomeAWrongAmount() = same(
+        "drei hundert Franken", "ein tausend zwei hundert Franken",
+    )
+
     @Test fun englishCardinalsFromThirteenBecomeDigits() = check(
         "Pour in two hundred and fifty milliliters of milk." to "Pour in 250 milliliters of milk.",
         "We counted forty five birds and forty-six bees." to "We counted 45 birds and 46 bees.",
