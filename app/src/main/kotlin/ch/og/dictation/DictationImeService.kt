@@ -163,7 +163,7 @@ class DictationImeService : InputMethodService() {
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             rotationEvent(RotationEvent.SCREEN_OFF)
-            if (takeActive) takeLocked = true // Its text is refused when the take finishes, after unlock too.
+            if (take != null) takeLocked = true // Also after Stop, until finished(): its text is refused, after unlock too.
             if (held != null) { clearHeld(); showIdle() }
             previewAllowed = false
             showPreview("")
@@ -1141,6 +1141,7 @@ class DictationImeService : InputMethodService() {
             backLabel = when {
                 open == PanelChoice.RECORDING -> R.string.continue_recording
                 open == PanelChoice.FINISHING -> R.string.keep_finishing
+                held?.warned == true -> R.string.back_discard_text
                 running && finishing -> R.string.back_hold_and_choose
                 running -> R.string.discard_recording
                 else -> R.string.back_to_keyboard

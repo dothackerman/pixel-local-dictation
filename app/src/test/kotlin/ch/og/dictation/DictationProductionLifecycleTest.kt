@@ -507,7 +507,8 @@ class DictationProductionLifecycleTest {
         assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
         back(returned).performClick()
         assertEquals(service.getString(R.string.status_back_warning), status(returned))
-        assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
+        // The arrow says what the next press does.
+        assertEquals(service.getString(R.string.back_discard_text), back(returned).contentDescription.toString())
         assertEquals("old speech", preview(returned))
         assertNull("Back never copies", clipboard.primaryClip)
         assertEquals(View.VISIBLE, returned.findViewById<View>(R.id.status_marker).visibility)
@@ -539,6 +540,7 @@ class DictationProductionLifecycleTest {
         assertEquals(service.getString(R.string.status_back_warning), status(returned))
         returned.findViewById<View>(R.id.choice_safe).performClick()
         assertEquals(service.getString(R.string.status_copied), status(returned))
+        assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
     }
 
     @Test fun aRotationCancelsTheBackWarning() {
@@ -546,6 +548,7 @@ class DictationProductionLifecycleTest {
         back(returned).performClick()
         val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
         assertHeldState(service, rebuilt)
+        assertEquals(service.getString(R.string.back_to_keyboard), back(rebuilt).contentDescription.toString())
         back(rebuilt).performClick()
         assertEquals(service.getString(R.string.status_back_warning), status(rebuilt)) // Starts over.
     }
@@ -705,6 +708,46 @@ class DictationProductionLifecycleTest {
         assertNothingHeldOrShown(service, view)
         assertEquals("old speech", rows().single().text)
         assertEquals(0, commits)
+    }
+
+    /** The screen goes off after the take ended (Stop's result is out) but before its capture release is acknowledged. */
+    @Test fun aLockBetweenTheTakeEndingAndItsFinishHoldsNothingAfterUnlock() {
+        writeResult = { false } // The commit fails, so the take would otherwise hold its text.
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        devices.add(input)
+        val (service, view) = service(editor(privateField = true))
+        feed(input, 1000, 1)
+        button(view).performClick()
+        decode.drain()
+        screenOff() // The release is held: finished() has not run yet.
+        gate.countDown()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory(); pump()
+        service.onStartInput(editor(privateField = true), true) // Unlock: the same app restarts input.
+        service.onStartInputView(editor(privateField = true), true)
+        pump()
+        assertNothingHeldOrShown(service, view)
+    }
+
+    /** Stop, then another app's input arrives while the result is on its way to the commit: nothing held or shown there. */
+    @Test fun anotherAppsInputBetweenDecodeEndAndCommitHoldsAndShowsNothingThere() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        button(view).performClick()
+        decode.drain() // The text is decoded; the commit is still queued on the main thread.
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        val other = Field(service)
+        service.onCreateInputMethodInterface().startInput(other, editor(pkg = "app.b"))
+        service.onStartInputView(editor(pkg = "app.b"), false)
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory(); pump()
+        assertNothingHeldOrShown(service, view)
+        assertEquals(0, commits)
+        assertTrue(other.inserted.isEmpty())
     }
 
     @Test fun aTakeActiveAtLockHoldsNothingAfterUnlock() {
