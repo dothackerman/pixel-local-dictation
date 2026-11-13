@@ -311,7 +311,7 @@ class TakeSession internal constructor(
             if (state != State.COMPLETING) return // An editor callback invalidated this take.
             if (accepted == false) {
                 if (!output.commitAttempted()) {
-                    finish(TakeOutcome.INPUT_CHANGED)
+                    finish(TakeOutcome.INPUT_CHANGED, text, accepted)
                     return
                 }
                 mark("commitRejected")

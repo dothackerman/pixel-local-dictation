@@ -382,7 +382,7 @@ class RecordingPanelTest {
                     val back = panel.findViewById<View>(R.id.back)
                     val safeAction = panel.findViewById<View>(R.id.choice_safe)
                     val discardAction = panel.findViewById<View>(R.id.choice_discard)
-                    for (target in listOf(back, mic, safeAction, discardAction).filter { it.visibility == View.VISIBLE }) {
+                    for (target in listOf(back, mic, safeAction, discardAction).filter { it.visibility == View.VISIBLE && (it.parent as View).visibility == View.VISIBLE }) {
                         assertTrue("target below 48dp ($name $suffix)", target.width >= 48 * density - 1 && target.height >= 48 * density - 1)
                         assertTrue("target outside the panel ($name $suffix)", whole.contains(bounds(target, panel)))
                     }

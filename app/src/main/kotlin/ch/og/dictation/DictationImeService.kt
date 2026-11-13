@@ -110,14 +110,11 @@ class DictationImeService : InputMethodService() {
     /**
      * The finished text of a take that could not be inserted (plan B): held in memory only while
      * the Unable to insert text state shows; never written or logged. Cleared by Discard text, Back
-     * after a copy, screen off and a different app's editor; kept across a rotation.
+     * after a copy, screen off and a different app's editor; kept across a rotation, an input
+     * restart and a tap on the field. While held, the status is the held state's own (see showStatus).
      */
-    private var heldText: String? = null
-    private var heldCopied = false
-    private var heldPackage: String? = null
+    private var held: HeldText? = null
     private var editorPackage: String? = null
-    /** The last commit was refused because the editor had deactivated its connection. */
-    private var commitRefusedInactive = false
     /**
      * The open Cancel choice, part of the take's state: every panel (also one recreated for a
      * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
@@ -160,7 +157,7 @@ class DictationImeService : InputMethodService() {
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             rotationEvent(RotationEvent.SCREEN_OFF)
-            if (heldText != null) { clearHeld(); showIdle() }
+            if (held != null) { clearHeld(); showIdle() }
             previewAllowed = false
             showPreview("")
             editorEvent(EditorEvent.SCREEN_OFF)
@@ -256,9 +253,9 @@ class DictationImeService : InputMethodService() {
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
-        v.findViewById<View>(R.id.choice_safe).setOnClickListener { if (heldText != null) copyHeld() else chooseSafe() }
+        v.findViewById<View>(R.id.choice_safe).setOnClickListener { if (held != null) copyHeld() else chooseSafe() }
         v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
-        v.findViewById<View>(R.id.choice_discard).setOnClickListener { if (heldText != null) discardHeld() else chooseDiscard() }
+        v.findViewById<View>(R.id.choice_discard).setOnClickListener { if (held != null) discardHeld() else chooseDiscard() }
         renderChoice()
         startup?.event("inputViewCreateEnd")
         return v
@@ -273,7 +270,7 @@ class DictationImeService : InputMethodService() {
         editorRetention = EditorRetentionPolicy.classify(attribute)
         editorRetentionEligible = editorRetention.eligible
         editorPackage = attribute?.packageName
-        if (heldText != null && editorPackage != heldPackage) { clearHeld(); showIdle() } // A different app's editor.
+        if (held != null && editorPackage != held?.from) { clearHeld(); showIdle() } // A different app's editor.
         previewAllowed = false
         showPreview("")
         // Any input start ends the previous session (InputSession.start).
@@ -507,11 +504,21 @@ class DictationImeService : InputMethodService() {
         requestOwnPanelForNewEditor(event)
     }
 
-    /** A new editor took input without showing the keyboard: ask for our own panel. */
+    /**
+     * A hold is on and our panel is not showing: ask for it. Asked on every hold entry (the new
+     * editor's input start, and again when it hides the view or the window), because the editor's
+     * hide can land after the first request ran, when the hold had briefly ended (Signal order,
+     * 4 in 12 probe runs). One request is pending at a time, and the hold's gap bounds the asking:
+     * after the gap, a real leave, or the panel's return, nothing is requested.
+     */
     private fun requestOwnPanelForNewEditor(event: EditorEvent) {
-        if (event == EditorEvent.INPUT_START) mainHandler.post {
-            if (holding && !inputViewVisible && !destroyed) requestPanel(this)
-        }
+        if (event != EditorEvent.INPUT_START && event != EditorEvent.INPUT_VIEW_FINISH && event != EditorEvent.WINDOW_HIDDEN) return
+        mainHandler.removeCallbacks(panelRequest)
+        mainHandler.post(panelRequest)
+    }
+
+    private val panelRequest = Runnable {
+        if (holding && !inputViewVisible && !destroyed) requestPanel(this)
     }
 
     /** The panel settled after a rotation: release a result held for it, unless the finishing choice holds it. */
@@ -668,7 +675,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun startRecording() {
-        if (takeActive || heldText != null) return // Held text is never dropped by starting a take.
+        if (takeActive || held != null) return // Held text is never dropped by starting a take.
         if (MicrophoneOwner.state().occupied) {
             interruptedView = true
             updateSharedMicrophone()
@@ -697,7 +704,6 @@ class DictationImeService : InputMethodService() {
             val currentRotationTake = rotationTake
             recordingToken = session.token()
             takeHeldForRotation = false
-            commitRefusedInactive = false
             authority = null
             fun authorityForThisTake() = authority.takeIf { generation == takeGeneration }
             val save = saveTake
@@ -746,21 +752,19 @@ class DictationImeService : InputMethodService() {
                         finishing = false
                         choice = null
                         showPreview("")
-                        holdText(result.text)
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
-                        showStatus(R.string.status_unable_insert)
-                        setMicrophone(true, R.string.start_recording)
+                        notInsertedText(result)?.let(::holdText) ?: run {
+                            showStatus(R.string.status_unable_insert)
+                            setMicrophone(true, R.string.start_recording)
+                        }
                         return
                     }
                     choice = null
                     showIdle()
-                    if (result.outcome == TakeOutcome.COMMIT_REJECTED && commitRefusedInactive) {
-                        // The text is in History where the field allows it; say it was not inserted.
-                        holdText(result.text)
-                        // A panel shown again (rotation) must not start a take over this state: Copy stays until Back.
-                        MicrophoneOwner.requireExplicitStart()
-                        showStatus(R.string.status_unable_insert)
-                        setMicrophone(true, R.string.start_recording)
+                    val notInserted = notInsertedText(result)
+                    if (notInserted != null) {
+                        // The text is in History where the field allows it; the panel also holds it for Copy.
+                        holdText(notInserted)
                     } else if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         Log.e(tag, "take failed: ${result.outcome}")
                         showStatus(R.string.status_failed)
@@ -915,7 +919,6 @@ class DictationImeService : InputMethodService() {
             { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); ic.commitText(content, 1) }, text,
             requireLive = takeHeldForRotation, refused = {
                 onAttempt()
-                commitRefusedInactive = true
                 Log.w(tag, "commit refused: connection inactive")
                 rotationEvent(RotationEvent.COMMIT_REFUSED_INACTIVE)
             })
@@ -1008,7 +1011,7 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && heldText != null) { cancelAndReturn(); return true }
+        if (keyCode == KeyEvent.KEYCODE_BACK && held != null) { cancelAndReturn(); return true }
         if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
             // Back on an open choice is its safe default; otherwise it opens the choice.
             if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
@@ -1101,12 +1104,12 @@ class DictationImeService : InputMethodService() {
             choice = open,
             preparing = running && finishing && open == null,
             stopGlyph = running && !finishing,
-            unableToInsert = statusText == R.string.status_unable_insert || heldText != null,
-            held = heldText != null,
+            unableToInsert = held == null && statusText == R.string.status_unable_insert,
+            held = held != null,
             backLabel = when {
                 open == PanelChoice.RECORDING -> R.string.continue_recording
                 open == PanelChoice.FINISHING -> R.string.keep_finishing
-                heldText != null -> if (heldCopied) R.string.back_to_keyboard else R.string.copy_text
+                held != null -> if (held?.copied == true) R.string.back_to_keyboard else R.string.copy_text
                 running && finishing -> R.string.back_hold_and_choose
                 running -> R.string.discard_recording
                 else -> R.string.back_to_keyboard
@@ -1114,9 +1117,9 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun cancelAndReturn() {
-        if (heldText != null) {
+        if (held != null) {
             // Back is the safe default: it copies the held text; once copied it leaves (the text is on the clipboard).
-            if (!heldCopied) { copyHeld(); return }
+            if (held?.copied != true) { copyHeld(); return }
             val token = session.token()
             clearHeld()
             MicrophoneOwner.requireExplicitStart()
@@ -1134,24 +1137,36 @@ class DictationImeService : InputMethodService() {
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }
 
-    /** Holds the finished text of a take that could not be inserted; the preview shows it. */
-    private fun holdText(text: String?) {
-        heldText = text?.takeIf { it.isNotBlank() }
-        heldCopied = false
-        heldPackage = editorPackage
-        if (heldText != null) showPreview("")
+    /** The text of a take that was not inserted; the panel holds it for Copy. [from] is the editor's app. */
+    private class HeldText(val text: String, val from: String?, var copied: Boolean = false)
+
+    /**
+     * Every outcome of a take that has text and did not insert it: the commit was rejected (the
+     * write returned false, or the connection was dead), failed after decoding before an accepted
+     * commit, or the input changed under it. Recognition worked, so these never say "Recognition
+     * failed"; only an outcome with no text does.
+     */
+    private fun notInsertedText(result: TakeResult): String? = when (result.outcome) {
+        TakeOutcome.COMMIT_REJECTED, TakeOutcome.INPUT_CHANGED -> result.text
+        TakeOutcome.FAILED -> result.text.takeIf { result.commitAccepted != true }
+        TakeOutcome.COMPLETED, TakeOutcome.CANCELLED -> null
+    }?.takeIf { it.isNotBlank() }
+
+    /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
+    private fun holdText(text: String) {
+        held = HeldText(text, editorPackage)
+        MicrophoneOwner.requireExplicitStart() // A panel shown again never starts a take over the held text.
+        showPreview("")
+        showStatus(R.string.status_unable_insert)
+        setMicrophone(true, R.string.start_recording)
     }
 
-    private fun clearHeld() {
-        heldText = null
-        heldCopied = false
-        heldPackage = null
-    }
+    private fun clearHeld() { held = null }
 
     private fun copyHeld() {
-        val text = heldText ?: return
-        copyTranscript(this, text)
-        heldCopied = true
+        val state = held ?: return
+        copyTranscript(this, state.text)
+        state.copied = true
         showStatus(R.string.status_copied)
     }
 
@@ -1172,7 +1187,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun showIdle() {
-        if (heldText != null) return
+        if (held != null) return
         feedback?.stop()
         feedback = null
         ring?.follow(null)
@@ -1199,7 +1214,7 @@ class DictationImeService : InputMethodService() {
 
     private fun updateSharedMicrophone() {
         val owner = MicrophoneOwner.state()
-        if (takeActive || heldText != null) return
+        if (takeActive || held != null) return
         if (owner.occupied) {
             interruptedView = true
             if (owner.releaseFailed) {
@@ -1223,10 +1238,10 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun showStatus(label: Int) {
-        // Held text keeps its two states; stray status writes (a rotation's input start) cannot replace them.
-        if (heldText != null && label != R.string.status_unable_insert && label != R.string.status_copied) return
-        statusText = label
-        status?.setText(label)
+        // While text is held the status is the held state's (unable, or copied), whatever else asks.
+        val shown = held?.let { if (it.copied) R.string.status_copied else R.string.status_unable_insert } ?: label
+        statusText = shown
+        status?.setText(shown)
         renderChoice()
     }
 
@@ -1248,7 +1263,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun showPreview(text: String) {
-        previewText = PanelPreview.tail(heldText ?: text)
+        previewText = PanelPreview.tail(held?.text ?: text)
         preview?.let { PanelPreview.bind(it, previewText) }
     }
 

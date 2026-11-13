@@ -6,11 +6,12 @@
     <string name="status_finishing_choice">Still preparing text</string>
     <string name="choice_title">Cancel take</string>
     <string name="back_to_keyboard">Back to keyboard</string>
-    <!-- The take ended without insertion (system interruption); its marker sits in the status row. -->
+    <!-- The take ended without insertion; its marker sits in the status row. The panel holds the
+         text: Copy text and Discard text, and after a copy the status says so. -->
+    <string name="status_unable_insert">Unable to insert text</string>
     <string name="copy_text">Copy text</string>
     <string name="discard_text">Discard text</string>
     <string name="status_copied">Copied. Paste it in the field.</string>
-    <string name="status_unable_insert">Unable to insert text</string>
     <!-- Back while Preparing text: holds the text and opens the choice. -->
     <string name="back_hold_and_choose">Hold text and choose</string>
 </resources>

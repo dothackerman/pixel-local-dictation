@@ -25,7 +25,9 @@ class TakeSessionTest {
         val inserted = ArrayList<String>()
         val results = ArrayList<TakeResult>()
         var accepts = true
+        var attempted = true
         var returns = 0
+        override fun commitAttempted() = attempted
         override fun preview(text: String) {}
         override fun commit(text: String): Boolean {
             if (accepts) inserted.add(text)
@@ -196,6 +198,23 @@ class TakeSessionTest {
         queue.drain()
         assertEquals(1, releases)
         assertThrows(IllegalStateException::class.java) { runtime.open(Capture(), Output(), direct) }
+    }
+
+    /** Authority gone before any write: nothing was inserted, so the result carries the text for the panel's Copy. */
+    @Test fun commitSkippedBecauseTheInputChangedStillCarriesTheText() {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        val capture = Capture()
+        val output = Output().also { it.accepts = false; it.attempted = false }
+        val session = runtime.open(capture, output, direct)
+        session.start()
+        capture.feed(floatArrayOf(1f))
+        session.stop()
+        capture.drained(Result.success(byteArrayOf(1)))
+        session.stop()
+        val result = output.results.single()
+        assertEquals(TakeOutcome.INPUT_CHANGED, result.outcome)
+        assertEquals("word", result.text)
+        assertTrue(output.inserted.isEmpty())
     }
 
     @Test fun rejectedCommitDoesNotReturnToKeyboardOrRetryInsertion() {

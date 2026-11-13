@@ -179,6 +179,15 @@ class RotationContinuityDemoTest {
             marks.event(RotationEvent.PROBE_ROTATE_REQUESTED, flag = false)
             instrumentation.runOnMainSync { activity().rotate(landscape = false) }
             Thread.sleep(1_500)
+            // The held state must survive rotating back (an input restart): the editor hid the keyboard,
+            // so show it again (ours is still selected) and read the panel once more.
+            if (detach) {
+                instrumentation.runOnMainSync { activity().showKeyboard() }
+                Thread.sleep(1_500)
+            }
+            val unableAfterRotation = statusText()
+            val copyReadyAfterRotation = ready(R.id.choice_safe)
+            val heldPreviewAfterRotation = previewText().isNotBlank() // Never logged.
             instrumentation.runOnMainSync { activity().hideKeyboard() }
             Thread.sleep(500)
             marks.close()
@@ -212,6 +221,9 @@ class RotationContinuityDemoTest {
                 assertTrue("Discard text control missing or disabled", discardReady)
                 assertFalse("no microphone control while the text is held", micShown)
                 assertTrue("held text must show in the preview", heldPreviewShown)
+                assertEquals("held state lost after rotating back", unableShown, unableAfterRotation)
+                assertTrue("Copy lost after rotating back", copyReadyAfterRotation)
+                assertTrue("held text lost from the preview after rotating back", heldPreviewAfterRotation)
                 passed = true
                 return
             }

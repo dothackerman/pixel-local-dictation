@@ -20,7 +20,7 @@ data class PanelFrame(
     val preparing: Boolean = false,
     /** The disk's glyph is the Stop square (a take is open and recording); otherwise the mic. */
     val stopGlyph: Boolean = false,
-    /** The take ended without insertion while the panel showed it: the status carries its marker. */
+    /** The take ended without insertion and no text is held: the status carries its marker. */
     val unableToInsert: Boolean = false,
     /**
      * The finished text is held in the panel (Unable to insert text, plan B): the preview shows it
@@ -88,8 +88,8 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         else -> View.GONE
     }
     panel.findViewById<ImageView>(R.id.status_marker)?.apply {
-        visibility = if (frame.unableToInsert && open == null) View.VISIBLE else View.GONE
-        if (frame.unableToInsert) setImageResource(R.drawable.ic_marker_not_inserted)
+        visibility = if ((frame.unableToInsert || held) && open == null) View.VISIBLE else View.GONE
+        if (frame.unableToInsert || held) setImageResource(R.drawable.ic_marker_not_inserted)
     }
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
     if ((open != null || held) && safe != null) {
