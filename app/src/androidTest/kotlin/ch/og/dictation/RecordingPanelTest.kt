@@ -380,8 +380,9 @@ class RecordingPanelTest {
                     if (preview.visibility == View.VISIBLE) assertTrue("preview lost its lines ($name $suffix)",
                         preview.height >= preview.layout.getLineBottom(minOf(preview.maxLines - 1, preview.layout.lineCount - 1), false))
                     val back = panel.findViewById<View>(R.id.back)
-                    val copy = panel.findViewById<View>(R.id.copy_text)
-                    for (target in listOf(back, mic, copy).filter { it.visibility == View.VISIBLE }) {
+                    val safeAction = panel.findViewById<View>(R.id.choice_safe)
+                    val discardAction = panel.findViewById<View>(R.id.choice_discard)
+                    for (target in listOf(back, mic, safeAction, discardAction).filter { it.visibility == View.VISIBLE }) {
                         assertTrue("target below 48dp ($name $suffix)", target.width >= 48 * density - 1 && target.height >= 48 * density - 1)
                         assertTrue("target outside the panel ($name $suffix)", whole.contains(bounds(target, panel)))
                     }
@@ -403,7 +404,6 @@ class RecordingPanelTest {
                 }
                 mic.isEnabled = true
                 state("idle", R.string.status_idle, PanelFrame(), words = "")
-                assertEquals(View.GONE, panel.findViewById<View>(R.id.copy_text).visibility)
                 state("private-field", R.string.status_idle, PanelFrame(), words = "", privateField = true)
                 state("recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording))
                 state("private-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), privateField = true)
@@ -416,14 +416,20 @@ class RecordingPanelTest {
                 assertNotEquals("no microphone disk while preparing", View.VISIBLE, mic.visibility)
                 state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
-                state("unable-to-insert", R.string.status_unable_insert, PanelFrame(unableToInsert = true, copyable = true), words = "")
-                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
-                panel.findViewById<ImageButton>(R.id.copy_text).let {
-                    assertEquals("Copy button missing ($suffix)", View.VISIBLE, it.visibility)
-                    assertEquals(app.getString(R.string.copy_text), it.contentDescription.toString())
-                    assertTrue(it.isEnabled)
+                val held = "… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim()
+                for ((name, label, backLabel) in listOf(
+                    Triple("unable-to-insert", R.string.status_unable_insert, R.string.copy_text),
+                    Triple("unable-to-insert-copied", R.string.status_copied, R.string.back_to_keyboard))) {
+                    state(name, label, PanelFrame(unableToInsert = true, held = true, backLabel = backLabel), words = held)
+                    assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
+                    assertNotEquals("no microphone disk with held text", View.VISIBLE, mic.visibility)
+                    assertNotEquals("no ring with held text", View.VISIBLE, panel.findViewById<View>(R.id.recording_ring).visibility)
+                    assertEquals(app.getString(R.string.copy_text), panel.findViewById<View>(R.id.choice_safe).contentDescription.toString())
+                    assertEquals(app.getString(R.string.discard_text), panel.findViewById<View>(R.id.choice_discard).contentDescription.toString())
+                    assertEquals(View.VISIBLE, preview.visibility)
+                    assertTrue(preview.text.isNotBlank())
+                    oneRow(name, listOf(R.id.choice_safe, R.id.choice_discard))
                 }
-                assertEquals(View.VISIBLE, mic.visibility)
                 if (!landscape) assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
                     heights.filterKeys { !it.startsWith("private-") }.values.toSet().size)
             }

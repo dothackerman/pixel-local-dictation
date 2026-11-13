@@ -464,15 +464,98 @@ class DictationProductionLifecycleTest {
         assertEquals(0, next.dropped) // Before the fix: 1, the text was written into the dead connection.
         assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
         assertEquals("old speech", rows().single().text)
+        assertHeldState(service, returned)
         assertCopyPutsTakeTextOnClipboard(service, returned)
     }
 
-    /** A retention-ineligible editor: nothing in History, but Copy still has the text. */
+    /** A retention-ineligible editor: nothing in History, but the panel holds the text for Copy. */
     @Test fun signalOrderInactiveConnectionInPrivateFieldKeepsTextForCopyOnly() {
         val (service, returned, next) = deadConnectionAtStop(privateField = true)
         assertEquals(0, next.dropped)
         assertTrue(rows().isEmpty())
+        assertHeldState(service, returned)
         assertCopyPutsTakeTextOnClipboard(service, returned)
+    }
+
+    /** Discard text: the text is gone, the panel is idle and only the microphone tap starts a take. */
+    @Test fun discardTextEndsTheHeldStateAndNeedsTheMicrophoneTap() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
+        clipboard.clearPrimaryClip()
+        assertEquals(service.getString(R.string.discard_text), discardAction(returned).contentDescription.toString())
+        discardAction(returned).performClick()
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+        assertEquals("", preview(returned))
+        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
+        assertEquals(View.VISIBLE, button(returned).visibility)
+        assertNull(clipboard.primaryClip) // Discard never copies.
+        // A panel shown again (a rotation) neither starts a take nor brings the text back.
+        val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
+        assertEquals(service.getString(R.string.status_idle), status(rebuilt))
+        assertEquals("", preview(rebuilt))
+        assertEquals(View.GONE, rebuilt.findViewById<View>(R.id.choice).visibility)
+    }
+
+    /** Back is the safe default: the first Back copies and stays; after a copy Back leaves and drops the text. */
+    @Test fun backCopiesFirstAndLeavesAfterTheCopy() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
+        assertEquals(service.getString(R.string.copy_text), back(returned).contentDescription.toString())
+        back(returned).performClick()
+        assertEquals("old speech", clipboard.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(service.getString(R.string.status_copied), status(returned))
+        assertEquals("old speech", preview(returned))
+        assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
+        assertTrue(systemBack(service)) // The hardware Back follows the arrow: now it leaves.
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+        assertEquals("", preview(returned))
+    }
+
+    /** A rotation keeps the state and the text, copied or not, on the new panel view. */
+    @Test fun rotationKeepsTheHeldStateAndTheCopiedStatus() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
+        assertHeldState(service, rebuilt)
+        rebuilt.findViewById<View>(R.id.choice_safe).performClick()
+        val again = platformResetOnRotation(service, android.view.Surface.ROTATION_90)!!
+        assertEquals(service.getString(R.string.status_copied), status(again))
+        assertEquals("old speech", preview(again))
+        assertEquals(View.VISIBLE, again.findViewById<View>(R.id.choice).visibility)
+        assertEquals(View.VISIBLE, again.findViewById<View>(R.id.status_marker).visibility)
+    }
+
+    @Test fun screenOffClearsTheHeldText() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        screenOff()
+        pump()
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+        assertEquals("", preview(returned))
+    }
+
+    @Test fun anotherAppsEditorClearsTheHeldText() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onCreateInputMethodInterface().startInput(Field(service), editor().apply { packageName = "other.app" })
+        pump()
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+        assertEquals("", preview(returned))
+        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
+    }
+
+    /** Held text: the status keeps its mark, the stage has Copy and Discard text and no microphone or ring. */
+    private fun assertHeldState(service: DictationImeService, panel: View) {
+        assertEquals(service.getString(R.string.status_unable_insert), status(panel))
+        assertEquals("old speech", preview(panel))
+        assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
+        assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.choice).visibility)
+        assertEquals(service.getString(R.string.copy_text), panel.findViewById<View>(R.id.choice_safe).contentDescription.toString())
+        assertEquals(View.GONE, panel.findViewById<View>(R.id.choice_stop).visibility)
+        assertEquals(service.getString(R.string.discard_text), discardAction(panel).contentDescription.toString())
+        assertTrue(panel.findViewById<View>(R.id.choice_safe).isEnabled && discardAction(panel).isEnabled)
+        // No control starts a take or drops the text implicitly.
+        assertNotEquals(View.VISIBLE, button(panel).visibility)
+        assertNotEquals(View.VISIBLE, panel.findViewById<View>(R.id.recording_ring).visibility)
     }
 
     private fun deadConnectionAtStop(privateField: Boolean): Triple<DictationImeService, View, InactiveField> {
@@ -500,19 +583,18 @@ class DictationProductionLifecycleTest {
         return Triple(service, returned, next)
     }
 
-    /** Copy is shown with the state, copies exactly the take text as plain text (no sensitive flag), and repeats. */
+    /** Copy puts exactly the take text on the clipboard as plain text (no sensitive flag), repeatably, and says so. */
     private fun assertCopyPutsTakeTextOnClipboard(service: DictationImeService, panel: View) {
-        val copy = panel.findViewById<View>(R.id.copy_text)
-        assertEquals(View.VISIBLE, copy.visibility)
-        assertEquals(service.getString(R.string.copy_text), copy.contentDescription.toString())
         val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
         repeat(2) {
             clipboard.clearPrimaryClip()
-            copy.performClick()
+            panel.findViewById<View>(R.id.choice_safe).performClick()
             val clip = clipboard.primaryClip!!
             assertEquals("old speech", clip.getItemAt(0).text.toString())
             assertEquals(false, clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE") ?: false)
-            assertEquals(service.getString(R.string.status_unable_insert), status(panel)) // Copying does not dismiss the state.
+            assertEquals(service.getString(R.string.status_copied), status(panel))
+            assertEquals("old speech", preview(panel)) // The text stays held and visible.
+            assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
         }
     }
 
@@ -1067,6 +1149,9 @@ class DictationProductionLifecycleTest {
     }
 
     private fun choiceShown(panel: View) = panel.findViewById<View>(R.id.choice).visibility == View.VISIBLE
+    /** The Cancel choice (paused or finishing); the held-text state also shows the choice row, with Copy. */
+    private fun cancelChoiceShown(panel: View) = choiceShown(panel) &&
+        panel.findViewById<View>(R.id.choice_safe).contentDescription.toString() != panel.context.getString(R.string.copy_text)
     private fun safe(panel: View) = panel.findViewById<ImageButton>(R.id.choice_safe)
     private fun stopAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_stop)
     private fun discardAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_discard)
@@ -1211,7 +1296,7 @@ class DictationProductionLifecycleTest {
         val returned = showPanel(service)!!
         advance(ROTATION_SETTLE_MS)
         decode.drain(); settleHistory()
-        assertFalse("no choice comes back after a lock", choiceShown(returned))
+        assertFalse("no choice comes back after a lock", cancelChoiceShown(returned))
         assertEquals(0, commits)
     }
 
@@ -1650,14 +1735,14 @@ class DictationProductionLifecycleTest {
         service.onStartInputView(editor(), true)
         pump()
         assertEquals(1, input.starts.get())
-        assertFalse(choiceShown(view))
+        assertFalse(cancelChoiceShown(view))
         assertEquals(0, commits)
     }
 
     /**
      * P1 (#61 visit), #36: an interrupted take must not leave a silent idle panel with old text. The
-     * panel says "Unable to insert text" with its marker and nothing more; Back is the way out and
-     * the microphone stays for a new take.
+     * panel says "Unable to insert text" with its marker, shows the held text and offers Copy and
+     * Discard text; Back copies first and leaves after that; Discard text returns to the microphone.
      */
     @Test fun historyOnlyEndSaysUnableToInsertWithItsMarkerAndBackLeaves() {
         val input = Input()
@@ -1671,7 +1756,7 @@ class DictationProductionLifecycleTest {
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
         await { status(view) == service.getString(R.string.status_unable_insert) }
-        assertEquals("", preview(view))
+        assertEquals("old speech", preview(view))
         val marker = view.findViewById<View>(R.id.status_marker)
         assertEquals(View.VISIBLE, marker.visibility)
         // The mark reads with the words, directly after them; at the far edge it reads as a button.
@@ -1684,8 +1769,10 @@ class DictationProductionLifecycleTest {
         val textEnd = statusBounds.left + statusView.totalPaddingLeft + statusView.layout.getLineWidth(0)
         assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
         assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
-        assertEquals(View.VISIBLE, button(view).visibility)
-        assertTrue("the microphone stays for a new take", button(view).isEnabled)
+        assertNotEquals("no microphone while the text is held", View.VISIBLE, button(view).visibility)
+        assertEquals(service.getString(R.string.copy_text), back(view).contentDescription.toString())
+        back(view).performClick() // Safe default: copies and stays.
+        assertEquals(service.getString(R.string.status_copied), status(view))
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
         org.robolectric.shadows.ShadowLog.clear()
         back(view).performClick()

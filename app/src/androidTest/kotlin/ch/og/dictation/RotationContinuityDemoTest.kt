@@ -157,7 +157,11 @@ class RotationContinuityDemoTest {
             Thread.sleep(500)
             // Read the panel now: the rotation back and the hide below take it off screen.
             val unableShown = statusText()
-            val copyReady = ours(R.id.copy_text)?.let { it.isEnabled && it.isVisibleToUser } == true
+            fun ready(id: Int) = ours(id)?.let { it.isEnabled && it.isVisibleToUser } == true
+            val copyReady = ready(R.id.choice_safe)
+            val discardReady = ready(R.id.choice_discard)
+            val micShown = ours(R.id.microphone)?.isVisibleToUser == true
+            val heldPreviewShown = previewText().isNotBlank() // Never logged: it is the take's text.
             val handedBack = currentIme() == futo
             var inserted = ""
             instrumentation.runOnMainSync { inserted = activity().editor.text.toString().trim() }
@@ -205,6 +209,9 @@ class RotationContinuityDemoTest {
                 assertEquals(context.getString(R.string.status_unable_insert), unableShown)
                 assertFalse("must not hand back to FUTO as if inserted", handedBack)
                 assertTrue("Copy control missing or disabled", copyReady)
+                assertTrue("Discard text control missing or disabled", discardReady)
+                assertFalse("no microphone control while the text is held", micShown)
+                assertTrue("held text must show in the preview", heldPreviewShown)
                 passed = true
                 return
             }

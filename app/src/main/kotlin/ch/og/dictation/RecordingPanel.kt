@@ -22,8 +22,12 @@ data class PanelFrame(
     val stopGlyph: Boolean = false,
     /** The take ended without insertion while the panel showed it: the status carries its marker. */
     val unableToInsert: Boolean = false,
-    /** The take's text is held and can be copied (only with [unableToInsert]). */
-    val copyable: Boolean = false,
+    /**
+     * The finished text is held in the panel (Unable to insert text, plan B): the preview shows it
+     * and the stage offers Copy and Discard text instead of the microphone. Back label is the
+     * caller's.
+     */
+    val held: Boolean = false,
     /** What Back does now. */
     val backLabel: Int = R.string.back_to_keyboard,
 )
@@ -39,22 +43,35 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     val context = panel.context
     val open = frame.choice
     val overStage = context.resources.getBoolean(R.bool.panel_choice_over_stage)
+    val held = frame.held
     val choice = panel.findViewById<View>(R.id.choice)
-    choice?.visibility = if (open != null) View.VISIBLE else View.GONE
+    choice?.visibility = if (open != null || held) View.VISIBLE else View.GONE
     val safe = panel.findViewById<ImageButton>(R.id.choice_safe)
-    val safeLabel = context.getString(if (open == PanelChoice.FINISHING) R.string.keep_finishing else R.string.continue_recording)
+    val safeLabel = context.getString(when {
+        held -> R.string.copy_text
+        open == PanelChoice.FINISHING -> R.string.keep_finishing
+        else -> R.string.continue_recording
+    })
     safe?.contentDescription = safeLabel
     // Keep preparing text is not "play": it shows the preparing glyph (hourglass), as History does.
-    safe?.setImageResource(if (open == PanelChoice.FINISHING) R.drawable.ic_marker_preparing else R.drawable.ic_play_arrow)
-    safe?.let { TooltipCompat.setTooltipText(it, safeLabel) }
+    safe?.setImageResource(when {
+        held -> R.drawable.ic_content_copy
+        open == PanelChoice.FINISHING -> R.drawable.ic_marker_preparing
+        else -> R.drawable.ic_play_arrow
+    })
+    // No tooltip on Copy: no touch-and-hold hint (owner decision).
+    safe?.let { TooltipCompat.setTooltipText(it, if (held) null else safeLabel) }
     panel.findViewById<View>(R.id.choice_stop)?.let {
         it.visibility = if (open == PanelChoice.RECORDING) View.VISIBLE else View.GONE
         TooltipCompat.setTooltipText(it, it.contentDescription)
     }
-    panel.findViewById<View>(R.id.choice_discard)?.let { TooltipCompat.setTooltipText(it, it.contentDescription) }
+    panel.findViewById<View>(R.id.choice_discard)?.let {
+        it.contentDescription = context.getString(if (held) R.string.discard_text else R.string.discard_take)
+        TooltipCompat.setTooltipText(it, it.contentDescription)
+    }
 
-    // The stage: in a choice there is no microphone to tap by mistake.
-    val covered = open != null
+    // The stage: in a choice (or holding text) there is no microphone to tap by mistake.
+    val covered = open != null || held
     val disk = when {
         covered || frame.preparing -> View.INVISIBLE
         else -> View.VISIBLE
@@ -66,18 +83,16 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     }
     panel.findViewById<View>(R.id.processing)?.visibility = if (frame.preparing && !covered) View.VISIBLE else View.GONE
     panel.findViewById<View>(R.id.preview)?.visibility = when {
-        !covered -> View.VISIBLE
+        !covered || held -> View.VISIBLE
         overStage -> View.VISIBLE
         else -> View.GONE
     }
     panel.findViewById<ImageView>(R.id.status_marker)?.apply {
-        visibility = if (frame.unableToInsert && !covered) View.VISIBLE else View.GONE
+        visibility = if (frame.unableToInsert && open == null) View.VISIBLE else View.GONE
         if (frame.unableToInsert) setImageResource(R.drawable.ic_marker_not_inserted)
     }
-    panel.findViewById<View>(R.id.copy_text)?.visibility =
-        if (frame.unableToInsert && frame.copyable && !covered) View.VISIBLE else View.GONE
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
-    if (open != null && safe != null) {
+    if ((open != null || held) && safe != null) {
         safe.isFocusableInTouchMode = true
         safe.requestFocus()
         safe.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED)
