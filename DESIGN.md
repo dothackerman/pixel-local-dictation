@@ -168,7 +168,7 @@ Material Symbols Sharp (FILL 0, wght 400, opsz 24; Apache 2.0) as vector drawabl
 | Unable to insert text (not inserted / not attempted) | `edit_off` | Unable to insert text. Copy it to use it. |
 | Insertion uncertain | custom: outlined, unboxed "?" at 3dp | Insertion uncertain. Check the app before you paste. |
 
-**The One Mark Rule.** At most one mark per take, by precedence: in progress, cut short, unable to insert, uncertain. A finished, inserted take carries none. Marks are onSurface except the recording mark. On the panel a mark shows only when nothing else shows the state (today: Unable to insert text).
+**The One Mark Rule.** At most one mark per take, by precedence: in progress, cut short, unable to insert, uncertain. A finished, inserted take carries none. Marks are onSurface except the recording mark. On the panel a mark shows only when nothing else shows the state (today: Unable to insert text). That state also carries one Copy icon button (`content_copy`, 48dp, "Copy text", right after the mark, plain ClipData, no tooltip): plan B so the owner can paste the take's text by hand; the state stays until Back and Copy can repeat.
 
 ## Components
 

@@ -460,18 +460,34 @@ class DictationProductionLifecycleTest {
      * text can reach the field, so Stop must not report an insert; the take stays in History.
      */
     @Test fun signalOrderInactiveConnectionAtStopIsNotReportedInsertedAndStaysInHistory() {
+        val (service, returned, next) = deadConnectionAtStop(privateField = false)
+        assertEquals(0, next.dropped) // Before the fix: 1, the text was written into the dead connection.
+        assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
+        assertEquals("old speech", rows().single().text)
+        assertCopyPutsTakeTextOnClipboard(service, returned)
+    }
+
+    /** A retention-ineligible editor: nothing in History, but Copy still has the text. */
+    @Test fun signalOrderInactiveConnectionInPrivateFieldKeepsTextForCopyOnly() {
+        val (service, returned, next) = deadConnectionAtStop(privateField = true)
+        assertEquals(0, next.dropped)
+        assertTrue(rows().isEmpty())
+        assertCopyPutsTakeTextOnClipboard(service, returned)
+    }
+
+    private fun deadConnectionAtStop(privateField: Boolean): Triple<DictationImeService, View, InactiveField> {
         DictationImeService.requestPanel = {}
         val input = Input()
         devices.add(input)
-        val (service, _) = service(editor())
+        val (service, _) = service(editor(privateField))
         feed(input, 1000, 1)
         platformResetOnRotation(service, android.view.Surface.ROTATION_90)
         advance(200)
         service.onFinishInputView(true)
         service.onFinishInput()
         val next = InactiveField(service)
-        service.onCreateInputMethodInterface().startInput(next, editor())
-        service.onStartInputView(editor(), false)
+        service.onCreateInputMethodInterface().startInput(next, editor(privateField))
+        service.onStartInputView(editor(privateField), false)
         service.onFinishInputView(false)
         service.onWindowHidden()
         pump()
@@ -479,10 +495,25 @@ class DictationProductionLifecycleTest {
         advance(ROTATION_SETTLE_MS)
         button(returned).performClick()
         await { input.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); rows().singleOrNull()?.let { it.delivery != HistoryDelivery.UNKNOWN } == true }
-        assertEquals(0, next.dropped) // Today: 1, the text is written into the dead connection.
-        assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
-        assertEquals("old speech", rows().single().text)
+        await { decode.drain(); status(returned) == service.getString(R.string.status_unable_insert) }
+        settleHistory()
+        return Triple(service, returned, next)
+    }
+
+    /** Copy is shown with the state, copies exactly the take text as plain text (no sensitive flag), and repeats. */
+    private fun assertCopyPutsTakeTextOnClipboard(service: DictationImeService, panel: View) {
+        val copy = panel.findViewById<View>(R.id.copy_text)
+        assertEquals(View.VISIBLE, copy.visibility)
+        assertEquals(service.getString(R.string.copy_text), copy.contentDescription.toString())
+        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
+        repeat(2) {
+            clipboard.clearPrimaryClip()
+            copy.performClick()
+            val clip = clipboard.primaryClip!!
+            assertEquals("old speech", clip.getItemAt(0).text.toString())
+            assertEquals(false, clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE") ?: false)
+            assertEquals(service.getString(R.string.status_unable_insert), status(panel)) // Copying does not dismiss the state.
+        }
     }
 
     @Test fun pixelOrderKeptEditorKeepsTheTakeAfterThePlatformReset() {

@@ -51,6 +51,19 @@
                 android:layout_marginStart="8dp"
                 android:importantForAccessibility="no"
                 android:visibility="gone" />
+            <!-- Plan B for Unable to insert text: the finished take's text on the clipboard. Shown
+                 with the mark only; the system confirms the copy. 48dp target, 24dp glyph. -->
+            <ImageButton
+                android:id="@+id/copy_text"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:padding="12dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_content_copy"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/copy_text"
+                android:visibility="gone" />
         </LinearLayout>
     </LinearLayout>
     <TextView

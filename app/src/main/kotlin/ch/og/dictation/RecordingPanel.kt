@@ -22,6 +22,8 @@ data class PanelFrame(
     val stopGlyph: Boolean = false,
     /** The take ended without insertion while the panel showed it: the status carries its marker. */
     val unableToInsert: Boolean = false,
+    /** The take's text is held and can be copied (only with [unableToInsert]). */
+    val copyable: Boolean = false,
     /** What Back does now. */
     val backLabel: Int = R.string.back_to_keyboard,
 )
@@ -72,6 +74,8 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         visibility = if (frame.unableToInsert && !covered) View.VISIBLE else View.GONE
         if (frame.unableToInsert) setImageResource(R.drawable.ic_marker_not_inserted)
     }
+    panel.findViewById<View>(R.id.copy_text)?.visibility =
+        if (frame.unableToInsert && frame.copyable && !covered) View.VISIBLE else View.GONE
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
     if (open != null && safe != null) {
         safe.isFocusableInTouchMode = true

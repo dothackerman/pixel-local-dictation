@@ -7,6 +7,7 @@
     <string name="choice_title">Cancel take</string>
     <string name="back_to_keyboard">Back to keyboard</string>
     <!-- The take ended without insertion (system interruption); its marker sits in the status row. -->
+    <string name="copy_text">Copy text</string>
     <string name="status_unable_insert">Unable to insert text</string>
     <!-- Back while Preparing text: holds the text and opens the choice. -->
     <string name="back_hold_and_choose">Hold text and choose</string>

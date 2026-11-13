@@ -107,6 +107,8 @@ class DictationImeService : InputMethodService() {
     private var deliveryHeldForRotation = false
     /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
     private var takeHeldForRotation = false
+    /** The finished text of a take that could not be inserted; held in memory only while that state shows. */
+    private var unableText: String? = null
     /** The last commit was refused because the editor had deactivated its connection. */
     private var commitRefusedInactive = false
     /**
@@ -246,6 +248,7 @@ class DictationImeService : InputMethodService() {
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
+        v.findViewById<View>(R.id.copy_text).setOnClickListener { unableText?.let { copyTranscript(this, it) } }
         v.findViewById<View>(R.id.choice_safe).setOnClickListener { chooseSafe() }
         v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
         v.findViewById<View>(R.id.choice_discard).setOnClickListener { chooseDiscard() }
@@ -734,6 +737,7 @@ class DictationImeService : InputMethodService() {
                         finishing = false
                         choice = null
                         showPreview("")
+                        unableText = result.text
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
                         showStatus(R.string.status_unable_insert)
                         setMicrophone(true, R.string.start_recording)
@@ -743,6 +747,9 @@ class DictationImeService : InputMethodService() {
                     showIdle()
                     if (result.outcome == TakeOutcome.COMMIT_REJECTED && commitRefusedInactive) {
                         // The text is in History where the field allows it; say it was not inserted.
+                        unableText = result.text
+                        // A panel shown again (rotation) must not start a take over this state: Copy stays until Back.
+                        MicrophoneOwner.requireExplicitStart()
                         showStatus(R.string.status_unable_insert)
                         setMicrophone(true, R.string.start_recording)
                     } else if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
@@ -1085,6 +1092,7 @@ class DictationImeService : InputMethodService() {
             preparing = running && finishing && open == null,
             stopGlyph = running && !finishing,
             unableToInsert = statusText == R.string.status_unable_insert,
+            copyable = !unableText.isNullOrBlank(),
             backLabel = when {
                 open == PanelChoice.RECORDING -> R.string.continue_recording
                 open == PanelChoice.FINISHING -> R.string.keep_finishing
@@ -1164,6 +1172,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun showStatus(label: Int) {
+        if (label != R.string.status_unable_insert) unableText = null
         statusText = label
         status?.setText(label)
         renderChoice()

@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -154,6 +155,10 @@ class RotationContinuityDemoTest {
             if (!detach) until(5_000, "FUTO restored by Stop") { currentIme() == futo }
             else until(5_000, "unable to insert shown") { statusText() == context.getString(R.string.status_unable_insert) }
             Thread.sleep(500)
+            // Read the panel now: the rotation back and the hide below take it off screen.
+            val unableShown = statusText()
+            val copyReady = ours(R.id.copy_text)?.let { it.isEnabled && it.isVisibleToUser } == true
+            val handedBack = currentIme() == futo
             var inserted = ""
             instrumentation.runOnMainSync { inserted = activity().editor.text.toString().trim() }
 
@@ -197,8 +202,9 @@ class RotationContinuityDemoTest {
                 assertEquals(0, commits)
                 assertEquals(1, refusals)
                 assertEquals("nothing may reach the editor", "", inserted)
-                assertEquals(context.getString(R.string.status_unable_insert), statusText())
-                assertTrue("must not hand back to FUTO as if inserted", currentIme() != futo)
+                assertEquals(context.getString(R.string.status_unable_insert), unableShown)
+                assertFalse("must not hand back to FUTO as if inserted", handedBack)
+                assertTrue("Copy control missing or disabled", copyReady)
                 passed = true
                 return
             }

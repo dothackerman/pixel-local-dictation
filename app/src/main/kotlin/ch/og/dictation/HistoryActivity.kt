@@ -1,7 +1,5 @@
 package ch.og.dictation
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
@@ -293,8 +291,7 @@ open class HistoryActivity : AppCompatActivity() {
         load({ it.get(id) }) { current ->
             current.fold({ saved ->
                 if (saved == null || isClearTarget(id)) { leaveDetailMissing(); return@fold }
-                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Transcript", saved.text))
-                // minSdk is 36: the system shows its own copy confirmation, so no Snackbar of ours.
+                copyTranscript(this, saved.text)
             }, { selected = null; readError = true; removeDetail(); renderList() })
         }
     }
