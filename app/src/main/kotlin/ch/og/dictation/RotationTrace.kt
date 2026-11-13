@@ -12,7 +12,7 @@ enum class RotationEvent {
     INPUT_VIEW_FINISH, INPUT_FINISH, CONFIGURATION, WINDOW_SHOWN, WINDOW_HIDDEN,
     SCREEN_OFF, INPUT_START_DONE, INPUT_VIEW_START_DONE, INPUT_VIEW_FINISH_DONE, INPUT_FINISH_DONE, CONFIGURATION_DONE, CAPTURE_START, CAPTURE_STARTED, STOP_REQUESTED, CAPTURE_STOPPED,
     CANCEL_REQUESTED, CAPTURE_CANCELLED, TAKE_ENDED, COMMIT_ATTEMPT, COMMIT_ACCEPTED,
-    COMMIT_REJECTED, CAPTURE_INTERRUPTED, CAPTURE_FAILED, CAPTURE_RELEASED, CAPTURE_NOT_ACQUIRED,
+    COMMIT_REJECTED, COMMIT_REFUSED_INACTIVE, CAPTURE_INTERRUPTED, CAPTURE_FAILED, CAPTURE_RELEASED, CAPTURE_NOT_ACQUIRED,
     TERMINAL_COMPLETED, TERMINAL_CANCELLED, TERMINAL_INPUT_CHANGED, TERMINAL_FAILED,
     TERMINAL_COMMIT_REJECTED,
     /** Display listener callback for the default display (trace only). */
@@ -62,7 +62,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
             "app-restart", "app-focus", "app-hide", "app-lock", "signal-controls",
             "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing",
             "signal-cancel-recording", "signal-cancel-finishing",
-            "demo52-keep", "demo52-hidden",
+            "demo52-keep", "demo52-hidden", "demo52-signal-hide", "demo52-signal-detach",
             "demo53-hidden-before-decode", "demo53-keep-before-decode", "demo53-hidden-before-save",
             "demo53-hidden-after-commit", "demo53-hidden-recording-choice",
             "demo53-hidden-finishing-choice-before-decode", "demo53-hidden-finishing-choice-after-save")

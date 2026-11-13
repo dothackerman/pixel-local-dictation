@@ -406,6 +406,85 @@ class DictationProductionLifecycleTest {
         assertEquals(1, input.starts.get())
     }
 
+    /**
+     * Signal order (owner log 2026-11-13): platform reset, the old editor finishes, the recreated
+     * one starts input with the panel shown, then Signal hides the keyboard and starts no further
+     * input; our own panel request shows it again on that input. Stop must insert there once.
+     */
+    @Test fun signalOrderHideAfterRecreatedEditorStartStopInsertsOnceIntoIt() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        val first = firstField.getValue(service)
+        feed(input, 1000, 1)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90)
+        advance(200)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        val next = Field(service)
+        service.onCreateInputMethodInterface().startInput(next, editor())
+        service.onStartInputView(editor(), false) // Window still shown: the view starts with the input.
+        service.onFinishInputView(false) // Signal hides the keyboard; the input stays started.
+        service.onWindowHidden()
+        pump() // Our request for the panel runs here.
+        assertEquals(0, input.releases.get())
+        assertEquals(1, panelRequests.get())
+        val returned = showPanel(service)!!
+        assertEquals(service.getString(R.string.status_recording), status(returned))
+        advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(0, input.releases.get())
+        feed(input, 20000, 2)
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        settleHistory()
+        assertEquals(listOf("old speech private speech"), next.inserted)
+        assertTrue(first.inserted.isEmpty())
+    }
+
+    /**
+     * The client deactivated this connection (its view was detached) without a new input start:
+     * Android answers reads with null and drops writes while reporting success (Pixel probe
+     * demo52-signal-detach, 2026-11-13: "commitText on inactive InputConnection").
+     */
+    private inner class InactiveField(service: DictationImeService) : BaseInputConnection(View(service), false) {
+        var dropped = 0
+        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence? = null
+        override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean { dropped++; return true }
+    }
+
+    /**
+     * Signal order with the recreated editor's connection deactivated by Signal before Stop: no
+     * text can reach the field, so Stop must not report an insert; the take stays in History.
+     */
+    @Test fun signalOrderInactiveConnectionAtStopIsNotReportedInsertedAndStaysInHistory() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        feed(input, 1000, 1)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90)
+        advance(200)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        val next = InactiveField(service)
+        service.onCreateInputMethodInterface().startInput(next, editor())
+        service.onStartInputView(editor(), false)
+        service.onFinishInputView(false)
+        service.onWindowHidden()
+        pump()
+        val returned = showPanel(service)!!
+        advance(ROTATION_SETTLE_MS)
+        button(returned).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); rows().singleOrNull()?.let { it.delivery != HistoryDelivery.UNKNOWN } == true }
+        assertEquals(0, next.dropped) // Today: 1, the text is written into the dead connection.
+        assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
+        assertEquals("old speech", rows().single().text)
+    }
+
     @Test fun pixelOrderKeptEditorKeepsTheTakeAfterThePlatformReset() {
         DictationImeService.requestPanel = {}
         val input = Input()

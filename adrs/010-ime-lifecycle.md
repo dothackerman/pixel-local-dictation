@@ -191,3 +191,9 @@ and the panel's Undo views are gone. Discard stays the dashed error-coloured but
 from Stop, now the only protection against a slip; the safe action stays preselected. History's
 own Undo after delete is unchanged. Evidence: host lifecycle tests (discard final at once from
 both choices, late decoder output after Discard, rotation right after Discard, private field).
+
+## Amendment — a dead connection is a failed insert (#36, 2026-11-13)
+
+- The return value of `commitText` is not trusted: it is a one-way call, and an editor that deactivated its connection (Signal after a rotation) drops the text and still answers true.
+- For a take that went through a rotation hold (also a self-requested panel), a null read before the write means the connection is dead: nothing is written, the take is a rejected insert (History keeps it where retention allows), and the panel shows "Unable to insert text" instead of handing back. Other takes are unchanged, since healthy editors may also answer a read with null.
+- The result is not carried to a later input start.

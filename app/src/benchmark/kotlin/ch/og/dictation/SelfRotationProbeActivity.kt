@@ -31,7 +31,38 @@ open class SelfRotationProbeActivity : Activity() {
         }
     }
 
+    /**
+     * Signal's order (2026-11-13 log): recreated, its editor takes input and the platform shows
+     * the keyboard, then the app hides it at once and starts no further input. With
+     * [DETACH_AFTER_HIDE] it also swaps the focused field for a fresh, unfocused one, so the input
+     * connection the keyboard holds belongs to a detached view.
+     */
+    class SignalOrder : SelfRotationProbeActivity() {
+        private var recreated = false
+        private var hidden = false
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            recreated = savedInstanceState != null
+            if (recreated) editor.requestFocus()
+        }
+        override fun onWindowFocusChanged(hasFocus: Boolean) {
+            super.onWindowFocusChanged(hasFocus)
+            if (!recreated || !hasFocus || hidden) return
+            hidden = true
+            editor.post {
+                hideKeyboard()
+                if (intent.getBooleanExtra(DETACH_AFTER_HIDE, false)) {
+                    val column = editor.parent as LinearLayout
+                    column.removeView(editor)
+                    column.post { column.addView(newEditor()) }
+                }
+            }
+        }
+    }
+
     companion object {
+        /** Intent extra for [SignalOrder]: swap the field after hiding the keyboard. */
+        const val DETACH_AFTER_HIDE = "detachAfterHide"
         @Volatile var current: SelfRotationProbeActivity? = null
         /**
          * Intent extra: an ordinary field whose takes are kept in History, so a test can reach the
@@ -57,18 +88,21 @@ open class SelfRotationProbeActivity : Activity() {
         column.addView(TextView(this).apply {
             text = "Automated rotation probe. Please do not touch the phone until it closes."
         })
-        editor = EditText(this).apply {
-            id = R.id.probe_no_learning
-            inputType = InputType.TYPE_CLASS_TEXT
-            val kept = intent.getBooleanExtra(HISTORY_ELIGIBLE, false)
-            imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_FULLSCREEN or
-                if (kept) 0 else EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-            hint = if (kept) "Probe field (kept in test History only)" else "Probe field (not kept)"
-        }
-        column.addView(editor)
+        column.addView(newEditor())
         setContentView(column)
         current = this
         if (this is Keep || savedInstanceState == null) editor.requestFocus()
+    }
+
+    /** The probe field; becomes [editor]. */
+    protected fun newEditor(): EditText = EditText(this).apply {
+        id = R.id.probe_no_learning
+        inputType = InputType.TYPE_CLASS_TEXT
+        val kept = intent.getBooleanExtra(HISTORY_ELIGIBLE, false)
+        imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            if (kept) 0 else EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        hint = if (kept) "Probe field (kept in test History only)" else "Probe field (not kept)"
+        editor = this
     }
 
     fun showKeyboard() {

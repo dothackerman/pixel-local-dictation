@@ -105,6 +105,10 @@ class DictationImeService : InputMethodService() {
     private var authorityMoves = false
     /** A Stop-wait rotation hold holds the result before dispatch until the panel has settled. */
     private var deliveryHeldForRotation = false
+    /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
+    private var takeHeldForRotation = false
+    /** The last commit was refused because the editor had deactivated its connection. */
+    private var commitRefusedInactive = false
     /**
      * The open Cancel choice, part of the take's state: every panel (also one recreated for a
      * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
@@ -469,6 +473,7 @@ class DictationImeService : InputMethodService() {
     /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
     private fun enterRotationHold(event: EditorEvent) {
         mainHandler.removeCallbacks(panelSettled)
+        takeHeldForRotation = true
         if (!holding) {
             holding = true
             rotationEvent(RotationEvent.HOLD_ENTERED)
@@ -679,6 +684,8 @@ class DictationImeService : InputMethodService() {
             val generation = ++takeGeneration
             val currentRotationTake = rotationTake
             recordingToken = session.token()
+            takeHeldForRotation = false
+            commitRefusedInactive = false
             authority = null
             fun authorityForThisTake() = authority.takeIf { generation == takeGeneration }
             val save = saveTake
@@ -734,7 +741,11 @@ class DictationImeService : InputMethodService() {
                     }
                     choice = null
                     showIdle()
-                    if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
+                    if (result.outcome == TakeOutcome.COMMIT_REJECTED && commitRefusedInactive) {
+                        // The text is in History where the field allows it; say it was not inserted.
+                        showStatus(R.string.status_unable_insert)
+                        setMicrophone(true, R.string.start_recording)
+                    } else if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         Log.e(tag, "take failed: ${result.outcome}")
                         showStatus(R.string.status_failed)
                         setMicrophone(true, R.string.retry_recording)
@@ -885,7 +896,13 @@ class DictationImeService : InputMethodService() {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
         rotationEvent(RotationEvent.COMMIT_ATTEMPT)
         val result = commitToInput(session, token, currentInputConnection, { currentInputConnection }, allowed,
-            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); ic.commitText(content, 1) }, text)
+            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); ic.commitText(content, 1) }, text,
+            requireLive = takeHeldForRotation, refused = {
+                onAttempt()
+                commitRefusedInactive = true
+                Log.w(tag, "commit refused: connection inactive")
+                rotationEvent(RotationEvent.COMMIT_REFUSED_INACTIVE)
+            })
         if (result == null) return false
         return result.also {
             rotationEvent(if (it) RotationEvent.COMMIT_ACCEPTED else RotationEvent.COMMIT_REJECTED)

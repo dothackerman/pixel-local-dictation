@@ -34,6 +34,16 @@ class RotationContinuityDemoTest {
 
     @Test fun keptEditorKeepsTakeAndStopInsertsOnce() = demo("demo52-keep", keep = true)
     @Test fun recreatedHiddenEditorGetsPanelBackAndStopInsertsOnce() = demo("demo52-hidden", keep = false)
+    /** Signal's 2026-11-13 order: recreated editor takes input, the keyboard shows, the app hides it. */
+    @Test fun signalOrderHideAfterRecreateStopInsertsOnce() =
+        demo("demo52-signal-hide", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java)
+    /**
+     * As above, and the app swaps the focused field, leaving the keyboard a detached view's connection.
+     * Text cannot reach a dead connection: Stop must refuse the commit, report no insert, keep the
+     * text out of the field (it goes to History) and show "Unable to insert text" without handing back.
+     */
+    @Test fun signalOrderDetachedFieldStopRefusesAndShowsUnableToInsert() =
+        demo("demo52-signal-detach", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java, detach = true)
 
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
@@ -80,7 +90,7 @@ class RotationContinuityDemoTest {
         override fun release() {}
     }
 
-    private fun demo(case: String, keep: Boolean) {
+    private fun demo(case: String, keep: Boolean, kind: Class<out SelfRotationProbeActivity>? = null, detach: Boolean = false) {
         val power = context.getSystemService(android.os.PowerManager::class.java)
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         assertTrue("phone must be unlocked with the screen on (owner step); the demo never unlocks it",
@@ -107,10 +117,11 @@ class RotationContinuityDemoTest {
         makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
-        val kind = if (keep) SelfRotationProbeActivity.Keep::class.java else SelfRotationProbeActivity::class.java
+        val editorKind = kind ?: if (keep) SelfRotationProbeActivity.Keep::class.java else SelfRotationProbeActivity::class.java
         var passed = false
         try {
-            instrumentation.startActivitySync(Intent(context, kind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            instrumentation.startActivitySync(Intent(context, editorKind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(SelfRotationProbeActivity.DETACH_AFTER_HIDE, detach))
             Thread.sleep(600)
             keys.openFuto({ activity().showKeyboard() })
             Thread.sleep(400)
@@ -140,7 +151,8 @@ class RotationContinuityDemoTest {
             assertTrue("panel lost before Stop", ours(R.id.microphone) != null)
             assertTrue(ours(R.id.microphone)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             until(30_000, "take terminal") { rows(run).any { it.getString("event").startsWith("TERMINAL_") } }
-            until(5_000, "FUTO restored by Stop") { currentIme() == futo }
+            if (!detach) until(5_000, "FUTO restored by Stop") { currentIme() == futo }
+            else until(5_000, "unable to insert shown") { statusText() == context.getString(R.string.status_unable_insert) }
             Thread.sleep(500)
             var inserted = ""
             instrumentation.runOnMainSync { inserted = activity().editor.text.toString().trim() }
@@ -148,6 +160,7 @@ class RotationContinuityDemoTest {
             val terminal = rows(run).last { it.getString("event").startsWith("TERMINAL_") }.getString("event")
             val commits = count(run, "COMMIT_ACCEPTED")
             val captures = count(run, "CAPTURE_STARTED")
+            val refusals = count(run, "COMMIT_REFUSED_INACTIVE")
             // The preview shows at most the newest 240 characters; compare with its tail.
             val tail = before.takeLast(40)
             val at = inserted.indexOf(tail)
@@ -165,6 +178,7 @@ class RotationContinuityDemoTest {
                 .put("case", case)
                 .put("terminal", terminal)
                 .put("commitAccepted", commits)
+                .put("commitRefusedInactive", refusals)
                 .put("captureStarted", captures)
                 .put("recorderStarts", starts.get())
                 .put("panelBackRecordingMs", panelBackMs)
@@ -176,10 +190,20 @@ class RotationContinuityDemoTest {
             File(context.filesDir, "lab/issue52").mkdirs()
             File(context.filesDir, "lab/issue52/demo-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
-            assertEquals("TERMINAL_COMPLETED", terminal)
-            assertEquals(1, commits)
             assertEquals(1, captures)
             assertEquals(1, starts.get())
+            if (detach) {
+                assertEquals("TERMINAL_COMMIT_REJECTED", terminal)
+                assertEquals(0, commits)
+                assertEquals(1, refusals)
+                assertEquals("nothing may reach the editor", "", inserted)
+                assertEquals(context.getString(R.string.status_unable_insert), statusText())
+                assertTrue("must not hand back to FUTO as if inserted", currentIme() != futo)
+                passed = true
+                return
+            }
+            assertEquals("TERMINAL_COMPLETED", terminal)
+            assertEquals(1, commits)
             assertTrue("speech before rotation not inserted", beforeInserted)
             assertTrue("speech after rotation not inserted", afterInserted)
             assertTrue("text not inserted exactly once", insertedOnce)
