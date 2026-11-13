@@ -33,8 +33,6 @@ data class PanelFrame(
      * caller's.
      */
     val held: Boolean = false,
-    /** The held text was copied at least once: Copy is outlined, not filled, so a still frame tells. */
-    val copied: Boolean = false,
     /** The held text is a write that was not confirmed: the status carries the "Insertion uncertain" mark, not "not inserted". */
     val uncertain: Boolean = false,
     /** What Back does now. */
@@ -68,12 +66,10 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         open == PanelChoice.FINISHING -> R.drawable.ic_marker_preparing
         else -> R.drawable.ic_play_arrow
     })
-    // Copy is filled like Continue until the text was copied, then outlined like Stop (still enabled).
-    val outlined = held && frame.copied
     safe?.let {
-        it.setBackgroundResource(if (outlined) R.drawable.choice_stop else R.drawable.choice_continue)
+        it.setBackgroundResource(R.drawable.choice_continue)
         it.imageTintList = ColorStateList.valueOf(com.google.android.material.color.MaterialColors.getColor(
-            it, if (outlined) com.google.android.material.R.attr.colorOnSurface else com.google.android.material.R.attr.colorOnPrimary))
+            it, com.google.android.material.R.attr.colorOnPrimary))
     }
     // No tooltip on Copy: no touch-and-hold hint (owner decision).
     safe?.let { TooltipCompat.setTooltipText(it, if (held) null else safeLabel) }

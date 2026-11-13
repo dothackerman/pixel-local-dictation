@@ -17,7 +17,6 @@
     <string name="back_discard_text">Discard text and go back</string>
     <string name="copy_text">Copy text</string>
     <string name="discard_text">Discard text</string>
-    <string name="status_copied">Copied. Paste it in the field.</string>
     <!-- Back while Preparing text: holds the text and opens the choice. -->
     <string name="back_hold_and_choose">Hold text and choose</string>
 </resources>

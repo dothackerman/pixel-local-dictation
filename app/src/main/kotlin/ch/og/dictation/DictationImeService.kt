@@ -336,6 +336,11 @@ class DictationImeService : InputMethodService() {
             rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
             return
         }
+        if (held != null) { // A panel shown again never starts a take over held text.
+            showIdle()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
         if (MicrophoneOwner.state().explicitStartRequired) {
             interruptedView = true
             showIdle()
@@ -835,6 +840,8 @@ class DictationImeService : InputMethodService() {
                     identity()?.let { startup?.liveResult(liveTakeId, it, result) }
                     if (!result.interrupted) saveBenchmarkTake(save && !RotationTrace.probeActive(), pcm, result)
                     if (generation != takeGeneration) return
+                    // The take's History output is dropped with the take; only a write awaiting its second look keeps it.
+                    if (pendingConfirm == null || result.interrupted || result.outcome != TakeOutcome.COMMIT_REJECTED) takeHistory = null
                     recordingToken = null
                     authority = null
                     startupTake = null
@@ -1077,7 +1084,9 @@ class DictationImeService : InputMethodService() {
      */
     private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long) {
         confirming = true
+        val history = takeHistory
         mainHandler.postDelayed({
+            takeHistory = null
             confirming = false
             if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
             val live = currentInputConnection === pending.connection && session.matches(pending.token)
@@ -1085,7 +1094,7 @@ class DictationImeService : InputMethodService() {
             traceVerified(check != InsertCheck.NONE, check)
             if (check != InsertCheck.NONE) {
                 // The write was seen after all: the receipt the rejected write left is corrected, and the take completed.
-                takeHistory?.receipt(HistoryDelivery.ACCEPTED)
+                history?.receipt(HistoryDelivery.ACCEPTED)
                 rotationTrace?.event(RotationEvent.TERMINAL_COMPLETED, take = rotationTake)
                 if (held == null) returnToKeyboard()
                 return@postDelayed
@@ -1280,7 +1289,6 @@ class DictationImeService : InputMethodService() {
             stopGlyph = running && !finishing,
             unableToInsert = statusText == R.string.status_unable_insert,
             held = held != null,
-            copied = held?.copied == true,
             uncertain = held?.unconfirmed == true,
             backLabel = when {
                 open == PanelChoice.RECORDING -> R.string.continue_recording
@@ -1294,13 +1302,12 @@ class DictationImeService : InputMethodService() {
 
     private fun cancelAndReturn() {
         if (held != null) {
-            // Back never writes to the clipboard. Uncopied text: the first Back only warns, the second
-            // discards and leaves; after a copy Back leaves at once.
+            // Back never writes to the clipboard: the first Back only warns, the second discards and leaves.
             val state = held
-            if (state != null && !state.copied && !state.warned) { state.warned = true; renderChoice(); return }
+            if (state != null && !state.warned) { state.warned = true; renderChoice(); return }
             val token = session.token()
             clearHeld()
-            MicrophoneOwner.requireExplicitStart()
+            MicrophoneOwner.acceptExplicitStart()
             showIdle()
             if (token != null && session.matches(token)) returnToKeyboard()
             return
@@ -1320,14 +1327,12 @@ class DictationImeService : InputMethodService() {
         val text: String, val from: String?,
         /** History keeps the take (the editor is retention-eligible); the status says where to find it. */
         val inHistory: Boolean,
-        var copied: Boolean = false,
         /** The first Back warned that a second one discards the uncopied text. */
         var warned: Boolean = false,
         /** A write was made but not seen in the field (rotation safety net): the status admits the uncertainty. */
         val unconfirmed: Boolean = false,
     ) {
         val status: Int get() = when {
-            copied -> R.string.status_copied
             warned -> R.string.status_back_warning
             unconfirmed -> R.string.status_unconfirmed
             inHistory -> R.string.status_unable_history
@@ -1357,7 +1362,6 @@ class DictationImeService : InputMethodService() {
     /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
     private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
         held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
-        MicrophoneOwner.requireExplicitStart() // A panel shown again never starts a take over the held text.
         showPreview("")
         setMicrophone(true, R.string.start_recording)
         renderChoice()
@@ -1371,18 +1375,20 @@ class DictationImeService : InputMethodService() {
     /** The panel's dashed button: Discard text while text is held, otherwise Discard take. */
     private fun onDiscardAction() { if (held != null) discardHeld() else chooseDiscard() }
 
+    /** Copy text: on the clipboard, the held text gone, back to the previous keyboard at once. */
     private fun copyHeld() {
         val state = held ?: return
         copyTranscript(this, state.text)
-        state.copied = true
-        state.warned = false
-        renderChoice()
+        clearHeld()
+        MicrophoneOwner.acceptExplicitStart()
+        showIdle()
+        returnToKeyboard()
     }
 
-    /** Discard text: gone at once; the panel is idle and a new take needs the microphone tap. */
+    /** Discard text: gone at once; the panel is idle, the next time it opens it records. */
     private fun discardHeld() {
         clearHeld()
-        MicrophoneOwner.requireExplicitStart()
+        MicrophoneOwner.acceptExplicitStart()
         Log.i(tag, "held text discarded")
         showIdle()
     }
