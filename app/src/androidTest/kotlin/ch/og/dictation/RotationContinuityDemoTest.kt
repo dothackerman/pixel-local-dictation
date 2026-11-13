@@ -70,6 +70,26 @@ class RotationContinuityDemoTest {
         demo("demo52-signal-non-editor-refocus", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
             retarget = SelfRotationProbeActivity.RETARGET_NON_EDITOR, refocus = true)
 
+    /** A real touch on the probe's own field, as the user's tap. */
+    private fun tapEditor() {
+        val at = IntArray(2)
+        var size = intArrayOf(0, 0)
+        instrumentation.runOnMainSync {
+            val editor = activity().editor
+            editor.getLocationOnScreen(at)
+            size = intArrayOf(editor.width, editor.height)
+        }
+        val x = at[0] + size[0] / 2f
+        val y = at[1] + size[1] / 2f
+        val now = SystemClock.uptimeMillis()
+        for ((action, time) in listOf(android.view.MotionEvent.ACTION_DOWN to now, android.view.MotionEvent.ACTION_UP to now + 80)) {
+            val event = android.view.MotionEvent.obtain(now, time, action, x, y, 0)
+            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            instrumentation.uiAutomation.injectInputEvent(event, true)
+            event.recycle()
+        }
+    }
+
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
     private val keys = KeyboardHandoff(instrumentation, ::status)
@@ -174,7 +194,7 @@ class RotationContinuityDemoTest {
             }
             if (refocus) {
                 // The user taps the take's own field: input starts there again and authority returns.
-                instrumentation.runOnMainSync { activity().showKeyboard() }
+                tapEditor()
                 until(5_000, "tap-the-field line gone after the field took focus again") {
                     ours(R.id.retention_notice)?.isVisibleToUser != true && statusText() == context.getString(R.string.status_recording)
                 }

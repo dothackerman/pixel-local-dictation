@@ -45,7 +45,9 @@ open class SelfRotationProbeActivity : Activity() {
             recreated = savedInstanceState != null
             if (!recreated) return
             val column = editor.parent as LinearLayout
-            when (intent.getStringExtra(RETARGET)) {
+            // Only the first recreation retargets; rotating back (the test's cleanup) returns focus to the field.
+            val retarget = if (savedInstanceState?.getBoolean(RETARGETED) == true) null else intent.getStringExtra(RETARGET)
+            when (retarget) {
                 // Signal 2026-11-13 diagnostics: after recreation input focus is on a view that is not a
                 // text editor; the platform starts input with TYPE_NULL and a fallback connection.
                 RETARGET_NON_EDITOR -> column.addView(View(this).apply {
@@ -69,10 +71,15 @@ open class SelfRotationProbeActivity : Activity() {
         /** View state restores focus to the field; the retarget wins, as in Signal, after restoration. */
         override fun onRestoreInstanceState(savedInstanceState: Bundle) {
             super.onRestoreInstanceState(savedInstanceState)
+            if (savedInstanceState.getBoolean(RETARGETED)) return
             when (intent.getStringExtra(RETARGET)) {
                 RETARGET_NON_EDITOR -> findViewById<View>(R.id.probe_non_editor)?.requestFocus()
                 RETARGET_OTHER_FIELD -> other?.requestFocus()
             }
+        }
+        override fun onSaveInstanceState(outState: Bundle) {
+            super.onSaveInstanceState(outState)
+            outState.putBoolean(RETARGETED, recreated)
         }
         override fun onWindowFocusChanged(hasFocus: Boolean) {
             super.onWindowFocusChanged(hasFocus)
@@ -92,6 +99,7 @@ open class SelfRotationProbeActivity : Activity() {
     companion object {
         /** Intent extra for [SignalOrder]: what takes input focus after recreation instead of the field. */
         const val RETARGET = "retarget"
+        private const val RETARGETED = "retargeted"
         const val RETARGET_NON_EDITOR = "nonEditor"
         const val RETARGET_OTHER_FIELD = "otherField"
         /** Intent extra for [SignalOrder]: swap the field after hiding the keyboard. */
