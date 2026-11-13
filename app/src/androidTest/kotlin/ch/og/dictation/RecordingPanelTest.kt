@@ -131,12 +131,12 @@ class RecordingPanelTest {
     }
 
     /** Inflates the panel as the input method would on this phone held sideways. */
-    private fun landscapePanel(fontScale: Float, night: Boolean): Pair<View, Context> {
+    private fun landscapePanel(fontScale: Float, night: Boolean, narrowWidthDp: Int? = null): Pair<View, Context> {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val base = app.resources.configuration
         val config = Configuration(base).apply {
             orientation = Configuration.ORIENTATION_LANDSCAPE
-            screenWidthDp = maxOf(base.screenWidthDp, base.screenHeightDp)
+            screenWidthDp = narrowWidthDp ?: maxOf(base.screenWidthDp, base.screenHeightDp)
             screenHeightDp = minOf(base.screenWidthDp, base.screenHeightDp)
             this.fontScale = fontScale
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -146,7 +146,7 @@ class RecordingPanelTest {
         val panel = panelOf(context)
         val density = context.resources.displayMetrics.density
         val metrics = app.resources.displayMetrics
-        val width = maxOf(metrics.widthPixels, metrics.heightPixels)
+        val width = if (narrowWidthDp != null) (narrowWidthDp * density).roundToInt() else maxOf(metrics.widthPixels, metrics.heightPixels)
         panel.findViewById<TextView>(R.id.status).setText(R.string.status_recording)
         // As the service shows it: the last 240 characters from a whole word, newest line in view.
         PanelPreview.bind(panel.findViewById(R.id.preview),
@@ -416,11 +416,9 @@ class RecordingPanelTest {
                 assertNotEquals("no microphone disk while preparing", View.VISIBLE, mic.visibility)
                 state("preparing-choice", R.string.status_finishing_choice, PanelFrame(choice = PanelChoice.FINISHING, backLabel = R.string.keep_finishing))
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
-                val held = "… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim()
-                for ((name, label, backLabel) in listOf(
-                    Triple("unable-to-insert", R.string.status_unable_insert, R.string.copy_text),
-                    Triple("unable-to-insert-copied", R.string.status_copied, R.string.back_to_keyboard))) {
-                    state(name, label, PanelFrame(unableToInsert = true, held = true, backLabel = backLabel), words = held)
+                val heldWords = "… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim()
+                for (held in HELD_STATES) {
+                    state(held.name, held.status, PanelFrame(held = true, copied = held.copied), words = heldWords, privateField = held.privateField)
                     assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
                     assertNotEquals("no microphone disk with held text", View.VISIBLE, mic.visibility)
                     assertNotEquals("no ring with held text", View.VISIBLE, panel.findViewById<View>(R.id.recording_ring).visibility)
@@ -428,10 +426,92 @@ class RecordingPanelTest {
                     assertEquals(app.getString(R.string.discard_text), panel.findViewById<View>(R.id.choice_discard).contentDescription.toString())
                     assertEquals(View.VISIBLE, preview.visibility)
                     assertTrue(preview.text.isNotBlank())
-                    oneRow(name, listOf(R.id.choice_safe, R.id.choice_discard))
+                    oneRow(held.name, listOf(R.id.choice_safe, R.id.choice_discard))
                 }
-                if (!landscape) assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
-                    heights.filterKeys { !it.startsWith("private-") }.values.toSet().size)
+                // Held text says what to do: at font 2 its status may take one more line than the others.
+                val heldStates = HELD_STATES.map { it.name }.toSet() + "private-unable-to-insert"
+                if (!landscape) {
+                    assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
+                        heights.filterKeys { !it.startsWith("private-") && it !in heldStates }.values.toSet().size)
+                    val statusLine = panel.findViewById<TextView>(R.id.status).lineHeight
+                    for (name in listOf("unable-to-insert", "unable-to-insert-back-warning", "unable-to-insert-copied")) {
+                        assertTrue("$name grows by more than one status line ($suffix): $heights",
+                            heights.getValue(name) - heights.getValue("idle") <= statusLine)
+                    }
+                }
+            }
+        }
+    }
+
+    /** The held-text states (Unable to insert text) as the service renders them; labels are the status the service shows. */
+    private class HeldState(val name: String, val status: Int, val copied: Boolean = false, val privateField: Boolean = false)
+    private val HELD_STATES = listOf(
+        HeldState("unable-to-insert", R.string.status_unable_history),
+        HeldState("private-unable-to-insert", R.string.status_unable_unsaved, privateField = true),
+        HeldState("unable-to-insert-back-warning", R.string.status_back_warning),
+        HeldState("unable-to-insert-copied", R.string.status_copied, copied = true),
+    )
+
+    /**
+     * Narrow landscape (under 600dp wide, layout-land): Copy and Discard text stack in the stage, so
+     * the panel keeps the height of the other states; the preview stays in the status column.
+     */
+    @Test fun heldTextInNarrowLandscapeStacksInTheStageAndKeepsThePanelHeight() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext
+        val out = File(app.filesDir, "lab/issue36/b2-panel").apply { mkdirs() }
+        instrumentation.runOnMainSync {
+            for (fontScale in listOf(1f, 2f)) {
+                val (panel, context) = landscapePanel(fontScale, night = false, narrowWidthDp = 560)
+                assertFalse("not the narrow layout", context.resources.getBoolean(R.bool.panel_choice_over_stage))
+                val density = context.resources.displayMetrics.density
+                val width = panel.width
+                val suffix = "narrow-font${if (fontScale > 1f) "2" else "1"}.png"
+                val status = panel.findViewById<TextView>(R.id.status)
+                val preview = panel.findViewById<TextView>(R.id.preview)
+                val words = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
+                fun draw(name: String, label: Int, frame: PanelFrame, private: Boolean): Int {
+                    status.setText(label)
+                    PanelPreview.bind(preview, if (frame.held) words else "")
+                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (private) R.string.retention_field_off else null)
+                    renderPanel(panel, frame)
+                    layOut(panel, width)
+                    val image = Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        panel.draw(Canvas(image))
+                        File(out, "$name-$suffix").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    } finally { image.recycle() }
+                    return panel.height
+                }
+                val idle = draw("idle", R.string.status_idle, PanelFrame(), false)
+                val paused = draw("paused-choice", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording), false)
+                // A private field adds the notice line to every state: compare with the same field's other states.
+                val privateIdle = draw("private-idle", R.string.status_idle, PanelFrame(), true)
+                val privatePaused = draw("private-paused-choice", R.string.status_paused,
+                    PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording), true)
+                for (held in HELD_STATES) {
+                    val reference = if (held.privateField) maxOf(privateIdle, privatePaused) else maxOf(idle, paused)
+                    val height = draw(held.name, held.status, PanelFrame(held = true, copied = held.copied), held.privateField)
+                    val safe = panel.findViewById<View>(R.id.choice_safe)
+                    val discard = panel.findViewById<View>(R.id.choice_discard)
+                    val stage = panel.findViewById<View>(R.id.stage)
+                    val whole = Rect(0, 0, panel.width, panel.height)
+                    // The status says what to do: at font 2 it may be a few dp taller than the other states (a private field,
+                    // with its notice line, up to 40dp: measured 34dp on the Pixel), no more.
+                    assertTrue("${held.name} ($suffix): panel $height px vs $reference px", height <= reference + (if (held.privateField && fontScale > 1f) 40 else 16) * density)
+                    for (button in listOf(safe, discard)) {
+                        assertTrue("${held.name} ($suffix): button outside panel", whole.contains(bounds(button, panel)))
+                        assertTrue("${held.name} ($suffix): button outside the stage", bounds(stage, panel).contains(bounds(button, panel)))
+                        assertTrue("${held.name} ($suffix): target below 48dp", button.width >= 48 * density - 1 && button.height >= 48 * density - 1)
+                    }
+                    assertTrue("${held.name} ($suffix): not stacked", bounds(discard, panel).top >= bounds(safe, panel).bottom - 1)
+                    assertTrue("${held.name} ($suffix): status clipped",
+                        status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
+                    assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
+                }
+                // Leaving the held state puts the choice row back in the status column for the paused choice.
+                draw("paused-choice-again", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording), false)
+                assertEquals(paused, panel.height)
             }
         }
     }

@@ -214,6 +214,7 @@ class TakeSessionTest {
         val result = output.results.single()
         assertEquals(TakeOutcome.INPUT_CHANGED, result.outcome)
         assertEquals("word", result.text)
+        assertNull("a write that was never attempted is not a rejection", result.commitAccepted)
         assertTrue(output.inserted.isEmpty())
     }
 

@@ -1,7 +1,12 @@
 package ch.og.dictation
 
+import android.content.res.ColorStateList
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ImageView
 import androidx.appcompat.widget.TooltipCompat
 
@@ -28,6 +33,8 @@ data class PanelFrame(
      * caller's.
      */
     val held: Boolean = false,
+    /** The held text was copied at least once: Copy is outlined, not filled, so a still frame tells. */
+    val copied: Boolean = false,
     /** What Back does now. */
     val backLabel: Int = R.string.back_to_keyboard,
 )
@@ -59,6 +66,13 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         open == PanelChoice.FINISHING -> R.drawable.ic_marker_preparing
         else -> R.drawable.ic_play_arrow
     })
+    // Copy is filled like Continue until the text was copied, then outlined like Stop (still enabled).
+    val outlined = held && frame.copied
+    safe?.let {
+        it.setBackgroundResource(if (outlined) R.drawable.choice_stop else R.drawable.choice_continue)
+        it.imageTintList = ColorStateList.valueOf(com.google.android.material.color.MaterialColors.getColor(
+            it, if (outlined) com.google.android.material.R.attr.colorOnSurface else com.google.android.material.R.attr.colorOnPrimary))
+    }
     // No tooltip on Copy: no touch-and-hold hint (owner decision).
     safe?.let { TooltipCompat.setTooltipText(it, if (held) null else safeLabel) }
     panel.findViewById<View>(R.id.choice_stop)?.let {
@@ -68,6 +82,17 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     panel.findViewById<View>(R.id.choice_discard)?.let {
         it.contentDescription = context.getString(if (held) R.string.discard_text else R.string.discard_take)
         TooltipCompat.setTooltipText(it, it.contentDescription)
+    }
+
+    // A narrow landscape window has no room beside the preview: held text stacks its two buttons in the stage.
+    if (!overStage && choice is LinearLayout) placeChoice(panel, choice, inStage = held)
+    // The held status is longer (it says what to do): two preview lines keep the narrow panel's height.
+    if (!overStage) panel.findViewById<android.widget.TextView>(R.id.preview)?.let {
+        val notice = panel.findViewById<View>(R.id.retention_notice)?.visibility == View.VISIBLE &&
+            context.resources.getBoolean(R.bool.panel_preview_yields_to_notice)
+        val lines = if (held || notice) 2 else 3
+        it.minLines = lines
+        it.maxLines = lines
     }
 
     // The stage: in a choice (or holding text) there is no microphone to tap by mistake.
@@ -88,7 +113,7 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         else -> View.GONE
     }
     panel.findViewById<ImageView>(R.id.status_marker)?.apply {
-        visibility = if ((frame.unableToInsert || held) && open == null) View.VISIBLE else View.GONE
+        visibility = if (held || (frame.unableToInsert && open == null)) View.VISIBLE else View.GONE
         if (frame.unableToInsert || held) setImageResource(R.drawable.ic_marker_not_inserted)
     }
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
@@ -97,4 +122,23 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         safe.requestFocus()
         safe.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED)
     }
+}
+
+/** Where the choice row sits in a narrow landscape panel: its place in the status column, or the stage. */
+private class ChoiceHome(val parent: ViewGroup, val index: Int, val params: ViewGroup.LayoutParams)
+
+private fun placeChoice(panel: View, choice: LinearLayout, inStage: Boolean) {
+    val stage = panel.findViewById<ViewGroup>(R.id.stage) ?: return
+    val home = (choice.getTag(R.id.choice) as? ChoiceHome)
+        ?: ChoiceHome(choice.parent as ViewGroup, (choice.parent as ViewGroup).indexOfChild(choice), choice.layoutParams)
+            .also { choice.setTag(R.id.choice, it) }
+    val target = if (inStage) stage else home.parent
+    if (choice.parent !== target) {
+        (choice.parent as ViewGroup).removeView(choice)
+        if (inStage) stage.addView(choice, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        else home.parent.addView(choice, home.index, home.params)
+    }
+    choice.orientation = if (inStage) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+    choice.findViewById<View>(R.id.choice_gap)?.visibility = if (inStage) View.GONE else View.VISIBLE
 }

@@ -153,7 +153,7 @@ class RotationContinuityDemoTest {
             assertTrue(ours(R.id.microphone)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             until(30_000, "take terminal") { rows(run).any { it.getString("event").startsWith("TERMINAL_") } }
             if (!detach) until(5_000, "FUTO restored by Stop") { currentIme() == futo }
-            else until(5_000, "unable to insert shown") { statusText() == context.getString(R.string.status_unable_insert) }
+            else until(5_000, "unable to insert shown") { statusText().startsWith(context.getString(R.string.status_unable_insert)) }
             Thread.sleep(500)
             // Read the panel now: the rotation back and the hide below take it off screen.
             val unableShown = statusText()
@@ -215,7 +215,7 @@ class RotationContinuityDemoTest {
                 assertEquals(0, commits)
                 assertEquals(1, refusals)
                 assertEquals("nothing may reach the editor", "", inserted)
-                assertEquals(context.getString(R.string.status_unable_insert), unableShown)
+                assertTrue(unableShown, unableShown.startsWith(context.getString(R.string.status_unable_insert)))
                 assertFalse("must not hand back to FUTO as if inserted", handedBack)
                 assertTrue("Copy control missing or disabled", copyReady)
                 assertTrue("Discard text control missing or disabled", discardReady)

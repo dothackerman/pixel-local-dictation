@@ -156,7 +156,8 @@ class DictationProductionLifecycleTest {
     private fun preview(view: View) = view.findViewById<TextView>(R.id.preview).text.toString()
     private fun status(view: View) = view.findViewById<TextView>(R.id.status).text.toString()
     private fun button(view: View) = view.findViewById<ImageButton>(R.id.microphone)
-    private fun editor(privateField: Boolean = false) = EditorInfo().apply {
+    private fun editor(privateField: Boolean = false, pkg: String? = null) = EditorInfo().apply {
+        packageName = pkg
         inputType = InputType.TYPE_CLASS_TEXT or if (privateField) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL
     }
     /** One editor field; counts what reaches it. */
@@ -475,7 +476,7 @@ class DictationProductionLifecycleTest {
         val (service, returned, next) = deadConnectionAtStop(privateField = true)
         assertEquals(0, next.dropped)
         assertTrue(rows().isEmpty())
-        assertHeldState(service, returned)
+        assertHeldState(service, returned, privateField = true)
         assertCopyPutsTakeTextOnClipboard(service, returned)
     }
 
@@ -498,19 +499,67 @@ class DictationProductionLifecycleTest {
         assertEquals(View.GONE, rebuilt.findViewById<View>(R.id.choice).visibility)
     }
 
-    /** Back is the safe default: the first Back copies and stays; after a copy Back leaves and drops the text. */
-    @Test fun backCopiesFirstAndLeavesAfterTheCopy() {
+    /** Back never writes to the clipboard: uncopied text gets a warning first, the second Back discards. */
+    @Test fun firstBackOnUncopiedTextOnlyWarnsAndTheSecondDiscards() {
         val (service, returned, _) = deadConnectionAtStop(privateField = false)
         val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
-        assertEquals(service.getString(R.string.copy_text), back(returned).contentDescription.toString())
-        back(returned).performClick()
-        assertEquals("old speech", clipboard.primaryClip!!.getItemAt(0).text.toString())
-        assertEquals(service.getString(R.string.status_copied), status(returned))
-        assertEquals("old speech", preview(returned))
+        clipboard.clearPrimaryClip()
         assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
-        assertTrue(systemBack(service)) // The hardware Back follows the arrow: now it leaves.
+        back(returned).performClick()
+        assertEquals(service.getString(R.string.status_back_warning), status(returned))
+        assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
+        assertEquals("old speech", preview(returned))
+        assertNull("Back never copies", clipboard.primaryClip)
+        assertEquals(View.VISIBLE, returned.findViewById<View>(R.id.status_marker).visibility)
+        back(returned).performClick()
         assertEquals(service.getString(R.string.status_idle), status(returned))
         assertEquals("", preview(returned))
+        assertNull(clipboard.primaryClip)
+    }
+
+    @Test fun hardwareBackFollowsTheArrowWarnThenDiscard() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        assertTrue(systemBack(service))
+        assertEquals(service.getString(R.string.status_back_warning), status(returned))
+        assertTrue(systemBack(service))
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+    }
+
+    @Test fun backAfterACopyLeavesAtOnce() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        returned.findViewById<View>(R.id.choice_safe).performClick()
+        back(returned).performClick()
+        assertEquals(service.getString(R.string.status_idle), status(returned))
+        assertEquals("", preview(returned))
+    }
+
+    @Test fun copyCancelsTheBackWarning() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        back(returned).performClick()
+        assertEquals(service.getString(R.string.status_back_warning), status(returned))
+        returned.findViewById<View>(R.id.choice_safe).performClick()
+        assertEquals(service.getString(R.string.status_copied), status(returned))
+    }
+
+    @Test fun aRotationCancelsTheBackWarning() {
+        val (service, returned, _) = deadConnectionAtStop(privateField = false)
+        back(returned).performClick()
+        val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
+        assertHeldState(service, rebuilt)
+        back(rebuilt).performClick()
+        assertEquals(service.getString(R.string.status_back_warning), status(rebuilt)) // Starts over.
+    }
+
+    /** The status says what to do, and whether History keeps the text, by the take's editor. */
+    @Test fun statusLineTellsWhereTheTextIsSaved() {
+        val (service, eligible, _) = deadConnectionAtStop(privateField = false)
+        assertEquals("Unable to insert text. Copy it, or find it in History.", status(eligible))
+        assertEquals(service.getString(R.string.status_unable_history), status(eligible))
+    }
+
+    @Test fun statusLineSaysAPrivateFieldTextIsNotSaved() {
+        val (_, view, _) = deadConnectionAtStop(privateField = true)
+        assertEquals("Unable to insert text. Copy it now. It is not saved.", status(view))
     }
 
     /** A rotation keeps the state and the text, copied or not, on the new panel view. */
@@ -546,8 +595,8 @@ class DictationProductionLifecycleTest {
     }
 
     /** Held text: the status keeps its mark, the stage has Copy and Discard text and no microphone or ring. */
-    private fun assertHeldState(service: DictationImeService, panel: View) {
-        assertEquals(service.getString(R.string.status_unable_insert), status(panel))
+    private fun assertHeldState(service: DictationImeService, panel: View, privateField: Boolean = false) {
+        assertEquals(service.getString(if (privateField) R.string.status_unable_unsaved else R.string.status_unable_history), status(panel))
         assertEquals("old speech", preview(panel))
         assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
         assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.choice).visibility)
@@ -614,6 +663,116 @@ class DictationProductionLifecycleTest {
         assertEquals(before, panelRequests.get())
     }
 
+    // --- Held text is for the app the take started in, and never survives a lock (round 2, A and B). ---
+
+    private fun assertNothingHeldOrShown(service: DictationImeService, view: View) {
+        assertEquals("", preview(view))
+        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
+        assertEquals(View.VISIBLE, button(view).visibility)
+        assertFalse(status(view).contains("Copy"))
+    }
+
+    @Test fun stopThenSwitchingAppsDuringDecodeHoldsAndShowsNothingInTheOtherApp() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        button(view).performClick() // Stop: the text is still being decoded.
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
+        service.onStartInputView(editor(pkg = "app.b"), false)
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertNothingHeldOrShown(service, view)
+        assertEquals("old speech", rows().single().text) // History keeps it where eligible.
+        assertEquals(0, commits)
+    }
+
+    @Test fun interruptedByAnotherAppsInputHoldsAndShowsNothingThere() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
+        service.onStartInputView(editor(pkg = "app.b"), false)
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertNothingHeldOrShown(service, view)
+        assertEquals("old speech", rows().single().text)
+        assertEquals(0, commits)
+    }
+
+    @Test fun aTakeActiveAtLockHoldsNothingAfterUnlock() {
+        val input = Input()
+        devices.add(input)
+        val (service, view) = service(editor(privateField = true))
+        feed(input, 1000, 1)
+        screenOff()
+        await { input.releases.get() == 1 }
+        decode.drain(); settleHistory(); pump()
+        service.onStartInput(editor(privateField = true), true) // Unlock: the same app restarts input.
+        service.onStartInputView(editor(privateField = true), true)
+        pump()
+        assertNothingHeldOrShown(service, view)
+        assertEquals(0, commits)
+    }
+
+    // --- A rotation never moves a take to another app (round 2, C). ---
+
+    /**
+     * Before the fix: Home inside the rotation window requested our panel with no input started
+     * (the hide re-entered the hold), and a different app's input start was just another hold entry.
+     */
+    @Test fun homeInsideTheRotationWindowAsksForNoPanelAndEndsTheTakeAtTheGap() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90, editor(pkg = "app.a"))
+        val before = panelRequests.get()
+        service.onFinishInputView(true) // Home: the editor and the keyboard go away.
+        service.onWindowHidden()
+        service.onFinishInput()
+        pump()
+        assertEquals(before, panelRequests.get())
+        advance(ROTATION_HOLD_GAP_MS + 100)
+        await { input.releases.get() == 1 }
+        awaitInterruptedInHistory()
+        assertEquals(0, commits)
+    }
+
+    @Test fun anotherAppsInputStartInsideTheRotationWindowEndsTheHoldAndGetsNothing() {
+        val panelRequests = AtomicInteger()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        platformResetOnRotation(service, android.view.Surface.ROTATION_90, editor(pkg = "app.a"))
+        val before = panelRequests.get()
+        service.onFinishInputView(true)
+        service.onWindowHidden()
+        service.onFinishInput()
+        val other = Field(service)
+        service.onCreateInputMethodInterface().startInput(other, editor(pkg = "app.b"))
+        pump()
+        assertEquals(before, panelRequests.get()) // No request for the other app.
+        await { input.releases.get() == 1 } // The take ended at once, not at the gap.
+        val shown = showPanel(service, editor(pkg = "app.b"))
+        advance(ROTATION_HOLD_GAP_MS)
+        awaitInterruptedInHistory()
+        assertEquals(0, commits)
+        assertTrue(other.inserted.isEmpty())
+        if (shown != null) assertNotEquals(service.getString(R.string.status_recording), status(shown))
+    }
+
     // --- Commit outcomes with text that was not inserted: one held-text state for all (finding 3). ---
 
     private fun stopWithWrites(write: () -> Boolean): Triple<DictationImeService, View, Field> {
@@ -624,7 +783,7 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         button(view).performClick()
         await { input.releases.get() == 1 }
-        await { decode.drain(); status(view) == service.getString(R.string.status_unable_insert) }
+        await { decode.drain(); status(view).startsWith(service.getString(R.string.status_unable_insert)) }
         settleHistory()
         return Triple(service, view, firstField.getValue(service))
     }
@@ -649,7 +808,7 @@ class DictationProductionLifecycleTest {
         await { input.releases.get() == 1 }
         await { decode.drain(); commits == 1 }
         settleHistory()
-        assertNotEquals(service.getString(R.string.status_unable_insert), status(view))
+        assertFalse(status(view).startsWith(service.getString(R.string.status_unable_insert)))
         assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
     }
 
@@ -673,7 +832,7 @@ class DictationProductionLifecycleTest {
         trigger(service)
         pump()
         val view = service.window.findViewById<View>(R.id.panel) ?: returned
-        assertHeldState(service, view)
+        assertHeldState(service, view, privateField = true)
         assertEquals(View.VISIBLE, view.findViewById<View>(R.id.choice).visibility)
         assertCopyPutsTakeTextOnClipboard(service, view)
     }
@@ -711,7 +870,7 @@ class DictationProductionLifecycleTest {
         advance(ROTATION_SETTLE_MS)
         button(returned).performClick()
         await { input.releases.get() == 1 }
-        await { decode.drain(); status(returned) == service.getString(R.string.status_unable_insert) }
+        await { decode.drain(); status(returned).startsWith(service.getString(R.string.status_unable_insert)) }
         settleHistory()
         return Triple(service, returned, next)
     }
@@ -1282,9 +1441,6 @@ class DictationProductionLifecycleTest {
     }
 
     private fun choiceShown(panel: View) = panel.findViewById<View>(R.id.choice).visibility == View.VISIBLE
-    /** The Cancel choice (paused or finishing); the held-text state also shows the choice row, with Copy. */
-    private fun cancelChoiceShown(panel: View) = choiceShown(panel) &&
-        panel.findViewById<View>(R.id.choice_safe).contentDescription.toString() != panel.context.getString(R.string.copy_text)
     private fun safe(panel: View) = panel.findViewById<ImageButton>(R.id.choice_safe)
     private fun stopAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_stop)
     private fun discardAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_discard)
@@ -1429,7 +1585,7 @@ class DictationProductionLifecycleTest {
         val returned = showPanel(service)!!
         advance(ROTATION_SETTLE_MS)
         decode.drain(); settleHistory()
-        assertFalse("no choice comes back after a lock", cancelChoiceShown(returned))
+        assertFalse("no choice comes back after a lock", choiceShown(returned))
         assertEquals(0, commits)
     }
 
@@ -1731,7 +1887,7 @@ class DictationProductionLifecycleTest {
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
         assertEquals(0, commits)
-        assertEquals(service.getString(R.string.status_unable_insert), status(view))
+        assertTrue(status(view).startsWith(service.getString(R.string.status_unable_insert)))
     }
 
     // --- Discard take (#36, owner 2026-11-11): final at once, from either choice; no Undo window. ---
@@ -1868,14 +2024,14 @@ class DictationProductionLifecycleTest {
         service.onStartInputView(editor(), true)
         pump()
         assertEquals(1, input.starts.get())
-        assertFalse(cancelChoiceShown(view))
+        assertFalse(choiceShown(view))
         assertEquals(0, commits)
     }
 
     /**
      * P1 (#61 visit), #36: an interrupted take must not leave a silent idle panel with old text. The
      * panel says "Unable to insert text" with its marker, shows the held text and offers Copy and
-     * Discard text; Back copies first and leaves after that; Discard text returns to the microphone.
+     * Discard text; the first Back warns and the second discards and leaves; Discard text returns to the microphone.
      */
     @Test fun historyOnlyEndSaysUnableToInsertWithItsMarkerAndBackLeaves() {
         val input = Input()
@@ -1888,7 +2044,7 @@ class DictationProductionLifecycleTest {
         service.onStartInputView(editor(), true)
         await { input.releases.get() == 1 }
         awaitInterruptedInHistory()
-        await { status(view) == service.getString(R.string.status_unable_insert) }
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
         assertEquals("old speech", preview(view))
         val marker = view.findViewById<View>(R.id.status_marker)
         assertEquals(View.VISIBLE, marker.visibility)
@@ -1903,12 +2059,11 @@ class DictationProductionLifecycleTest {
         assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
         assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
         assertNotEquals("no microphone while the text is held", View.VISIBLE, button(view).visibility)
-        assertEquals(service.getString(R.string.copy_text), back(view).contentDescription.toString())
-        back(view).performClick() // Safe default: copies and stays.
-        assertEquals(service.getString(R.string.status_copied), status(view))
         assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
+        back(view).performClick() // Uncopied text: the first Back only warns.
+        assertEquals(service.getString(R.string.status_back_warning), status(view))
         org.robolectric.shadows.ShadowLog.clear()
-        back(view).performClick()
+        back(view).performClick() // The second Back discards the text and leaves.
         pump()
         assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
         assertEquals(1, input.starts.get())
@@ -2185,7 +2340,7 @@ class DictationProductionLifecycleTest {
         old.onFinishInputView(true)
         assertEquals("", preview(oldView))
         await { !MicrophoneOwner.state().occupied }
-        await { status(oldView) == old.getString(R.string.status_unable_insert) }
+        await { status(oldView).startsWith(old.getString(R.string.status_unable_insert)) }
         opened.removeAt(0).destroy()
         val (replacement, view) = service(editor(privateField = true))
         assertEquals(0, next.starts.get())
@@ -2240,7 +2395,7 @@ class DictationProductionLifecycleTest {
 
         gate.countDown()
         await { !MicrophoneOwner.state().occupied }
-        await { status(view) == service.getString(R.string.status_unable_insert) }
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
         decode.drain()
         settleHistory()
         val saved = rows().single()
@@ -2278,7 +2433,7 @@ class DictationProductionLifecycleTest {
 
         gate.countDown()
         await { !MicrophoneOwner.state().occupied }
-        await { status(view) == service.getString(R.string.status_unable_insert) }
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
         decode.drain()
         settleHistory()
         val saved = rows().single()
@@ -2332,7 +2487,7 @@ class DictationProductionLifecycleTest {
             await { !MicrophoneOwner.state().occupied }
             await { flushes.get() == 1 }
             decode.drain(); settleHistory()
-            await { status(view) == service.getString(R.string.status_unable_insert) }
+            await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
             assertEquals("old speech", rows().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
             assertEquals(0, commits)
@@ -2394,7 +2549,7 @@ class DictationProductionLifecycleTest {
             await { !MicrophoneOwner.state().occupied }
             await { flushes.get() == 1 }
             decode.drain(); settleHistory()
-            await { status(view) == service.getString(R.string.status_unable_insert) }
+            await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
             assertTrue(rows().isEmpty())
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
@@ -2539,7 +2694,7 @@ class DictationProductionLifecycleTest {
             assertEquals(prefix.id, rows().single().id)
             assertEquals("old speech", rows().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-            assertEquals(service.getString(R.string.status_unable_insert), status(view))
+            assertTrue(status(view).startsWith(service.getString(R.string.status_unable_insert)))
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
         } finally { BenchmarkStore.setEnabled(app, false); benchmarkDir.deleteRecursively() }
