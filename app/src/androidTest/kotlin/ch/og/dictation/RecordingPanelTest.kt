@@ -419,7 +419,7 @@ class RecordingPanelTest {
                 oneRow("preparing-choice", listOf(R.id.choice_safe, R.id.choice_discard))
                 val heldWords = "… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim()
                 for (held in HELD_STATES) {
-                    state(held.name, held.status, PanelFrame(held = true, copied = held.copied), words = heldWords, privateField = held.privateField)
+                    state(held.name, held.status, PanelFrame(held = true, copied = held.copied, uncertain = held.uncertain), words = heldWords, privateField = held.privateField)
                     assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.status_marker).visibility)
                     assertNotEquals("no microphone disk with held text", View.VISIBLE, mic.visibility)
                     assertNotEquals("no ring with held text", View.VISIBLE, panel.findViewById<View>(R.id.recording_ring).visibility)
@@ -445,13 +445,14 @@ class RecordingPanelTest {
     }
 
     /** The held-text states (Unable to insert text) as the service renders them; labels are the status the service shows. */
-    private class HeldState(val name: String, val status: Int, val copied: Boolean = false, val privateField: Boolean = false)
+    private class HeldState(val name: String, val status: Int, val copied: Boolean = false, val privateField: Boolean = false,
+                            val uncertain: Boolean = false)
     private val HELD_STATES = listOf(
         HeldState("unable-to-insert", R.string.status_unable_history),
         HeldState("private-unable-to-insert", R.string.status_unable_unsaved, privateField = true),
         HeldState("unable-to-insert-back-warning", R.string.status_back_warning),
         HeldState("unable-to-insert-copied", R.string.status_copied, copied = true),
-        HeldState("unable-to-insert-unconfirmed", R.string.status_unconfirmed),
+        HeldState("unable-to-insert-unconfirmed", R.string.status_unconfirmed, uncertain = true),
     )
 
     /**
@@ -493,7 +494,7 @@ class RecordingPanelTest {
                     PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording), true)
                 for (held in HELD_STATES) {
                     val reference = if (held.privateField) maxOf(privateIdle, privatePaused) else maxOf(idle, paused)
-                    val height = draw(held.name, held.status, PanelFrame(held = true, copied = held.copied), held.privateField)
+                    val height = draw(held.name, held.status, PanelFrame(held = true, copied = held.copied, uncertain = held.uncertain), held.privateField)
                     val safe = panel.findViewById<View>(R.id.choice_safe)
                     val discard = panel.findViewById<View>(R.id.choice_discard)
                     val stage = panel.findViewById<View>(R.id.stage)

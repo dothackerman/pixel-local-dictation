@@ -1106,6 +1106,39 @@ class DictationProductionLifecycleTest {
         assertHeldState(service, returned)
     }
 
+    /** The hold settled on a mismatch: final. A matching start afterwards gets no authority and Stop holds the text. */
+    @Test fun aMatchingStartAfterTheHoldSettledOnAMismatchGetsNoAuthorityAndStopHolds() {
+        val (service, returned, input) = retargetedToNonEditor() // The panel settled on the non-editor.
+        val other = Field(service)
+        service.onCreateInputMethodInterface().startInput(other, composeField())
+        service.onStartInputView(composeField(), false)
+        pump()
+        advance(ROTATION_SETTLE_MS)
+        await { input.releases.get() == 1 } // Android finishes the old input first: a plain leave, at once.
+        await { decode.drain(); settleHistory(); status(returned).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertTrue(other.inserted.isEmpty())
+        assertEquals(0, commits)
+    }
+
+    /** A take that kept authority through a rotation: a cursor move in the same field changes nothing, Stop inserts. */
+    @Test fun aCursorMoveInTheTakesFieldAfterARotationStillInsertsOnStop() {
+        DictationImeService.requestPanel = {}
+        val input = Input()
+        devices.add(input)
+        val (service, _) = service(editor())
+        val first = firstField.getValue(service)
+        feed(input, 1000, 1)
+        val panel = platformResetOnRotation(service, android.view.Surface.ROTATION_90)!!
+        advance(ROTATION_SETTLE_MS * 2)
+        service.onUpdateSelection(0, 0, 5, 5, -1, -1)
+        pump()
+        assertEquals(0, input.releases.get())
+        button(panel).performClick()
+        await { input.releases.get() == 1 }
+        await { decode.drain(); commits == 1 }
+        assertEquals(listOf("old speech"), first.inserted)
+    }
+
     /** No timer after a plain hide: the take without authority ends at once, as ADR-010 says. */
     @Test fun aPlainHideWhileWithoutAuthorityStopsAtOnce() {
         val panelRequests = AtomicInteger()
@@ -1449,11 +1482,11 @@ class DictationProductionLifecycleTest {
         feed(input, 20000, 2)
         button(back).performClick()
         await { input.releases.get() == 1 }
-        // The editor-less start was not the take's field and authority never returns (owner 2026-11-13): held, still kept.
-        await { decode.drain(); settleHistory(); status(back).startsWith(service.getString(R.string.status_unable_insert)) }
+        await { decode.drain(); settleHistory(); commits == 1 }
         settleHistory()
-        assertEquals(0, commits)
-        assertTrue(last.inserted.isEmpty() && none.inserted.isEmpty())
+        assertEquals(listOf("old speech private speech"), last.inserted)
+        assertTrue(none.inserted.isEmpty())
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
         assertEquals("old speech private speech", rows().single().text)
     }
 

@@ -116,9 +116,14 @@ class DictationImeService : InputMethodService() {
     private var editorIdentity: FieldIdentity? = null
     /**
      * A rotation hold's input start was not the take's field (same app): the take keeps recording but has no
-     * authority for the rest of the take, and Stop writes nothing (the text is held). Ends with the take.
+     * authority, and Stop writes nothing (the text is held). While the hold is open the take's own field starting
+     * input again (the automatic rotation sequence) returns it; once the hold settled on a mismatch it is final.
      */
     private var fieldMismatch = false
+    /** The rotation hold settled on a mismatch: it is final, the take's field never regains authority. */
+    private var mismatchFinal = false
+    /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
+    private var retargetSettle = false
     /** The read-back of a write that could not be confirmed at once; the second look is pending. */
     private var confirming = false
     private var pendingConfirm: PendingConfirm? = null
@@ -516,9 +521,10 @@ class DictationImeService : InputMethodService() {
 
     /** A rotation since the panel was last visible, or the take is without authority for another field. */
     private fun rotationIdentified(event: EditorEvent? = null): Boolean {
-        if (rotationChanges > rotationsWhenVisible) return true
+        if (rotationChanges > rotationsWhenVisible || retargetSettle) return true
         if (!fieldMismatch) return false
-        // Without authority a start is still judged; a plain hide is not a rotation (ADR-010: no timer after it).
+        if (!mismatchFinal) return true // The hold is still open: the editor is still reacting to the rotation.
+        // Settled on a mismatch: a start is still judged, but a plain hide is not a rotation (ADR-010: no timer after it).
         return when (event) {
             EditorEvent.INPUT_VIEW_FINISH, EditorEvent.INPUT_FINISH, EditorEvent.WINDOW_HIDDEN -> holding
             else -> true
@@ -539,6 +545,12 @@ class DictationImeService : InputMethodService() {
         if (!same && !fieldMismatch) {
             fieldMismatch = true
             Log.i(tag, "authority withheld: input is not the take's field")
+        } else if (same && fieldMismatch && !mismatchFinal) {
+            fieldMismatch = false
+            retargetSettle = true
+            // A Stop pressed meanwhile gets its authority back with the panel on this field's session.
+            if (finishing) authorityMoves = true
+            Log.i(tag, "authority returned: the take's field, inside the hold")
         }
     }
 
@@ -617,6 +629,8 @@ class DictationImeService : InputMethodService() {
         if (rotationEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
         endHold()
         rotationsWhenVisible = rotationChanges
+        retargetSettle = false
+        if (fieldMismatch) mismatchFinal = true
         authorityMoves = false
         if (takeActive && !interruptedView && editorRetention.excludesSettledTake) excludeTakeFromHistory()
         restoreAfterRotation()
@@ -630,6 +644,8 @@ class DictationImeService : InputMethodService() {
     private fun endHoldAndClearDeliveryHold() {
         endHold()
         fieldMismatch = false
+        mismatchFinal = false
+        retargetSettle = false
         renderNotice()
         authorityMoves = false
         deliveryHeldForRotation = false
