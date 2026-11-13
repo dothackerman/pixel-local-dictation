@@ -54,8 +54,8 @@ open class SelfRotationProbeActivity : Activity() {
                     id = R.id.probe_non_editor
                     isFocusable = true
                     isFocusableInTouchMode = true
-                    minimumHeight = 48
-                }, 0).also { column.getChildAt(0).requestFocus() }
+                }, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 48)) // A plain View would fill the column.
+                    .also { column.getChildAt(0).requestFocus() }
                 // A different real text field of the same app takes focus (a search box, say).
                 RETARGET_OTHER_FIELD -> column.addView(EditText(this).apply {
                     id = R.id.probe_other_field
