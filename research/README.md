@@ -14,6 +14,7 @@ Research-only terms: *exported model* (runtime-ready representation),
 | [Linux sandboxes vs Ubuntu userns](linux-sandbox-userns.md) | Why sandboxed Claude commands failed on this host, Codex escalation flood, user-run fixes ([ADR-024](../adrs/024-phone-access-rewrite.md)) |
 | [Spoken numbers to digits](number-itn.md) | sherpa-onnx rule FSTs, NeMo ITN fit, Parakeet number output, Swiss number style, options |
 | [Issue 30 panel performance](issue30-panel-performance.md) | Review, startup and component-replay timings of the recording-panel ring; Signal height trade-off |
+| [Profiling mode draft spec](profiling-mode-spec.md) | What is known about preview and Stop wait slowness, proposed per-take timing collection, review findings, open owner decisions |
 
 Evidence levels are distinct: source support, downloadable binary, successful
 load, correct GPU output, measured benefit. A note establishes only the level it names.
