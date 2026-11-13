@@ -125,7 +125,8 @@ class DictationImeService : InputMethodService() {
     /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
     private var retargetSettle = false
     /** The read-back of a write that could not be confirmed at once; the second look is pending. */
-    private var confirming = false
+    /** Generation of the take whose outcome has not been delivered yet: from start until finished() (or its late read-back look) ends. */
+    private var outcomePending: Long? = null
     private var pendingConfirm: PendingConfirm? = null
     /** The History side of the current take: a late pass of the read-back corrects its delivery receipt. */
     private var takeHistory: HistoryTakeOutput? = null
@@ -186,7 +187,7 @@ class DictationImeService : InputMethodService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             rotationEvent(RotationEvent.SCREEN_OFF)
             // Also after Stop and during the read-back wait, until finished(): its text is refused, after unlock too.
-            if (take != null || confirming) takeLocked = true
+            if (outcomePending != null) takeLocked = true
             if (held != null) { clearHeld(); showIdle() }
             previewAllowed = false
             showPreview("")
@@ -754,6 +755,7 @@ class DictationImeService : InputMethodService() {
         rotationEvent(RotationEvent.SERVICE_DESTROY)
         if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
         destroyed = true
+        outcomePending = null
         endHold()
         getSystemService(android.media.AudioManager::class.java)?.unregisterAudioRecordingCallback(recordingCallback)
         MicrophoneOwner.remove(microphoneOwnerListener)
@@ -767,7 +769,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun startRecording() {
-        if (takeActive || held != null || confirming) return // Held text is never dropped by starting a take.
+        if (takeActive || held != null || outcomePending != null) return // Held text is never dropped by starting a take.
         if (MicrophoneOwner.state().occupied) {
             interruptedView = true
             updateSharedMicrophone()
@@ -790,9 +792,11 @@ class DictationImeService : InputMethodService() {
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         rotationTake++
         rotationEvent(RotationEvent.CAPTURE_START)
+        var started = false // This start produced a take that will deliver finished().
         try {
             val liveTakeId = startupTake
             val generation = ++takeGeneration
+            outcomePending = generation
             val currentRotationTake = rotationTake
             recordingToken = session.token()
             takeHeldForRotation = false
@@ -828,6 +832,8 @@ class DictationImeService : InputMethodService() {
                     finally { mainHandler.post { returning = false } }
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
+                    // Synchronous on the main thread; only a late read-back look marks it pending again.
+                    if (outcomePending == generation) outcomePending = null
                     // A write that is still being read back reports its terminal event at the second look.
                     val lateLook = pendingConfirm != null && !result.interrupted && result.outcome == TakeOutcome.COMMIT_REJECTED
                     if (!lateLook) rotationTrace?.event(when (result.outcome) {
@@ -855,7 +861,7 @@ class DictationImeService : InputMethodService() {
                         showPreview("")
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
                         val keep = textToHold(result)
-                        if (keep != null) holdText(keep, result.retentionEligible) else {
+                        if (keep != null) holdText(keep, result.historySaved) else {
                             showStatus(R.string.status_unable_insert)
                             setMicrophone(true, R.string.start_recording)
                         }
@@ -867,13 +873,13 @@ class DictationImeService : InputMethodService() {
                     pendingConfirm = null
                     if (pending != null && result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         // The write may still show up: the held text, or the hand-back, waits for the second look.
-                        confirmLater(pending, result, currentRotationTake)
+                        confirmLater(pending, result, currentRotationTake, generation)
                         return
                     }
                     val keep = textToHold(result)
                     if (keep != null) {
                         // The text is in History where the field allows it; the panel also holds it for Copy.
-                        holdText(keep, result.retentionEligible)
+                        holdText(keep, result.historySaved)
                     } else if (notInsertedText(result) != null) {
                         // Not this app's panel any more, or the screen went off: status only, History where eligible.
                         showStatus(R.string.status_unable_insert)
@@ -990,6 +996,7 @@ class DictationImeService : InputMethodService() {
                     retentionEligible = retentionEligible).also { it.start() }
             }
             take = startedTake
+            started = true
             renderChoice()
             microphoneCapture.setReleaseRetry { startedTake.retryCaptureRelease() }
             Log.i(tag, "recording started")
@@ -998,6 +1005,7 @@ class DictationImeService : InputMethodService() {
             rotationEvent(RotationEvent.CAPTURE_NOT_ACQUIRED)
             rotationEvent(RotationEvent.TERMINAL_FAILED)
             startup?.event("recordingFailed", startupTake)
+            if (!started) outcomePending = null
             startupTake = null
             feedback?.stop()
             showIdle()
@@ -1082,12 +1090,13 @@ class DictationImeService : InputMethodService() {
      * The take ended with a write that was not confirmed yet. Look once more; seen now, it was inserted (hand
      * back, nothing held); otherwise hold the text with a status that admits the uncertainty.
      */
-    private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long) {
-        confirming = true
+    private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long, generation: Long) {
+        outcomePending = generation
+        setMicrophone(false, R.string.status_stopping_recording)
         val history = takeHistory
         mainHandler.postDelayed({
             takeHistory = null
-            confirming = false
+            if (outcomePending == generation) { outcomePending = null; setMicrophone(true, R.string.start_recording) }
             if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
             val live = currentInputConnection === pending.connection && session.matches(pending.token)
             val check = if (live) readBack(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
@@ -1101,7 +1110,7 @@ class DictationImeService : InputMethodService() {
             }
             rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake)
             val keep = textToHold(result)
-            if (keep != null) holdText(keep, result.retentionEligible, unconfirmed = true) else {
+            if (keep != null) holdText(keep, result.historySaved, unconfirmed = true) else {
                 showStatus(R.string.status_unable_insert)
                 setMicrophone(true, R.string.start_recording)
             }
@@ -1164,7 +1173,8 @@ class DictationImeService : InputMethodService() {
                 authority = null
                 startupTake = null
                 showStatus(R.string.status_unable_insert)
-                setMicrophone(true, R.string.start_recording)
+                // The microphone stays off until the outcome is in; finished() then offers it.
+                if (outcomePending == null) setMicrophone(true, R.string.start_recording)
             }
         }
     }
@@ -1413,7 +1423,7 @@ class DictationImeService : InputMethodService() {
                 showStatus(R.string.status_release_failed)
                 setMicrophone(true, R.string.retry_release)
             }
-            takeActive -> {
+            takeActive || outcomePending != null -> {
                 showStatus(R.string.status_stopping_recording)
                 setMicrophone(false, R.string.status_stopping_recording)
             }

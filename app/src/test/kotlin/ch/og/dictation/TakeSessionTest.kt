@@ -349,12 +349,12 @@ class TakeSessionTest {
     @Test fun interruptionWhileFinalSaveWaitsNeverDispatchesToEditor() {
         val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
-        lateinit var stageReady: () -> Unit
+        lateinit var stageReady: (Boolean) -> Unit
         var commits = 0
         var result: TakeResult? = null
         val output = object : TakeOutput {
             override fun preview(text: String) {}
-            override fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) { stageReady = ready }
+            override fun stage(text: String, retentionEligible: Boolean, ready: (Boolean) -> Unit) { stageReady = ready }
             override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) { done(true) }
             override fun commit(text: String): Boolean { commits++; return true }
             override fun returnToKeyboard(): Boolean { fail("must not return"); return false }
@@ -368,9 +368,9 @@ class TakeSessionTest {
         var released = false
         take.interrupt { released = true }
         assertTrue(released)
-        stageReady()
+        stageReady(false)
         assertEquals(0, commits)
-        assertTrue(result!!.interruptedSaved)
+        assertTrue(result!!.historySaved)
     }
 
     @Test fun finishingChoiceHoldsDeliveryUntilKept() {
@@ -425,12 +425,12 @@ class TakeSessionTest {
     @Test fun finishingChoiceDuringDelayedSaveCanDiscardWithoutLateDelivery() {
         val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
-        lateinit var ready: () -> Unit
+        lateinit var ready: (Boolean) -> Unit
         var commits = 0
         var deletions = 0
         val output = object : TakeOutput {
             override fun preview(text: String) {}
-            override fun stage(text: String, retentionEligible: Boolean, callback: () -> Unit) { ready = callback }
+            override fun stage(text: String, retentionEligible: Boolean, callback: (Boolean) -> Unit) { ready = callback }
             override fun discardStaged(done: (Boolean) -> Unit) { deletions++; done(true) }
             override fun commit(text: String): Boolean { commits++; return true }
             override fun returnToKeyboard() = true
@@ -442,7 +442,7 @@ class TakeSessionTest {
         assertTrue(take.holdDelivery())
         var deleted = false
         take.cancel(onDiscarded = { deleted = it })
-        ready()
+        ready(false)
         assertTrue(deleted)
         assertEquals(1, deletions)
         assertEquals(0, commits)
@@ -451,11 +451,11 @@ class TakeSessionTest {
     @Test fun finishingChoiceDuringDelayedSaveKeepsAndDeliversOnce() {
         val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
         val capture = Capture()
-        lateinit var ready: () -> Unit
+        lateinit var ready: (Boolean) -> Unit
         var commits = 0
         val output = object : TakeOutput {
             override fun preview(text: String) {}
-            override fun stage(text: String, retentionEligible: Boolean, callback: () -> Unit) { ready = callback }
+            override fun stage(text: String, retentionEligible: Boolean, callback: (Boolean) -> Unit) { ready = callback }
             override fun commit(text: String): Boolean { commits++; return true }
             override fun returnToKeyboard() = true
             override fun finished(result: TakeResult, pcm: ByteArray) {}
@@ -464,7 +464,7 @@ class TakeSessionTest {
         take.start(); capture.feed(floatArrayOf(1f)); take.stop()
         capture.drained(Result.success(byteArrayOf()))
         assertTrue(take.holdDelivery())
-        ready()
+        ready(false)
         assertEquals(0, commits)
         take.resumeDelivery()
         take.resumeDelivery()
@@ -495,4 +495,56 @@ class TakeSessionTest {
         } finally { root.deleteRecursively() }
     }
 
+
+    @Test fun excludedWhileTheFinalSaveWaitsStillFinishesWithoutHistory() {
+        val dir = java.nio.file.Files.createTempDirectory("take-exclude").toFile()
+        try {
+            val io = Queue()
+            val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+            val capture = Capture()
+            val output = Output()
+            val take = runtime.open(capture, HistoryTakeOutput(output, { HistoryStore(dir) }, io, { fail("save failed") }), direct)
+            take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+            capture.drained(Result.success(byteArrayOf()))
+            assertTrue(output.results.isEmpty())
+            take.excludeFromHistory()
+            io.drain()
+            val result = output.results.single()
+            assertEquals(TakeOutcome.COMPLETED, result.outcome)
+            assertFalse(result.historySaved)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun aFailedHistorySaveIsNotReportedAsSaved() {
+        val root = java.nio.file.Files.createTempFile("take-unwritable", ".file").toFile()
+        try {
+            val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+            val capture = Capture()
+            val output = Output()
+            val take = runtime.open(capture, HistoryTakeOutput(output, { HistoryStore(root) }, direct, {}), direct)
+            take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+            capture.drained(Result.success(byteArrayOf()))
+            assertFalse(output.results.single().historySaved)
+        } finally { root.delete() }
+    }
+
+    @Test fun cancelWhileTheStageIsQueuedDiscardsEvenWithSynchronousDelivery() {
+        val dir = java.nio.file.Files.createTempDirectory("take-cancel").toFile()
+        try {
+            val io = Queue()
+            val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+            val capture = Capture()
+            val output = Output()
+            val take = runtime.open(capture, HistoryTakeOutput(output, { HistoryStore(dir) }, io, { fail("save failed") }), direct)
+            take.start(); capture.feed(floatArrayOf(1f)); take.stop()
+            capture.drained(Result.success(byteArrayOf()))
+            take.cancel()
+            io.drain()
+            assertTrue(output.inserted.isEmpty())
+            assertEquals(TakeOutcome.CANCELLED, output.results.single().outcome)
+            assertNull(output.results.single().text)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
 }

@@ -61,7 +61,7 @@ class InterruptionHistoryTest {
             io.drain()
             assertEquals("word word", HistoryStore(directory).list().single().text)
             assertEquals(HistoryCompletion.INTERRUPTED, HistoryStore(directory).list().single().completion)
-            assertTrue(result!!.interruptedSaved)
+            assertTrue(result!!.historySaved)
             assertFalse(inserted)
             assertFalse(returned)
         } finally { directory.deleteRecursively() }
@@ -106,7 +106,7 @@ class InterruptionHistoryTest {
             io.drain()
             delivery.drain()
             assertFalse(inserted)
-            assertTrue(finished!!.interruptedSaved)
+            assertTrue(finished!!.historySaved)
             val entry = HistoryStore(directory).list().single()
             assertEquals("word", entry.text)
             assertEquals(HistoryCompletion.COMPLETE, entry.completion)

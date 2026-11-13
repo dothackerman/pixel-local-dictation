@@ -45,7 +45,7 @@ class BenchmarkStoreTest {
 
         for (outcome in listOf(TakeOutcome.COMPLETED, TakeOutcome.FAILED)) {
             val recovered = TakeResult(outcome, "accepted prefix", emptyMap(),
-                retentionEligible = true, interrupted = true, interruptedSaved = true)
+                retentionEligible = true, interrupted = true, historySaved = true)
             for (enabled in listOf(false, true)) {
                 assertNull(store.saveIfEligible(enabled, recovered, ByteArray(4), 16_000, "recovery text"))
                 assertFalse(dir.exists())

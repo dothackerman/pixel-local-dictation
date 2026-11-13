@@ -283,6 +283,12 @@ class DictationProductionLifecycleTest {
         return showPanel(service, info)
     }
 
+    /** The old take's outcome is in (decoded, saved, delivered); text it holds is discarded so the next take may start. */
+    private fun awaitOutcomeThenDiscardHeld(view: View) {
+        await { decode.drain(); settleHistory(); !MicrophoneOwner.state().occupied && button(view).isEnabled }
+        if (view.findViewById<View>(R.id.choice).visibility == View.VISIBLE) discardAction(view).performClick()
+    }
+
     /** Late decode and the History save run after the release; keep draining while waiting. */
     private fun awaitInterruptedInHistory() =
         await { decode.drain(); settleHistory(); rows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
@@ -595,6 +601,17 @@ class DictationProductionLifecycleTest {
         assertEquals(service.getString(R.string.status_unable_history), status(eligible))
     }
 
+    /** An eligible field whose History save fails must not promise History. */
+    @Test fun statusLineSaysTheTextIsNotSavedWhenTheEligibleSaveFailed() {
+        val unwritable = java.nio.file.Files.createTempFile("history-unwritable", ".file").toFile()
+        try {
+            DictationImeService.historyRootFor = { unwritable }
+            val (service, view, _) = deadConnectionAtStop(privateField = false)
+            assertEquals(service.getString(R.string.status_unable_unsaved), status(view))
+            assertTrue(rows().isEmpty())
+        } finally { unwritable.delete() }
+    }
+
     @Test fun statusLineSaysAPrivateFieldTextIsNotSaved() {
         val (_, view, _) = deadConnectionAtStop(privateField = true)
         assertEquals("Unable to insert text. Copy it now. It is not saved.", status(view))
@@ -745,8 +762,38 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
-    /** The screen goes off after the take ended (Stop's result is out) but before its capture release is acknowledged. */
+    /**
+     * The take lost its capture (hide) and the release is acknowledged, but the late decode and History
+     * save have not delivered the outcome yet: `take` is already null. A lock here still refuses the text.
+     */
+    private fun interruptedIntoTheGap(editorInfo: EditorInfo, input: Input, gate: CountDownLatch): Pair<DictationImeService, View> {
+        val (service, view) = service(editorInfo)
+        feed(input, 1000, 1)
+        service.onFinishInputView(true)
+        service.onWindowHidden()
+        gate.countDown()
+        await { input.releases.get() == 1 }
+        pump() // The release callback ran: capture ownership has ended, decoding has not finished.
+        return service to view
+    }
+
     @Test fun aLockBetweenTheTakeEndingAndItsFinishHoldsNothingAfterUnlock() {
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        devices.add(input)
+        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
+        screenOff()
+        decode.drain(); settleHistory(); pump()
+        service.onStartInput(editor(), true) // Unlock: the same app restarts input.
+        service.onStartInputView(editor(), true)
+        pump()
+        assertNothingHeldOrShown(service, view)
+        assertEquals("old speech", rows().single().text) // History keeps it.
+        assertEquals(0, commits)
+    }
+
+    /** The Stop path: the result is decoded and the commit would fail, the release is held, then the screen goes off. */
+    @Test fun aLockAfterStopWithTheReleaseHeldHoldsNothingAfterUnlock() {
         writeResult = { false } // The commit fails, so the take would otherwise hold its text.
         val gate = CountDownLatch(1)
         val input = Input(releaseGate = gate)
@@ -763,6 +810,94 @@ class DictationProductionLifecycleTest {
         service.onStartInputView(editor(privateField = true), true)
         pump()
         assertNothingHeldOrShown(service, view)
+    }
+
+    /** Any path that redraws the idle panel in the gap must not offer a Start that does nothing. */
+    @Test fun redrawingThePanelInTheGapDoesNotOfferADeadStart() {
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        devices.add(input)
+        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
+        assertFalse(button(view).isEnabled)
+        service.onStartInput(editor(), true)
+        service.onStartInputView(editor(), true)
+        pump()
+        service.onFinishInputView(true)
+        service.onWindowHidden()
+        pump()
+        assertFalse(button(view).isEnabled)
+        decode.drain(); settleHistory(); pump()
+        assertEquals("old speech", rows().single().text)
+    }
+
+    /** A failed start after an ordinary take must not leave the next starts refused. */
+    @Test fun aFailedStartAfterACompletedTakeDoesNotKillLaterStarts() {
+        val first = Input()
+        devices.add(first)
+        val (service, view) = service(editor())
+        feed(first, 1000, 1)
+        button(view).performClick()
+        await { first.releases.get() == 1 }
+        await { decode.drain(); settleHistory(); commits == 1 }
+        pump()
+        // The next start fails synchronously (the recorder cannot be created).
+        DictationImeService.recorderFactory = { error("synthetic recorder failure") }
+        MicrophoneOwner.acceptExplicitStart()
+        service.onStartInputView(editor(), true)
+        button(view).performClick()
+        pump()
+        DictationImeService.recorderFactory = { Recorder { devices.remove() } }
+        val third = Input()
+        devices.add(third)
+        await { button(view).isEnabled }
+        MicrophoneOwner.acceptExplicitStart()
+        button(view).performClick()
+        await { third.starts.get() == 1 }
+        assertEquals(1, third.starts.get())
+    }
+
+    @Test fun aMicrophoneTapInTheGapStartsNothingAndTheOutcomeIsStillDelivered() {
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        val second = Input()
+        devices.add(input)
+        devices.add(second)
+        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
+        assertFalse(button(view).isEnabled) // The microphone is not offered until the outcome is in.
+        button(view).performClick()
+        pump()
+        assertEquals(0, second.starts.get())
+        decode.drain(); settleHistory(); pump()
+        assertEquals(0, second.starts.get())
+        assertEquals("old speech", rows().single().text)
+        assertEquals(0, commits)
+        // The old take's text is held for Copy as before, not silently dropped.
+        assertEquals("old speech", preview(view))
+        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.choice).visibility)
+    }
+
+    @Test fun afterTheOutcomeArrivesTheMicrophoneStartsATakeAgain() {
+        val gate = CountDownLatch(1)
+        val input = Input(releaseGate = gate)
+        val second = Input()
+        devices.add(input)
+        devices.add(second)
+        val (service, view) = service(editor(pkg = "app.a"))
+        feed(input, 1000, 1)
+        service.onFinishInputView(true)
+        service.onFinishInput()
+        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
+        service.onStartInputView(editor(pkg = "app.b"), false)
+        gate.countDown()
+        await { input.releases.get() == 1 }
+        pump()
+        assertFalse(button(view).isEnabled)
+        awaitInterruptedInHistory()
+        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertTrue(button(view).isEnabled)
+        button(view).performClick()
+        await { second.starts.get() == 1 }
+        assertEquals(1, second.starts.get())
     }
 
     /** Stop, then another app's input arrives while the result is on its way to the commit: nothing held or shown there. */
@@ -2960,7 +3095,7 @@ class DictationProductionLifecycleTest {
         original.readerThread!!.join(2000)
         assertFalse(original.readerThread!!.isAlive)
         view.findViewById<ImageButton>(R.id.back).performClick()
-        await { !MicrophoneOwner.state().occupied }
+        awaitOutcomeThenDiscardHeld(view)
         button(view).performClick()
         await { next.starts.get() == 1 }
         feed(next, 20000, 2)
@@ -2988,7 +3123,7 @@ class DictationProductionLifecycleTest {
         try {
             feed(original, 20000, 2)
             original.endUnexpectedly()
-            await { !MicrophoneOwner.state().occupied && button(view).isEnabled }
+            awaitOutcomeThenDiscardHeld(view)
             button(view).performClick()
             await { next.starts.get() == 1 }
             await { receipts().count { it.optString("phase") == "captureStart" } >= 2 }
@@ -3019,7 +3154,7 @@ class DictationProductionLifecycleTest {
             val (service, view) = service(editor())
             assertEquals(View.VISIBLE, view.findViewById<View>(R.id.benchmark_banner).visibility)
             original.endUnexpectedly()
-            await { !MicrophoneOwner.state().occupied }
+            awaitOutcomeThenDiscardHeld(view)
             BenchmarkStore.setEnabled(app, false)
             service.onStartInputView(editor(), true)
             button(view).performClick()
@@ -3046,7 +3181,7 @@ class DictationProductionLifecycleTest {
         assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
         // Process interruption and the separate release acknowledgement, keeping only
         // the old capture-end event out of the main queue.
-        await { !MicrophoneOwner.state().occupied && button(view).isEnabled }
+        awaitOutcomeThenDiscardHeld(view)
         MicrophoneOwner.requireExplicitStart()
         val newEditor = editor(privateField = true)
         service.onStartInput(newEditor, true)

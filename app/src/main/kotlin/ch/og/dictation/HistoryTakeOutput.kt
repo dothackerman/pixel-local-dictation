@@ -22,7 +22,7 @@ class HistoryTakeOutput(
     private val lock = Any()
     private data class Pending(
         val text: String,
-        val ready: (() -> Unit)?,
+        val ready: ((Boolean) -> Unit)?,
         val revision: Long = 0,
         val interruptedReady: ((Boolean) -> Unit)? = null,
         val sourceEndSample: Long? = null,
@@ -86,7 +86,7 @@ class HistoryTakeOutput(
             }
         }
         if (rejected) {
-            next.ready?.let { delivery.execute(it) }
+            next.ready?.let { callback -> delivery.execute { callback(false) } }
             next.interruptedReady?.let { callback -> delivery.execute { callback(false) } }
             return
         }
@@ -103,6 +103,7 @@ class HistoryTakeOutput(
                 } ?: break
                 if (work.ready != null) saved = false
                 var interruptedSaved = false
+                var finalSaved = false
                 try {
                     val history = store()
                     if (work.interruptedReady != null) {
@@ -125,9 +126,12 @@ class HistoryTakeOutput(
                             timeline?.emit(TimelineEvent("checkpointDurable", sampleEnd = work.sourceEndSample, revision = work.revision))
                         } else if (work.sourceEndSample != null) timeline?.emit(TimelineEvent(
                             "checkpointFailed", sampleEnd = work.sourceEndSample, revision = work.revision))
-                        if (work.ready != null) saved = durable && committed?.let {
-                            it.text == work.text && it.completion == HistoryCompletion.COMPLETE && it.revision >= work.revision
-                        } == true
+                        if (work.ready != null) {
+                            saved = durable && committed?.let {
+                                it.text == work.text && it.completion == HistoryCompletion.COMPLETE && it.revision >= work.revision
+                            } == true
+                            finalSaved = saved
+                        }
                     }
                     if (interruptedSaved) durablePrefix = true
                 } catch (_: Exception) {
@@ -135,18 +139,18 @@ class HistoryTakeOutput(
                         "checkpointFailed", sampleEnd = work.sourceEndSample, revision = work.revision))
                     onSaveFailure()
                 }
-                work.ready?.let { callback -> delivery.execute { callback() } }
+                work.ready?.let { callback -> delivery.execute { callback(finalSaved) } }
                 work.interruptedReady?.let { callback -> delivery.execute { callback(interruptedSaved) } }
             }
         }
     }
-    override fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) {
+    override fun stage(text: String, retentionEligible: Boolean, ready: (Boolean) -> Unit) {
         stage(text, retentionEligible, null, ready)
     }
-    override fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: () -> Unit) {
-        if (!retentionEligible) { eligible = false; ready(); return }
+    override fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: (Boolean) -> Unit) {
+        if (!retentionEligible) { eligible = false; ready(false); return }
         eligible = true
-        if (text.isEmpty()) { ready(); return }
+        if (text.isEmpty()) { ready(false); return }
         enqueue(Pending(text, ready, sourceEndSample = sourceEndSample))
     }
     override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) {
@@ -160,17 +164,28 @@ class HistoryTakeOutput(
             try { if (saved) store().updateDelivery(id, status) } catch (_: Exception) { onReceiptFailure() }
         }
     }
+    /** Suppress further writes and acknowledge every queued terminal item once, unsaved. */
+    private fun dropPending() {
+        val dropped = synchronized(lock) {
+            suppressed = true
+            listOfNotNull(pending, pendingAfterTerminal).also { pending = null; pendingAfterTerminal = null }
+        }
+        dropped.forEach { item ->
+            item.ready?.let { callback -> delivery.execute { callback(false) } }
+            item.interruptedReady?.let { callback -> delivery.execute { callback(false) } }
+        }
+    }
     override fun excludeHistory() {
         if (!eligible) return
         eligible = false
-        synchronized(lock) { suppressed = true; pending = null; pendingAfterTerminal = null }
+        dropPending()
         HistoryProcess.owner.remove(id)
         // Serial I/O: runs after any checkpoint already being written.
         io.execute { try { store().delete(id) } catch (_: Exception) { onDeleteFailure() } }
     }
     override fun discardStaged(done: (Boolean) -> Unit) {
         if (eligible) {
-            synchronized(lock) { suppressed = true; pending = null }
+            dropPending()
             io.execute {
                 val deleted = try { store().delete(id); true } catch (_: Exception) { onDeleteFailure(); false }
                 delivery.execute { done(deleted) }

@@ -192,4 +192,99 @@ class HistoryTakeTest {
             assertEquals(setOf(HistoryDelivery.REJECTED, HistoryDelivery.NOT_ATTEMPTED, HistoryDelivery.ACCEPTED), entries.map { it.delivery }.toSet())
         } finally { dir.deleteRecursively() }
     }
+
+    private class Manual : Executor {
+        private val work = ArrayDeque<Runnable>()
+        override fun execute(command: Runnable) { work.add(command) }
+        fun drain() { while (work.isNotEmpty()) work.removeFirst().run() }
+    }
+    private val inert = object : TakeOutput {
+        override fun preview(text: String) {}
+        override fun commit(text: String) = true
+        override fun returnToKeyboard() = true
+        override fun finished(result: TakeResult, pcm: ByteArray) {}
+    }
+
+    @Test fun excludedWhileTheFinalStageWaitsAcknowledgesOnceUnsavedAndWritesNothing() {
+        val dir = Files.createTempDirectory("history-exclude-stage").toFile()
+        try {
+            val io = Manual()
+            val output = HistoryTakeOutput(inert, { HistoryStore(dir) }, io, { fail("save failed") })
+            output.startHistory(true)
+            val acks = ArrayList<Boolean>()
+            output.stage("private words", true) { acks.add(it) }
+            output.excludeHistory()
+            io.drain()
+            assertEquals(listOf(false), acks)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun excludedWhileTheInterruptedSaveWaitsBehindTheStageAcknowledgesBothUnsaved() {
+        val dir = Files.createTempDirectory("history-exclude-both").toFile()
+        try {
+            val io = Manual()
+            val output = HistoryTakeOutput(inert, { HistoryStore(dir) }, io, { fail("save failed") })
+            output.startHistory(true)
+            val staged = ArrayList<Boolean>()
+            val interrupted = ArrayList<Boolean>()
+            output.stage("private words", true) { staged.add(it) }
+            output.saveInterrupted("private words", true) { interrupted.add(it) }
+            output.excludeHistory()
+            io.drain()
+            assertEquals(listOf(false), staged)
+            assertEquals(listOf(false), interrupted)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun discardingTheStagedTextAcknowledgesItsQueuedStage() {
+        val dir = Files.createTempDirectory("history-discard-stage").toFile()
+        try {
+            val io = Manual()
+            val output = HistoryTakeOutput(inert, { HistoryStore(dir) }, io, { fail("save failed") })
+            output.startHistory(true)
+            val acks = ArrayList<Boolean>()
+            var deleted: Boolean? = null
+            output.stage("private words", true) { acks.add(it) }
+            output.discardStaged { deleted = it }
+            io.drain()
+            assertEquals(listOf(false), acks)
+            assertEquals(true, deleted)
+            assertTrue(HistoryStore(dir).list().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun theStageAcknowledgementCarriesTheRealSaveResult() {
+        val dir = Files.createTempDirectory("history-stage-result").toFile()
+        val root = Files.createTempFile("history-unwritable", ".file").toFile()
+        try {
+            val ok = HistoryTakeOutput(inert, { HistoryStore(dir) }, Executor { it.run() }, { fail("save failed") })
+            ok.startHistory(true)
+            var saved: Boolean? = null
+            ok.stage("private words", true) { saved = it }
+            assertEquals(true, saved)
+            // The store throws.
+            val broken = HistoryTakeOutput(inert, { HistoryStore(root) }, Executor { it.run() }, {})
+            broken.startHistory(true)
+            saved = null
+            broken.stage("private words", true) { saved = it }
+            assertEquals(false, saved)
+            // History cleared mid-take: the checkpoint is suppressed.
+            val cleared = HistoryTakeOutput(inert, { HistoryStore(dir) }, Executor { it.run() }, { fail("save failed") }, id = "00000000-0000-0000-0000-000000000099")
+            cleared.startHistory(true)
+            cleared.preview("first")
+            HistoryStore(dir).delete("00000000-0000-0000-0000-000000000099")
+            saved = null
+            cleared.stage("first second", true) { saved = it }
+            assertEquals(false, saved)
+            // Ineligible and empty text.
+            saved = null
+            ok.stage("x", false) { saved = it }
+            assertEquals(false, saved)
+            saved = null
+            ok.stage("", true) { saved = it }
+            assertEquals(false, saved)
+        } finally { dir.deleteRecursively(); root.delete() }
+    }
 }

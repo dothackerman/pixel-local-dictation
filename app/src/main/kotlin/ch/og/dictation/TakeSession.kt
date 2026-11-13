@@ -28,8 +28,8 @@ interface TakeOutput {
     fun commit(text: String, allowed: () -> Boolean): Boolean = if (allowed()) commit(text) else false
     /** False if commit was skipped because the originating editor was unavailable. */
     fun commitAttempted(): Boolean = true
-    fun stage(text: String, retentionEligible: Boolean, ready: () -> Unit) = ready()
-    fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: () -> Unit) =
+    fun stage(text: String, retentionEligible: Boolean, ready: (saved: Boolean) -> Unit) = ready(false)
+    fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: (saved: Boolean) -> Unit) =
         stage(text, retentionEligible, ready)
     fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) = done(false)
     fun receipt(status: HistoryDelivery) {}
@@ -54,7 +54,8 @@ data class TakeResult(
     /** Latched from the editor that opened this take; false forbids every content writer. */
     val retentionEligible: Boolean = true,
     val interrupted: Boolean = false,
-    val interruptedSaved: Boolean = false,
+    /** The kept History entry is complete and the take is still eligible. */
+    val historySaved: Boolean = false,
 )
 
 /**
@@ -90,7 +91,8 @@ class TakeSession internal constructor(
     private val audioLock = Any()
     private var interrupted = false
     private var releaseNotice: (() -> Unit)? = null
-    private var interruptedSaved = false
+    private var historySaved = false
+    private var cancelling = false
     private var interruptionFailure: Throwable? = null
     private var staged = false
     private val events = linkedMapOf<String, Long>()
@@ -252,6 +254,7 @@ class TakeSession internal constructor(
             if (!inputChanged) { deliberatelyCancelledDuringDispatch = true; deferredDiscard = onDiscarded }
             return
         }
+        cancelling = true // Late History acknowledgements (a synchronous delivery runs them now) must not complete the take.
         var cancellationApplied = false
         var immediateDeletion: Boolean? = null
         if (inputChanged) {
@@ -274,15 +277,16 @@ class TakeSession internal constructor(
         if (interrupted) { saveInterrupted(text); return }
         if (text.isEmpty()) { complete(text); return }
         staged = true
-        output.stage(text, retentionEligible, synchronized(audioLock) { capturedSamples }) {
-            if (state == State.COMPLETING) complete(text)
+        output.stage(text, retentionEligible, synchronized(audioLock) { capturedSamples }) { saved ->
+            historySaved = saved
+            if (state == State.COMPLETING && !cancelling) complete(text)
         }
     }
 
     private fun saveInterrupted(text: String) {
         output.saveInterrupted(text, retentionEligible) { saved ->
-            interruptedSaved = saved
-            if (state == State.COMPLETING) finish(
+            historySaved = saved
+            if (state == State.COMPLETING && !cancelling) finish(
                 if (interruptionFailure == null) TakeOutcome.INPUT_CHANGED else TakeOutcome.FAILED,
                 text, failure = interruptionFailure)
         }
@@ -345,7 +349,7 @@ class TakeSession internal constructor(
         if (state == State.ENDED) return
         state = State.ENDED
         take?.cancel()
-        terminal = TakeResult(outcome, text, emptyMap(), committed, returned, failure, retentionEligible, interrupted, interruptedSaved)
+        terminal = TakeResult(outcome, text, emptyMap(), committed, returned, failure, retentionEligible, interrupted, historySaved && retentionEligible)
         cleanup()
     }
 
