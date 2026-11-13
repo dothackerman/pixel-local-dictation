@@ -37,6 +37,10 @@ enum class RotationEvent {
     CAPTURE_PAUSED,
     /** Continue recording: the same take's platform recording started again. */
     CAPTURE_RESUMED,
+    /** An input started during a hold of this take; the detail says whether it is the take's field (booleans only). */
+    FIELD_JUDGED,
+    /** The read-back after a write on a held take; the detail says whether it passed and which check (ints/booleans only). */
+    COMMIT_VERIFIED,
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */
@@ -63,6 +67,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
             "self-keep-capture", "self-keep-finishing", "self-hidden-capture", "self-hidden-finishing",
             "signal-cancel-recording", "signal-cancel-finishing",
             "demo52-keep", "demo52-hidden", "demo52-signal-hide", "demo52-signal-detach",
+            "demo52-signal-non-editor", "demo52-signal-other-field", "demo52-signal-non-editor-refocus",
             "demo53-hidden-before-decode", "demo53-keep-before-decode", "demo53-hidden-before-save",
             "demo53-hidden-after-commit", "demo53-hidden-recording-choice",
             "demo53-hidden-finishing-choice-before-decode", "demo53-hidden-finishing-choice-after-save")
@@ -162,7 +167,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
                             view: Long? = null, take: Long? = null,
                             rotation: Int? = null, rotations: Long? = null,
                             configDiff: Int? = null, handledConfig: Int? = null,
-                            retention: EditorRetention? = null) {
+                            retention: EditorRetention? = null, detail: Map<String, Any>? = null) {
         if (closed || (probeScoped && !probeActive())) return
         observe(service, event, take, active)
         val row = JSONObject().put("protocol", "ime-rotation-v1").put("process", process)
@@ -184,6 +189,8 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         handledConfig?.let { row.put("handledConfig", it) }
         // INPUT_START_DONE only: the fixed retention class of the editor that started input.
         retention?.let { row.put("retention", it.name) }
+        // Booleans and integers only: nothing the editor or the user wrote can pass through here.
+        detail?.forEach { (key, value) -> if (value is Boolean || value is Int) row.put(key, value) }
         val line = row.toString() + "\n"
         writer.execute {
             if (!failed) try {

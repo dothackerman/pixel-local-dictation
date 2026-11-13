@@ -43,7 +43,36 @@ open class SelfRotationProbeActivity : Activity() {
         override fun onCreate(savedInstanceState: Bundle?) {
             super.onCreate(savedInstanceState)
             recreated = savedInstanceState != null
-            if (recreated) editor.requestFocus()
+            if (!recreated) return
+            val column = editor.parent as LinearLayout
+            when (intent.getStringExtra(RETARGET)) {
+                // Signal 2026-11-13 diagnostics: after recreation input focus is on a view that is not a
+                // text editor; the platform starts input with TYPE_NULL and a fallback connection.
+                RETARGET_NON_EDITOR -> column.addView(View(this).apply {
+                    id = R.id.probe_non_editor
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    minimumHeight = 48
+                }, 0).also { column.getChildAt(0).requestFocus() }
+                // A different real text field of the same app takes focus (a search box, say).
+                RETARGET_OTHER_FIELD -> column.addView(EditText(this).apply {
+                    id = R.id.probe_other_field
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                    imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or
+                        EditorInfo.IME_ACTION_GO
+                    hint = "Other probe field (not kept)"
+                    other = this
+                }, 0).also { other?.requestFocus() }
+                else -> editor.requestFocus()
+            }
+        }
+        /** View state restores focus to the field; the retarget wins, as in Signal, after restoration. */
+        override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+            super.onRestoreInstanceState(savedInstanceState)
+            when (intent.getStringExtra(RETARGET)) {
+                RETARGET_NON_EDITOR -> findViewById<View>(R.id.probe_non_editor)?.requestFocus()
+                RETARGET_OTHER_FIELD -> other?.requestFocus()
+            }
         }
         override fun onWindowFocusChanged(hasFocus: Boolean) {
             super.onWindowFocusChanged(hasFocus)
@@ -61,6 +90,10 @@ open class SelfRotationProbeActivity : Activity() {
     }
 
     companion object {
+        /** Intent extra for [SignalOrder]: what takes input focus after recreation instead of the field. */
+        const val RETARGET = "retarget"
+        const val RETARGET_NON_EDITOR = "nonEditor"
+        const val RETARGET_OTHER_FIELD = "otherField"
         /** Intent extra for [SignalOrder]: swap the field after hiding the keyboard. */
         const val DETACH_AFTER_HIDE = "detachAfterHide"
         @Volatile var current: SelfRotationProbeActivity? = null
@@ -74,6 +107,9 @@ open class SelfRotationProbeActivity : Activity() {
 
     lateinit var editor: EditText
         private set
+    /** [SignalOrder] with [RETARGET_OTHER_FIELD]: the other field that took focus. */
+    var other: EditText? = null
+        protected set
 
     @SuppressLint("AppCompatCustomView")
     override fun onCreate(savedInstanceState: Bundle?) {

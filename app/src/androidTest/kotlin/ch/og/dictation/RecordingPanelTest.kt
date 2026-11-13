@@ -365,10 +365,13 @@ class RecordingPanelTest {
                 val mic = panel.findViewById<ImageButton>(R.id.microphone)
                 val text = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
                 val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
-                fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false) {
+                fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false,
+                          tapNotice: Boolean = false) {
                     status.setText(label)
                     PanelPreview.bind(preview, words)
-                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
+                    // The service's own choice: the line that gets authority back wins over the private-field line, and has no lock.
+                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice),
+                        if (tapNotice) R.string.notice_tap_field else if (privateField) R.string.retention_field_off else null, lock = !tapNotice)
                     renderPanel(panel, frame)
                     layOut(panel, width)
                     // Recording draws the real ribbon: the service attaches the take's feedback;
@@ -407,6 +410,12 @@ class RecordingPanelTest {
                 state("private-field", R.string.status_idle, PanelFrame(), words = "", privateField = true)
                 state("recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording))
                 state("private-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), privateField = true)
+                // Recording after a rotation without insert authority: one helper line, recording status and controls unchanged.
+                state("no-authority-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), tapNotice = true)
+                assertEquals(app.getString(R.string.notice_tap_field), panel.findViewById<TextView>(R.id.retention_notice).text.toString())
+                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.retention_notice).visibility)
+                assertNull("the tap line has no lock glyph", panel.findViewById<TextView>(R.id.retention_notice).compoundDrawablesRelative[0])
+                assertEquals(View.VISIBLE, mic.visibility)
                 state("paused-choice", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording))
                 oneRow("paused-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))
                 val apart = bounds(panel.findViewById(R.id.choice_discard), panel).left - bounds(panel.findViewById(R.id.choice_stop), panel).right
@@ -432,7 +441,7 @@ class RecordingPanelTest {
                 val heldStates = HELD_STATES.map { it.name }.toSet() + "private-unable-to-insert"
                 if (!landscape) {
                     assertEquals("portrait keeps one panel height ($suffix): $heights", 1,
-                        heights.filterKeys { !it.startsWith("private-") && it !in heldStates }.values.toSet().size)
+                        heights.filterKeys { !it.startsWith("private-") && !it.startsWith("no-authority-") && it !in heldStates }.values.toSet().size)
                     val statusLine = panel.findViewById<TextView>(R.id.status).lineHeight
                     for (name in listOf("unable-to-insert", "unable-to-insert-back-warning", "unable-to-insert-copied")) {
                         assertTrue("$name grows by more than one status line ($suffix): $heights",
@@ -450,6 +459,7 @@ class RecordingPanelTest {
         HeldState("private-unable-to-insert", R.string.status_unable_unsaved, privateField = true),
         HeldState("unable-to-insert-back-warning", R.string.status_back_warning),
         HeldState("unable-to-insert-copied", R.string.status_copied, copied = true),
+        HeldState("unable-to-insert-unconfirmed", R.string.status_unconfirmed),
     )
 
     /**

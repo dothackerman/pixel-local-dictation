@@ -46,6 +46,30 @@ class RotationContinuityDemoTest {
     @Test fun signalOrderDetachedFieldStopRefusesAndShowsUnableToInsert() =
         demo("demo52-signal-detach", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java, detach = true)
 
+    /**
+     * Signal 2026-11-13 diagnostics: after the recreation input focus is on a view that is not a text
+     * editor (TYPE_NULL start, a fallback connection that answers "" and swallows writes). Nothing may
+     * be reported inserted; the take must end in the held-text state.
+     */
+    @Test fun signalOrderNonEditorFocusAfterRecreateHoldsTheText() =
+        demo("demo52-signal-non-editor", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
+            retarget = SelfRotationProbeActivity.RETARGET_NON_EDITOR)
+    /**
+     * A different real field of the same app takes focus after the recreation (ADR-010: never insert
+     * into a different field). Nothing may be written there; the take must end in the held-text state.
+     */
+    @Test fun signalOrderOtherFieldFocusAfterRecreateHoldsTheText() =
+        demo("demo52-signal-other-field", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
+            retarget = SelfRotationProbeActivity.RETARGET_OTHER_FIELD)
+
+    /**
+     * As above, then the user taps the take's own field while recording: authority returns, the line
+     * goes, and Stop inserts the whole take once into that field.
+     */
+    @Test fun signalOrderNonEditorThenTheOriginalFieldIsTappedStopInsertsOnce() =
+        demo("demo52-signal-non-editor-refocus", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
+            retarget = SelfRotationProbeActivity.RETARGET_NON_EDITOR, refocus = true)
+
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
     private val keys = KeyboardHandoff(instrumentation, ::status)
@@ -91,7 +115,9 @@ class RotationContinuityDemoTest {
         override fun release() {}
     }
 
-    private fun demo(case: String, keep: Boolean, kind: Class<out SelfRotationProbeActivity>? = null, detach: Boolean = false) {
+    private fun demo(case: String, keep: Boolean, kind: Class<out SelfRotationProbeActivity>? = null, detach: Boolean = false,
+                     retarget: String? = null, refocus: Boolean = false) {
+        val holds = detach || (retarget != null && !refocus)
         val power = context.getSystemService(android.os.PowerManager::class.java)
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         assertTrue("phone must be unlocked with the screen on (owner step); the demo never unlocks it",
@@ -122,7 +148,8 @@ class RotationContinuityDemoTest {
         var passed = false
         try {
             instrumentation.startActivitySync(Intent(context, editorKind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(SelfRotationProbeActivity.DETACH_AFTER_HIDE, detach))
+                .putExtra(SelfRotationProbeActivity.DETACH_AFTER_HIDE, detach)
+                .putExtra(SelfRotationProbeActivity.RETARGET, retarget))
             Thread.sleep(600)
             keys.openFuto({ activity().showKeyboard() })
             Thread.sleep(400)
@@ -142,6 +169,16 @@ class RotationContinuityDemoTest {
                 statusText() == context.getString(R.string.status_recording) && ours(R.id.microphone)?.isEnabled == true
             }
             val panelBackMs = SystemClock.uptimeMillis() - rotatedAt
+            if (retarget != null) until(3_000, "tap-the-field line while recording without authority") {
+                ours(R.id.retention_notice)?.let { it.isVisibleToUser && it.text?.toString() == context.getString(R.string.notice_tap_field) } == true
+            }
+            if (refocus) {
+                // The user taps the take's own field: input starts there again and authority returns.
+                instrumentation.runOnMainSync { activity().showKeyboard() }
+                until(5_000, "tap-the-field line gone after the field took focus again") {
+                    ours(R.id.retention_notice)?.isVisibleToUser != true && statusText() == context.getString(R.string.status_recording)
+                }
+            }
             assertTrue("take ended during rotation", rows(run).none { it.getString("event").startsWith("TERMINAL_") })
             until(45_000, "speech after rotation in the preview") {
                 // The preview keeps only the newest ~240 characters, so a long second chunk can push the
@@ -152,7 +189,7 @@ class RotationContinuityDemoTest {
             assertTrue("panel lost before Stop", ours(R.id.microphone) != null)
             assertTrue(ours(R.id.microphone)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             until(30_000, "take terminal") { rows(run).any { it.getString("event").startsWith("TERMINAL_") } }
-            if (!detach) until(5_000, "FUTO restored by Stop") { currentIme() == futo }
+            if (!holds) until(5_000, "FUTO restored by Stop") { currentIme() == futo }
             else until(5_000, "unable to insert shown") { statusText().startsWith(context.getString(R.string.status_unable_insert)) }
             Thread.sleep(500)
             // Read the panel now: the rotation back and the hide below take it off screen.
@@ -164,7 +201,11 @@ class RotationContinuityDemoTest {
             val heldPreviewShown = previewText().isNotBlank() // Never logged: it is the take's text.
             val handedBack = currentIme() == futo
             var inserted = ""
-            instrumentation.runOnMainSync { inserted = activity().editor.text.toString().trim() }
+            var otherInserted = ""
+            instrumentation.runOnMainSync {
+                inserted = activity().editor.text.toString().trim()
+                otherInserted = activity().other?.text?.toString()?.trim().orEmpty()
+            }
 
             val terminal = rows(run).last { it.getString("event").startsWith("TERMINAL_") }.getString("event")
             val commits = count(run, "COMMIT_ACCEPTED")
@@ -181,7 +222,7 @@ class RotationContinuityDemoTest {
             Thread.sleep(1_500)
             // The held state must survive rotating back (an input restart): the editor hid the keyboard,
             // so show it again (ours is still selected) and read the panel once more.
-            if (detach) {
+            if (holds) {
                 instrumentation.runOnMainSync { activity().showKeyboard() }
                 Thread.sleep(1_500)
             }
@@ -203,6 +244,7 @@ class RotationContinuityDemoTest {
                 .put("speechBeforeInserted", beforeInserted)
                 .put("speechAfterInserted", afterInserted)
                 .put("insertedOnce", insertedOnce)
+                .put("otherFieldWritten", otherInserted.isNotEmpty())
                 .put("futoRestored", currentIme() == futo)
                 .put("serviceDestroyed", rows(run).any { it.getString("event") == "SERVICE_DESTROY" })
             File(context.filesDir, "lab/issue52").mkdirs()
@@ -210,11 +252,14 @@ class RotationContinuityDemoTest {
             status("$case summary: $summary")
             assertEquals(1, captures)
             assertEquals(1, starts.get())
-            if (detach) {
-                assertEquals("TERMINAL_COMMIT_REJECTED", terminal)
-                assertEquals(0, commits)
-                assertEquals(1, refusals)
+            if (holds) {
+                if (detach) {
+                    assertEquals("TERMINAL_COMMIT_REJECTED", terminal)
+                    assertEquals(1, refusals)
+                }
+                assertEquals("nothing may be reported inserted", 0, commits)
                 assertEquals("nothing may reach the editor", "", inserted)
+                assertEquals("nothing may reach the other field", "", otherInserted)
                 assertTrue(unableShown, unableShown.startsWith(context.getString(R.string.status_unable_insert)))
                 assertFalse("must not hand back to FUTO as if inserted", handedBack)
                 assertTrue("Copy control missing or disabled", copyReady)

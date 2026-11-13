@@ -36,6 +36,8 @@ import org.json.JSONObject
  */
 class DictationImeService : InputMethodService() {
     companion object {
+        /** The second read-back after a write that was not seen in the field at once (ADR-010). */
+        internal const val CONFIRM_DELAY_MS = 100L
         internal var recorderFactory: () -> Recorder = ::Recorder
         internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
         /** Asks Android to show this input method's own panel on the current input session. */
@@ -107,6 +109,21 @@ class DictationImeService : InputMethodService() {
     private var deliveryHeldForRotation = false
     /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
     private var takeHeldForRotation = false
+    /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
+    private var takeField: FieldIdentity? = null
+    private var takeConnection: android.view.inputmethod.InputConnection? = null
+    /** The editor that last started input, as identity values only. */
+    private var editorIdentity: FieldIdentity? = null
+    /**
+     * A rotation hold's input start was not the take's field (same app): the take keeps recording but has no
+     * authority, and Stop writes nothing, until the take's own field starts input again. Ends with the take.
+     */
+    private var fieldMismatch = false
+    /** The take's field is back after a mismatch: the rotation stays identified until the panel has settled. */
+    private var retargetSettle = false
+    /** The read-back of a write that could not be confirmed at once; the second look is pending. */
+    private var confirming = false
+    private var pendingConfirm: PendingConfirm? = null
     /**
      * The finished text of a take that could not be inserted (plan B): held in memory only while
      * the Unable to insert text state shows; never written or logged. Cleared by Discard text, Back
@@ -247,7 +264,7 @@ class DictationImeService : InputMethodService() {
         banner = v.findViewById(R.id.benchmark_banner)
         retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
-        showPanelDisclosure(if (takeRetentionEligible == false) R.string.retention_field_off else null)
+        renderNotice()
         ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
         microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
             setOnClickListener {
@@ -278,6 +295,7 @@ class DictationImeService : InputMethodService() {
         editorRetention = EditorRetentionPolicy.classify(attribute)
         editorRetentionEligible = editorRetention.eligible
         editorPackage = attribute?.packageName
+        editorIdentity = FieldIdentity.of(attribute)
         inputStarted = true
         held?.warned = false
         if (held != null && editorPackage != held?.from) { clearHeld(); showIdle() } // A different app's editor.
@@ -475,11 +493,12 @@ class DictationImeService : InputMethodService() {
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
             capturing = takeActive && !finishing && !interruptedView,
             finishing = takeActive && finishing && !interruptedView,
-            rotation = rotationChanges > rotationsWhenVisible))
+            rotation = rotationIdentified()))
         // A rotation never moves a take to another app: an input start from a different package
         // ends the hold, whatever the rotation window says (no authority, no panel there).
         val decision = if (decided == EditorDecision.REVOKE_AUTHORITY && event == EditorEvent.INPUT_START && anotherApp())
             EditorDecision.INTERRUPT else decided
+        if (event == EditorEvent.INPUT_START && takeActive && decision == EditorDecision.REVOKE_AUTHORITY) judgeField()
         when (decision) {
             EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
             EditorDecision.REVOKE_AUTHORITY -> {
@@ -492,6 +511,34 @@ class DictationImeService : InputMethodService() {
             EditorDecision.INTERRUPT -> interruptTake()
         }
         return decision
+    }
+
+    /** A rotation since the panel was last visible, or the take is without authority for another field, or its field just returned. */
+    private fun rotationIdentified() = rotationChanges > rotationsWhenVisible || fieldMismatch || retargetSettle
+
+    /**
+     * An input started inside a hold of this take. Only the take's own field keeps the take's insert
+     * authority; another editor of the app (a search box, a view that is no editor) leaves the take
+     * recording without it, and Stop then holds the text. Nothing here is an interruption.
+     */
+    private fun judgeField() {
+        val now = editorIdentity
+        val same = now?.isSameFieldAs(takeField) == true
+        rotationEvent(RotationEvent.FIELD_JUDGED, same, detail = mapOf(
+            "sameField" to same, "typeNull" to (now?.typeNull ?: true), "selValid" to (now?.selValid ?: false),
+            "connectionChanged" to (currentInputConnection !== takeConnection)))
+        if (!same && !fieldMismatch) {
+            fieldMismatch = true
+            Log.i(tag, "authority withheld: input is not the take's field")
+            renderNotice()
+        } else if (same && fieldMismatch) {
+            fieldMismatch = false
+            retargetSettle = true
+            // A Stop pressed meanwhile gets its authority back with the panel on this field's session.
+            if (finishing) authorityMoves = true
+            Log.i(tag, "authority returned: the take's field")
+            renderNotice()
+        }
     }
 
     private fun anotherApp(): Boolean {
@@ -569,6 +616,7 @@ class DictationImeService : InputMethodService() {
         if (rotationEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
         endHold()
         rotationsWhenVisible = rotationChanges
+        retargetSettle = false
         authorityMoves = false
         if (takeActive && !interruptedView && editorRetention.excludesSettledTake) excludeTakeFromHistory()
         restoreAfterRotation()
@@ -581,6 +629,9 @@ class DictationImeService : InputMethodService() {
      */
     private fun endHoldAndClearDeliveryHold() {
         endHold()
+        fieldMismatch = false
+        retargetSettle = false
+        renderNotice()
         authorityMoves = false
         deliveryHeldForRotation = false
     }
@@ -593,7 +644,7 @@ class DictationImeService : InputMethodService() {
     private fun panelVisible() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
-        if (authorityMoves && finishing && !interruptedView) authority = recordingToken
+        if (authorityMoves && finishing && !interruptedView && !fieldMismatch) authority = recordingToken
         if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
         if (holding) {
             holding = false
@@ -617,11 +668,11 @@ class DictationImeService : InputMethodService() {
         if (takeRetentionEligible != true) return
         takeRetentionEligible = false
         take?.excludeFromHistory()
-        showPanelDisclosure(R.string.retention_field_off)
+        renderNotice()
     }
 
     private fun settleAfterRotation() {
-        if (!takeActive || holding || !inputViewVisible || rotationChanges <= rotationsWhenVisible) return
+        if (!takeActive || holding || !inputViewVisible || !rotationIdentified()) return
         mainHandler.removeCallbacks(panelSettled)
         mainHandler.postDelayed(panelSettled, ROTATION_SETTLE_MS)
     }
@@ -634,12 +685,12 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null,
-                              retention: EditorRetention? = null) {
+                              retention: EditorRetention? = null, detail: Map<String, Any>? = null) {
         val trace = rotationTrace ?: return
         val rotation = observeRotation()
         trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
             flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges,
-            configDiff, handledConfig, retention)
+            configDiff, handledConfig, retention, detail)
     }
 
     /** Trace only: the configuration this service last saw, to report what a change differs in. */
@@ -696,7 +747,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun startRecording() {
-        if (takeActive || held != null) return // Held text is never dropped by starting a take.
+        if (takeActive || held != null || confirming) return // Held text is never dropped by starting a take.
         if (MicrophoneOwner.state().occupied) {
             interruptedView = true
             updateSharedMicrophone()
@@ -725,6 +776,8 @@ class DictationImeService : InputMethodService() {
             val currentRotationTake = rotationTake
             recordingToken = session.token()
             takeHeldForRotation = false
+            takeField = FieldIdentity.of(currentInputEditorInfo)
+            takeConnection = currentInputConnection
             takePackage = editorPackage
             takeLocked = false
             authority = null
@@ -732,7 +785,7 @@ class DictationImeService : InputMethodService() {
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
-            showPanelDisclosure(if (retentionEligible) null else R.string.retention_field_off)
+            renderNotice()
             var identity: () -> org.json.JSONObject? = { null }
             var attempted = false
             val output = object : TakeOutput {
@@ -785,6 +838,13 @@ class DictationImeService : InputMethodService() {
                     }
                     choice = null
                     showIdle()
+                    val pending = pendingConfirm
+                    pendingConfirm = null
+                    if (pending != null && result.outcome == TakeOutcome.COMMIT_REJECTED) {
+                        // The write may still show up: the held text, or the hand-back, waits for the second look.
+                        confirmLater(pending, result)
+                        return
+                    }
                     val keep = textToHold(result)
                     if (keep != null) {
                         // The text is in History where the field allows it; the panel also holds it for Copy.
@@ -926,9 +986,10 @@ class DictationImeService : InputMethodService() {
         // Stop settles the take on this editor.
         if (editorRetention.excludesSettledTake) excludeTakeFromHistory()
         // Stop grants authority to the input session the visible panel is attached to.
-        authority = recordingToken?.takeIf { session.matches(it) }
+        authority = recordingToken?.takeIf { session.matches(it) && !fieldMismatch }
         authorityMoves = false
         finishing = true
+        renderNotice()
         feedback?.stop()
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
@@ -944,7 +1005,7 @@ class DictationImeService : InputMethodService() {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
         rotationEvent(RotationEvent.COMMIT_ATTEMPT)
         val result = commitToInput(session, token, currentInputConnection, { currentInputConnection }, allowed,
-            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); ic.commitText(content, 1) }, text,
+            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); writeAndVerify(ic, content, token) }, text,
             requireLive = takeHeldForRotation, refused = {
                 onAttempt()
                 Log.w(tag, "commit refused: connection inactive")
@@ -954,6 +1015,61 @@ class DictationImeService : InputMethodService() {
         return result.also {
             rotationEvent(if (it) RotationEvent.COMMIT_ACCEPTED else RotationEvent.COMMIT_REJECTED)
         }
+    }
+
+    /** A write after a rotation hold whose read-back did not show the text at once; the second look is at [CONFIRM_DELAY_MS]. */
+    private class PendingConfirm(val connection: android.view.inputmethod.InputConnection, val content: String,
+                                 val extractedBefore: Int?, val token: Long?)
+
+    private fun extractedLength(ic: android.view.inputmethod.InputConnection): Int? =
+        runCatching { ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = 100_000 }, 0)?.text?.length }.getOrNull()
+
+    private fun readBack(ic: android.view.inputmethod.InputConnection, content: String, extractedBefore: Int?): InsertCheck {
+        val before = runCatching { ic.getTextBeforeCursor(InsertReadBack.READ_CHARS, 0) }.getOrNull()
+        return InsertReadBack.check(content, before, extractedBefore, extractedLength(ic))
+    }
+
+    /**
+     * The one write. A take that went through a rotation hold is read back at once (ADR-010): a write's
+     * return value and a non-null read prove nothing, so it only counts as inserted when the text is seen
+     * in the field. Not seen yet: the write is reported rejected for now and looked at once more shortly
+     * (see [confirmLater]), without blocking the main thread.
+     */
+    private fun writeAndVerify(ic: android.view.inputmethod.InputConnection, content: String, token: Long?): Boolean {
+        if (!takeHeldForRotation) return ic.commitText(content, 1)
+        val extractedBefore = extractedLength(ic)
+        if (!ic.commitText(content, 1)) return false
+        val check = readBack(ic, content, extractedBefore)
+        if (check != InsertCheck.NONE) { traceVerified(true, check); return true }
+        pendingConfirm = PendingConfirm(ic, content, extractedBefore, token)
+        return false
+    }
+
+    private fun traceVerified(verified: Boolean, check: InsertCheck) =
+        rotationEvent(RotationEvent.COMMIT_VERIFIED, verified, detail = mapOf("verified" to verified, "check" to check.ordinal))
+
+    /**
+     * The take ended with a write that was not confirmed yet. Look once more; seen now, it was inserted (hand
+     * back, nothing held); otherwise hold the text with a status that admits the uncertainty.
+     */
+    private fun confirmLater(pending: PendingConfirm, result: TakeResult) {
+        confirming = true
+        mainHandler.postDelayed({
+            confirming = false
+            if (destroyed) return@postDelayed
+            val live = currentInputConnection === pending.connection && session.matches(pending.token)
+            val check = if (live) readBack(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
+            traceVerified(check != InsertCheck.NONE, check)
+            if (check != InsertCheck.NONE) {
+                if (held == null) returnToKeyboard()
+                return@postDelayed
+            }
+            val keep = textToHold(result)
+            if (keep != null) holdText(keep, result.retentionEligible, unconfirmed = true) else {
+                showStatus(R.string.status_unable_insert)
+                setMicrophone(true, R.string.start_recording)
+            }
+        }, CONFIRM_DELAY_MS)
     }
 
     private fun saveBenchmarkTake(enabled: Boolean, pcm: ByteArray, result: TakeResult) {
@@ -1179,10 +1295,13 @@ class DictationImeService : InputMethodService() {
         var copied: Boolean = false,
         /** The first Back warned that a second one discards the uncopied text. */
         var warned: Boolean = false,
+        /** A write was made but not seen in the field (rotation safety net): the status admits the uncertainty. */
+        val unconfirmed: Boolean = false,
     ) {
         val status: Int get() = when {
             copied -> R.string.status_copied
             warned -> R.string.status_back_warning
+            unconfirmed -> R.string.status_unconfirmed
             inHistory -> R.string.status_unable_history
             else -> R.string.status_unable_unsaved
         }
@@ -1208,8 +1327,8 @@ class DictationImeService : InputMethodService() {
         notInsertedText(result)?.takeIf { !takeLocked && editorPackage == takePackage }
 
     /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
-    private fun holdText(text: String, historyKeepsIt: Boolean) {
-        held = HeldText(text, takePackage, historyKeepsIt)
+    private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
+        held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
         MicrophoneOwner.requireExplicitStart() // A panel shown again never starts a take over the held text.
         showPreview("")
         setMicrophone(true, R.string.start_recording)
@@ -1288,9 +1407,17 @@ class DictationImeService : InputMethodService() {
         } else if (interruptedView) showIdle()
     }
 
-    /** Secondary disclosure has its own view so recording/finishing status stays truthful. */
-    private fun showPanelDisclosure(message: Int?) {
-        retentionNotice?.let { PanelDisclosure.bind(it, message) }
+    /**
+     * Secondary notice line (own view, so recording/finishing status stays truthful): while a take records
+     * without authority after a rotation it says how to get it back; otherwise the private-field line.
+     */
+    private fun renderNotice() {
+        val message = when {
+            takeActive && fieldMismatch && !finishing && !interruptedView -> R.string.notice_tap_field
+            takeRetentionEligible == false -> R.string.retention_field_off
+            else -> null
+        }
+        retentionNotice?.let { PanelDisclosure.bind(it, message, lock = message != R.string.notice_tap_field) }
     }
 
     /** History warnings are shown on the History page only, never on the recording panel. */

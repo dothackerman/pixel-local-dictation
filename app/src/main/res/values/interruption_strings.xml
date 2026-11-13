@@ -11,6 +11,10 @@
     <string name="status_unable_insert">Unable to insert text</string>
     <string name="status_unable_history">Unable to insert text. Copy it, or find it in History.</string>
     <string name="status_unable_unsaved">Unable to insert text. Copy it now. It is not saved.</string>
+    <!-- A write on a take that went through a rotation was not seen in the field. -->
+    <string name="status_unconfirmed">Could not confirm the insert. Check the field, or copy the text.</string>
+    <!-- Notice line while a take records after a rotation without insert authority (another field has focus). -->
+    <string name="notice_tap_field">Tap the text field to insert here.</string>
     <string name="status_back_warning">Press Back again to discard the text.</string>
     <string name="back_discard_text">Discard text and go back</string>
     <string name="copy_text">Copy text</string>
