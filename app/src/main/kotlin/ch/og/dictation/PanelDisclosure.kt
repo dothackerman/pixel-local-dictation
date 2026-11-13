@@ -13,15 +13,10 @@ import kotlin.math.roundToInt
 object PanelDisclosure {
     private const val PREVIEW_LINES = 3
 
-    /** [lock]: the private-field glyph; the line that says how to get authority back has none. */
-    fun bind(view: TextView, message: Int?, lock: Boolean = true) {
+    fun bind(view: TextView, message: Int?) {
         if (message == null) view.text = "" else view.setText(message)
         view.visibility = if (message == null) View.GONE else View.VISIBLE
-        // The layout's lock drawable is kept in a tag while a line without it shows.
-        val kept = view.compoundDrawablesRelative[0] ?: view.getTag(R.id.retention_notice) as? android.graphics.drawable.Drawable
-        if (kept != null) view.setTag(R.id.retention_notice, kept)
-        if (!lock) view.setCompoundDrawablesRelative(null, null, null, null)
-        kept?.takeIf { lock }?.let { lock ->
+        view.compoundDrawablesRelative[0]?.let { lock ->
             val size = (view.textSize * 16 / 14).roundToInt()
             lock.setBounds(0, 0, size, size)
             view.setCompoundDrawablesRelative(lock, null, null, null)

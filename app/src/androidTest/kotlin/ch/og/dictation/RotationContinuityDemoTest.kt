@@ -62,31 +62,6 @@ class RotationContinuityDemoTest {
         demo("demo52-signal-other-field", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
             retarget = SelfRotationProbeActivity.RETARGET_OTHER_FIELD)
 
-    /**
-     * As above, then the user taps the take's own field while recording: authority returns, the line
-     * goes, and Stop inserts the whole take once into that field.
-     */
-    @Test fun signalOrderNonEditorThenTheOriginalFieldIsTappedStopInsertsOnce() =
-        demo("demo52-signal-non-editor-refocus", keep = false, kind = SelfRotationProbeActivity.SignalOrder::class.java,
-            retarget = SelfRotationProbeActivity.RETARGET_NON_EDITOR, refocus = true)
-
-    /**
-     * The user's tap on the probe's own field: a touch delivered to that view, so focus and the keyboard
-     * request take the platform's own path. (Our panel covers the field in landscape, so a touch on the
-     * screen may not reach it.)
-     */
-    private fun tapEditor() = instrumentation.runOnMainSync {
-        val editor = activity().editor
-        val now = SystemClock.uptimeMillis()
-        for ((action, time) in listOf(android.view.MotionEvent.ACTION_DOWN to now, android.view.MotionEvent.ACTION_UP to now + 80)) {
-            val event = android.view.MotionEvent.obtain(now, time, action, 1f, 1f, 0)
-            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
-            editor.dispatchTouchEvent(event)
-            event.recycle()
-        }
-        activity().showKeyboard() // The touch focuses the field; its keyboard request is the platform's own on a tap.
-    }
-
     private fun status(text: String) = instrumentation.sendStatus(0, Bundle().apply { putString("stream", text + "\n") })
 
     private val keys = KeyboardHandoff(instrumentation, ::status)
@@ -133,8 +108,8 @@ class RotationContinuityDemoTest {
     }
 
     private fun demo(case: String, keep: Boolean, kind: Class<out SelfRotationProbeActivity>? = null, detach: Boolean = false,
-                     retarget: String? = null, refocus: Boolean = false) {
-        val holds = detach || (retarget != null && !refocus)
+                     retarget: String? = null) {
+        val holds = detach || (retarget != null)
         val power = context.getSystemService(android.os.PowerManager::class.java)
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         assertTrue("phone must be unlocked with the screen on (owner step); the demo never unlocks it",
@@ -186,17 +161,6 @@ class RotationContinuityDemoTest {
                 statusText() == context.getString(R.string.status_recording) && ours(R.id.microphone)?.isEnabled == true
             }
             val panelBackMs = SystemClock.uptimeMillis() - rotatedAt
-            if (retarget != null) until(3_000, "tap-the-field line while recording without authority") {
-                ours(R.id.retention_notice)?.let { it.isVisibleToUser && it.text?.toString() == context.getString(R.string.notice_tap_field) } == true
-            }
-            if (refocus) {
-                // The user taps the take's own field: input starts there again and authority returns.
-                tapEditor()
-                until(5_000, "tap-the-field line gone after the field took focus again") {
-                    // The probe field is not kept in History, so its own private-field line may show instead.
-                    ours(R.id.retention_notice)?.text?.toString() != context.getString(R.string.notice_tap_field) && statusText() == context.getString(R.string.status_recording)
-                }
-            }
             assertTrue("take ended during rotation", rows(run).none { it.getString("event").startsWith("TERMINAL_") })
             until(45_000, "speech after rotation in the preview") {
                 // The preview keeps only the newest ~240 characters, so a long second chunk can push the

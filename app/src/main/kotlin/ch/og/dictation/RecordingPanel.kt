@@ -35,6 +35,8 @@ data class PanelFrame(
     val held: Boolean = false,
     /** The held text was copied at least once: Copy is outlined, not filled, so a still frame tells. */
     val copied: Boolean = false,
+    /** The held text is a write that was not confirmed: the status carries the "Insertion uncertain" mark, not "not inserted". */
+    val uncertain: Boolean = false,
     /** What Back does now. */
     val backLabel: Int = R.string.back_to_keyboard,
 )
@@ -114,7 +116,8 @@ fun renderPanel(panel: View, frame: PanelFrame) {
     }
     panel.findViewById<ImageView>(R.id.status_marker)?.apply {
         visibility = if (held || (frame.unableToInsert && open == null)) View.VISIBLE else View.GONE
-        if (frame.unableToInsert || held) setImageResource(R.drawable.ic_marker_not_inserted)
+        // One mark per state (DESIGN.md): an unconfirmed write is uncertain, not "not inserted".
+        if (frame.unableToInsert || held) setImageResource(if (frame.uncertain) R.drawable.ic_marker_uncertain else R.drawable.ic_marker_not_inserted)
     }
     panel.findViewById<View>(R.id.back)?.contentDescription = context.getString(frame.backLabel)
     if ((open != null || held) && safe != null) {

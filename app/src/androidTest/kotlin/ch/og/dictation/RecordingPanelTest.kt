@@ -365,13 +365,10 @@ class RecordingPanelTest {
                 val mic = panel.findViewById<ImageButton>(R.id.microphone)
                 val text = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
                 val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
-                fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false,
-                          tapNotice: Boolean = false) {
+                fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false) {
                     status.setText(label)
                     PanelPreview.bind(preview, words)
-                    // The service's own choice: the line that gets authority back wins over the private-field line, and has no lock.
-                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice),
-                        if (tapNotice) R.string.notice_tap_field else if (privateField) R.string.retention_field_off else null, lock = !tapNotice)
+                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
                     renderPanel(panel, frame)
                     layOut(panel, width)
                     // Recording draws the real ribbon: the service attaches the take's feedback;
@@ -410,11 +407,6 @@ class RecordingPanelTest {
                 state("private-field", R.string.status_idle, PanelFrame(), words = "", privateField = true)
                 state("recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording))
                 state("private-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), privateField = true)
-                // Recording after a rotation without insert authority: one helper line, recording status and controls unchanged.
-                state("no-authority-recording", R.string.status_recording, PanelFrame(stopGlyph = true, backLabel = R.string.discard_recording), tapNotice = true)
-                assertEquals(app.getString(R.string.notice_tap_field), panel.findViewById<TextView>(R.id.retention_notice).text.toString())
-                assertEquals(View.VISIBLE, panel.findViewById<View>(R.id.retention_notice).visibility)
-                assertNull("the tap line has no lock glyph", panel.findViewById<TextView>(R.id.retention_notice).compoundDrawablesRelative[0])
                 assertEquals(View.VISIBLE, mic.visibility)
                 state("paused-choice", R.string.status_paused, PanelFrame(choice = PanelChoice.RECORDING, backLabel = R.string.continue_recording))
                 oneRow("paused-choice", listOf(R.id.choice_safe, R.id.choice_stop, R.id.choice_discard))

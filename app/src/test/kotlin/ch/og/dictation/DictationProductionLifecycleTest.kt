@@ -1053,11 +1053,10 @@ class DictationProductionLifecycleTest {
         return back
     }
 
-    @Test fun aTakeRecordingWithoutAuthorityKeepsRecordingShowsTheTapLineAndStopHoldsTheText() {
+    @Test fun aTakeRecordingWithoutAuthorityKeepsRecordingAndStopHoldsTheText() {
         val (service, returned, input) = retargetedToNonEditor()
         assertEquals(service.getString(R.string.status_recording), status(returned))
-        assertEquals(View.VISIBLE, notice(returned).visibility)
-        assertEquals(service.getString(R.string.notice_tap_field), notice(returned).text.toString())
+        assertEquals(View.GONE, notice(returned).visibility) // No helper line: only the private-field line ever shows.
         assertEquals(0, input.releases.get()) // Not an interruption.
         feed(input, 20000, 2) // Speech after the rotation is not lost.
         advance(ROTATION_HOLD_GAP_MS)
@@ -1071,29 +1070,27 @@ class DictationProductionLifecycleTest {
         assertHeldState(service, returned, text = "old speech private speech")
     }
 
-    @Test fun theTakesFieldStartingInputAgainRestoresAuthorityAndStopInsertsOnce() {
+    /** Authority never comes back (owner 2026-11-13): the tap on the take's own field ends the take, its text is held. */
+    @Test fun theTakesFieldStartingInputAgainDoesNotRestoreAuthorityAndTheTextIsHeld() {
         val (service, returned, input) = retargetedToNonEditor()
-        val back = tapOriginalField(service)
-        assertEquals(View.GONE, notice(returned).visibility) // The line goes when authority returns.
-        assertEquals(service.getString(R.string.status_recording), status(returned))
-        assertEquals(0, input.releases.get()) // A matching start never interrupts.
         feed(input, 20000, 2)
-        button(returned).performClick()
+        val back = tapOriginalField(service)
         await { input.releases.get() == 1 }
-        await { decode.drain(); commits == 1 }
-        settleHistory()
-        assertEquals(listOf("old speech private speech"), back.inserted)
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+        await { decode.drain(); settleHistory(); status(returned).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertTrue(back.inserted.isEmpty())
+        assertEquals(0, commits)
+        assertEquals("old speech private speech", preview(returned))
     }
 
-    @Test fun theTakesFieldReturningDuringTheStopWaitGetsTheResultOnce() {
+    @Test fun theTakesFieldReturningDuringTheStopWaitInsertsNothingAndHoldsTheText() {
         val (service, returned, input) = retargetedToNonEditor()
         button(returned).performClick()
         await { input.releases.get() == 1 } // Stopped without authority; the result is not decoded yet.
         val back = tapOriginalField(service)
-        await { decode.drain(); commits == 1 }
-        settleHistory()
-        assertEquals(listOf("old speech"), back.inserted)
+        await { decode.drain(); settleHistory(); status(returned).startsWith(service.getString(R.string.status_unable_insert)) }
+        assertTrue(back.inserted.isEmpty())
+        assertEquals(0, commits)
+        assertEquals("old speech", preview(returned))
     }
 
     @Test fun theTakesFieldStartingInputAfterTheResultWasDispatchedInsertsNothing() {
@@ -1107,6 +1104,17 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
         assertTrue(back.inserted.isEmpty())
         assertHeldState(service, returned)
+    }
+
+    /** No timer after a plain hide: the take without authority ends at once, as ADR-010 says. */
+    @Test fun aPlainHideWhileWithoutAuthorityStopsAtOnce() {
+        val panelRequests = AtomicInteger()
+        val (service, _, input) = retargetedToNonEditor()
+        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        service.onFinishInputView(false)
+        service.onWindowHidden()
+        await { input.releases.get() == 1 }
+        assertEquals(0, panelRequests.get())
     }
 
     @Test fun anotherAppStartingInputWhileWithoutAuthorityStillInterrupts() {
@@ -1155,6 +1163,30 @@ class DictationProductionLifecycleTest {
         assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
         assertEquals(service.getString(R.string.status_idle), status(returned))
         assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
+        // The rejected-for-now receipt is corrected: History says inserted.
+        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+    }
+
+    /** A lock during the read-back wait locks the take like any other: nothing is held, after unlock too. */
+    @Test fun screenOffDuringTheReadBackWaitHoldsNothing() {
+        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
+        screenOff()
+        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
+        settleHistory()
+        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
+        assertEquals("", preview(returned))
+        assertTrue(status(returned).startsWith(service.getString(R.string.status_unable_insert)))
+        assertTrue(status(returned) != service.getString(R.string.status_unconfirmed))
+    }
+
+    /** An unconfirmed write is "Insertion uncertain", not "not inserted" (One Mark Rule). */
+    @Test fun anUnconfirmedHeldWriteShowsTheUncertainMark() {
+        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
+        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
+        settleHistory()
+        assertHeldState(service, returned, statusRes = R.string.status_unconfirmed)
+        val marker = returned.findViewById<android.widget.ImageView>(R.id.status_marker)
+        assertEquals(R.drawable.ic_marker_uncertain, shadowOf(marker.drawable).createdFromResId)
     }
 
     /** The read-back belongs to takes that went through a rotation hold: others are untouched. */
@@ -1298,10 +1330,11 @@ class DictationProductionLifecycleTest {
         val returned = showPanel(service, editor(privateField = true))!!
         settleHistory()
         assertTrue(rows().isEmpty())
-        // A different (private) field: the take has no authority there, so the notice line says how to get it back.
+        // A different (private) field: the take has no authority there, but the "not kept" disclosure is never hidden.
         val notice = returned.findViewById<TextView>(R.id.retention_notice)
         assertEquals(View.VISIBLE, notice.visibility)
-        assertEquals(service.getString(R.string.notice_tap_field), notice.text.toString())
+        assertEquals(service.getString(R.string.retention_field_off), notice.text.toString())
+        assertNotNull(notice.compoundDrawablesRelative[0])
         feed(input, 20000, 2)
         decode.drain(); settleHistory()
         assertTrue(rows().isEmpty())
@@ -1344,10 +1377,9 @@ class DictationProductionLifecycleTest {
             HoldExit.HIDE_AFTER_PANEL -> {
                 showPanel(service, editor(privateField = true))
                 advance(ROTATION_SETTLE_MS)
+                // A plain hide ends the take at once, also without authority (ADR-010): no timer, no panel request.
                 service.onFinishInputView(true)
-                // The private editor is not the take's field (no authority): a leave is held for the gap, as a tap on
-                // the field would otherwise end it (ADR-010 same-field rule).
-                advance(ROTATION_HOLD_GAP_MS)
+                service.onWindowHidden()
             }
         }
         await { input.releases.get() == 1 }
@@ -1417,11 +1449,11 @@ class DictationProductionLifecycleTest {
         feed(input, 20000, 2)
         button(back).performClick()
         await { input.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); commits == 1 }
+        // The editor-less start was not the take's field and authority never returns (owner 2026-11-13): held, still kept.
+        await { decode.drain(); settleHistory(); status(back).startsWith(service.getString(R.string.status_unable_insert)) }
         settleHistory()
-        assertEquals(listOf("old speech private speech"), last.inserted)
-        assertTrue(none.inserted.isEmpty())
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
+        assertEquals(0, commits)
+        assertTrue(last.inserted.isEmpty() && none.inserted.isEmpty())
         assertEquals("old speech private speech", rows().single().text)
     }
 
@@ -1470,7 +1502,7 @@ class DictationProductionLifecycleTest {
         feed(input, 1000, 1)
         val next = rotateHidden(service, android.view.Surface.ROTATION_90, editor())
         val returned = showPanel(service, editor())!!
-        assertEquals(service.getString(R.string.notice_tap_field), returned.findViewById<TextView>(R.id.retention_notice).text.toString())
+        assertEquals(service.getString(R.string.retention_field_off), returned.findViewById<TextView>(R.id.retention_notice).text.toString())
         feed(input, 20000, 2)
         button(returned).performClick()
         await { input.releases.get() == 1 }
