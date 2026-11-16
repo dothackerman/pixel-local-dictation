@@ -105,7 +105,7 @@ class HistoryProcessTest {
     @Test fun unboundProducerLeavesInterruptedCheckpointForNewProcessOwner() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = File(context.noBackupFilesDir, "checkpoint-process-test")
-        val normalRoot = File(context.noBackupFilesDir, "history")
+        val normalRoot = context.wiring.historyRoot
         // Represents an in-progress write belonging to the already-running main process.
         val pending = File(normalRoot, "${UUID.randomUUID()}.tmp")
         root.deleteRecursively()

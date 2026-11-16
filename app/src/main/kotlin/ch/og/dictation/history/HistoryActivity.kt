@@ -1,5 +1,6 @@
 package ch.og.dictation.history
 
+import ch.og.dictation.wiring
 import ch.og.dictation.R
 import android.content.Context
 import android.os.Bundle
@@ -62,7 +63,7 @@ open class HistoryActivity : AppCompatActivity() {
     private var visibleSavedCount = 0
     private var hasStoredHistoryCopies = false
     private var submittedClearToken: Long? = null
-    protected open fun historyRoot() = historyRoot(this)
+    protected open fun historyRoot() = wiring.historyRoot
     /** How long a deleted transcript can be brought back. */
     protected open val undoWindowMs: Long get() = 8000L
     private val storeRoot by lazy { historyRoot() }

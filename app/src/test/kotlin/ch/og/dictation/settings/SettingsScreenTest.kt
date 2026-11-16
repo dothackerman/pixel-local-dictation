@@ -6,7 +6,6 @@ import ch.og.dictation.history.HistoryDelivery
 import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryStore
-import ch.og.dictation.history.historyRoot
 import android.os.Looper
 import android.view.View
 import android.widget.Button

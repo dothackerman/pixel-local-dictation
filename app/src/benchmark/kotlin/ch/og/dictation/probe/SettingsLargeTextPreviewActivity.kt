@@ -1,7 +1,6 @@
 package ch.og.dictation.probe
 
 import ch.og.dictation.SettingsActivity
-import ch.og.dictation.history.historyRoot
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
@@ -17,6 +16,7 @@ class SettingsLargeTextPreviewActivity : SettingsActivity() {
         @Volatile var historyRootSuffix: String? = null
     }
     override fun onCreate(savedInstanceState: Bundle?) {
+        refuseOwnersHistory(historyRoot())
         super.onCreate(savedInstanceState)
         // Test window only: the screen cannot time out mid-run (no wake lock, no setting).
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -28,5 +28,5 @@ class SettingsLargeTextPreviewActivity : SettingsActivity() {
         val config = Configuration(base.resources.configuration).apply { fontScale = Companion.fontScale }
         super.attachBaseContext(base.createConfigurationContext(config))
     }
-    override fun historyRoot() = historyRootSuffix?.let { File(noBackupFilesDir, "history-ui-test-$it") } ?: super.historyRoot()
+    override fun historyRoot() = File(noBackupFilesDir, "history-ui-test${historyRootSuffix?.let { "-$it" } ?: ""}")
 }

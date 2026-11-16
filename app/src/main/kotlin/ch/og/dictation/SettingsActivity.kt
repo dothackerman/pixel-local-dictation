@@ -5,7 +5,6 @@ import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.dictionary.DictionaryActivity
 import ch.og.dictation.history.HistoryActivity
 import ch.og.dictation.history.HistoryIo
-import ch.og.dictation.history.historyRoot
 import android.content.Intent
 import android.os.Bundle
 import android.text.SpannableString
@@ -65,7 +64,7 @@ open class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); showStored(); showHistoryCount(); showDictionaryCount() }
 
-    protected open fun historyRoot() = historyRoot(this)
+    protected open fun historyRoot() = wiring.historyRoot
 
     /** The History row shows only how many transcripts are saved; warnings live on the History page. */
     private fun showHistoryCount() {

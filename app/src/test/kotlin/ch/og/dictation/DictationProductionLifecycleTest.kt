@@ -136,7 +136,7 @@ class DictationProductionLifecycleTest {
         wiring = RuntimeEnvironment.getApplication().overrideWiring {
             it.with(engine = Engine.prepared(runtime), recorderFactory = { Recorder { devices.remove() } })
         }
-        root = File(RuntimeEnvironment.getApplication().noBackupFilesDir, "history")
+        root = RuntimeEnvironment.getApplication().wiring.historyRoot
         HistoryIo.executor.submit { val store = HistoryIo.store(root); store.clear(store.clearableIds()) }.get(2, TimeUnit.SECONDS)
         HistoryNotice.entries.forEach { historyNotices(RuntimeEnvironment.getApplication()).dismiss(it) }
     }

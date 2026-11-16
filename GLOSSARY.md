@@ -80,3 +80,9 @@ A word that belongs to a dictionary entry.
 **Boost**:
 The score bonus a token gets while it continues a dictionary entry.
 _Avoid_: bias score, hotword score
+
+## Code
+
+**Wiring**:
+What one app process is built from: the recorder factory, the History root and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
+_Avoid_: environment, container, hooks

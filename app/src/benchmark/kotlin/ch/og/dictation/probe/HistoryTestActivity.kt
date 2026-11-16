@@ -1,7 +1,6 @@
 package ch.og.dictation.probe
 
 import ch.og.dictation.history.HistoryActivity
-import ch.og.dictation.history.historyRoot
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
@@ -19,6 +18,7 @@ class HistoryTestActivity : HistoryActivity() {
     }
     override val undoWindowMs: Long get() = undoWindow
     override fun onCreate(savedInstanceState: Bundle?) {
+        refuseOwnersHistory(historyRoot())
         super.onCreate(savedInstanceState)
         // Test window only: the screen cannot time out mid-run (no wake lock, no setting).
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

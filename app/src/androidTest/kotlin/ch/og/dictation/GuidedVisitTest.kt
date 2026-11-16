@@ -57,7 +57,7 @@ class GuidedVisitTest {
             val run = UUID.randomUUID().toString()
             val traceCase = step.traceCase
             HistoryIo.executor.submit {}.get()
-            val history = File(context.noBackupFilesDir, "history")
+            val history = context.wiring.historyRoot
             val benchmark = File(context.filesDir, "benchmark")
             val beforeHistory = inventory(history)
             val beforeBenchmark = inventory(benchmark)

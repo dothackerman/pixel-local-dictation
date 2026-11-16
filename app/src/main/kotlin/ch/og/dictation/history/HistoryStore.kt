@@ -1,6 +1,5 @@
 package ch.og.dictation.history
 
-import ch.og.dictation.wiring
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
@@ -40,9 +39,6 @@ class HistoryOwner {
 }
 
 private fun immutableIds(ids: Collection<String>): Set<String> = Collections.unmodifiableSet(LinkedHashSet(ids))
-
-/** The owner's History root (Wiring). */
-fun historyRoot(context: android.content.Context) = context.wiring.historyRoot
 
 /** History startup, only in the process that owns History: recovers and cleans the store once, best effort. */
 fun startHistory(owns: Boolean, root: File) { if (owns) HistoryIo.start(root) }

@@ -1,5 +1,6 @@
 package ch.og.dictation.history
 
+import ch.og.dictation.wiring
 import ch.og.dictation.R
 import android.app.Application
 import android.os.Bundle
@@ -37,7 +38,7 @@ class HistoryScreenTest {
 
     @Before fun seed() {
         app = RuntimeEnvironment.getApplication()
-        root = historyRoot(app)
+        root = app.wiring.historyRoot
         root.deleteRecursively()
         HistoryNotice.entries.forEach(historyNotices(app)::dismiss)
         HistoryStore(root).save(HistoryEntry(a, 200, "First synthetic transcript", HistoryDelivery.ACCEPTED))
