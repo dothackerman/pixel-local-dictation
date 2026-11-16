@@ -2,8 +2,9 @@
 """Turns files/lab/guided-visit-<id>.jsonl (+ rotation-probe.jsonl and its .prev.jsonl) into the
 #61 check table and per-rotation timings for the Signal rotation steps. Reads sanitized metadata only."""
 import json
-import os
 import sys
+
+from lab_receipts import generations
 
 ROTATION_STEPS = {'A2', 'A3'}
 
@@ -14,10 +15,8 @@ def load(path):
 
 
 def load_trace(path):
-    """The app rotates a full trace to NAME.prev.jsonl (#64); its older rows come first."""
-    stem, dot, suffix = path.rpartition('.')
-    previous = f'{stem}.prev.{suffix}' if dot else f'{path}.prev'
-    return (load(previous) if os.path.isfile(previous) else []) + load(path)
+    """Both generations of a rotated trace, older rows first."""
+    return [row for source in generations(path) for row in load(source)]
 
 
 def checks(rows):
@@ -96,7 +95,8 @@ def summarize(rows, trace):
 
 def main(argv):
     if not 1 <= len(argv) <= 2:
-        print('usage: guided_visit_summary.py guided-visit-<id>.jsonl [rotation-probe.jsonl]', file=sys.stderr)
+        print('usage: guided_visit_summary.py guided-visit-<id>.jsonl [rotation-probe.jsonl]\n'
+              '  a pulled rotation-probe.prev.jsonl beside rotation-probe.jsonl is read too', file=sys.stderr)
         return 2
     result = summarize(load(argv[0]), load_trace(argv[1]) if len(argv) == 2 else [])
     print('\n'.join(result['checks']))

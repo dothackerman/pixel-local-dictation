@@ -193,7 +193,7 @@ class RotationTrace(private val file: File, private val maxBytes: Long = LabRece
         detail?.forEach { (key, value) -> if (value is Boolean || value is Int) row.put(key, value) }
         val line = row.toString() + "\n"
         writer.execute {
-            if (!failed) try { LabReceipts.append(file, line, maxBytes) } catch (_: Exception) { failed = true }
+            if (!failed && !LabReceipts.append(file, line, maxBytes)) failed = true
         }
     }
 

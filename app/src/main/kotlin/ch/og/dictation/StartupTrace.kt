@@ -79,16 +79,12 @@ class StartupTrace(private val context: Context) {
 
     /**
      * Rows are built and written on the writer thread, off the IME callbacks. Each
-     * files/lab/[name].jsonl rotates at the shared cap ([LabReceipts]); rotation and failure each
-     * log once per file per process, never once per row.
+     * files/lab/[name].jsonl rotates at the shared cap; [LabReceipts] logs rotation and write
+     * failure itself, once per file per process. Only a row that cannot be built is logged here.
      */
     private fun append(name: String, row: () -> JSONObject) = writer.execute {
-        val file = File(context.filesDir, "lab/$name.jsonl")
-        runCatching { LabReceipts.append(file, row().toString() + "\n") }
-            .onSuccess {
-                if (it == LabReceipts.Appended.ROTATED && LabReceipts.firstNotice(file, "rotated"))
-                    Log.w("StartupTrace", "$name receipts reached the cap; older rows moved to $name.prev.jsonl")
-            }
-            .onFailure { if (LabReceipts.firstNotice(file, "failed")) Log.e("StartupTrace", "$name receipt unavailable", it) }
+        runCatching { row().toString() + "\n" }
+            .onSuccess { LabReceipts.append(File(context.filesDir, "lab/$name.jsonl"), it) }
+            .onFailure { Log.e("StartupTrace", "$name receipt row could not be built", it) }
     }
 }

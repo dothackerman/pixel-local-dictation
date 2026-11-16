@@ -97,12 +97,17 @@ collection is off. Receipts hold timing, identity and geometry only, never audio
 text or editor identity. The Settings Benchmark switch gates only saved take audio, not these
 receipts.
 
-Capacity (#64): every receipt file goes through [LabReceipts](app/src/main/kotlin/ch/og/dictation/LabReceipts.kt).
-A file is append-only up to 2 MiB; the row that would cross the cap first moves it to
-`NAME.prev.jsonl` (replacing the older generation) and starts a new file. Collection never stops;
-rotation and write failure each log once per file per process. At most two generations (about two
-hours of dictation for `recovery-timing.jsonl`) stay on the phone, so pull `NAME.prev.jsonl` too
-when a visit's evidence must be kept. Analyzers and device tests read both generations, older first.
+Capacity (#64): the six files below are a rolling window for deliberate measurements, not an
+archive. Each is written through [LabReceipts](app/src/main/kotlin/ch/og/dictation/LabReceipts.kt):
+append-only up to 2 MiB; the row that would cross the cap first moves the file to `NAME.prev.jsonl`
+(replacing the older generation) and starts a new file. A full file therefore never stops
+collection. LabReceipts logs rotation and write failure itself, each once per file per process.
+The phone is guaranteed to hold the last cap of rows and holds at most two; for
+`recovery-timing.jsonl` one cap is about an hour of speech (estimate from #64, not measured).
+Older rows are gone, so pull `NAME.jsonl` and `NAME.prev.jsonl` right after measuring. The two
+analyzers named in this file and the device tests that read these files read both generations,
+older first. The per-visit `guided-visit-<id>.jsonl` is written by `GuidedVisitTest` directly and
+is outside the cap.
 
 | File | Protocol | Schema source |
 |---|---|---|

@@ -6,6 +6,8 @@ import json
 import statistics
 from pathlib import Path
 
+from lab_receipts import generations
+
 SAMPLE_RATE = 16_000
 FORBIDDEN = {"text", "transcript", "audio", "pcm", "editor", "editorinfo", "content"}
 
@@ -51,12 +53,6 @@ def _sample_time(offset: int, anchors: list[dict]) -> int | None:
             return left["ns"] + (right["ns"] - left["ns"]) * (offset - a) // (b - a)
     anchor = anchors[-1]
     return anchor["ns"] + (offset - anchor["sampleEnd"]) * 1_000_000_000 // SAMPLE_RATE
-
-
-def generations(path: Path) -> list[Path]:
-    """The app rotates a full receipt file to NAME.prev.jsonl (#64); read that older generation first."""
-    previous = path.with_name(f"{path.stem}.prev{path.suffix}")
-    return [previous, path] if previous.is_file() else [path]
 
 
 def analyze(path: Path) -> dict:
@@ -126,7 +122,9 @@ def analyze(path: Path) -> dict:
         stop_ns = stops[0]["ns"] if stops else None
         final_ns = finals[0]["ns"] if finals else None
         terminal_ns = terminals[-1]["ns"] if terminals else None
-        complete = bool(anchors and stop_anchors and stops and finals and terminals)
+        # captureStart is the first row every take writes: without it the head was rotated away
+        # (#64) and the frontier reconstruction above started mid-take.
+        complete = bool(phase.get("captureStart") and anchors and stop_anchors and stops and finals and terminals)
         fixture_ids = [e["fixtureId"] for e in phase.get("scenario", []) if e.get("fixtureId")]
         first_durable = min(durable, key=lambda e: e.get("sampleEnd", 0), default=None)
         audio_start_ns = _sample_time(0, source_anchors)
@@ -139,10 +137,10 @@ def analyze(path: Path) -> dict:
             "initialZeroCheckpointIntervalMs": round((first_durable["ns"] - audio_start_ns) / 1e6, 2) if first_durable and audio_start_ns is not None else None,
             "zeroCheckpointObservedThroughMs": round((terminal_ns - audio_start_ns) / 1e6, 2) if complete and not durable and audio_start_ns is not None else None,
             "firstDurableSourceSec": round(min(durable, key=lambda e: e.get("sampleEnd", 0))["sampleEnd"] / SAMPLE_RATE, 3) if durable else None,
-            "oldestNewlyDurableAudioLagMs": _range(newly_oldest_lags),
-            "newestNewlyDurableAudioLagMs": _range(newly_newest_lags),
-            "chunkToDurableLagMs": _range(chunk_to_durable_lags),
-            "checkpointQueueLagMs": _range(checkpoint_queue_lags),
+            "oldestNewlyDurableAudioLagMs": _range(newly_oldest_lags) if complete else None,
+            "newestNewlyDurableAudioLagMs": _range(newly_newest_lags) if complete else None,
+            "chunkToDurableLagMs": _range(chunk_to_durable_lags) if complete else None,
+            "checkpointQueueLagMs": _range(checkpoint_queue_lags) if complete else None,
             "durableCheckpointCount": len(durable),
             "failedCheckpointCount": len(failed),
             "zeroCheckpoint": not durable if complete else None,
@@ -156,7 +154,8 @@ def analyze(path: Path) -> dict:
             "queuedAtStop": stop_state.get("queued"),
             "limitations": ["Capture callback anchors bound/interpolate audio sample time; they are not word timestamps.",
                             "Source frontiers include pauses and chunk padding.",
-                            "A missing terminal receipt is incomplete, not a measured zero-checkpoint run."],
+                            "A missing terminal receipt is incomplete, not a measured zero-checkpoint run.",
+                            "A take without captureStart lost its head to receipt rotation: incomplete, no lag or backlog numbers."],
         })
     return {"protocol": "recovery-timing-summary-v1", "sampleRate": SAMPLE_RATE,
             "takeCount": len(takes), "takes": takes,
@@ -166,7 +165,7 @@ def analyze(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl (a sibling .prev.jsonl is read too)")
+    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl; a pulled recovery-timing.prev.jsonl beside it is read first")
     args = parser.parse_args()
     print(json.dumps(analyze(args.receipts), indent=2, sort_keys=True))
 

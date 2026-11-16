@@ -1,9 +1,8 @@
 """Synthetic guided-visit file and rotation trace; no phone data."""
 import json
-import unittest
-
 import os
 import tempfile
+import unittest
 
 from guided_visit_summary import load_trace, summarize
 

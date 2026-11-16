@@ -170,9 +170,8 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
             .put("ns", System.nanoTime()).put("mode", mode).put("phase", phase).put("values", values)
             .toString() + "\n"
         writer.execute {
-            if (writeFailure.get() == null) runCatching {
-                LabReceipts.append(File(filesDir, "lab/editor-geometry.jsonl"), line)
-            }.onFailure { writeFailure.compareAndSet(null, it.message ?: "write failed") }
+            if (writeFailure.get() == null && !LabReceipts.append(File(filesDir, "lab/editor-geometry.jsonl"), line))
+                writeFailure.compareAndSet(null, "write failed; LabReceipts logged the cause")
         }
     }
 
