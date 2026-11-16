@@ -2,7 +2,7 @@ package ch.og.dictation
 
 /**
  * Take text in the owner's written form: spoken numbers that the recognizer left as words become
- * digits where the context makes the number clear, in Swiss style for German (research/number-itn.md).
+ * digits where the context makes the number clear, in Swiss style for German (docs/research/number-itn.md).
  * A wrong digit is worse than a word, so every rule needs context:
  * - cardinals from 13 always; 0 to 12 only before a unit, currency or %, or after a counter noun
  *   (Gleis, Seite, platform…); ein/eine/einen, lone eins/one and bare hundert/hundred never;

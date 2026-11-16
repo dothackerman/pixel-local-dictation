@@ -4,7 +4,7 @@ import org.json.JSONObject
 import kotlin.math.ceil
 
 /**
- * Kotlin twin of tools/variant.py (schema 4): one decode pipeline, fully described. The daily
+ * Kotlin twin of tools/experiments/variant.py (schema 4): one decode pipeline, fully described. The daily
  * app selects its packaged provisional baseline; HISTORICAL_INT8 remains the parsing default.
  * The laboratory test (LabTest) runs whatever variant.json was pushed.
  * Unknown keys are rejected so that laptop and phone can never silently run different pipelines.

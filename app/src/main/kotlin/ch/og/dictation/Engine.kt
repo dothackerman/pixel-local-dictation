@@ -170,7 +170,7 @@ class SherpaRecognizer(
 /**
  * Canary and Cohere need the language as input: a Whisper-based spoken-language identifier looks at
  * the first chunk of each take (or its first probe seconds) and picks one of two recognizers.
- * Twin of class LanguageSwitched in tools/pipeline.py.
+ * Twin of class LanguageSwitched in tools/experiments/pipeline.py.
  */
 class LanguageSwitchedRecognizer(
     private val v: Variant, lid: ModelFiles, build: (String) -> SherpaRecognizer,

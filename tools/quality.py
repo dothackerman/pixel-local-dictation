@@ -18,7 +18,7 @@ def staged_errors(root=ROOT):
     if subprocess.run(['git', 'diff', '--quiet'], cwd=root).returncode:
         errors.append('tracked working-tree changes differ from the index; stage or stash them')
     untracked = subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=root, text=True).splitlines()
-    if any(p.startswith(('tools/', 'app/src/', 'gradle/')) or p.endswith(('.gradle.kts', '.gradle')) for p in untracked):
+    if any(p.startswith(('tools/', 'app/src/', 'gradle/', 'native-role-profiler/')) or p.endswith(('.gradle.kts', '.gradle')) for p in untracked):
         errors.append('untracked source/test/build inputs must be staged or removed')
     return errors
 

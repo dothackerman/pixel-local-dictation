@@ -39,7 +39,7 @@ class SwissSpelling(val inner: Recognizer) : Recognizer {
 }
 
 /**
- * Joins chunk texts with one space (twin of post_join in tools/pipeline.py). With [seamCapitalize]
+ * Joins chunk texts with one space (twin of post_join in tools/experiments/pipeline.py). With [seamCapitalize]
  * a chunk that follows a sentence-final mark starts with a capital letter.
  */
 fun joinChunks(texts: List<String>, seamCapitalize: Boolean): String {
@@ -62,7 +62,7 @@ fun joinChunks(texts: List<String>, seamCapitalize: Boolean): String {
  * pending audio reaches that length (Whisper models drop audio beyond 30 s).
  * Each chunk records whether speech was found in it: a speech end was reported inside it, or
  * speech was in progress at the cut. Positions are sample counts since the start of the take.
- * Twin of class Chunker in tools/pipeline.py.
+ * Twin of class Chunker in tools/experiments/pipeline.py.
  */
 class PauseChunker(private val minSamples: Int, private val padSamples: Int, private val maxSamples: Int = 0) {
     private var pending = FloatArray(1 shl 16)

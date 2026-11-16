@@ -112,7 +112,7 @@ components:
 
 **Creative North Star: "Kraft card printed in two inks."** Red-orange (primary) and rind green (secondary) on a warm card ground, a condensed display face for everything that is a name, a time or a count, and a plain sans for what the owner reads. One fixed **light** scheme for every surface: the recording panel, inline choice, Settings, Dictionary (list, add/edit sheet, empty state), History (list, detail, empty state, status slot, dialogs, marks sheet) and Snackbars. Benchmark-only guide screens may stay plain. The light panel next to a dark keyboard is deliberate (owner decision).
 
-Approved direction and frames: [design/issue-36/direction.md](design/issue-36/direction.md), `direction.html` (#36; its marks sheet proposal, now labelled "Marks explained", is approved; the panel's Undo after Discard was approved, built, then removed by the owner on 2026-11-11: Discard is final at once).
+Approved direction and frames: [docs/design/issue-36/direction.md](docs/design/issue-36/direction.md), `direction.html` (#36; its marks sheet proposal, now labelled "Marks explained", is approved; the panel's Undo after Discard was approved, built, then removed by the owner on 2026-11-11: Discard is final at once).
 
 Source of truth: `app/src/main/res/values/{colors,themes,type}.xml`, `res/font/*`, `res/drawable/ic_*.xml`, the layouts named below, `RecordingPanel.kt` (`renderPanel`), `PanelDisclosure.kt`, `RecordingRingView.kt`, `PreparingArcView.kt`, `HistoryRows.kt` (`HistoryMarker`). Frontmatter keeps Android dp/sp.
 
@@ -187,7 +187,7 @@ Status block (both orientations): Back (48dp, labelled by state), status (titleM
 
 The disk is one colour in every state; the glyph and status say what it does. Portrait and the phone's landscape (`layout-w600dp-land`): the choice takes the stage's place, under the thumb that held the microphone; the preview stays readable while Stop or Discard is decided and the panel height is unchanged. A narrower landscape window (`layout-land`) falls back to the status column, with the stage left empty. Rotation rebuilds the panel from the take's state (choice, Preparing, held text) and never starts, stops, chooses or discards. Held text (plan B, owner 2026-11-13) lives in memory only while the state shows, and only for the app the take started in and the panel still shows in: Discard text, a second Back on uncopied text (or a first Back after a copy), screen off (a lock during a take also refuses to hold its text, after unlock too) and another app's editor clear or refuse it; a rotation, an input restart and a tap on the field keep it, and a rotation cancels the Back warning. Discard text, like Discard take, leaves Idle with the microphone tap needed. The benchmark banner is errorContainer.
 
-**Discard take is final at once** (owner, 2026-11-11). From either choice: nothing inserted, nothing in History, late output ignored; the panel shows Idle at once and a new take needs the microphone tap (a rotation right after never starts one). No Undo in the panel; History's delete keeps its Undo. Lifecycle rules: [ADR-010](adrs/010-ime-lifecycle.md).
+**Discard take is final at once** (owner, 2026-11-11). From either choice: nothing inserted, nothing in History, late output ignored; the panel shows Idle at once and a new take needs the microphone tap (a rotation right after never starts one). No Undo in the panel; History's delete keeps its Undo. Lifecycle rules: [ADR-010](docs/adr/010-ime-lifecycle.md).
 
 ### Settings (`layout/settings.xml`)
 
