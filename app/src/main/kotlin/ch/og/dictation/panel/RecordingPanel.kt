@@ -1,6 +1,7 @@
 package ch.og.dictation.panel
 
 import ch.og.dictation.R
+import ch.og.dictation.audio.RecordingFeedback
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.View
@@ -9,15 +10,17 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.widget.TooltipCompat
+import kotlin.math.roundToInt
 
 /** The inline Cancel choice a take can have open. RECORDING: the take is paused. FINISHING: delivery held. */
 enum class PanelChoice { RECORDING, FINISHING }
 
 /**
- * What the recording panel shows, derived from the take's state in DictationImeService. Every
- * panel (also one recreated for a rotation) renders the same frame, so state lives in the
- * service and the views only draw it.
+ * Everything the recording panel shows, derived from the take's state. Every panel (also one
+ * recreated for a rotation) renders the same frame, so state lives with the take and the views
+ * only draw it; [renderPanel] is the only code that writes the panel's views.
  */
 data class PanelFrame(
     /** The open choice, or null. */
@@ -30,28 +33,64 @@ data class PanelFrame(
     val unableToInsert: Boolean = false,
     /**
      * The finished text is held in the panel (Unable to insert text, plan B): the preview shows it
-     * and the stage offers Copy and Discard text instead of the microphone. Back label is the
-     * caller's.
+     * and the stage offers Copy and Discard text instead of the microphone.
      */
     val held: Boolean = false,
     /** The held text is a write that was not confirmed: the status carries the "Insertion uncertain" mark, not "not inserted". */
     val uncertain: Boolean = false,
     /** What Back does now. */
     val backLabel: Int = R.string.back_to_keyboard,
+    /** The status line. */
+    val status: Int = R.string.status_opening,
+    /** The microphone disk answers a tap, and what it says it does. */
+    val microphoneEnabled: Boolean = false,
+    val microphoneLabel: Int = R.string.status_opening,
+    /** The end of the text so far (or the held text), already cut to the preview's length. */
+    val preview: String = "",
+    /** The secondary notice line (the private-field line), or null. */
+    val notice: Int? = null,
+    /** This take's audio is saved for benchmarks: the banner shows. */
+    val banner: Boolean = false,
+    /** The ring follows the take's live loudness; otherwise it rests. */
+    val ringLive: Boolean = false,
 )
 
+private const val PREVIEW_LINES = 3
+
 /**
- * Renders [frame] on [panel] (built from ime.xml, either orientation). Portrait and the phone's
- * landscape: the choice takes the stage's place, the preview stays and the panel keeps its
- * height. A narrow landscape window (under 600dp, `panel_choice_over_stage` false): it takes the
- * preview's place in the status column and the stage stays empty. The safe action takes focus when a choice
- * opens, so a hardware key or TalkBack lands on it; one tap still chooses it.
+ * Renders [frame] on [panel] (built from ime.xml, either orientation) and returns it as the frame
+ * now [shown] there; null [shown] means a fresh panel. An identical frame writes nothing; a
+ * change of the preview alone binds only the preview; any other change renders the whole panel
+ * and moves focus to the safe action while a choice or held text is open.
+ *
+ * Portrait and the phone's landscape: the choice takes the stage's place, the preview stays and
+ * the panel keeps its height. A narrow landscape window (under 600dp, `panel_choice_over_stage`
+ * false): it takes the preview's place in the status column and the stage stays empty. The safe
+ * action takes focus when a choice opens, so a hardware key or TalkBack lands on it; one tap
+ * still chooses it.
  */
-fun renderPanel(panel: View, frame: PanelFrame) {
+fun renderPanel(panel: View, frame: PanelFrame, shown: PanelFrame?, feedback: RecordingFeedback?): PanelFrame {
+    val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
+    val ringTarget = if (frame.ringLive) feedback else null
+    if (ring != null && ring.following !== ringTarget) ring.follow(ringTarget)
+    if (frame == shown) return frame
+    val preview = panel.findViewById<TextView>(R.id.preview)
+    if (shown != null && frame == shown.copy(preview = frame.preview)) {
+        preview?.let { PanelPreview.bind(it, frame.preview) }
+        return frame
+    }
     val context = panel.context
+    val resources = context.resources
     val open = frame.choice
-    val overStage = context.resources.getBoolean(R.bool.panel_choice_over_stage)
     val held = frame.held
+    val overStage = resources.getBoolean(R.bool.panel_choice_over_stage)
+
+    panel.findViewById<TextView>(R.id.status)?.setText(frame.status)
+    panel.findViewById<View>(R.id.benchmark_banner)?.visibility = if (frame.banner) View.VISIBLE else View.GONE
+    val notice = panel.findViewById<TextView>(R.id.retention_notice)
+    notice?.let { bindNotice(it, frame.notice) }
+    preview?.let { PanelPreview.bind(it, frame.preview) }
+
     val choice = panel.findViewById<View>(R.id.choice)
     choice?.visibility = if (open != null || held) View.VISIBLE else View.GONE
     val safe = panel.findViewById<ImageButton>(R.id.choice_safe)
@@ -85,28 +124,31 @@ fun renderPanel(panel: View, frame: PanelFrame) {
 
     // A narrow landscape window has no room beside the preview: held text stacks its two buttons in the stage.
     if (!overStage && choice is LinearLayout) placeChoice(panel, choice, inStage = held)
-    // The held status is longer (it says what to do): two preview lines keep the narrow panel's height.
-    if (!overStage) panel.findViewById<android.widget.TextView>(R.id.preview)?.let {
-        val notice = panel.findViewById<View>(R.id.retention_notice)?.visibility == View.VISIBLE &&
-            context.resources.getBoolean(R.bool.panel_preview_yields_to_notice)
-        val lines = if (held || notice) 2 else 3
-        it.minLines = lines
-        it.maxLines = lines
+    // One line-count rule. Landscape (`panel_preview_yields_to_notice`): the preview gives up a line
+    // while the private-field line shows. A narrow window also gives one up for the held status,
+    // which is longer (it says what to do), so the panel keeps its height.
+    val yields = resources.getBoolean(R.bool.panel_preview_yields_to_notice)
+    val lines = when {
+        !overStage -> if (held || (frame.notice != null && yields)) PREVIEW_LINES - 1 else PREVIEW_LINES
+        yields -> if (frame.notice != null) PREVIEW_LINES - 1 else PREVIEW_LINES
+        else -> null
     }
+    if (lines != null) preview?.let { it.minLines = lines; it.maxLines = lines }
 
     // The stage: in a choice (or holding text) there is no microphone to tap by mistake.
     val covered = open != null || held
-    val disk = when {
-        covered || frame.preparing -> View.INVISIBLE
-        else -> View.VISIBLE
-    }
-    panel.findViewById<View>(R.id.recording_ring)?.visibility = disk
+    val disk = if (covered || frame.preparing) View.INVISIBLE else View.VISIBLE
+    ring?.visibility = disk
+    if (frame.ringLive) ring?.invalidate()
     panel.findViewById<ImageButton>(R.id.microphone)?.apply {
         visibility = disk
         setImageResource(if (frame.stopGlyph) R.drawable.ic_stop else R.drawable.ic_mic)
+        // One disk colour in every state (#36): the glyph and the status say what it does.
+        isEnabled = frame.microphoneEnabled
+        contentDescription = context.getString(frame.microphoneLabel)
     }
     panel.findViewById<View>(R.id.processing)?.visibility = if (frame.preparing && !covered) View.VISIBLE else View.GONE
-    panel.findViewById<View>(R.id.preview)?.visibility = when {
+    preview?.visibility = when {
         !covered || held -> View.VISIBLE
         overStage -> View.VISIBLE
         else -> View.GONE
@@ -121,6 +163,21 @@ fun renderPanel(panel: View, frame: PanelFrame) {
         safe.isFocusableInTouchMode = true
         safe.requestFocus()
         safe.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED)
+    }
+    return frame
+}
+
+/**
+ * The secondary notice (the private-field line), independent of the recording status. The lock
+ * glyph keeps the mock's 16dp-to-14sp proportion, so it grows with the font.
+ */
+private fun bindNotice(view: TextView, message: Int?) {
+    if (message == null) view.text = "" else view.setText(message)
+    view.visibility = if (message == null) View.GONE else View.VISIBLE
+    view.compoundDrawablesRelative[0]?.let { lock ->
+        val size = (view.textSize * 16 / 14).roundToInt()
+        lock.setBounds(0, 0, size, size)
+        view.setCompoundDrawablesRelative(lock, null, null, null)
     }
 }
 

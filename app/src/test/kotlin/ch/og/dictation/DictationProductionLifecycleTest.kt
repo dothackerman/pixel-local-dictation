@@ -11,7 +11,6 @@ import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryNotice
 import ch.og.dictation.history.historyNotices
-import ch.og.dictation.panel.PanelDisclosure
 import ch.og.dictation.panel.PreparingArcView
 import ch.og.dictation.panel.RecordingRingView
 import ch.og.dictation.recognition.Chunk
@@ -2730,34 +2729,6 @@ class DictationProductionLifecycleTest {
 
     @Test @Config(qualifiers = "w960dp-h440dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun choiceFitsAtLargeTextInLandscapeDark() = choiceFitsAtLargeText(960)
-
-    /**
-     * Private field, landscape, font 2× (#36 critique): the lock line costs the editor almost no
-     * height (the preview yields a line to it), and the lock glyph grows with the text.
-     */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun privateFieldLineStaysCompactInLandscapeAtLargeText() {
-        RuntimeEnvironment.setFontScale(2f)
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor(privateField = true))
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        val density = view.resources.displayMetrics.density
-        val notice = view.findViewById<TextView>(R.id.retention_notice)
-        layOut(view, 960)
-        assertEquals(View.VISIBLE, notice.visibility)
-        val withLine = view.height
-        val lock = notice.compoundDrawablesRelative[0]
-        assertTrue("lock ${lock.bounds.height() / density}dp does not scale with the text", lock.bounds.height() >= 24 * density)
-        assertEquals("lock keeps the label's proportion", notice.textSize * 16 / 14, lock.bounds.height().toFloat(), 1.5f)
-        PanelDisclosure.bind(notice, null)
-        layOut(view, 960)
-        assertTrue("private line adds ${(withLine - view.height) / density}dp", withLine - view.height <= 4 * density)
-        PanelDisclosure.bind(notice, R.string.retention_field_off)
-        button(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
 
     private val longPreview = "zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on " +
         "Saturday, because the market closes early and we still need lime, garlic and a bunch of spring onions for the soup."

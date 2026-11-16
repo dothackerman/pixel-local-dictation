@@ -18,10 +18,8 @@ import ch.og.dictation.ime.InputSession
 import ch.og.dictation.ime.PermissionActivity
 import ch.og.dictation.ime.commitToInput
 import ch.og.dictation.panel.PanelChoice
-import ch.og.dictation.panel.PanelDisclosure
 import ch.og.dictation.panel.PanelFrame
 import ch.og.dictation.panel.PanelPreview
-import ch.og.dictation.panel.RecordingRingView
 import ch.og.dictation.panel.renderPanel
 import ch.og.dictation.recognition.SAMPLE_RATE
 import ch.og.dictation.take.EditorDecision
@@ -81,19 +79,17 @@ class DictationImeService : InputMethodService() {
         internal const val CONFIRM_DELAY_MS = 100L
     }
     private val tag = "DictationIme"
-    private var status: TextView? = null
-    private var preview: TextView? = null
-    private var microphone: ImageButton? = null
-    private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
+    /** The ring follows [feedback]'s live loudness; otherwise it rests. */
+    private var ringLive = false
+    /** The frame the current panel shows; null for a panel not rendered yet. */
+    private var shownFrame: PanelFrame? = null
     private var captureEnded: () -> Boolean = { false }
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
     private var microphoneEnabled = false
     private var microphoneLabel = R.string.status_opening
-    private var banner: View? = null
-    private var retentionNotice: TextView? = null
     private var editorRetentionEligible = false
     /** Kept for panel recreation throughout this take; never recomputed from later focus. */
     private var takeRetentionEligible: Boolean? = null
@@ -301,15 +297,8 @@ class DictationImeService : InputMethodService() {
                 }
             }
         }
-        status = v.findViewById(R.id.status)
-        preview = v.findViewById<TextView>(R.id.preview).also { PanelPreview.bind(it, previewText) }
-        showStatus(statusText)
-        banner = v.findViewById(R.id.benchmark_banner)
-        retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
-        renderNotice()
-        ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
-        microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
+        shownFrame = null
+        v.findViewById<ImageButton>(R.id.microphone).apply {
             setOnClickListener {
                 if (MicrophoneOwner.state().releaseFailed) {
                     releaseRetry = false
@@ -319,12 +308,11 @@ class DictationImeService : InputMethodService() {
                 } else if (takeActive) stopAndInsert() else startRecording()
             }
         }
-        setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
         v.findViewById<View>(R.id.choice_safe).setOnClickListener { onSafeAction() }
         v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
         v.findViewById<View>(R.id.choice_discard).setOnClickListener { onDiscardAction() }
-        renderChoice()
+        render()
         startup?.event("inputViewCreateEnd")
         return v
     }
@@ -439,7 +427,7 @@ class DictationImeService : InputMethodService() {
             .put("panelWidthPx", view?.width ?: JSONObject.NULL)
             .put("panelTopWindowPx", if (view != null) inWindow[1] else JSONObject.NULL)
             .put("panelTopScreenPx", if (view != null) onScreen[1] else JSONObject.NULL)
-            .put("bannerVisible", banner?.visibility == View.VISIBLE)
+            .put("bannerVisible", view != null && shownFrame?.banner == true)
             .put("contentTopInsetsPx", contentTopInsets ?: JSONObject.NULL)
             .put("visibleTopInsetsPx", visibleTopInsets ?: JSONObject.NULL)
             .put("touchableInsets", touchableInsets ?: JSONObject.NULL)
@@ -453,7 +441,7 @@ class DictationImeService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         rotationEvent(RotationEvent.INPUT_VIEW_FINISH, finishingInput)
         inputViewVisible = false
-        ring?.follow(null)
+        setRingLive(false)
         geometryTake = null
         geometryUntilNs = 0L
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
@@ -507,10 +495,7 @@ class DictationImeService : InputMethodService() {
             it.orientation != newConfig.orientation || it.screenWidthDp != newConfig.screenWidthDp ||
                 it.screenHeightDp != newConfig.screenHeightDp
         } ?: false
-        if (layoutChanged && panel != null) {
-            ring?.follow(null)
-            setInputView(onCreateInputView())
-        }
+        if (layoutChanged && panel != null) setInputView(onCreateInputView())
         // An editor that keeps focus sends no event; the visible panel settles the rotation.
         settleAfterRotation()
         rotationEvent(RotationEvent.CONFIGURATION_DONE)
@@ -610,7 +595,7 @@ class DictationImeService : InputMethodService() {
             holding = true
             rotationEvent(RotationEvent.HOLD_ENTERED)
             Log.i(tag, "rotation hold")
-            ring?.follow(null)
+            setRingLive(false)
         }
         // An open choice is take state: the returned panel renders it again; nothing to move.
         // Stop wait: hold the result before dispatch; an accepted commit is never undone.
@@ -708,7 +693,7 @@ class DictationImeService : InputMethodService() {
             if (!interruptedView) {
                 previewAllowed = true
                 showPreview(latestPreview)
-                if (!finishing && choice == null) ring?.follow(feedback)
+                if (!finishing && choice == null) setRingLive(true)
             }
         }
         settleAfterRotation()
@@ -800,7 +785,6 @@ class DictationImeService : InputMethodService() {
         if (takeActive) interruptTake()
         if (releaseRetry) MicrophoneOwner.retryRelease()
         feedback?.stop()
-        ring?.follow(null)
         super.onDestroy()
     }
 
@@ -814,7 +798,7 @@ class DictationImeService : InputMethodService() {
         MicrophoneOwner.acceptExplicitStart()
         interruptedView = false
         choice = null
-        renderChoice()
+        render()
         previewAllowed = true
         if (!hasMicPermission()) {
             showStatus(R.string.status_no_permission)
@@ -826,7 +810,7 @@ class DictationImeService : InputMethodService() {
         val wiring = this.wiring
         val liveCheck = wiring.engine.liveReceipt() != null
         saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
+        render()
         if (startupTake == null) startupTake = startup?.beginTake(wiring.engine.modelReadyNs != null)
         rotationTake++
         rotationEvent(RotationEvent.CAPTURE_START)
@@ -942,7 +926,7 @@ class DictationImeService : InputMethodService() {
             val currentFeedback = RecordingFeedback()
             feedback?.stop()
             feedback = currentFeedback
-            ring?.follow(currentFeedback)
+            setRingLive(true)
             val trace = startup
             val traceTake = startupTake
             val traceRotation = rotationTrace
@@ -956,7 +940,6 @@ class DictationImeService : InputMethodService() {
                     if (feedback === currentFeedback && takeActive && !finishing) {
                         showStatus(R.string.status_recording)
                         setMicrophone(true, R.string.stop_recording)
-                        ring?.invalidate()
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
@@ -1036,7 +1019,7 @@ class DictationImeService : InputMethodService() {
             }
             take = startedTake
             started = true
-            renderChoice()
+            render()
             microphoneCapture.setReleaseRetry { startedTake.retryCaptureRelease() }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
@@ -1065,9 +1048,9 @@ class DictationImeService : InputMethodService() {
         finishing = true
         renderNotice()
         feedback?.stop()
+        setRingLive(false)
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
-        ring?.follow(null)
         take?.stop()
     }
 
@@ -1191,7 +1174,7 @@ class DictationImeService : InputMethodService() {
         revokeAuthority()
         // A system interruption overrides an open choice (paused audio already captured goes to History).
         choice = null
-        if (interruptedView) { renderChoice(); return }
+        if (interruptedView) { render(); return }
         interruptedView = true
         val generation = takeGeneration
         session.invalidate()
@@ -1199,7 +1182,7 @@ class DictationImeService : InputMethodService() {
         latestPreview = ""
         showPreview("")
         feedback?.stop()
-        ring?.follow(null)
+        setRingLive(false)
         // Truthful while the microphone is released; then "Unable to insert text" with its marker.
         showStatus(R.string.status_stopping_recording)
         setMicrophone(false, R.string.status_stopping_recording)
@@ -1261,10 +1244,9 @@ class DictationImeService : InputMethodService() {
         if (take?.pause() != true) { interruptTake(); return }
         rotationTrace?.event(RotationEvent.CAPTURE_PAUSED, take = rotationTake)
         choice = PanelChoice.RECORDING
-        ring?.follow(null)
+        setRingLive(false)
         showStatus(R.string.status_paused)
         setMicrophone(false, R.string.status_paused)
-        renderChoice()
     }
 
     /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
@@ -1273,7 +1255,6 @@ class DictationImeService : InputMethodService() {
         if (take?.holdDelivery() != true) return
         choice = PanelChoice.FINISHING
         showStatus(R.string.status_finishing_choice)
-        renderChoice()
     }
 
     /** Continue recording (resumes the same take) or Keep finishing. Also system Back and the Back arrow. */
@@ -1281,17 +1262,15 @@ class DictationImeService : InputMethodService() {
         when (choice) {
             PanelChoice.RECORDING -> {
                 choice = null
-                if (take?.resume() != true) { renderChoice(); interruptTake(); return }
+                if (take?.resume() != true) { render(); interruptTake(); return }
                 rotationTrace?.event(RotationEvent.CAPTURE_RESUMED, take = rotationTake)
                 showStatus(R.string.status_recording)
                 setMicrophone(true, R.string.stop_recording)
-                if (!holding) ring?.follow(feedback)
-                renderChoice()
+                if (!holding) setRingLive(true)
             }
             PanelChoice.FINISHING -> {
                 choice = null
                 showStatus(R.string.status_finishing)
-                renderChoice()
                 // A rotation that still holds the result releases it once the panel has settled.
                 if (!deliveryHeldForRotation) take?.resumeDelivery()
             }
@@ -1303,7 +1282,7 @@ class DictationImeService : InputMethodService() {
     private fun chooseStop() {
         if (choice != PanelChoice.RECORDING) return
         choice = null
-        renderChoice()
+        render()
         if (captureEnded()) interruptTake() else stopAndInsert()
     }
 
@@ -1324,15 +1303,11 @@ class DictationImeService : InputMethodService() {
         showIdle()
     }
 
-    /** Renders the take's state (choice, Preparing text, marker, glyph, Back label) on the current panel. */
-    private fun renderChoice() {
-        // Held text owns the status line (what to do, and whether History keeps it); otherwise the take's status.
-        val shown = held?.status ?: statusText
-        status?.setText(shown)
-        val view = panel ?: return
+    /** The whole recording panel, from the take's state. */
+    private fun panelFrame(): PanelFrame {
         val open = choice
         val running = takeActive && !interruptedView
-        renderPanel(view, PanelFrame(
+        return PanelFrame(
             choice = open,
             preparing = running && finishing && open == null,
             stopGlyph = running && !finishing,
@@ -1346,14 +1321,34 @@ class DictationImeService : InputMethodService() {
                 running && finishing -> R.string.back_hold_and_choose
                 running -> R.string.discard_recording
                 else -> R.string.back_to_keyboard
-            }))
+            },
+            // Held text owns the status line (what to do, and whether History keeps it); otherwise the take's status.
+            status = held?.status ?: statusText,
+            microphoneEnabled = microphoneEnabled,
+            microphoneLabel = microphoneLabel,
+            preview = previewText,
+            notice = if (takeRetentionEligible == false) R.string.retention_field_off else null,
+            banner = saveTake,
+            ringLive = ringLive,
+        )
+    }
+
+    /** Renders the take's state on the current panel; the only way this service changes panel views. */
+    private fun render() {
+        val view = panel ?: return
+        shownFrame = renderPanel(view, panelFrame(), shownFrame, feedback)
+    }
+
+    private fun setRingLive(live: Boolean) {
+        ringLive = live
+        render()
     }
 
     private fun cancelAndReturn() {
         if (held != null) {
             // Back never writes to the clipboard: the first Back only warns, the second discards and leaves.
             val state = held
-            if (state != null && !state.warned) { state.warned = true; renderChoice(); return }
+            if (state != null && !state.warned) { state.warned = true; render(); return }
             val token = session.token()
             clearHeld()
             MicrophoneOwner.acceptExplicitStart()
@@ -1363,7 +1358,7 @@ class DictationImeService : InputMethodService() {
         }
         if (choice != null) { chooseSafe(); return }
         if (takeActive && !interruptedView) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
-        renderChoice()
+        render()
         // An interrupted take keeps finishing into History; Back only leaves.
         if (takeActive) { returnToKeyboard(); return }
         // Idle (no take, or it already ended): Back belongs to the live editor session.
@@ -1413,7 +1408,6 @@ class DictationImeService : InputMethodService() {
         held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
         showPreview("")
         setMicrophone(true, R.string.start_recording)
-        renderChoice()
     }
 
     private fun clearHeld() { held = null }
@@ -1453,7 +1447,7 @@ class DictationImeService : InputMethodService() {
     private fun showIdle() {
         feedback?.stop()
         feedback = null
-        ring?.follow(null)
+        ringLive = false
         finishing = false
         showPreview("")
         if (!takeActive) releaseRetry = false
@@ -1472,7 +1466,7 @@ class DictationImeService : InputMethodService() {
                 setMicrophone(true, R.string.start_recording)
             }
         }
-        renderChoice()
+        render()
     }
 
     private fun updateSharedMicrophone() {
@@ -1493,10 +1487,7 @@ class DictationImeService : InputMethodService() {
     /**
      * Secondary notice line (own view, so recording/finishing status stays truthful): the private-field line.
      */
-    private fun renderNotice() {
-        val message = if (takeRetentionEligible == false) R.string.retention_field_off else null
-        retentionNotice?.let { PanelDisclosure.bind(it, message) }
-    }
+    private fun renderNotice() = render()
 
     /** History warnings are shown on the History page only, never on the recording panel. */
     private fun recordHistoryNotice(notice: HistoryNotice) {
@@ -1505,17 +1496,13 @@ class DictationImeService : InputMethodService() {
 
     private fun showStatus(label: Int) {
         statusText = label
-        renderChoice()
+        render()
     }
 
     private fun setMicrophone(enabled: Boolean, label: Int) {
         microphoneEnabled = enabled
         microphoneLabel = label
-        // One disk colour in every state (#36): the glyph and the status say what it does.
-        microphone?.apply {
-            isEnabled = enabled
-            contentDescription = getString(label)
-        }
+        render()
     }
 
     /** The end of the text so far; the view is a few lines high. */
@@ -1527,7 +1514,7 @@ class DictationImeService : InputMethodService() {
 
     private fun showPreview(text: String) {
         previewText = PanelPreview.tail(held?.text ?: text)
-        preview?.let { PanelPreview.bind(it, previewText) }
+        render()
     }
 
     private fun hasMicPermission() =

@@ -36,6 +36,9 @@ class RecordingRingView @JvmOverloads constructor(context: Context, attrs: Attri
     private var lastFrame = 0L
     private val density get() = resources.displayMetrics.density
 
+    /** The feedback the ring draws now, or null at rest. */
+    val following: RecordingFeedback? get() = source
+
     fun follow(feedback: RecordingFeedback?) {
         source = feedback
         lastFrame = 0
