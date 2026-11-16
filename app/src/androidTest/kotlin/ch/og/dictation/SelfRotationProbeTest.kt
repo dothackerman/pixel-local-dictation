@@ -49,8 +49,8 @@ class SelfRotationProbeTest {
         if (!keys.handBackToFuto({ showKeyboard.run() })) throw AssertionError("FUTO not restored (${keys.selection()})")
     }
 
-    private fun rows(run: String): List<JSONObject> = if (!traceFile.exists()) emptyList() else
-        traceFile.readLines().filter { it.isNotBlank() }.map { JSONObject(it) }.filter { it.optString("run") == run }
+    private fun rows(run: String): List<JSONObject> =
+        LabReceipts.lines(traceFile).map { JSONObject(it) }.filter { it.optString("run") == run }
 
     private fun activity(): SelfRotationProbeActivity = SelfRotationProbeActivity.current ?: error("probe editor gone")
 
@@ -71,7 +71,6 @@ class SelfRotationProbeTest {
         val futo = currentIme()
         assertTrue("current keyboard must be FUTO before the probe (${keys.selection()})", isFuto(futo))
         val run = UUID.randomUUID().toString()
-        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
         val polling = AtomicBoolean(true)

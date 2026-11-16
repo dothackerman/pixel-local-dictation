@@ -70,6 +70,17 @@ class RecoveryTimingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "invalid receipt"):
                 analyze(path)
 
+    def test_a_rotated_previous_generation_is_read_first(self):
+        def line(**row):
+            return json.dumps(dict(protocol="recovery-timing-v1", clock="CLOCK_MONOTONIC", processId="p", takeId="t", **row))
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "recovery-timing.jsonl"
+            (Path(directory) / "recovery-timing.prev.jsonl").write_text(line(phase="stopRequested", ns=3_000_000) + "\n")
+            path.write_text(line(phase="finalReady", ns=4_000_000) + "\n" + line(phase="takeEnded", ns=5_000_000) + "\n")
+            result = analyze(path)["takes"]
+        self.assertEqual(1, len(result))
+        self.assertEqual(2.0, result[0]["terminalStopWaitMs"])
+
 
 if __name__ == "__main__":
     unittest.main()

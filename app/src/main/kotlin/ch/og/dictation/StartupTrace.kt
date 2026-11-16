@@ -78,18 +78,17 @@ class StartupTrace(private val context: Context) {
     }
 
     /**
-     * Rows are built and written on the writer thread, off the IME callbacks. Never silently
-     * overwrite visit evidence: each files/lab/[name].jsonl stops growing before it exceeds 2 MiB.
+     * Rows are built and written on the writer thread, off the IME callbacks. Each
+     * files/lab/[name].jsonl rotates at the shared cap ([LabReceipts]); rotation and failure each
+     * log once per file per process, never once per row.
      */
     private fun append(name: String, row: () -> JSONObject) = writer.execute {
-        runCatching {
-            val line = row().toString() + "\n"
-            val file = File(context.filesDir, "lab/$name.jsonl")
-            file.parentFile?.mkdirs()
-            check(file.length() + line.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
-                "$name receipt file full; pull and archive it"
+        val file = File(context.filesDir, "lab/$name.jsonl")
+        runCatching { LabReceipts.append(file, row().toString() + "\n") }
+            .onSuccess {
+                if (it == LabReceipts.Appended.ROTATED && LabReceipts.firstNotice(file, "rotated"))
+                    Log.w("StartupTrace", "$name receipts reached the cap; older rows moved to $name.prev.jsonl")
             }
-            file.appendText(line)
-        }.onFailure { Log.e("StartupTrace", "$name receipt unavailable", it) }
+            .onFailure { if (LabReceipts.firstNotice(file, "failed")) Log.e("StartupTrace", "$name receipt unavailable", it) }
     }
 }

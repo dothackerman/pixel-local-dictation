@@ -77,8 +77,8 @@ class RotationContinuityDemoTest {
     private fun previewText(): String = ours(R.id.preview)?.text?.toString().orEmpty()
     private fun statusText(): String = ours(R.id.status)?.text?.toString().orEmpty()
 
-    private fun rows(run: String): List<JSONObject> = if (!traceFile.exists()) emptyList() else
-        traceFile.readLines().filter { it.isNotBlank() }.map { JSONObject(it) }.filter { it.optString("run") == run }
+    private fun rows(run: String): List<JSONObject> =
+        LabReceipts.lines(traceFile).map { JSONObject(it) }.filter { it.optString("run") == run }
     private fun count(run: String, event: String) = rows(run).count { it.getString("event") == event }
 
     private fun activity(): SelfRotationProbeActivity = SelfRotationProbeActivity.current ?: error("probe editor gone")
@@ -133,7 +133,6 @@ class RotationContinuityDemoTest {
         val previousRecorder = DictationImeService.recorderFactory
         DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
         val run = UUID.randomUUID().toString()
-        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
         val editorKind = kind ?: if (keep) SelfRotationProbeActivity.Keep::class.java else SelfRotationProbeActivity::class.java

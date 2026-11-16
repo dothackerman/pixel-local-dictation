@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Turns files/lab/guided-visit-<id>.jsonl (+ rotation-probe.jsonl) into the #61 check table
-and per-rotation timings for the Signal rotation steps. Reads sanitized metadata only."""
+"""Turns files/lab/guided-visit-<id>.jsonl (+ rotation-probe.jsonl and its .prev.jsonl) into the
+#61 check table and per-rotation timings for the Signal rotation steps. Reads sanitized metadata only."""
 import json
+import os
 import sys
 
 ROTATION_STEPS = {'A2', 'A3'}
@@ -10,6 +11,13 @@ ROTATION_STEPS = {'A2', 'A3'}
 def load(path):
     with open(path, encoding='utf-8') as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def load_trace(path):
+    """The app rotates a full trace to NAME.prev.jsonl (#64); its older rows come first."""
+    stem, dot, suffix = path.rpartition('.')
+    previous = f'{stem}.prev.{suffix}' if dot else f'{path}.prev'
+    return (load(previous) if os.path.isfile(previous) else []) + load(path)
 
 
 def checks(rows):
@@ -90,7 +98,7 @@ def main(argv):
     if not 1 <= len(argv) <= 2:
         print('usage: guided_visit_summary.py guided-visit-<id>.jsonl [rotation-probe.jsonl]', file=sys.stderr)
         return 2
-    result = summarize(load(argv[0]), load(argv[1]) if len(argv) == 2 else [])
+    result = summarize(load(argv[0]), load_trace(argv[1]) if len(argv) == 2 else [])
     print('\n'.join(result['checks']))
     if result['rotations']:
         print('\nSignal rotation (settle/gap evidence)')

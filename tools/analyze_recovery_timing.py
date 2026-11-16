@@ -53,16 +53,24 @@ def _sample_time(offset: int, anchors: list[dict]) -> int | None:
     return anchor["ns"] + (offset - anchor["sampleEnd"]) * 1_000_000_000 // SAMPLE_RATE
 
 
+def generations(path: Path) -> list[Path]:
+    """The app rotates a full receipt file to NAME.prev.jsonl (#64); read that older generation first."""
+    previous = path.with_name(f"{path.stem}.prev{path.suffix}")
+    return [previous, path] if previous.is_file() else [path]
+
+
 def analyze(path: Path) -> dict:
     groups: dict[tuple[str, str], list[dict]] = {}
-    for line_number, line in enumerate(path.read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            row = _validate(json.loads(line))
-        except (json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"invalid receipt at line {line_number}: {exc}") from exc
-        groups.setdefault((row["processId"], row["takeId"]), []).append(row)
+    for source in generations(path):
+        for line_number, line in enumerate(source.read_text().splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                row = _validate(json.loads(line))
+            except (json.JSONDecodeError, ValueError) as exc:
+                where = "" if source == path else f" in {source.name}"
+                raise ValueError(f"invalid receipt at line {line_number}{where}: {exc}") from exc
+            groups.setdefault((row["processId"], row["takeId"]), []).append(row)
 
     takes = []
     for (process_id, take_id), events in sorted(groups.items()):
@@ -158,7 +166,7 @@ def analyze(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl")
+    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl (a sibling .prev.jsonl is read too)")
     args = parser.parse_args()
     print(json.dumps(analyze(args.receipts), indent=2, sort_keys=True))
 

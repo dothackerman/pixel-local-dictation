@@ -94,13 +94,23 @@ Not visible in the code:
 
 Benchmark builds append timing and geometry receipts under `files/lab/`; release
 collection is off. Receipts hold timing, identity and geometry only, never audio,
-text or editor identity. Each file is append-only, capped at 2 MiB, never overwritten.
+text or editor identity. The Settings Benchmark switch gates only saved take audio, not these
+receipts.
+
+Capacity (#64): every receipt file goes through [LabReceipts](app/src/main/kotlin/ch/og/dictation/LabReceipts.kt).
+A file is append-only up to 2 MiB; the row that would cross the cap first moves it to
+`NAME.prev.jsonl` (replacing the older generation) and starts a new file. Collection never stops;
+rotation and write failure each log once per file per process. At most two generations (about two
+hours of dictation for `recovery-timing.jsonl`) stay on the phone, so pull `NAME.prev.jsonl` too
+when a visit's evidence must be kept. Analyzers and device tests read both generations, older first.
 
 | File | Protocol | Schema source |
 |---|---|---|
 | `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/StartupTrace.kt), DictationImeService |
 | `geometry.jsonl` | `ime-geometry-v1` | StartupTrace `geometry` |
 | `live-results.jsonl` | `ime-candidate-live-v1` | StartupTrace `liveResult` |
+| `recovery-timing.jsonl` | `recovery-timing-v1` | StartupTrace `timing`, RecoveryTimingTest; [analyzer](tools/analyze_recovery_timing.py) |
+| `rotation-probe.jsonl` | `ime-rotation-v1` | [RotationTrace](app/src/main/kotlin/ch/og/dictation/RotationTrace.kt) |
 | `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt) |
 
 Reading rules (frozen meanings):
@@ -188,7 +198,7 @@ the benchmark build is debuggable.
   screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). A re-visit runs only
   chosen steps with `steps=A2,A3,A7,A8,B9` or starts at one with `start=A7`. Rotation and
   Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
-  and `phone pull files/lab/rotation-probe.jsonl`, then
+  and `phone pull files/lab/rotation-probe.jsonl` (plus `rotation-probe.prev.jsonl` if present), then
   `python3 tools/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
   per-rotation panel/hide/silenced/hold timings).
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
