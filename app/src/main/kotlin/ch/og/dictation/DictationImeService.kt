@@ -18,7 +18,11 @@ import ch.og.dictation.ime.InputSession
 import ch.og.dictation.ime.PermissionActivity
 import ch.og.dictation.ime.commitToInput
 import ch.og.dictation.panel.PanelChoice
+import ch.og.dictation.panel.HeldPanel
 import ch.og.dictation.panel.PanelFrame
+import ch.og.dictation.panel.PanelPhase
+import ch.og.dictation.panel.PanelState
+import ch.og.dictation.panel.panelFrame
 import ch.og.dictation.panel.PanelPreview
 import ch.og.dictation.panel.renderPanel
 import ch.og.dictation.recognition.SAMPLE_RATE
@@ -86,10 +90,9 @@ class DictationImeService : InputMethodService() {
     private var shownFrame: PanelFrame? = null
     private var captureEnded: () -> Boolean = { false }
     private var finishing = false
-    private var statusText = R.string.status_opening
+    /** What the panel says and what its microphone does; stored at each change, never derived. */
+    private var phase = PanelPhase.OPENING
     private var previewText = ""
-    private var microphoneEnabled = false
-    private var microphoneLabel = R.string.status_opening
     private var editorRetentionEligible = false
     /** Kept for panel recreation throughout this take; never recomputed from later focus. */
     private var takeRetentionEligible: Boolean? = null
@@ -302,8 +305,7 @@ class DictationImeService : InputMethodService() {
             setOnClickListener {
                 if (MicrophoneOwner.state().releaseFailed) {
                     releaseRetry = false
-                    showStatus(R.string.status_stopping_recording)
-                    setMicrophone(false, R.string.status_stopping_recording)
+                    showPhase(PanelPhase.STOPPING)
                     MicrophoneOwner.retryRelease()
                 } else if (takeActive) stopAndInsert() else startRecording()
             }
@@ -801,8 +803,7 @@ class DictationImeService : InputMethodService() {
         render()
         previewAllowed = true
         if (!hasMicPermission()) {
-            showStatus(R.string.status_no_permission)
-            setMicrophone(false, R.string.status_no_permission)
+            showPhase(PanelPhase.NO_PERMISSION)
             return
         }
         // Latch current policy for each new take, including explicit restarts.
@@ -839,8 +840,7 @@ class DictationImeService : InputMethodService() {
                 override fun captureReleaseFailed() {
                     if (generation != takeGeneration) return
                     releaseRetry = true
-                    showStatus(R.string.status_release_failed)
-                    setMicrophone(true, R.string.retry_release)
+                    showPhase(PanelPhase.RELEASE_FAILED)
                 }
                 override fun commit(text: String) = commitForSession(authorityForThisTake(), text) { attempted = true }
                 override fun commit(text: String, allowed: () -> Boolean) = commitForSession(authorityForThisTake(), text, allowed) { attempted = true }
@@ -884,8 +884,7 @@ class DictationImeService : InputMethodService() {
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
                         val keep = textToHold(result)
                         if (keep != null) holdText(keep, result.historySaved) else {
-                            showStatus(R.string.status_unable_insert)
-                            setMicrophone(true, R.string.start_recording)
+                            showPhase(PanelPhase.NOT_INSERTED)
                         }
                         return
                     }
@@ -904,17 +903,15 @@ class DictationImeService : InputMethodService() {
                         holdText(keep, result.historySaved)
                     } else if (notInsertedText(result) != null) {
                         // Not this app's panel any more, or the screen went off: status only, History where eligible.
-                        showStatus(R.string.status_unable_insert)
-                        setMicrophone(true, R.string.start_recording)
+                        showPhase(PanelPhase.NOT_INSERTED)
                     } else if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         Log.e(tag, "take failed: ${result.outcome}")
-                        showStatus(R.string.status_failed)
-                        setMicrophone(true, R.string.retry_recording)
+                        showPhase(PanelPhase.FAILED)
                     }
                     if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
                 }
             }
-            showStatus(R.string.status_opening)
+            showPhase(PanelPhase.OPENING)
             showPreview("")
             latestPreview = ""
             // The panel is visible now; only rotations after this point count for this take.
@@ -922,7 +919,6 @@ class DictationImeService : InputMethodService() {
             rotationsWhenVisible = rotationChanges
             endHoldAndClearDeliveryHold()
             finishing = false
-            setMicrophone(false, R.string.status_opening)
             val currentFeedback = RecordingFeedback()
             feedback?.stop()
             feedback = currentFeedback
@@ -938,8 +934,7 @@ class DictationImeService : InputMethodService() {
                 trace?.event("recordingStarted", traceTake)
                 mainHandler.post {
                     if (feedback === currentFeedback && takeActive && !finishing) {
-                        showStatus(R.string.status_recording)
-                        setMicrophone(true, R.string.stop_recording)
+                        showPhase(PanelPhase.RECORDING)
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
@@ -1032,8 +1027,7 @@ class DictationImeService : InputMethodService() {
             feedback?.stop()
             showIdle()
             Log.e(tag, "start failed")
-            showStatus(R.string.status_failed)
-            setMicrophone(true, R.string.retry_recording)
+            showPhase(PanelPhase.FAILED)
             if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
         }
     }
@@ -1049,8 +1043,7 @@ class DictationImeService : InputMethodService() {
         renderNotice()
         feedback?.stop()
         setRingLive(false)
-        showStatus(R.string.status_finishing)
-        setMicrophone(false, R.string.status_finishing)
+        showPhase(PanelPhase.FINISHING)
         take?.stop()
     }
 
@@ -1114,11 +1107,11 @@ class DictationImeService : InputMethodService() {
      */
     private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long, generation: Long) {
         outcomePending = generation
-        setMicrophone(false, R.string.status_stopping_recording)
+        if (phase == PanelPhase.IDLE) showPhase(PanelPhase.IDLE_WAITING)
         val history = takeHistory
         mainHandler.postDelayed({
             takeHistory = null
-            if (outcomePending == generation) { outcomePending = null; setMicrophone(true, R.string.start_recording) }
+            if (outcomePending == generation) { outcomePending = null; if (phase == PanelPhase.IDLE_WAITING) showPhase(PanelPhase.IDLE) }
             if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
             val live = currentInputConnection === pending.connection && session.matches(pending.token)
             val check = if (live) readBack(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
@@ -1133,8 +1126,7 @@ class DictationImeService : InputMethodService() {
             rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake)
             val keep = textToHold(result)
             if (keep != null) holdText(keep, result.historySaved, unconfirmed = true) else {
-                showStatus(R.string.status_unable_insert)
-                setMicrophone(true, R.string.start_recording)
+                showPhase(PanelPhase.NOT_INSERTED)
             }
         }, CONFIRM_DELAY_MS)
     }
@@ -1184,8 +1176,7 @@ class DictationImeService : InputMethodService() {
         feedback?.stop()
         setRingLive(false)
         // Truthful while the microphone is released; then "Unable to insert text" with its marker.
-        showStatus(R.string.status_stopping_recording)
-        setMicrophone(false, R.string.status_stopping_recording)
+        showPhase(PanelPhase.STOPPING)
         old.interrupt {
             if (generation == takeGeneration) {
                 // Decode and History may continue, but capture ownership has ended.
@@ -1194,9 +1185,8 @@ class DictationImeService : InputMethodService() {
                 recordingToken = null
                 authority = null
                 startupTake = null
-                showStatus(R.string.status_unable_insert)
                 // The microphone stays off until the outcome is in; finished() then offers it.
-                if (outcomePending == null) setMicrophone(true, R.string.start_recording)
+                showPhase(if (outcomePending == null) PanelPhase.NOT_INSERTED else PanelPhase.NOT_INSERTED_WAITING)
             }
         }
     }
@@ -1245,8 +1235,7 @@ class DictationImeService : InputMethodService() {
         rotationTrace?.event(RotationEvent.CAPTURE_PAUSED, take = rotationTake)
         choice = PanelChoice.RECORDING
         setRingLive(false)
-        showStatus(R.string.status_paused)
-        setMicrophone(false, R.string.status_paused)
+        showPhase(PanelPhase.PAUSED)
     }
 
     /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
@@ -1254,7 +1243,7 @@ class DictationImeService : InputMethodService() {
         if (choice != null || !takeActive || !finishing || interruptedView) return
         if (take?.holdDelivery() != true) return
         choice = PanelChoice.FINISHING
-        showStatus(R.string.status_finishing_choice)
+        showPhase(PanelPhase.FINISHING_CHOICE)
     }
 
     /** Continue recording (resumes the same take) or Keep finishing. Also system Back and the Back arrow. */
@@ -1264,13 +1253,12 @@ class DictationImeService : InputMethodService() {
                 choice = null
                 if (take?.resume() != true) { render(); interruptTake(); return }
                 rotationTrace?.event(RotationEvent.CAPTURE_RESUMED, take = rotationTake)
-                showStatus(R.string.status_recording)
-                setMicrophone(true, R.string.stop_recording)
+                showPhase(PanelPhase.RECORDING)
                 if (!holding) setRingLive(true)
             }
             PanelChoice.FINISHING -> {
                 choice = null
-                showStatus(R.string.status_finishing)
+                showPhase(PanelPhase.FINISHING)
                 // A rotation that still holds the result releases it once the panel has settled.
                 if (!deliveryHeldForRotation) take?.resumeDelivery()
             }
@@ -1303,40 +1291,23 @@ class DictationImeService : InputMethodService() {
         showIdle()
     }
 
-    /** The whole recording panel, from the take's state. */
-    private fun panelFrame(): PanelFrame {
-        val open = choice
-        val running = takeActive && !interruptedView
-        return PanelFrame(
-            choice = open,
-            preparing = running && finishing && open == null,
-            stopGlyph = running && !finishing,
-            unableToInsert = statusText == R.string.status_unable_insert,
-            held = held != null,
-            uncertain = held?.unconfirmed == true,
-            backLabel = when {
-                open == PanelChoice.RECORDING -> R.string.continue_recording
-                open == PanelChoice.FINISHING -> R.string.keep_finishing
-                held?.warned == true -> R.string.back_discard_text
-                running && finishing -> R.string.back_hold_and_choose
-                running -> R.string.discard_recording
-                else -> R.string.back_to_keyboard
-            },
-            // Held text owns the status line (what to do, and whether History keeps it); otherwise the take's status.
-            status = held?.status ?: statusText,
-            microphoneEnabled = microphoneEnabled,
-            microphoneLabel = microphoneLabel,
-            preview = previewText,
-            notice = if (takeRetentionEligible == false) R.string.retention_field_off else null,
-            banner = saveTake,
-            ringLive = ringLive,
-        )
-    }
+    /** The take's state as far as the panel shows it. */
+    private fun panelState() = PanelState(
+        phase = phase,
+        choice = choice,
+        running = takeActive && !interruptedView,
+        finishing = finishing,
+        held = held?.let { HeldPanel(it.inHistory, it.warned, it.unconfirmed) },
+        preview = previewText,
+        privateField = takeRetentionEligible == false,
+        banner = saveTake,
+        ringLive = ringLive,
+    )
 
     /** Renders the take's state on the current panel; the only way this service changes panel views. */
     private fun render() {
         val view = panel ?: return
-        shownFrame = renderPanel(view, panelFrame(), shownFrame, feedback)
+        shownFrame = renderPanel(view, panelFrame(panelState()), shownFrame, feedback)
     }
 
     private fun setRingLive(live: Boolean) {
@@ -1375,14 +1346,7 @@ class DictationImeService : InputMethodService() {
         var warned: Boolean = false,
         /** A write was made but not seen in the field (rotation safety net): the status admits the uncertainty. */
         val unconfirmed: Boolean = false,
-    ) {
-        val status: Int get() = when {
-            warned -> R.string.status_back_warning
-            unconfirmed -> R.string.status_unconfirmed
-            inHistory -> R.string.status_unable_history
-            else -> R.string.status_unable_unsaved
-        }
-    }
+    )
 
     /**
      * Every outcome of a take that has text and did not insert it: the commit was rejected (the
@@ -1407,7 +1371,8 @@ class DictationImeService : InputMethodService() {
     private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
         held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
         showPreview("")
-        setMicrophone(true, R.string.start_recording)
+        // Held text owns the status line; underneath, the take was not inserted and the microphone is free.
+        showPhase(PanelPhase.NOT_INSERTED)
     }
 
     private fun clearHeld() { held = null }
@@ -1453,17 +1418,14 @@ class DictationImeService : InputMethodService() {
         if (!takeActive) releaseRetry = false
         when {
             releaseRetry && takeActive -> {
-                showStatus(R.string.status_release_failed)
-                setMicrophone(true, R.string.retry_release)
+                showPhase(PanelPhase.RELEASE_FAILED)
             }
             takeActive || outcomePending != null -> {
-                showStatus(R.string.status_stopping_recording)
-                setMicrophone(false, R.string.status_stopping_recording)
+                showPhase(PanelPhase.STOPPING)
             }
             MicrophoneOwner.state().occupied -> updateSharedMicrophone()
             else -> {
-                showStatus(R.string.status_idle)
-                setMicrophone(true, R.string.start_recording)
+                showPhase(PanelPhase.IDLE)
             }
         }
         render()
@@ -1475,11 +1437,9 @@ class DictationImeService : InputMethodService() {
         if (owner.occupied) {
             interruptedView = true
             if (owner.releaseFailed) {
-                showStatus(R.string.status_release_failed)
-                setMicrophone(true, R.string.retry_release)
+                showPhase(PanelPhase.RELEASE_FAILED)
             } else {
-                showStatus(R.string.status_stopping_recording)
-                setMicrophone(false, R.string.status_stopping_recording)
+                showPhase(PanelPhase.STOPPING)
             }
         } else if (interruptedView) showIdle()
     }
@@ -1494,14 +1454,8 @@ class DictationImeService : InputMethodService() {
         historyNotices(this).record(notice)
     }
 
-    private fun showStatus(label: Int) {
-        statusText = label
-        render()
-    }
-
-    private fun setMicrophone(enabled: Boolean, label: Int) {
-        microphoneEnabled = enabled
-        microphoneLabel = label
+    private fun showPhase(next: PanelPhase) {
+        phase = next
         render()
     }
 
@@ -1524,8 +1478,7 @@ class DictationImeService : InputMethodService() {
 
     /** Ask once per service lifetime; after "don't ask again" we only show the message. */
     private fun requestMicPermission() {
-        showStatus(R.string.status_no_permission)
-        setMicrophone(false, R.string.status_no_permission)
+        showPhase(PanelPhase.NO_PERMISSION)
         if (permissionAsked) return
         permissionAsked = true
         startActivity(Intent(this, PermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

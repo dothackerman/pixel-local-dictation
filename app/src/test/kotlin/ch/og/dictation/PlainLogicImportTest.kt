@@ -26,6 +26,7 @@ class PlainLogicImportTest {
         "history/HistoryRows.kt",
         "history/HistoryTakeOutput.kt",
         "audio/RecordingFeedback.kt",
+        "panel/PanelFrame.kt",
     )
 
     /** `android.` as a package reference outside comments: imports and fully qualified uses alike. */

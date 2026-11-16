@@ -14,47 +14,6 @@ import android.widget.TextView
 import androidx.appcompat.widget.TooltipCompat
 import kotlin.math.roundToInt
 
-/** The inline Cancel choice a take can have open. RECORDING: the take is paused. FINISHING: delivery held. */
-enum class PanelChoice { RECORDING, FINISHING }
-
-/**
- * Everything the recording panel shows, derived from the take's state. Every panel (also one
- * recreated for a rotation) renders the same frame, so state lives with the take and the views
- * only draw it; [renderPanel] is the only code that writes the panel's views.
- */
-data class PanelFrame(
-    /** The open choice, or null. */
-    val choice: PanelChoice? = null,
-    /** Preparing text…: the arc replaces the microphone disk. */
-    val preparing: Boolean = false,
-    /** The disk's glyph is the Stop square (a take is open and recording); otherwise the mic. */
-    val stopGlyph: Boolean = false,
-    /** The take ended without insertion and no text is held: the status carries its marker. */
-    val unableToInsert: Boolean = false,
-    /**
-     * The finished text is held in the panel (Unable to insert text, plan B): the preview shows it
-     * and the stage offers Copy and Discard text instead of the microphone.
-     */
-    val held: Boolean = false,
-    /** The held text is a write that was not confirmed: the status carries the "Insertion uncertain" mark, not "not inserted". */
-    val uncertain: Boolean = false,
-    /** What Back does now. */
-    val backLabel: Int = R.string.back_to_keyboard,
-    /** The status line. */
-    val status: Int = R.string.status_opening,
-    /** The microphone disk answers a tap, and what it says it does. */
-    val microphoneEnabled: Boolean = false,
-    val microphoneLabel: Int = R.string.status_opening,
-    /** The end of the text so far (or the held text), already cut to the preview's length. */
-    val preview: String = "",
-    /** The secondary notice line (the private-field line), or null. */
-    val notice: Int? = null,
-    /** This take's audio is saved for benchmarks: the banner shows. */
-    val banner: Boolean = false,
-    /** The ring follows the take's live loudness; otherwise it rests. */
-    val ringLive: Boolean = false,
-)
-
 private const val PREVIEW_LINES = 3
 
 /**

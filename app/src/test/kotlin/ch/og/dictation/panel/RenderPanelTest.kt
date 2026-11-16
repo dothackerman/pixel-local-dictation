@@ -95,6 +95,91 @@ class RenderPanelTest {
         assertEquals(View.GONE, notice.visibility)
     }
 
+    /** Every take state the panel shows, each also in a private field. */
+    private val states: List<Pair<String, PanelState>> = listOf(
+        "opening" to PanelState(PanelPhase.OPENING, running = true),
+        "recording" to PanelState(PanelPhase.RECORDING, running = true, preview = "words so far", ringLive = true),
+        "paused" to PanelState(PanelPhase.PAUSED, PanelChoice.RECORDING, running = true, preview = "words so far"),
+        "preparing" to PanelState(PanelPhase.FINISHING, running = true, finishing = true, preview = "words so far"),
+        "finishing-choice" to PanelState(PanelPhase.FINISHING_CHOICE, PanelChoice.FINISHING, running = true, finishing = true),
+        "stopping" to PanelState(PanelPhase.STOPPING),
+        "release-failed" to PanelState(PanelPhase.RELEASE_FAILED),
+        "idle" to PanelState(PanelPhase.IDLE),
+        "no-permission" to PanelState(PanelPhase.NO_PERMISSION),
+        "failed" to PanelState(PanelPhase.FAILED),
+        "not-inserted" to PanelState(PanelPhase.NOT_INSERTED),
+        "not-inserted-waiting" to PanelState(PanelPhase.NOT_INSERTED_WAITING),
+        "idle-waiting" to PanelState(PanelPhase.IDLE_WAITING),
+        "held" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = true), preview = "held words"),
+        "held-unsaved" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = false), preview = "held words"),
+        "held-uncertain" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, unconfirmed = true), preview = "held words"),
+        "held-warned" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, warned = true), preview = "held words"),
+    ).flatMap { (name, state) -> listOf(name to state, "$name-private" to state.copy(privateField = true)) }
+
+    private fun everyState(widthDp: Int) {
+        val panel = inflate()
+        val context = panel.context
+        val density = context.resources.displayMetrics.density
+        val overStage = context.resources.getBoolean(R.bool.panel_choice_over_stage)
+        val yields = context.resources.getBoolean(R.bool.panel_preview_yields_to_notice)
+        var shown: PanelFrame? = null
+        for ((name, state) in states) {
+            val frame = panelFrame(state)
+            // Each state rendered on a fresh panel and as a change of the previous one look the same.
+            for (fresh in listOf(true, false)) {
+                val view = if (fresh) inflate() else panel
+                val drawn = renderPanel(view, frame, if (fresh) null else shown, null)
+                layOut(view, widthDp)
+                val covered = frame.choice != null || frame.held
+                assertEquals(name, context.getString(frame.status), view.findViewById<TextView>(R.id.status).text.toString())
+                assertEquals(name, if (covered) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.choice).visibility)
+                val mic = view.findViewById<ImageButton>(R.id.microphone)
+                assertEquals(name, if (covered || frame.preparing) View.INVISIBLE else View.VISIBLE, mic.visibility)
+                assertEquals(name, frame.microphoneEnabled, mic.isEnabled)
+                assertEquals(name, if (frame.preparing && !covered) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.processing).visibility)
+                assertEquals(name, if (frame.notice != null) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.retention_notice).visibility)
+                val marker = frame.held || (frame.unableToInsert && frame.choice == null)
+                assertEquals(name, if (marker) View.VISIBLE else View.GONE, view.findViewById<View>(R.id.status_marker).visibility)
+                val preview = view.findViewById<TextView>(R.id.preview)
+                val lines = when {
+                    !overStage -> if (frame.held || (frame.notice != null && yields)) 2 else 3
+                    yields -> if (frame.notice != null) 2 else 3
+                    else -> null
+                }
+                if (lines != null) assertEquals("$name preview lines", lines, preview.maxLines)
+                if (covered) assertTrue("$name: the safe action takes focus", view.findViewById<View>(R.id.choice_safe).isFocused)
+                val whole = android.graphics.Rect(0, 0, view.width, view.height)
+                val targets = listOf(R.id.back, R.id.microphone, R.id.choice_safe, R.id.choice_discard).map { view.findViewById<View>(it) }
+                    .filter { it.visibility == View.VISIBLE && (it.parent as View).visibility == View.VISIBLE }
+                for (target in targets) {
+                    assertTrue("$name: target below 48dp", target.width >= 48 * density - 1 && target.height >= 48 * density - 1)
+                    val bounds = android.graphics.Rect(0, 0, target.width, target.height)
+                    (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(target, bounds)
+                    assertTrue("$name: target outside the panel", whole.contains(bounds))
+                }
+                if (!fresh) shown = drawn
+            }
+        }
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInPortraitLight() = everyState(411)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-port-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInPortraitDark() = everyState(411)
+
+    @Test @Config(qualifiers = "w540dp-h360dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInNarrowLandscapeLight() = everyState(540)
+
+    @Test @Config(qualifiers = "w540dp-h360dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInNarrowLandscapeDark() = everyState(540)
+
+    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInWideLandscapeLight() = everyState(960)
+
+    @Test @Config(qualifiers = "w960dp-h440dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyStateInWideLandscapeDark() = everyState(960)
+
     /**
      * Private field, landscape, font 2× (#36 critique): the lock line costs the editor almost no
      * height (the preview yields a line to it), and the lock glyph grows with the text.
