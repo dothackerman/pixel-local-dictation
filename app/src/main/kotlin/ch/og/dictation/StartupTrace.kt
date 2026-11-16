@@ -61,6 +61,22 @@ class StartupTrace(private val context: Context) {
         }
     }
 
+    /** Checkpoint latency receipt: identity and sample offsets only, never transcript or audio. */
+    fun timing(takeId: String?, event: TimelineEvent) = append("recovery-timing") {
+        JSONObject().put("protocol", "recovery-timing-v1").put("clock", "CLOCK_MONOTONIC")
+            .put("processId", processId).put("serviceId", serviceId)
+            .put("takeId", takeId ?: JSONObject.NULL).put("phase", event.phase).put("ns", event.ns).also { row ->
+                event.chunkId?.let { row.put("chunkId", it) }
+                event.samples?.let { row.put("samples", it) }
+                event.sampleStart?.let { row.put("sampleStart", it) }
+                event.sampleEnd?.let { row.put("sampleEnd", it) }
+                event.revision?.let { row.put("revision", it) }
+                event.fixtureId?.let { row.put("fixtureId", it) }
+                event.queued?.let { row.put("queued", it) }
+                event.active?.let { row.put("active", it) }
+            }
+    }
+
     /**
      * Rows are built and written on the writer thread, off the IME callbacks. Never silently
      * overwrite visit evidence: each files/lab/[name].jsonl stops growing before it exceeds 2 MiB.

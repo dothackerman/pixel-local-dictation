@@ -30,6 +30,9 @@ class TakeTranscriberTest {
             val stopped = events.single { it.phase == "producerStop" }
             assertEquals(true, stopped.active); assertEquals(1, stopped.queued)
             release.countDown(); assertTrue(done.await(5, TimeUnit.SECONDS))
+            // The final callback runs inside the finish work; its WorkerEnd event is still being
+            // added on the queue thread. Read the events only after that thread has stopped.
+            queue.shutdown(); assertTrue(queue.awaitTermination(5, TimeUnit.SECONDS))
             val phases = events.map { it.phase }
             assertTrue(phases.indexOf("firstUsablePreview") > phases.indexOf("producerStop"))
             assertTrue(phases.indexOf("finishDrain") > phases.lastIndexOf("chunkWorkerEnd"))
@@ -55,6 +58,18 @@ class TakeTranscriberTest {
         assertTrue(gate === opening); assertTrue(decoded.first() === opening)
         assertEquals("usable", result)
         assertEquals(1, events.single { it.phase == "firstUsablePreview" }.chunkId)
+    }
+
+    @Test fun timingMetadataTracksTheAudioFrontierWithoutRetainingText() {
+        val events = ArrayList<TimelineEvent>()
+        val previews = ArrayList<Pair<String, Long?>>()
+        val take = TakeTranscriber({ bySample }, ChunkSegmenter(pending = seg(4)), direct, direct,
+            timeline = TimelineObserver { events.add(it) }, onPreview = {},
+            onTimedPreview = { text, sampleEnd -> previews.add(text to sampleEnd) })
+        take.feed(seg(1)); take.feed(seg(2)); take.finish { it.getOrThrow() }
+        assertEquals(listOf(1L, 2L, 3L), events.filter { it.phase == "chunkReady" }.map { it.sampleEnd })
+        assertEquals(listOf(1L, 2L, 3L), previews.map { it.second })
+        assertTrue(events.filter { it.phase == "chunkReady" }.all { it.sampleStart != null && it.samples == 1 })
     }
 
     @Test fun diagnosticFailureDoesNotChangeRecognitionOrDelivery() {
@@ -92,6 +107,16 @@ class TakeTranscriberTest {
         queue.runAll()
         assertEquals(listOf("eins", "eins zwei", "eins zwei vier"), previews)
         assertEquals("eins zwei vier", done!!.getOrThrow())
+    }
+
+    @Test fun delayedOlderPreviewCannotReplaceNewerCumulativeText() {
+        val delivery = Queue()
+        val previews = ArrayList<String>()
+        val take = TakeTranscriber({ bySample }, ChunkSegmenter(), direct, delivery) { previews.add(it) }
+        take.feed(seg(1)); take.feed(seg(2))
+        delivery.jobs.removeLast().run()
+        delivery.jobs.removeFirst().run()
+        assertEquals(listOf("eins zwei"), previews)
     }
 
     @Test fun cancelStopsAllCallbacksEvenForQueuedWork() {
@@ -133,6 +158,15 @@ class TakeTranscriberTest {
         assertEquals("eins zwei vier", open!!.getOrThrow())
     }
 
+    @Test fun previewAndFinalBothCarryTheWrittenForm() {
+        val previews = ArrayList<String>(); var final: String? = null
+        val said = Recognizer { if (it[0] == 0f) "Abfahrt um zwölf Uhr" else "sechsundvierzig, Gleis drei." }
+        val take = TakeTranscriber({ said }, ChunkSegmenter(), direct, direct, written = WrittenForm::of) { previews.add(it) }
+        take.feed(seg(0)); take.feed(seg(1)); take.finish { final = it.getOrThrow() }
+        assertEquals(listOf("Abfahrt um 12 Uhr", "Abfahrt um 12.46 Uhr, Gleis 3."), previews)
+        assertEquals("Abfahrt um 12.46 Uhr, Gleis 3.", final)
+    }
+
     @Test fun swissSpellingReplacesEszett() {
         val r = SwissSpelling(Recognizer { "Ich weiß, die Straße ist groß. STRAẞE" })
         assertEquals("Ich weiss, die Strasse ist gross. STRASSE", r.transcribe(FloatArray(0)))
@@ -143,10 +177,14 @@ class TakeTranscriberTest {
         c.append(FloatArray(8) { it.toFloat() })                 // positions 0..7
         assertNull("too short: pause after 6 samples", c.onSpeechEnd(6))
         c.append(FloatArray(8) { 8f + it })                      // positions 8..15
-        assertArrayEquals(FloatArray(14) { it.toFloat() }, c.onSpeechEnd(12)!!.samples, 0f)   // 12 + pad
+        val first = c.onSpeechEnd(12)!!
+        assertArrayEquals(FloatArray(14) { it.toFloat() }, first.samples, 0f)   // 12 + pad
+        assertEquals(0L, first.startSample); assertEquals(14L, first.endSample)
         c.append(FloatArray(4) { 16f + it })                     // positions 16..19
         assertNull(c.onSpeechEnd(18))
-        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), c.rest()!!.samples, 0f)
+        val tail = c.rest()!!
+        assertArrayEquals(floatArrayOf(14f, 15f, 16f, 17f, 18f, 19f), tail.samples, 0f)
+        assertEquals(14L, tail.startSample); assertEquals(20L, tail.endSample)
         assertNull(c.rest())
     }
 

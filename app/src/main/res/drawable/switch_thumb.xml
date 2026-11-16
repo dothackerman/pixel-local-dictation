@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square switch thumb (#36): a 32dp cell (the track's height, so the thumb travels 20dp) holding a
+     white 20dp square when on and a smaller 16dp outline-ink square when off, centred so the track
+     shows around it (6dp / 8dp). Fixed layer sizes keep the cell measurable in every state. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="32dp" android:height="32dp">
+        <shape android:shape="rectangle"><solid android:color="@android:color/transparent" /></shape>
+    </item>
+    <item android:width="20dp" android:height="20dp" android:gravity="center">
+        <selector>
+            <item android:state_checked="true"><shape android:shape="rectangle"><solid android:color="?attr/colorOnSecondary" /></shape></item>
+            <item><shape android:shape="rectangle"><solid android:color="@android:color/transparent" /></shape></item>
+        </selector>
+    </item>
+    <item android:width="16dp" android:height="16dp" android:gravity="center">
+        <selector>
+            <item android:state_checked="true"><shape android:shape="rectangle"><solid android:color="@android:color/transparent" /></shape></item>
+            <item><shape android:shape="rectangle"><solid android:color="?attr/colorOutline" /></shape></item>
+        </selector>
+    </item>
+</layer-list>

@@ -33,7 +33,7 @@ parked hypotheses.
 
 ## Requirements
 
-Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)).
+Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)); R9 added 11-12.
 They apply to every engine.
 
 | ID | Requirement |
@@ -46,6 +46,7 @@ They apply to every engine.
 | R6 | Follow the security rules in [AGENTS.md](AGENTS.md). Support return to FUTO and retain its baseline model. |
 | R7 | Use Swiss spelling: replace ß with ss. The scorer treats both forms equally. |
 | R8 | The panel and recording start at once; model loading never delays them. |
+| R9 | Spoken numbers become digits where context makes them unambiguous, Swiss style for German (`WrittenForm`, [research](research/number-itn.md)). Lab replays stay raw. |
 
 A single-language engine is acceptable if routing is automatic. Mixed-language
 conversation and diarization are out of scope. Dialect support, Stop behavior
@@ -64,7 +65,7 @@ alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 
 | Concern | Where | Decision |
 |---|---|---|
-| IME lifecycle: record on open; Cancel, Keyboard, any input restart, hide or lock discard | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md) |
+| IME lifecycle: record on initial open; confirmed discard removes the take; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md), amendment for #36 |
 | Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](adrs/017-shared-take-experiments.md) |
 | Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
 | Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
@@ -78,7 +79,10 @@ Not visible in the code:
   fail verification. Restart after changing them. Selection ignores `variant.json`;
   the benchmark-only `files/lab/live.json` override is retired. A future candidate is
   live-checked by packaging its acceptance record.
-- An input restart with identical attributes still discards the take (ADR-010).
+- An input restart with identical attributes still revokes insertion and stops capture;
+  available eligible text finishes into History. Reattachment does not resume recording
+  automatically. An identified rotation is the one exception: the rotation hold keeps the
+  take (Pixel-measured, ADR-010 amendment #52/#53).
 - Old takes keep their dictionary lease until queued work ends; later takes use the
   saved revision. Edited receipts carry their own configuration hash; the frozen
   acceptance record stays intact (ADR-027).
@@ -153,8 +157,10 @@ with `--staged`: tracked edits and new source, test and build inputs must be sta
 
 Enable the IME, grant microphone permission, enable FUTO’s “Disable built-in voice input”.
 Roll back by disabling that toggle before removing the app. Production audio stays in
-memory and is discarded; benchmark storage is opt-in, visibly marked and deletable
-(ADR-010). The first take loads the model. Release and benchmark builds share signing;
+memory and is discarded; eligible transcripts stay in no-backup History until deletion.
+Private/no-learning/unclassifiable editors exclude both History and benchmark content.
+Benchmark storage is opt-in, visibly marked and deletable (ADR-010). The first take loads
+the model. Release and benchmark builds share signing;
 the benchmark build is debuggable.
 
 ## Phone lab operations
@@ -169,6 +175,22 @@ the benchmark build is debuggable.
   including receipts. Pull receipts before pushing.
 - Mutating verbs and `run` write `corpus/lab/runs/<ts>-<verb>-<id>/meta.json` with the
   installed APK and lab hashes; experiments bind their receipts to it.
+- Interactive session (screen on, owner present; phone time is scarce):
+  1. Before asking: build, `check`, `install` (works while locked), `push` fixtures.
+  2. Owner: unlock, leave FUTO selected, keep the screen awake. Nothing else.
+  3. `run ch.og.dictation.PhoneReadyTest` (seconds): one `NOT READY:` line per unmet
+     precondition (screen, lock, FUTO selected, microphone permission, fixtures).
+  4. One batched `run A,B,C` with every suite; analyse and fix afterwards, not between suites.
+  Test-owned windows keep the screen on while shown (no wake lock, no setting). Tests that
+  drive the keyboard use `KeyboardHandoff`: our controls plus one FUTO voice-key tap, bounded
+  waits, FUTO restored in `finally`.
+- Owner visit (#61): `phone run ch.og.dictation.GuidedVisitTest extended=true` shows one step per
+  screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). A re-visit runs only
+  chosen steps with `steps=A2,A3,A7,A8,B9` or starts at one with `start=A7`. Rotation and
+  Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
+  and `phone pull files/lab/rotation-probe.jsonl`, then
+  `python3 tools/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
+  per-rotation panel/hide/silenced/hold timings).
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
   `bash tools/gate/apply.sh`. Then, in a fresh unescalated agent session, run
   `python3 tools/gate/check_installation.py` and `python3 tools/quality.py`. The installer

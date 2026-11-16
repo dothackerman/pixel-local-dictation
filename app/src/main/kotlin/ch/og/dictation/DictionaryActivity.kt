@@ -19,7 +19,6 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
@@ -42,9 +41,9 @@ open class DictionaryActivity : AppCompatActivity() {
     private var feedback: TextView? = null
     private var editing: String? = null
     private var snackbar: Snackbar? = null
+    private var addItem: android.view.MenuItem? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.dictionary)
         root = findViewById(R.id.dictionary_root)
@@ -55,7 +54,13 @@ open class DictionaryActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@DictionaryActivity)
             adapter = terms
         }
-        findViewById<MaterialToolbar>(R.id.dictionary_toolbar).setNavigationOnClickListener { finish() }
+        val toolbar = findViewById<MaterialToolbar>(R.id.dictionary_toolbar)
+        toolbar.setNavigationOnClickListener { finish() }
+        // Landscape: Add term in the top bar, so it covers no row or trash button (#36 critique round 3).
+        val addInToolbar = resources.getBoolean(R.bool.dictionary_add_in_toolbar)
+        addItem = toolbar.menu.findItem(R.id.dictionary_add_item).apply { isVisible = addInToolbar }
+        add.visibility = if (addInToolbar) View.GONE else View.VISIBLE
+        toolbar.setOnMenuItemClickListener { if (it.itemId == R.id.dictionary_add_item) { showEditor(null); true } else false }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -89,7 +94,7 @@ open class DictionaryActivity : AppCompatActivity() {
                     "edit" -> { sheet?.dismiss(); showMessage(R.string.dictionary_updated) }
                     "delete" -> {
                         snackbar = Snackbar.make(root, R.string.dictionary_deleted, 8000)
-                            .setAnchorView(add).setAction(R.string.dictionary_undo) { model.undo() }.also { it.show() }
+                            .setAnchorView(anchor()).setAction(R.string.dictionary_undo) { model.undo() }.also { it.show() }
                     }
                     "undo" -> showMessage(R.string.dictionary_restored)
                 }
@@ -107,8 +112,15 @@ open class DictionaryActivity : AppCompatActivity() {
     private fun render() {
         val state = model.state.value ?: return
         add.isEnabled = !state.busy && state.snapshot != null
+        addItem?.isEnabled = add.isEnabled
         val all = state.snapshot?.entries.orEmpty()
-        findViewById<TextView>(R.id.dictionary_count).text = resources.getQuantityString(R.plurals.dictionary_count, all.size, all.size)
+        // An empty dictionary says so in the state line; no "0 terms" above it (same pattern as History).
+        findViewById<TextView>(R.id.dictionary_count).text =
+            if (all.isEmpty()) "" else resources.getQuantityString(R.plurals.dictionary_count, all.size, all.size)
+        // An empty dictionary is its state line alone: nothing to search, no languages to summarise.
+        val summary = if (all.isEmpty()) View.GONE else View.VISIBLE
+        for (id in intArrayOf(R.id.dictionary_search_layout, R.id.dictionary_summary, R.id.dictionary_summary_rule)) findViewById<View>(id).visibility = summary
+        if (all.isEmpty() && !search.text.isNullOrEmpty()) { search.setText(""); return } // the watcher renders again
         val query = search.text?.toString().orEmpty().trim()
         terms.items = all.filter { it.contains(query, ignoreCase = true) }.sortedWith(Collator.getInstance(Locale.GERMAN))
         terms.enabled = !state.busy
@@ -137,7 +149,10 @@ open class DictionaryActivity : AppCompatActivity() {
         entryLayout = content.findViewById(R.id.dictionary_entry_layout)
         commit = content.findViewById(R.id.dictionary_commit)
         feedback = content.findViewById(R.id.dictionary_editor_feedback)
-        content.findViewById<TextView>(R.id.dictionary_editor_title).setText(if (term == null) R.string.dictionary_add else R.string.dictionary_edit)
+        val title = if (term == null) R.string.dictionary_add else R.string.dictionary_edit
+        content.findViewById<TextView?>(R.id.dictionary_editor_title)?.setText(title)
+        // Landscape has no title row; TalkBack still names the sheet.
+        ViewCompat.setAccessibilityPaneTitle(content, getString(title))
         commit!!.setText(if (term == null) R.string.dictionary_add_action else R.string.dictionary_done)
         entry!!.setText(draft)
         entry!!.watch { validate() }
@@ -203,8 +218,11 @@ open class DictionaryActivity : AppCompatActivity() {
 
     private fun showMessage(message: Int) {
         snackbar?.dismiss()
-        snackbar = Snackbar.make(root, message, Snackbar.LENGTH_LONG).setAnchorView(add).also { it.show() }
+        snackbar = Snackbar.make(root, message, Snackbar.LENGTH_LONG).setAnchorView(anchor()).also { it.show() }
     }
+
+    /** The Snackbar sits above the extended Add term; landscape has none over the list. */
+    private fun anchor(): View? = add.takeIf { it.visibility == View.VISIBLE }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("editor", sheet != null)

@@ -6,77 +6,133 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import java.io.ByteArrayOutputStream
 
-/**
- * Mono 16 kHz PCM capture, in memory only, released on stop/cancel.
- * Audio never touches storage (requirements: privacy handling).
- */
-class Recorder {
+/** Mono 16 kHz PCM capture, in memory only, released on stop/cancel. */
+class Recorder internal constructor(private val createInput: () -> AudioInput) {
+    constructor() : this({ androidInput() })
+
+    internal interface AudioInput {
+        val bufferSize: Int
+        fun start()
+        fun read(buffer: ShortArray): Int
+        fun stop()
+        fun release()
+    }
+
     companion object {
-        private const val CHANNEL = AudioFormat.CHANNEL_IN_MONO
-        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+        @SuppressLint("MissingPermission")
+        private fun androidInput(): AudioInput {
+            val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf * 4, SAMPLE_RATE * 2))
+            return object : AudioInput {
+                override val bufferSize = minBuf
+                override fun start() {
+                    check(rec.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord failed to initialise" }
+                    rec.startRecording()
+                }
+                override fun read(buffer: ShortArray) = rec.read(buffer, 0, buffer.size)
+                override fun stop() { if (rec.recordingState == AudioRecord.RECORDSTATE_RECORDING) rec.stop() }
+                override fun release() = rec.release()
+            }
+        }
     }
 
     @Volatile private var capturing = false
+    /** Paused: the platform recording is stopped but the device stays owned and the audio kept. */
+    @Volatile private var paused = false
     private var thread: Thread? = null
-    private var record: AudioRecord? = null
+    private var record: AudioInput? = null
+    private var onSamples: (FloatArray) -> Unit = {}
+    private var onEnded: (() -> Unit)? = null
     private val buffer = ByteArrayOutputStream()
+    val isRunning: Boolean get() = record != null
 
-    /** True from start until stop or cancel, also when the device ended the capture early. Main thread. */
-    val isRunning: Boolean get() = thread != null
-
-    /**
-     * [onSamples] is called on the recording thread with each chunk as floats in [-1, 1].
-     * @throws SecurityException when RECORD_AUDIO is not granted.
-     */
-    // Sole caller checks microphone permission and catches SecurityException via Exception.
-    @SuppressLint("MissingPermission")
     fun start(onSamples: (FloatArray) -> Unit = {}, onStarted: (() -> Unit)? = null, onEnded: (() -> Unit)? = null) {
-        if (thread != null) return
-        val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
-        // One second of headroom: the first chunk of a process also pays for setting up the segmenter.
-        val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, CHANNEL, ENCODING,
-            maxOf(minBuf * 4, SAMPLE_RATE * 2))
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            rec.release()
-            throw IllegalStateException("AudioRecord failed to initialise")
-        }
+        check(record == null) { "capture still owned" }
+        val rec = createInput()
         record = rec
         buffer.reset()
-        rec.startRecording()
+        this.onSamples = onSamples
+        this.onEnded = onEnded
+        paused = false
+        try { rec.start() } catch (failure: Throwable) {
+            try { rec.release(); record = null } catch (_: Throwable) { }
+            throw failure
+        }
         onStarted?.let { runCatching(it) }
         capturing = true
-        thread = Thread {
-            val chunk = ShortArray(minBuf / 2)
-            val bytes = ByteArray(minBuf)
-            try {
-                while (capturing) {
-                    val n = rec.read(chunk, 0, chunk.size)
-                    if (n < 0) break  // device error or interruption; stop() still returns what was captured
-                    if (n == 0) continue
-                    for (i in 0 until n) {
-                        bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
-                    }
-                    synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
-                    onSamples(FloatArray(n) { chunk[it] / 32768f })
-                }
-            } finally { onEnded?.invoke() }
-        }.also { it.start() }
+        thread = read(rec)
     }
 
-    /** Stops capture and returns the PCM bytes (16-bit little endian); the internal copy is discarded. */
-    fun stop(): ByteArray {
+    private fun read(rec: AudioInput) = Thread {
+        val chunk = ShortArray(rec.bufferSize / 2)
+        val bytes = ByteArray(rec.bufferSize)
+        try {
+            while (capturing) {
+                val n = try { rec.read(chunk) } catch (failure: Throwable) {
+                    if (!capturing) break else throw failure
+                }
+                if (n < 0) break
+                if (n == 0) continue
+                for (i in 0 until n) {
+                    bytes[2 * i] = chunk[i].toByte(); bytes[2 * i + 1] = (chunk[i].toInt() shr 8).toByte()
+                }
+                synchronized(buffer) { buffer.write(bytes, 0, 2 * n) }
+                onSamples(FloatArray(n) { chunk[it] / 32768f })
+            }
+        } catch (_: Throwable) {
+            // Capture ended unexpectedly; the owner still releases the device.
+        } finally {
+            // Pause and stop clear `capturing` before stopping the input, so a still-set flag means the end was not requested.
+            if (capturing) onEnded?.let { runCatching(it) }
+        }
+    }.also { it.start() }
+
+    /**
+     * Stops the platform recording without releasing the device or the audio so far, and returns
+     * once no read is in flight. Audio is not captured until [resume]. Throws if the platform
+     * could not stop; the owner then ends the take.
+     */
+    fun pause() {
+        val rec = record ?: return
+        if (paused) return
+        paused = true
         capturing = false
+        rec.stop()
         thread?.join()
         thread = null
+    }
+
+    /** Restarts the same platform recorder after [pause]; the take's audio continues. */
+    fun resume() {
+        val rec = record ?: return
+        if (!paused) return
+        rec.start()
+        paused = false
+        capturing = true
+        thread = read(rec)
+    }
+
+    /** Stop the platform read before joining; return only after callbacks have drained. */
+    fun stop(): ByteArray {
+        capturing = false
         val rec = record
-        record = null
-        try {
-            if (rec?.recordingState == AudioRecord.RECORDSTATE_RECORDING) rec.stop()
-        } finally {
-            rec?.release()
+        var failure: Throwable? = null
+        try { rec?.stop() } catch (e: Throwable) { failure = e }
+        var released = false
+        if (failure != null) try { rec?.release(); released = true } catch (_: Throwable) {}
+        // A failed stop and failed release cannot guarantee the read will unblock.
+        // Keep the thread and device owned so a later release can be retried.
+        if (failure != null && !released) throw failure
+        thread?.join()
+        thread = null
+        if (!released) try { rec?.release(); released = true } catch (e: Throwable) { if (failure == null) failure = e }
+        if (released) record = null
+        if (failure != null) {
+            synchronized(buffer) { buffer.reset() }
+            throw failure
         }
-        val pcm = synchronized(buffer) { buffer.toByteArray().also { buffer.reset() } }
-        return pcm
+        return synchronized(buffer) { buffer.toByteArray().also { buffer.reset() } }
     }
 
     fun cancel() { stop().fill(0) }

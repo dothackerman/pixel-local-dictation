@@ -1,361 +1,439 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-10T11:11:44.098765+00:00",
-  "title": "Design System: Pixel Local Dictation",
+  "generatedAt": "2026-11-11T16:59:38+00:00",
+  "title": "Design System: Pixel Local Dictation — Crate B2",
   "extensions": {
     "colorMeta": {
-      "primary": {
-        "role": "primary",
-        "displayName": "Primary",
-        "tonalRamp": [
-          "oklch(0.15000 0.03643 137.59)",
-          "oklch(0.26429 0.06419 137.59)",
-          "oklch(0.37857 0.09194 137.59)",
-          "oklch(0.49286 0.09715 137.59)",
-          "oklch(0.60714 0.09715 137.59)",
-          "oklch(0.72143 0.09715 137.59)",
-          "oklch(0.83571 0.06384 137.59)",
-          "oklch(0.95000 0.01943 137.59)"
-        ]
-      },
-      "on-primary": {
-        "role": "primary",
-        "displayName": "On Primary",
-        "tonalRamp": [
-          "oklch(0.15000 0.00000 0.00)",
-          "oklch(0.26429 0.00000 0.00)",
-          "oklch(0.37857 0.00000 0.00)",
-          "oklch(0.49286 0.00000 0.00)",
-          "oklch(0.60714 0.00000 0.00)",
-          "oklch(0.72143 0.00000 0.00)",
-          "oklch(0.83571 0.00000 0.00)",
-          "oklch(0.95000 0.00000 0.00)"
-        ]
-      },
-      "primary-container": {
-        "role": "primary",
-        "displayName": "Primary Container",
-        "tonalRamp": [
-          "oklch(0.15000 0.02838 133.96)",
-          "oklch(0.26429 0.05000 133.96)",
-          "oklch(0.37857 0.07163 133.96)",
-          "oklch(0.49286 0.07568 133.96)",
-          "oklch(0.60714 0.07568 133.96)",
-          "oklch(0.72143 0.07568 133.96)",
-          "oklch(0.83571 0.04973 133.96)",
-          "oklch(0.95000 0.01514 133.96)"
-        ]
-      },
-      "on-primary-container": {
-        "role": "primary",
-        "displayName": "On Primary Container",
-        "tonalRamp": [
-          "oklch(0.15000 0.01707 137.83)",
-          "oklch(0.26429 0.03008 137.83)",
-          "oklch(0.37857 0.04309 137.83)",
-          "oklch(0.49286 0.04553 137.83)",
-          "oklch(0.60714 0.04553 137.83)",
-          "oklch(0.72143 0.04553 137.83)",
-          "oklch(0.83571 0.02992 137.83)",
-          "oklch(0.95000 0.00911 137.83)"
-        ]
-      },
       "surface": {
         "role": "neutral",
-        "displayName": "Surface",
+        "displayName": "Kraft Card",
         "tonalRamp": [
-          "oklch(0.15000 0.00354 119.57)",
-          "oklch(0.26429 0.00624 119.57)",
-          "oklch(0.37857 0.00894 119.57)",
-          "oklch(0.49286 0.00944 119.57)",
-          "oklch(0.60714 0.00944 119.57)",
-          "oklch(0.72143 0.00944 119.57)",
-          "oklch(0.83571 0.00621 119.57)",
-          "oklch(0.95000 0.00189 119.57)"
+          "#494640",
+          "#7A746A",
+          "#AAA394",
+          "#D6CDBB",
+          "#F3E9D4",
+          "#F7F1E3",
+          "#FBF7F0",
+          "#FEFCFA"
+        ]
+      },
+      "surface-container": {
+        "role": "neutral",
+        "displayName": "Panel Card",
+        "tonalRamp": [
+          "#46423A",
+          "#746E60",
+          "#A39A87",
+          "#CDC2AA",
+          "#E9DCC1",
+          "#F1E8D7",
+          "#F7F3E9",
+          "#FCFBF8"
+        ]
+      },
+      "surface-container-high": {
+        "role": "neutral",
+        "displayName": "Pressed Card",
+        "tonalRamp": [
+          "#423E35",
+          "#6E6758",
+          "#9B907A",
+          "#C2B59A",
+          "#DDCEAF",
+          "#E9DFCB",
+          "#F3EEE3",
+          "#FBF9F5"
         ]
       },
       "on-surface": {
         "role": "neutral",
-        "displayName": "On Surface",
+        "displayName": "Press Black",
         "tonalRamp": [
-          "oklch(0.15000 0.00536 145.11)",
-          "oklch(0.26429 0.00944 145.11)",
-          "oklch(0.37857 0.01353 145.11)",
-          "oklch(0.49286 0.01429 145.11)",
-          "oklch(0.60714 0.01429 145.11)",
-          "oklch(0.72143 0.01429 145.11)",
-          "oklch(0.83571 0.00939 145.11)",
-          "oklch(0.95000 0.00286 145.11)"
-        ]
-      },
-      "surface-variant": {
-        "role": "neutral",
-        "displayName": "Surface Variant",
-        "tonalRamp": [
-          "oklch(0.15000 0.00647 128.67)",
-          "oklch(0.26429 0.01140 128.67)",
-          "oklch(0.37857 0.01633 128.67)",
-          "oklch(0.49286 0.01726 128.67)",
-          "oklch(0.60714 0.01726 128.67)",
-          "oklch(0.72143 0.01726 128.67)",
-          "oklch(0.83571 0.01134 128.67)",
-          "oklch(0.95000 0.00345 128.67)"
+          "#080805",
+          "#0E0D09",
+          "#14120D",
+          "#191710",
+          "#1C1A12",
+          "#6B6A65",
+          "#B0AFAC",
+          "#E4E4E3"
         ]
       },
       "on-surface-variant": {
         "role": "neutral",
-        "displayName": "On Surface Variant",
+        "displayName": "Soft Ink",
         "tonalRamp": [
-          "oklch(0.15000 0.00838 135.12)",
-          "oklch(0.26429 0.01477 135.12)",
-          "oklch(0.37857 0.02116 135.12)",
-          "oklch(0.49286 0.02236 135.12)",
-          "oklch(0.60714 0.02236 135.12)",
-          "oklch(0.72143 0.02236 135.12)",
-          "oklch(0.83571 0.01469 135.12)",
-          "oklch(0.95000 0.00447 135.12)"
+          "#171611",
+          "#27241C",
+          "#373227",
+          "#453F31",
+          "#4E4838",
+          "#8C887E",
+          "#C1BFB9",
+          "#EAE9E7"
         ]
       },
       "outline": {
         "role": "neutral",
-        "displayName": "Outline",
+        "displayName": "Card Edge",
         "tonalRamp": [
-          "oklch(0.15000 0.00869 131.63)",
-          "oklch(0.26429 0.01531 131.63)",
-          "oklch(0.37857 0.02192 131.63)",
-          "oklch(0.49286 0.02316 131.63)",
-          "oklch(0.60714 0.02316 131.63)",
-          "oklch(0.72143 0.02316 131.63)",
-          "oklch(0.83571 0.01522 131.63)",
-          "oklch(0.95000 0.00463 131.63)"
+          "#211E18",
+          "#363228",
+          "#4C4738",
+          "#605946",
+          "#6D6550",
+          "#A09B8D",
+          "#CCC9C2",
+          "#EDEDEA"
         ]
       },
-      "night-primary": {
+      "outline-variant": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "#3C382E",
+          "#645C4C",
+          "#8B826B",
+          "#AFA387",
+          "#C7B999",
+          "#DBD2BD",
+          "#EBE6DB",
+          "#F8F7F3"
+        ]
+      },
+      "primary": {
         "role": "primary",
-        "displayName": "Night Primary",
+        "displayName": "Red-Orange Ink",
         "tonalRamp": [
-          "oklch(0.15000 0.03886 134.62)",
-          "oklch(0.26429 0.06847 134.62)",
-          "oklch(0.37857 0.09808 134.62)",
-          "oklch(0.49286 0.10364 134.62)",
-          "oklch(0.60714 0.10364 134.62)",
-          "oklch(0.72143 0.10364 134.62)",
-          "oklch(0.83571 0.06810 134.62)",
-          "oklch(0.95000 0.02073 134.62)"
+          "#320E02",
+          "#521704",
+          "#742005",
+          "#912806",
+          "#A52E07",
+          "#C4775E",
+          "#E0B6A8",
+          "#F4E6E1"
         ]
       },
-      "night-on-primary": {
+      "on-primary": {
         "role": "primary",
-        "displayName": "Night On Primary",
+        "displayName": "White",
         "tonalRamp": [
-          "oklch(0.15000 0.03196 138.46)",
-          "oklch(0.26429 0.05631 138.46)",
-          "oklch(0.37857 0.08067 138.46)",
-          "oklch(0.49286 0.08523 138.46)",
-          "oklch(0.60714 0.08523 138.46)",
-          "oklch(0.72143 0.08523 138.46)",
-          "oklch(0.83571 0.05601 138.46)",
-          "oklch(0.95000 0.01705 138.46)"
+          "#4C4C4C",
+          "#808080",
+          "#B2B2B2",
+          "#E0E0E0",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF"
         ]
       },
-      "night-primary-container": {
+      "primary-container": {
         "role": "primary",
-        "displayName": "Night Primary Container",
+        "displayName": "Peach Wash",
         "tonalRamp": [
-          "oklch(0.15000 0.03323 138.28)",
-          "oklch(0.26429 0.05854 138.28)",
-          "oklch(0.37857 0.08386 138.28)",
-          "oklch(0.49286 0.08860 138.28)",
-          "oklch(0.60714 0.08860 138.28)",
-          "oklch(0.72143 0.08860 138.28)",
-          "oklch(0.83571 0.05823 138.28)",
-          "oklch(0.95000 0.01772 138.28)"
+          "#4C413B",
+          "#806C63",
+          "#B2978B",
+          "#E0BEAE",
+          "#FFD8C6",
+          "#FFE6DA",
+          "#FFF1EB",
+          "#FFFAF8"
         ]
       },
-      "night-on-primary-container": {
+      "on-primary-container": {
         "role": "primary",
-        "displayName": "Night On Primary Container",
+        "displayName": "Deep Rust",
         "tonalRamp": [
-          "oklch(0.15000 0.02838 133.96)",
-          "oklch(0.26429 0.05000 133.96)",
-          "oklch(0.37857 0.07163 133.96)",
-          "oklch(0.49286 0.07568 133.96)",
-          "oklch(0.60714 0.07568 133.96)",
-          "oklch(0.72143 0.07568 133.96)",
-          "oklch(0.83571 0.04973 133.96)",
-          "oklch(0.95000 0.01514 133.96)"
+          "#110400",
+          "#1D0700",
+          "#290A00",
+          "#330C00",
+          "#3A0E00",
+          "#7F6259",
+          "#BAABA6",
+          "#E7E2E0"
         ]
       },
-      "night-surface": {
-        "role": "neutral",
-        "displayName": "Night Surface",
+      "inverse-primary": {
+        "role": "primary",
+        "displayName": "Snackbar Peach",
         "tonalRamp": [
-          "oklch(0.15000 0.00567 131.99)",
-          "oklch(0.26429 0.00999 131.99)",
-          "oklch(0.37857 0.01431 131.99)",
-          "oklch(0.49286 0.01512 131.99)",
-          "oklch(0.60714 0.01512 131.99)",
-          "oklch(0.72143 0.01512 131.99)",
-          "oklch(0.83571 0.00994 131.99)",
-          "oklch(0.95000 0.00302 131.99)"
+          "#4C362E",
+          "#805A4D",
+          "#B27F6C",
+          "#E09F88",
+          "#FFB59A",
+          "#FFCFBD",
+          "#FFE5DC",
+          "#FFF6F3"
         ]
       },
-      "night-on-surface": {
-        "role": "neutral",
-        "displayName": "Night On Surface",
+      "secondary": {
+        "role": "secondary",
+        "displayName": "Rind Green",
         "tonalRamp": [
-          "oklch(0.15000 0.00622 121.79)",
-          "oklch(0.26429 0.01097 121.79)",
-          "oklch(0.37857 0.01571 121.79)",
-          "oklch(0.49286 0.01660 121.79)",
-          "oklch(0.60714 0.01660 121.79)",
-          "oklch(0.72143 0.01660 121.79)",
-          "oklch(0.83571 0.01091 121.79)",
-          "oklch(0.95000 0.00332 121.79)"
+          "#0E160A",
+          "#172510",
+          "#203417",
+          "#28411D",
+          "#2E4A21",
+          "#77896F",
+          "#B6C0B1",
+          "#E6E9E4"
         ]
       },
-      "night-surface-variant": {
-        "role": "neutral",
-        "displayName": "Night Surface Variant",
+      "on-secondary": {
+        "role": "secondary",
+        "displayName": "White",
         "tonalRamp": [
-          "oklch(0.15000 0.00838 135.12)",
-          "oklch(0.26429 0.01477 135.12)",
-          "oklch(0.37857 0.02116 135.12)",
-          "oklch(0.49286 0.02236 135.12)",
-          "oklch(0.60714 0.02236 135.12)",
-          "oklch(0.72143 0.02236 135.12)",
-          "oklch(0.83571 0.01469 135.12)",
-          "oklch(0.95000 0.00447 135.12)"
+          "#4C4C4C",
+          "#808080",
+          "#B2B2B2",
+          "#E0E0E0",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF"
         ]
       },
-      "night-on-surface-variant": {
-        "role": "neutral",
-        "displayName": "Night On Surface Variant",
+      "secondary-container": {
+        "role": "secondary",
+        "displayName": "Rind Wash",
         "tonalRamp": [
-          "oklch(0.15000 0.00933 127.64)",
-          "oklch(0.26429 0.01644 127.64)",
-          "oklch(0.37857 0.02355 127.64)",
-          "oklch(0.49286 0.02489 127.64)",
-          "oklch(0.60714 0.02489 127.64)",
-          "oklch(0.72143 0.02489 127.64)",
-          "oklch(0.83571 0.01635 127.64)",
-          "oklch(0.95000 0.00498 127.64)"
+          "#3E4338",
+          "#68705E",
+          "#919D84",
+          "#B6C5A5",
+          "#CFE0BC",
+          "#E0EBD3",
+          "#EEF4E8",
+          "#F9FBF7"
         ]
       },
-      "night-outline": {
-        "role": "neutral",
-        "displayName": "Night Outline",
+      "on-secondary-container": {
+        "role": "secondary",
+        "displayName": "Deep Rind",
         "tonalRamp": [
-          "oklch(0.15000 0.01004 130.05)",
-          "oklch(0.26429 0.01769 130.05)",
-          "oklch(0.37857 0.02534 130.05)",
-          "oklch(0.49286 0.02677 130.05)",
-          "oklch(0.60714 0.02677 130.05)",
-          "oklch(0.72143 0.02677 130.05)",
-          "oklch(0.83571 0.01759 130.05)",
-          "oklch(0.95000 0.00535 130.05)"
+          "#060B03",
+          "#0A1205",
+          "#0D1907",
+          "#112009",
+          "#13240A",
+          "#667160",
+          "#ACB2A9",
+          "#E3E5E2"
+        ]
+      },
+      "error": {
+        "role": "error",
+        "displayName": "Beet",
+        "tonalRamp": [
+          "#290515",
+          "#450822",
+          "#610C30",
+          "#790F3D",
+          "#8A1145",
+          "#B36486",
+          "#D6ACBE",
+          "#F1E2E9"
+        ]
+      },
+      "on-error": {
+        "role": "error",
+        "displayName": "White",
+        "tonalRamp": [
+          "#4C4C4C",
+          "#808080",
+          "#B2B2B2",
+          "#E0E0E0",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF",
+          "#FFFFFF"
+        ]
+      },
+      "error-container": {
+        "role": "error",
+        "displayName": "Beet Wash",
+        "tonalRamp": [
+          "#4A4044",
+          "#7C6C72",
+          "#AE969F",
+          "#DABDC8",
+          "#F8D7E3",
+          "#FAE5ED",
+          "#FDF1F5",
+          "#FEFAFC"
+        ]
+      },
+      "on-error-container": {
+        "role": "error",
+        "displayName": "Deep Beet",
+        "tonalRamp": [
+          "#120008",
+          "#1E000C",
+          "#2B0012",
+          "#360016",
+          "#3D0019",
+          "#81596A",
+          "#BBA6AE",
+          "#E8E0E3"
         ]
       }
     },
     "typographyMeta": {
       "title-large": {
-        "displayName": "Title Large",
-        "purpose": "Native sheet heading."
+        "displayName": "Title",
+        "purpose": "Toolbar and sheet titles."
       },
-      "body-large": {
-        "displayName": "Body Large",
-        "purpose": "Dictionary term labels."
+      "title-medium": {
+        "displayName": "Panel status",
+        "purpose": "The recording panel's status line."
       },
-      "body-medium": {
-        "displayName": "Body Medium",
-        "purpose": "Explanation and status."
+      "title-small": {
+        "displayName": "Times and counts",
+        "purpose": "Day headers, row times, detail meta, every count; tabular figures."
+      },
+      "label-large": {
+        "displayName": "Button",
+        "purpose": "Buttons, Undo, Snackbar action."
       },
       "label-medium": {
-        "displayName": "Label Medium",
-        "purpose": "Counts and inline feedback."
+        "displayName": "Small label",
+        "purpose": "Private-field line, banner, editor feedback."
+      },
+      "body-large": {
+        "displayName": "Reading",
+        "purpose": "Rows, transcripts, Settings rows, menus."
+      },
+      "body-medium": {
+        "displayName": "Small reading",
+        "purpose": "Panel preview, explanations, mark sentences."
       }
     },
     "shadows": [],
-    "motion": [],
-    "breakpoints": []
+    "motion": [
+      {
+        "name": "recording-ribbon",
+        "value": "continuous; radius and thickness follow measured loudness, the ring stays concentric with even thickness",
+        "purpose": "Recording ring; a static thick ring when animations are off."
+      },
+      {
+        "name": "preparing-arc",
+        "value": "300deg/s rotation",
+        "purpose": "Preparing text; a static segmented ring when animations are off."
+      },
+      {
+        "name": "undo-window",
+        "value": "8000ms linear",
+        "purpose": "History and Dictionary delete Undo windows (Snackbar)."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "landscape-narrow",
+        "value": "600dp"
+      }
+    ]
   },
   "components": [
     {
-      "name": "Toolbar structure",
+      "name": "Microphone disk",
+      "kind": "button",
+      "refersTo": "microphone-disk",
+      "description": "The same red-orange disk in every state; the mic glyph becomes Stop while recording; hairline ring at rest.",
+      "html": "<div class=\"ds-stage\"><button class=\"ds-mic\" aria-label=\"Start recording\"><svg viewBox=\"0 -960 960 960\" width=\"24\" height=\"24\"><path fill=\"currentColor\" d=\"M480-400q-50 0-85-35t-35-85v-240q0-50 35-85t85-35q50 0 85 35t35 85v240q0 50-35 85t-85 35Zm-40 280v-123q-104-14-172-93t-68-184h80q0 83 58.5 141.5T480-320q83 0 141.5-58.5T680-520h80q0 105-68 184t-172 93v123h-80Z\"/></svg></button></div>",
+      "css": ".ds-stage{display:grid;place-items:center;width:140px;height:140px;background:#E9DCC1}.ds-stage::before{content:'';grid-area:1/1;width:104px;height:104px;border-radius:50%;background:#F3E9D4;border:1px solid #6D6550}.ds-mic{grid-area:1/1;width:70px;height:70px;border-radius:50%;border:0;background:#A52E07;color:#fff;display:grid;place-items:center;cursor:pointer}.ds-mic:focus-visible{outline:2px solid #1C1A12;outline-offset:3px}.ds-mic:active{filter:brightness(1.15)}"
+    },
+    {
+      "name": "Paused choice",
+      "kind": "custom",
+      "refersTo": "paused-continue",
+      "description": "Three icon-only buttons at one height: Continue filled with a fixed selected ring, Stop outlined, Discard dashed in error and set 40dp apart.",
+      "html": "<div class=\"ds-trio\"><button class=\"ds-cont\" aria-label=\"Continue recording\">&#9654;</button><button class=\"ds-stop\" aria-label=\"Stop and insert\">&#9632;</button><button class=\"ds-disc\" aria-label=\"Discard take\">&#128465;</button></div>",
+      "css": ".ds-trio{display:flex;align-items:center;gap:8px;background:#E9DCC1;padding:16px}.ds-trio button{width:64px;height:56px;border-radius:0;font-size:20px;cursor:pointer;background:transparent}.ds-cont{background:#A52E07!important;color:#fff;border:0;box-shadow:0 0 0 2px #E9DCC1,0 0 0 4px #1C1A12}.ds-stop{border:2px solid #1C1A12;color:#1C1A12}.ds-disc{margin-left:32px;border:2px dashed #8A1145;color:#8A1145}.ds-trio button:focus-visible{outline:2px solid #1C1A12;outline-offset:4px}"
+    },
+    {
+      "name": "Held text choice",
+      "kind": "custom",
+      "refersTo": "paused-continue",
+      "description": "Unable to insert text: the status line says what to do and whether the text is saved and keeps its mark; the preview shows the held take text; the stage has two framed icon buttons instead of the disk: Copy text (filled, content_copy; it copies, drops the text and hands back to the previous keyboard at once) and Discard text (dashed error). In narrow landscape the buttons stack in the stage. Back never copies: the first Back on held text only warns, the second discards and leaves. Discard text and a second Back clear the explicit-start rule: the next time the panel opens it records. A write after a rotation that could not be confirmed in the field says \"Could not confirm the insert. Check the field, or copy the text.\" with the Insertion uncertain mark and the same controls.",
+      "html": "<div class=\"ds-trio\"><button class=\"ds-cont\" aria-label=\"Copy text\">&#10697;</button><button class=\"ds-disc\" aria-label=\"Discard text\">&#128465;</button></div>",
+      "css": ".ds-trio{display:flex;align-items:center;gap:8px;background:#E9DCC1;padding:16px}.ds-trio button{width:64px;height:56px;border-radius:0;font-size:20px;cursor:pointer;background:transparent}.ds-cont{background:#A52E07!important;color:#fff;border:0;box-shadow:0 0 0 2px #E9DCC1,0 0 0 4px #1C1A12}.ds-stop{border:2px solid #1C1A12;color:#1C1A12}.ds-disc{margin-left:32px;border:2px dashed #8A1145;color:#8A1145}.ds-trio button:focus-visible{outline:2px solid #1C1A12;outline-offset:4px}"
+    },
+    {
+      "name": "History row",
+      "kind": "card",
+      "refersTo": "history-row",
+      "description": "The time leads, one mark slot under it, two-line preview, trailing trash; hairline below.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-time\">14:05<br><span class=\"ds-mark\">&#9998;&#824;</span></div><p>Reminder to return the ladder to the neighbours before Friday evening.</p><button aria-label=\"Delete transcript\">&#128465;</button></div>",
+      "css": ".ds-row{display:grid;grid-template-columns:48px 1fr 48px;gap:12px;align-items:start;padding:12px 8px 12px 24px;background:#F3E9D4;border-bottom:1px solid #C7B999;font:400 16px/25px 'Public Sans',sans-serif;color:#1C1A12}.ds-time{font:800 15px/20px 'Big Shoulders Display',sans-serif;letter-spacing:.03em}.ds-row p{margin:0}.ds-row button{width:48px;height:48px;border:0;background:transparent;color:#4E4838;cursor:pointer}.ds-row:hover{background:#DDCEAF}"
+    },
+    {
+      "name": "Toolbar",
       "kind": "nav",
       "refersTo": "toolbar",
-      "description": "Structural preview only; native MaterialToolbar owns navigation, title style and state layers. Back icon uses colorOnSurface. Source: layout/dictionary.xml.",
-      "html": "<nav class=\"ds-toolbar\">Dictionary</nav>",
-      "css": ".ds-toolbar { min-height:64px; display:flex; align-items:center; color:#1B211B; background:#F8FAF3; font-family:sans-serif; }"
+      "description": "64dp, display-face title, closed by a 2dp ink rule.",
+      "html": "<header class=\"ds-bar\"><span>&#8592;</span><h1>History</h1><span>&#8942;</span></header>",
+      "css": ".ds-bar{display:flex;align-items:center;gap:16px;height:64px;padding:0 16px;background:#F3E9D4;border-bottom:2px solid #1C1A12;color:#1C1A12}.ds-bar h1{flex:1;margin:0;font:800 26px/30px 'Big Shoulders Display',sans-serif}"
     },
     {
-      "name": "Search field structure",
+      "name": "Square switch",
       "kind": "input",
-      "refersTo": "search-field",
-      "description": "Structural preview only; native FilledBox has a magnifying start icon, clear action, inline input hint, no floating hint and zero normal/focused strokes. Source: layout/dictionary.xml. Hint explicitly uses colorOnSurfaceVariant; final measured contrast: light 4.94:1, dark 6.56:1.",
-      "html": "<div class=\"ds-search-wrap\"><svg class=\"ds-search-icon\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" d=\"M16,10a6,6 0,1 1,-12 0a6,6 0,1 1,12 0M14.5,14.5L20,20\"/></svg><input class=\"ds-search\" aria-label=\"Search terms\" placeholder=\"Search terms\"></div>",
-      "css": ".ds-search-wrap { display:flex; align-items:center; border-radius:28px; background:#E1E7DB; color:#41493D; } .ds-search { border:0; background:transparent; color:#1B211B; font-family:sans-serif; } .ds-search::placeholder { color:#41493D; opacity:1; }"
-    },
-    {
-      "name": "Term label",
-      "kind": "custom",
-      "refersTo": "term-row",
-      "description": "Static light fallback; native selectable background and row delete control omitted. Source: layout/dictionary_row.xml.",
-      "html": "<div class=\"ds-term\">Example term</div>",
-      "css": ".ds-term { min-height:64px; padding:18px 10px; color:#1B211B; font:16px/24px sans-serif; letter-spacing:0.03125em; }"
-    },
-    {
-      "name": "Editor heading",
-      "kind": "custom",
-      "refersTo": "editor-title",
-      "description": "Type-role preview; actual native sheet includes close icon and outlined field. Source: layout/dictionary_editor.xml.",
-      "html": "<div class=\"ds-title\">Add term</div>",
-      "css": ".ds-title { font:22px/28px sans-serif; letter-spacing:0; }"
-    },
-    {
-      "name": "Inline feedback",
-      "kind": "custom",
-      "refersTo": "feedback",
-      "description": "Static light fallback; actual feedback is a polite Android live region. Source: layout/dictionary_editor.xml.",
-      "html": "<div class=\"ds-feedback\">Only on this device</div>",
-      "css": ".ds-feedback { font:500 12px/16px sans-serif; letter-spacing:0.04166667em; color:#41493D; }"
+      "refersTo": "icon-button",
+      "description": "Rind-green track and white thumb at the end when on; outline thumb at the start when off.",
+      "html": "<label class=\"ds-sw\"><input type=\"checkbox\" checked><span></span></label>",
+      "css": ".ds-sw input{display:none}.ds-sw span{display:inline-block;width:52px;height:32px;background:#DDCEAF;border:2px solid #6D6550;box-sizing:border-box;position:relative}.ds-sw span::after{content:'';position:absolute;left:6px;top:6px;width:16px;height:16px;background:#6D6550}.ds-sw input:checked+span{background:#2E4A21;border-color:#2E4A21}.ds-sw input:checked+span::after{left:auto;right:4px;top:4px;width:20px;height:20px;background:#fff}"
     }
   ],
   "narrative": {
-    "northStar": "Native Material3 task UI",
-    "overview": "Native Material3 task UI: familiar controls, readable terms, quiet feedback. System typography and dynamic color make Settings feel at home on Android; the green palette is the static fallback.\n\nThis records the implemented Settings/dictionary surface, not a redesign of the recording UI. No imagery or custom display face is needed for this task.\n\nVerification: on-phone `DictionarySettingsTest` passed default dark and app-local light previews; light explicitly used fontScale 1.3 without changing device settings. Assertions covered visible IME, commit above IME, action targets of at least 48dp, duplicate/search/valid/empty states. Actual successful UI Add/repeat behavior is code-reviewed, not automated through a successful UI save; backend persistence/update is tested separately.\n\nFinal contrast correction (`c23d2f1`): search hint explicitly uses `colorOnSurfaceVariant`; measured hint contrast is 4.94:1 in light and 6.56:1 in dark. Four list/empty contrast recaptures under `corpus/lab/dictionary-settings-contrast-review/files/lab/dictionary-settings/` (`phone-list.png`, `phone-empty.png`, `phone-large-light-list.png`, `phone-large-light-empty.png`) supersede the corresponding earlier captures for contrast only. Add/duplicate evidence remains in the final-review directory. Both dark and app-local light/1.3-scale UI tests passed again on the final APK, including keyboard and touch-target checks.",
+    "northStar": "Kraft card printed in two inks",
+    "overview": "Red-orange and rind green on a warm card ground, Big Shoulders Display for names, times and counts, Public Sans for what the owner reads. One fixed light scheme for the recording panel and every screen; the light panel next to a dark keyboard is deliberate.\n\nCorners are square except the microphone disk and ring; 2dp rules close toolbars and the panel, 1dp hairlines separate rows. Every state has words: status text, tooltips on icon-only buttons and one sentence per History mark.",
     "keyCharacteristics": [
-      "Native Android Material3 controls.",
-      "Dynamic color with light/dark green fallbacks.",
-      "One-field editing and immediate per-entry saving."
+      "One fixed light theme, no dynamic colour",
+      "Two inks: red-orange primary, rind-green secondary",
+      "Condensed display face for titles, times and counts",
+      "Square corners, 2dp rules, 1dp hairlines",
+      "One mark per History row, one sentence per mark",
+      "Undo after delete; Discard take final at once"
     ],
     "rules": [
       {
-        "name": "System Color",
-        "body": "Resolve semantic theme attributes at runtime; static green values are fallbacks, not a forced brand palette.",
-        "section": "colors"
-      },
-      {
-        "name": "Native Type",
-        "body": "Use Android text appearances and scalable sp text; preserve the system font.",
+        "name": "The Display Rule",
+        "body": "Names, times and counts in Big Shoulders Display; prose in Public Sans.",
         "section": "typography"
       },
       {
-        "name": "Native Depth",
-        "body": "Let Material widgets own elevation, state layers and transitions; do not introduce a separate shadow system.",
+        "name": "The One Mark Rule",
+        "body": "At most one mark per take: in progress, cut short, unable to insert, uncertain. Clean takes carry none.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Disk Rule",
+        "body": "The microphone disk is one colour in every state; the glyph and status say what it does.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat Card Rule",
+        "body": "No shadows; rules and hairlines carry structure.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** use semantic theme colors and DayNight resources.",
-      "**Do** preserve at least 48dp action targets, system insets and keyboard accommodation.",
-      "**Do** keep saving feedback close to the field and provide Undo after deletion.",
-      "**Do** keep dictionary management in Settings and recording focused on recording."
+      "Do resolve theme roles; hex only in values/colors.xml.",
+      "Do give every state words: status, tooltips, one sentence per mark.",
+      "Do keep 48dp targets (56dp on the panel) and check font scale 2 in both orientations.",
+      "Do keep Undo after deletion; Discard take in the panel is final at once (owner, 2026-11-11)."
     ],
     "donts": [
-      "**Don't** hardcode the fallback green over dynamic color.",
-      "**Don't** add a global Save step to the per-entry editor.",
-      "**Don't** promise measured accuracy gains for arbitrary new terms."
+      "Don't add DayNight resources, dynamic colour or a second theme.",
+      "Don't round corners except the microphone disk and ring.",
+      "Don't put more than one mark on a row, or transport glyphs in a mark slot.",
+      "Don't promise accuracy gains for new dictionary terms."
     ]
   }
 }

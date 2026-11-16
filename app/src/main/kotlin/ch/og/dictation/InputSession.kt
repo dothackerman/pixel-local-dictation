@@ -29,3 +29,24 @@ class InputSession {
 
     private fun open() { current++; live = true }
 }
+
+/**
+ * Null means no editor call was made; callbacks may synchronously invalidate the input.
+ * [requireLive]: a null read means the editor deactivated this connection (it answers reads with
+ * null and drops writes while reporting success), so nothing is written, [refused] runs and the
+ * result is false. Only for takes that went through a rotation hold: some healthy editors also
+ * answer a valid read with null.
+ */
+fun <C : Any> commitToInput(
+    session: InputSession, token: Long?, connection: C?, current: () -> C?,
+    allowed: () -> Boolean, before: (C) -> CharSequence?, write: (C, String) -> Boolean,
+    text: String, requireLive: Boolean = false, refused: () -> Unit = {},
+): Boolean? {
+    if (!allowed() || !session.matches(token) || connection == null) return null
+    val preceding = before(connection)
+    val currentConnection = current()
+    if (!allowed() || !session.matches(token) || currentConnection !== connection) return null
+    if (requireLive && preceding == null) { refused(); return false }
+    val lead = if (!preceding.isNullOrEmpty() && !preceding[0].isWhitespace()) " " else ""
+    return write(connection, lead + text)
+}

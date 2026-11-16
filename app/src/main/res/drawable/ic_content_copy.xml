@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols Sharp "content_copy", wght 400, opsz 24. Apache License 2.0 (licenses/Apache-2.0-MaterialSymbols.txt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="960" android:viewportHeight="960"
+    android:tint="?attr/colorOnSurface">
+    <group android:translateY="960">
+        <path android:fillColor="@android:color/white" android:pathData="M280-240v-640h520v640H280Zm80-80h360v-480H360v480ZM120-80v-640h80v560h440v80H120Zm240-240v-480 480Z" />
+    </group>
+</vector>

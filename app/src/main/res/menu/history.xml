@@ -1,0 +1,12 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Detail only, at the end of the top bar; Copy leads by order, Delete 16dp after it. -->
+    <item android:id="@+id/history_copy_item" android:title="@string/history_copy" android:icon="@drawable/ic_content_copy"
+        android:visible="false" app:showAsAction="always"
+        app:contentDescription="@string/history_copy_transcript" app:tooltipText="@string/history_copy_transcript" />
+    <item android:id="@+id/history_delete_item" android:title="@string/history_delete" android:icon="@drawable/ic_delete"
+        android:visible="false" app:showAsAction="always" app:actionLayout="@layout/history_delete_action"
+        app:contentDescription="@string/history_delete_transcript" app:tooltipText="@string/history_delete_transcript" />
+    <!-- List overflow: the marks sheet first, then Clear History… (keeps its confirmation). -->
+    <item android:id="@+id/history_marks_item" android:title="@string/history_marks" android:icon="@drawable/ic_info" app:showAsAction="never" />
+    <item android:id="@+id/history_clear_item" android:title="@string/history_clear" android:icon="@drawable/ic_delete" app:showAsAction="never" />
+</menu>

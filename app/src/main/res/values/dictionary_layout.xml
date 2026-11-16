@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Portrait: Add term is the extended button over the list, so the list keeps room under it. -->
+    <bool name="dictionary_add_in_toolbar">false</bool>
+    <dimen name="dictionary_list_bottom">104dp</dimen>
+    <!-- Material insets helper and error text 12dp at font 1.3× and up, 4dp left of the field's text
+         and of the editor's feedback line; keep the field's 16dp at every scale (#36 critique round 3). -->
+    <dimen name="material_helper_text_font_1_3_padding_horizontal" tools:override="true">16dp</dimen>
+    <!-- And 8dp above the error at font 1.3× and up; keep 4dp so the landscape error stays right
+         under its field above the keyboard. -->
+    <dimen name="material_helper_text_font_1_3_padding_top" tools:override="true">4dp</dimen>
+</resources>

@@ -14,6 +14,8 @@ class DictationRuntime(
     private val decode: Executor,
     private val load: () -> Recognizer,
     private val segments: () -> Segmenter,
+    /** Take text from joined chunk text; identity for measurement replays, so lab texts stay raw. */
+    private val written: (String) -> String = { it },
     private val release: (Recognizer) -> Unit = {},
 ) {
     private var recognizer: Recognizer? = null // decode executor only
@@ -39,14 +41,16 @@ class DictationRuntime(
     fun open(
         capture: TakeCapture, output: TakeOutput, deliver: Executor,
         timeline: TimelineObserver? = null, clock: () -> Long = System::nanoTime,
+        retentionEligible: Boolean = true,
     ): TakeSession = synchronized(sessions) {
         check(!closed && !retiring) { "runtime closed" }
         val segmenter = segments()
         lateinit var session: TakeSession
         session = TakeSession(capture, output, deliver, { delivery, observer, preview ->
             check(!closed) { "runtime closed" }
-            TakeTranscriber(::recognizer, segmenter, decode, delivery, variant.post, observer, preview)
-        }, timeline, clock, {
+            TakeTranscriber(::recognizer, segmenter, decode, delivery, variant.post, observer, written,
+                onTimedPreview = preview, onPreview = {})
+        }, timeline, clock, retentionEligible, {
             try { segmenter.reset() } finally { synchronized(sessions) {
                 sessions.remove(session)
                 if (retiring && sessions.isEmpty() && !closed) close()

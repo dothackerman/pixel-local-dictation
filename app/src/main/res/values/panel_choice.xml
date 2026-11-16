@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Portrait: the Cancel choice takes the microphone stage's place. -->
+    <bool name="panel_choice_over_stage">true</bool>
+    <!-- Between Stop and insert and Discard take: with the 6dp insets the drawn buttons are 72dp
+         apart, as in the mock (16 + 40 + 16). -->
+    <dimen name="choice_gap">60dp</dimen>
+    <!-- Portrait has room: the preview keeps three lines under the private-field line. -->
+    <bool name="panel_preview_yields_to_notice">false</bool>
+    <!-- Space under the private-field line. -->
+    <dimen name="panel_notice_gap">4dp</dimen>
+</resources>

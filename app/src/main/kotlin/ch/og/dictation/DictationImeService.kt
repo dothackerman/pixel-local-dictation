@@ -1,8 +1,14 @@
 package ch.og.dictation
 
 import android.Manifest
+import android.view.KeyEvent
+import android.view.Display
+import android.hardware.display.DisplayManager
+import android.view.WindowManager
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.res.Configuration
+import java.io.File
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -11,11 +17,15 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.ContextThemeWrapper
+import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
 import android.widget.TextView
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -25,18 +35,33 @@ import org.json.JSONObject
  * the previous keyboard. Nothing is written to a field before Stop.
  */
 class DictationImeService : InputMethodService() {
+    companion object {
+        /** The second read-back after a write that was not seen in the field at once (ADR-010). */
+        internal const val CONFIRM_DELAY_MS = 100L
+        internal var recorderFactory: () -> Recorder = ::Recorder
+        internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
+        /** Asks Android to show this input method's own panel on the current input session. */
+        internal var requestPanel: (InputMethodService) -> Unit = { it.requestShowSelf(0) }
+        /** Where takes are kept; device demos point it at an isolated root, never the owner's History. */
+        internal var historyRootFor: (android.content.Context) -> java.io.File = ::historyRoot
+    }
     private val tag = "DictationIme"
     private var status: TextView? = null
     private var preview: TextView? = null
     private var microphone: ImageButton? = null
     private var ring: RecordingRingView? = null
     private var feedback: RecordingFeedback? = null
+    private var captureEnded: () -> Boolean = { false }
     private var finishing = false
     private var statusText = R.string.status_opening
     private var previewText = ""
     private var microphoneEnabled = false
     private var microphoneLabel = R.string.status_opening
     private var banner: View? = null
+    private var retentionNotice: TextView? = null
+    private var editorRetentionEligible = false
+    /** Kept for panel recreation throughout this take; never recomputed from later focus. */
+    private var takeRetentionEligible: Boolean? = null
     /** Only saving audio needs a banner; experiment receipts remain out of the normal panel. */
     private var saveTake = false
     private val session = InputSession()
@@ -44,12 +69,107 @@ class DictationImeService : InputMethodService() {
     private val mainExecutor = Executor { mainHandler.post(it) }
     /** Set while a hand-back to the keyboard is pending, so the panel does not start a new take. */
     private var returning = false
-    /** Session that started the current take; text goes there or nowhere. */
+    /** Input session the current take's panel is attached to. */
     private var recordingToken: Long? = null
+    /** Authority to insert: granted by Stop to the panel's session; text goes there or nowhere. */
+    private var authority: Long? = null
     private var take: TakeSession? = null
+    private var takeGeneration = 0L
+    private var interruptedView = false
+    private var releaseRetry = false
+    private var previewAllowed = false
+    private var destroyed = false
+    private val microphoneOwnerListener: (MicrophoneOwner.State) -> Unit = {
+        mainHandler.post { if (!destroyed) updateSharedMicrophone() }
+    }
+    private var inputViewVisible = false
+    private var rotationTrace: RotationTrace? = null
+    /** Retention class of the editor that last started input. */
+    private var editorRetention = EditorRetention.NO_EDITOR
+    private var rotationView = 0L
+    private var rotationTake = 0L
+    /** Last observed display rotation and the number of rotation changes this service saw. */
+    private var displayRotation: Int? = null
+    private var rotationChanges = 0L
+    /** Orientation of the last configuration this service saw; a change counts as a rotation. */
+    private var configurationOrientation: Int? = null
+    private var rotationsAtConfiguration = 0L
+    /**
+     * rotationChanges when the panel was last visible (settled, see ROTATION_SETTLE_MS); a higher
+     * count identifies a rotation since.
+     */
+    private var rotationsWhenVisible = 0L
+    /** Rotation hold: authority revoked, preview hidden, capture continues until the panel returns. */
+    private var holding = false
+    /** From the first hold of a rotation until the panel has settled; one gap for all of it. */
+    private var rotationEpisode = false
+    /** Stop granted authority and a rotation hold revoked it: it moves to the session the panel returns to. */
+    private var authorityMoves = false
+    /** A Stop-wait rotation hold holds the result before dispatch until the panel has settled. */
+    private var deliveryHeldForRotation = false
+    /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
+    private var takeHeldForRotation = false
+    /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
+    private var takeField: FieldIdentity? = null
+    private var takeConnection: android.view.inputmethod.InputConnection? = null
+    /** The editor that last started input, as identity values only. */
+    private var editorIdentity: FieldIdentity? = null
+    /**
+     * A rotation hold's input start was not the take's field (same app): the take keeps recording but has no
+     * authority, and Stop writes nothing (the text is held). While the hold is open the take's own field starting
+     * input again (the automatic rotation sequence) returns it; once the hold settled on a mismatch it is final.
+     */
+    private var fieldMismatch = false
+    /** The rotation hold settled on a mismatch: it is final, the take's field never regains authority. */
+    private var mismatchFinal = false
+    /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
+    private var retargetSettle = false
+    /** The read-back of a write that could not be confirmed at once; the second look is pending. */
+    /** Generation of the take whose outcome has not been delivered yet: from start until finished() (or its late read-back look) ends. */
+    private var outcomePending: Long? = null
+    private var pendingConfirm: PendingConfirm? = null
+    /** The History side of the current take: a late pass of the read-back corrects its delivery receipt. */
+    private var takeHistory: HistoryTakeOutput? = null
+    /**
+     * The finished text of a take that could not be inserted (plan B): held in memory only while
+     * the Unable to insert text state shows; never written or logged. Cleared by Discard text, Back
+     * after a copy, screen off and a different app's editor; kept across a rotation, an input
+     * restart and a tap on the field. While held, the status is the held state's own (see showStatus).
+     */
+    private var held: HeldText? = null
+    private var editorPackage: String? = null
+    /** The app whose editor the take started in; its text is only ever held and shown for that app. */
+    private var takePackage: String? = null
+    /** The screen went off while this take was active: a lock never keeps its text. */
+    private var takeLocked = false
+    /** An input is started (between onStartInput and onFinishInput); a panel is only requested then. */
+    private var inputStarted = false
+    /**
+     * The open Cancel choice, part of the take's state: every panel (also one recreated for a
+     * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
+     */
+    private var choice: PanelChoice? = null
+    private val gapExpired = Runnable {
+        if (!rotationEpisode) return@Runnable
+        if (holding) { Log.i(tag, "rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
+        else rotationSettled()
+    }
+    /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
+    private val recordingCallback = object : android.media.AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
+            if (holding && !finishing && configs.orEmpty().any { it.isClientSilenced }) silencedDuringHold()
+        }
+    }
+    private val panelSettled = Runnable {
+        if (!holding && inputViewVisible && session.matches(recordingToken)) rotationSettled()
+    }
+    /** Newest preview of the current take, shown again when the panel returns from a hold. */
+    private var latestPreview = ""
     private var startup: StartupTrace? = null
     private var startupTake: String? = null
     private var panel: View? = null
+    /** Layout configuration the current panel was inflated for. */
+    private var panelConfiguration: Configuration? = null
     // Observation is separate from take completion, but ends when the input view is hidden.
     private var geometryTake: String? = null
     private var geometryUntilNs = 0L
@@ -65,7 +185,13 @@ class DictationImeService : InputMethodService() {
     /** A locked phone must not keep listening. */
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (takeActive) discardAndReturn("screen off")
+            rotationEvent(RotationEvent.SCREEN_OFF)
+            // Also after Stop and during the read-back wait, until finished(): its text is refused, after unlock too.
+            if (outcomePending != null) takeLocked = true
+            if (held != null) { clearHeld(); showIdle() }
+            previewAllowed = false
+            showPreview("")
+            editorEvent(EditorEvent.SCREEN_OFF)
         }
     }
 
@@ -76,13 +202,24 @@ class DictationImeService : InputMethodService() {
         val superReturnedNs = System.nanoTime()
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
+            if (RotationTrace.probeActive()) {
+                rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+                lastConfiguration = Configuration(resources.configuration)
+                rotationEvent(RotationEvent.SERVICE_CREATE)
+                listenToDisplay()
+            }
             startup = StartupTrace(applicationContext).also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
                 it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
             }
             observeGeometry()
         }
+        listenToDisplay()
+        observeRotation()
+        configurationOrientation = resources.configuration.orientation
+        getSystemService(android.media.AudioManager::class.java)?.registerAudioRecordingCallback(recordingCallback, mainHandler)
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
+        MicrophoneOwner.observe(microphoneOwnerListener)
         val ready = Engine.warmUp(this)
         startup?.event("warmUpReturned")
         ready.whenComplete { _, failure ->
@@ -93,11 +230,26 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        rotationView++
+        held?.warned = false // A rotation cancels the Back warning.
+        rotationEvent(RotationEvent.VIEW_CREATE)
         startup?.event("inputViewCreateBegin")
-        val v = layoutInflater.inflate(R.layout.ime, null)
+        // The panel uses the one application theme (#36); the service's own theme is the platform's.
+        val v = LayoutInflater.from(ContextThemeWrapper(this, R.style.Theme_Dictation)).inflate(R.layout.ime, null)
         startup?.event("inputViewInflated")
         panel = v
+        panelConfiguration = Configuration(resources.configuration)
         observeGeometry(startupTake)
+        if (resources.getBoolean(R.bool.benchmark_receipts)) {
+            var drawn = false
+            v.viewTreeObserver.addOnDrawListener {
+                if (!drawn && rotationTrace != null) {
+                    drawn = true
+                    // A draw listener must not change the tree; record after this frame.
+                    mainHandler.post { rotationEvent(RotationEvent.PANEL_DRAWN) }
+                }
+            }
+        }
         if (startup != null) {
             v.viewTreeObserver.addOnPreDrawListener {
                 recordGeometry("preDraw")
@@ -114,46 +266,98 @@ class DictationImeService : InputMethodService() {
             }
         }
         status = v.findViewById(R.id.status)
-        preview = v.findViewById<TextView>(R.id.preview).apply { text = previewText }
+        preview = v.findViewById<TextView>(R.id.preview).also { PanelPreview.bind(it, previewText) }
         showStatus(statusText)
         banner = v.findViewById(R.id.benchmark_banner)
+        retentionNotice = v.findViewById<TextView>(R.id.retention_notice)
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
+        renderNotice()
         ring = v.findViewById<RecordingRingView>(R.id.recording_ring).also { it.follow(feedback) }
         microphone = v.findViewById<ImageButton>(R.id.microphone).apply {
-            setOnClickListener { if (takeActive) stopAndInsert() else startRecording() }
+            setOnClickListener {
+                if (MicrophoneOwner.state().releaseFailed) {
+                    releaseRetry = false
+                    showStatus(R.string.status_stopping_recording)
+                    setMicrophone(false, R.string.status_stopping_recording)
+                    MicrophoneOwner.retryRelease()
+                } else if (takeActive) stopAndInsert() else startRecording()
+            }
         }
         setMicrophone(microphoneEnabled, microphoneLabel)
         v.findViewById<ImageButton>(R.id.back).setOnClickListener { cancelAndReturn() }
+        v.findViewById<View>(R.id.choice_safe).setOnClickListener { onSafeAction() }
+        v.findViewById<View>(R.id.choice_stop).setOnClickListener { chooseStop() }
+        v.findViewById<View>(R.id.choice_discard).setOnClickListener { onDiscardAction() }
+        renderChoice()
         startup?.event("inputViewCreateEnd")
         return v
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        attachRotationTrace()
+        rotationEvent(RotationEvent.INPUT_START, restarting)
         super.onStartInput(attribute, restarting)
         observeGeometry()
-        Log.i(tag, "input start: restarting=$restarting take=$takeActive " +
-            "type=0x%x field=%d".format(attribute?.inputType ?: 0, attribute?.fieldId ?: 0))
-        // Any input start during a take ends that take's session (InputSession.start).
+        Log.i(tag, "input start: restarting=$restarting take=$takeActive")
+        editorRetention = EditorRetentionPolicy.classify(attribute)
+        editorRetentionEligible = editorRetention.eligible
+        editorPackage = attribute?.packageName
+        editorIdentity = FieldIdentity.of(attribute)
+        inputStarted = true
+        held?.warned = false
+        if (held != null && editorPackage != held?.from) { clearHeld(); showIdle() } // A different app's editor.
+        previewAllowed = false
+        showPreview("")
+        // Any input start ends the previous session (InputSession.start).
         session.start()
-        if (takeActive) discardAndReturn("input restarted")
+        editorEvent(EditorEvent.INPUT_START)
+        rotationEvent(RotationEvent.INPUT_START_DONE, restarting, retention = editorRetention)
+    }
+
+    private fun attachRotationTrace() {
+        if ((rotationTrace == null || rotationTrace?.closed == true) && resources.getBoolean(R.bool.benchmark_receipts) &&
+            RotationTrace.probeActive()) {
+            rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+            rotationEvent(RotationEvent.SERVICE_ATTACH)
+            listenToDisplay()
+        }
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        attachRotationTrace()
+        rotationEvent(RotationEvent.INPUT_VIEW_START, restarting)
         super.onStartInputView(info, restarting)
+        inputViewVisible = true
         session.resume()
-        if (returning) return
-        if (takeActive) {
-            // The view can be restarted without a new input start; keep that take.
-            if (session.matches(recordingToken)) return
-            discardTake("input session changed")
+        editorEvent(EditorEvent.INPUT_VIEW_START)
+        if (returning || takeActive) { rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting); return }
+        if (MicrophoneOwner.state().occupied) {
+            interruptedView = true
+            updateSharedMicrophone()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
         }
-        val liveCheck = Engine.liveReceipt() != null
-        // The supervised live check stores timing/identity receipts only, never new recordings.
-        saveTake = !liveCheck && BenchmarkStore.isEnabled(this)
+        if (held != null) { // A panel shown again never starts a take over held text.
+            showIdle()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        if (MicrophoneOwner.state().explicitStartRequired) {
+            interruptedView = true
+            showIdle()
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        if (interruptedView) {
+            rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
+            return
+        }
+        takeRetentionEligible = null
         startupTake = startup?.beginTake(Engine.modelReadyNs != null)
         observeGeometry(startupTake)
-        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
+        rotationEvent(RotationEvent.INPUT_VIEW_START_DONE, restarting)
     }
 
     override fun onComputeInsets(outInsets: Insets) {
@@ -211,50 +415,416 @@ class DictationImeService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        rotationEvent(RotationEvent.INPUT_VIEW_FINISH, finishingInput)
+        inputViewVisible = false
         ring?.follow(null)
         geometryTake = null
         geometryUntilNs = 0L
         // Focus moved or keyboard hidden: never insert late, never keep the mic.
         session.invalidate()
+        previewAllowed = false
+        showPreview("")
         Log.i(tag, "input view finished: finishingInput=$finishingInput take=$takeActive")
-        if (takeActive) discardAndReturn("input view finished")
+        editorEvent(EditorEvent.INPUT_VIEW_FINISH)
         super.onFinishInputView(finishingInput)
+        rotationEvent(RotationEvent.INPUT_VIEW_FINISH_DONE, finishingInput)
     }
 
     override fun onFinishInput() {
+        rotationEvent(RotationEvent.INPUT_FINISH)
+        inputStarted = false
         geometryTake = null
         geometryUntilNs = 0L
         session.invalidate()
-        if (takeActive) discardAndReturn("input finished")
+        previewAllowed = false
+        showPreview("")
+        editorEvent(EditorEvent.INPUT_FINISH)
         super.onFinishInput()
+        rotationEvent(RotationEvent.INPUT_FINISH_DONE)
+    }
+
+    /**
+     * method.xml declares orientation and screen-size changes as handled; rebuild only our panel
+     * for the new layout, the take lives in this service and the panel renders its state. Android
+     * may still restart input inside super.onConfigurationChanged (measured on the Pixel on every
+     * rotation, ADR-010); the rotation counted here identifies that restart for the rotation hold.
+     * Never starts, cancels or interrupts a take by itself.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        observeRotation()
+        // Own configuration counts too, unless the display already reported a rotation since the last one.
+        if (rotationChanges == rotationsAtConfiguration && configurationOrientation != null &&
+            configurationOrientation != newConfig.orientation) rotationChanges++
+        configurationOrientation = newConfig.orientation
+        rotationsAtConfiguration = rotationChanges
+        rotationTrace?.let { trace ->
+            val diff = lastConfiguration?.diff(newConfig)
+            val handled = runCatching {
+                getSystemService(InputMethodManager::class.java)?.inputMethodList
+                    ?.firstOrNull { it.packageName == packageName }?.configChanges
+            }.getOrNull()
+            rotationEvent(RotationEvent.CONFIGURATION, configDiff = diff, handledConfig = handled)
+        }
+        lastConfiguration = Configuration(newConfig)
+        super.onConfigurationChanged(newConfig)
+        val layoutChanged = panelConfiguration?.let {
+            it.orientation != newConfig.orientation || it.screenWidthDp != newConfig.screenWidthDp ||
+                it.screenHeightDp != newConfig.screenHeightDp
+        } ?: false
+        if (layoutChanged && panel != null) {
+            ring?.follow(null)
+            setInputView(onCreateInputView())
+        }
+        // An editor that keeps focus sends no event; the visible panel settles the rotation.
+        settleAfterRotation()
+        rotationEvent(RotationEvent.CONFIGURATION_DONE)
+    }
+
+    /** Extract mode would hide the editor and our panel; landscape uses the compact panel. */
+    override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onWindowShown() {
+        rotationEvent(RotationEvent.WINDOW_SHOWN)
+        super.onWindowShown()
+    }
+
+    override fun onWindowHidden() {
+        rotationEvent(RotationEvent.WINDOW_HIDDEN)
+        previewAllowed = false
+        showPreview("")
+        session.invalidate()
+        editorEvent(EditorEvent.WINDOW_HIDDEN)
+        super.onWindowHidden()
+    }
+
+    /** The six editor-event callbacks decide the take's fate here and nowhere else. */
+    private fun editorEvent(event: EditorEvent): EditorDecision {
+        // Identification uses only what this app observed, at or before this event.
+        observeRotation()
+        val decided = EditorEventPolicy.decide(event, TakeFacts(
+            active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
+            capturing = takeActive && !finishing && !interruptedView,
+            finishing = takeActive && finishing && !interruptedView,
+            rotation = rotationIdentified(event)))
+        // A rotation never moves a take to another app: an input start from a different package
+        // ends the hold, whatever the rotation window says (no authority, no panel there).
+        val decision = if (decided == EditorDecision.REVOKE_AUTHORITY && event == EditorEvent.INPUT_START && anotherApp())
+            EditorDecision.INTERRUPT else decided
+        if (event == EditorEvent.INPUT_START && takeActive && decision == EditorDecision.REVOKE_AUTHORITY) judgeField()
+        when (decision) {
+            EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
+            EditorDecision.REVOKE_AUTHORITY -> {
+                if (authority != null) authorityMoves = true
+                revokeAuthority()
+                // A positively private rebound editor applies now, not only if the panel returns.
+                if (event == EditorEvent.INPUT_START && editorRetention.positivelyPrivate) excludeTakeFromHistory()
+                enterRotationHold(event)
+            }
+            EditorDecision.INTERRUPT -> interruptTake()
+        }
+        return decision
+    }
+
+    /** A rotation since the panel was last visible, or the take is without authority for another field. */
+    private fun rotationIdentified(event: EditorEvent? = null): Boolean {
+        if (rotationChanges > rotationsWhenVisible || retargetSettle) return true
+        if (!fieldMismatch) return false
+        if (!mismatchFinal) return true // The hold is still open: the editor is still reacting to the rotation.
+        // Settled on a mismatch: a start is still judged, but a plain hide is not a rotation (ADR-010: no timer after it).
+        return when (event) {
+            EditorEvent.INPUT_VIEW_FINISH, EditorEvent.INPUT_FINISH, EditorEvent.WINDOW_HIDDEN -> holding
+            else -> true
+        }
+    }
+
+    /**
+     * An input started inside a hold of this take. Only the take's own field keeps the take's insert
+     * authority; another editor of the app (a search box, a view that is no editor) leaves the take
+     * recording without it for good, and Stop then holds the text. Nothing here is an interruption.
+     */
+    private fun judgeField() {
+        val now = editorIdentity
+        val same = now?.isSameFieldAs(takeField) == true
+        rotationEvent(RotationEvent.FIELD_JUDGED, same, detail = mapOf(
+            "sameField" to same, "typeNull" to (now?.typeNull ?: true), "selValid" to (now?.selValid ?: false),
+            "connectionChanged" to (currentInputConnection !== takeConnection)))
+        if (!same && !fieldMismatch) {
+            fieldMismatch = true
+            Log.i(tag, "authority withheld: input is not the take's field")
+        } else if (same && fieldMismatch && !mismatchFinal) {
+            fieldMismatch = false
+            retargetSettle = true
+            // A Stop pressed meanwhile gets its authority back with the panel on this field's session.
+            if (finishing) authorityMoves = true
+            Log.i(tag, "authority returned: the take's field, inside the hold")
+        }
+    }
+
+    private fun anotherApp(): Boolean {
+        val mine = takePackage
+        val current = editorPackage
+        return mine != null && current != null && current != mine
+    }
+
+    /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
+    private fun enterRotationHold(event: EditorEvent) {
+        mainHandler.removeCallbacks(panelSettled)
+        takeHeldForRotation = true
+        if (!holding) {
+            holding = true
+            rotationEvent(RotationEvent.HOLD_ENTERED)
+            Log.i(tag, "rotation hold")
+            ring?.follow(null)
+        }
+        // An open choice is take state: the returned panel renders it again; nothing to move.
+        // Stop wait: hold the result before dispatch; an accepted commit is never undone.
+        if (finishing && !deliveryHeldForRotation && take?.holdDelivery() == true) deliveryHeldForRotation = true
+        if (!rotationEpisode) {
+            rotationEpisode = true
+            mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
+        }
+        if (finishing) { requestOwnPanelForNewEditor(event); return } // The microphone is already off.
+        val silenced = runCatching {
+            getSystemService(android.media.AudioManager::class.java)?.activeRecordingConfigurations.orEmpty().any { it.isClientSilenced }
+        }.getOrDefault(false)
+        if (silenced) { silencedDuringHold(); return }
+        requestOwnPanelForNewEditor(event)
+    }
+
+    /**
+     * A hold is on and our panel is not showing: ask for it. Asked on every hold entry (the new
+     * editor's input start, and again when it hides the view or the window), because the editor's
+     * hide can land after the first request ran, when the hold had briefly ended (Signal order,
+     * 4 in 12 probe runs). One request is pending at a time, and the hold's gap bounds the asking:
+     * after the gap, a real leave, or the panel's return, nothing is requested.
+     */
+    private fun requestOwnPanelForNewEditor(event: EditorEvent) {
+        if (event != EditorEvent.INPUT_START && event != EditorEvent.INPUT_VIEW_FINISH && event != EditorEvent.WINDOW_HIDDEN) return
+        mainHandler.removeCallbacks(panelRequest)
+        mainHandler.post(panelRequest)
+    }
+
+    private val panelRequest = Runnable {
+        if (holding && inputStarted && !inputViewVisible && !destroyed) requestPanel(this)
+    }
+
+    /** The panel settled after a rotation: release a result held for it, unless the finishing choice holds it. */
+    private fun restoreAfterRotation() {
+        val heldForRotation = deliveryHeldForRotation
+        deliveryHeldForRotation = false
+        if (!takeActive || interruptedView) return
+        if (heldForRotation && choice != PanelChoice.FINISHING) take?.resumeDelivery()
+    }
+
+    private fun silencedDuringHold() {
+        Log.i(tag, "rotation hold: capture silenced")
+        rotationEvent(RotationEvent.HOLD_SILENCED)
+        interruptTake()
+    }
+
+    /** Ends hold, gap and settling without deciding anything about the take. */
+    private fun endHold() {
+        holding = false
+        rotationEpisode = false
+        mainHandler.removeCallbacks(gapExpired)
+        mainHandler.removeCallbacks(panelSettled)
+    }
+
+    /** The panel stayed visible after the rotation: later editor events are judged without it. */
+    private fun rotationSettled() {
+        if (rotationEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
+        endHold()
+        rotationsWhenVisible = rotationChanges
+        retargetSettle = false
+        if (fieldMismatch) mismatchFinal = true
+        authorityMoves = false
+        if (takeActive && !interruptedView && editorRetention.excludesSettledTake) excludeTakeFromHistory()
+        restoreAfterRotation()
+    }
+
+    /**
+     * Take start, end or interruption: ends hold, gap and settling, and forgets everything a
+     * rotation decided for the take: moving authority and the rotation's delivery hold flag (the
+     * take itself releases or drops its held result).
+     */
+    private fun endHoldAndClearDeliveryHold() {
+        endHold()
+        fieldMismatch = false
+        mismatchFinal = false
+        retargetSettle = false
+        renderNotice()
+        authorityMoves = false
+        deliveryHeldForRotation = false
+    }
+
+    /**
+     * The panel is visible on the live session for this take; a held take continues there. The
+     * rotation stays identified until the panel has stayed visible for ROTATION_SETTLE_MS, because
+     * a recreated editor can still hide it right after Android showed it (#56 trace).
+     */
+    private fun panelVisible() {
+        recordingToken = session.token()
+        // Stop's authority moves with the identified rotation to the session the panel returned to.
+        if (authorityMoves && finishing && !interruptedView && !fieldMismatch) authority = recordingToken
+        if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
+        if (holding) {
+            holding = false
+            if (!interruptedView) {
+                previewAllowed = true
+                showPreview(latestPreview)
+                if (!finishing && choice == null) ring?.follow(feedback)
+            }
+        }
+        settleAfterRotation()
+    }
+
+    /**
+     * Retention stays latched from the starting editor and only tightens: a positively private
+     * editor (password, no-learning) seen while the take rebinds, or an excluded editor the take
+     * settles on (panel settled after a rotation, or Stop), excludes the take and removes what was
+     * saved, whatever ends the take afterwards. An input start without an editor (NO_EDITOR, e.g.
+     * TYPE_NULL while an app recreates its activity) never tightens by itself (#61).
+     */
+    private fun excludeTakeFromHistory() {
+        if (takeRetentionEligible != true) return
+        takeRetentionEligible = false
+        take?.excludeFromHistory()
+        renderNotice()
+    }
+
+    private fun settleAfterRotation() {
+        if (!takeActive || holding || !inputViewVisible || !rotationIdentified()) return
+        mainHandler.removeCallbacks(panelSettled)
+        mainHandler.postDelayed(panelSettled, ROTATION_SETTLE_MS)
+    }
+
+    /** No text may be written for this take until Stop grants authority again; capture is untouched. */
+    private fun revokeAuthority() {
+        authority = null
+        previewAllowed = false
+        showPreview("")
+    }
+
+    private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null,
+                              retention: EditorRetention? = null, detail: Map<String, Any>? = null) {
+        val trace = rotationTrace ?: return
+        val rotation = observeRotation()
+        trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
+            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges,
+            configDiff, handledConfig, retention, detail)
+    }
+
+    /** Trace only: the configuration this service last saw, to report what a change differs in. */
+    private var lastConfiguration: Configuration? = null
+
+    /**
+     * Reads the default display's rotation and counts every change this service observes.
+     * Comparing with the take's start rotation would miss rotating there and back.
+     */
+    private fun observeRotation(): Int? {
+        val current = runCatching {
+            getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)?.rotation
+        }.getOrNull() ?: return displayRotation
+        val last = displayRotation
+        if (last != null && last != current) rotationChanges++
+        displayRotation = current
+        return current
+    }
+
+    /** Counts display rotations as soon as Android reports them, before the editor reacts. */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != Display.DEFAULT_DISPLAY) return
+            // The value can still be the old one here (#56 trace); configuration and editor events read it again.
+            observeRotation()
+            settleAfterRotation()
+            rotationEvent(RotationEvent.DISPLAY_CHANGED)
+        }
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+    }
+    private var displayListening = false
+
+    private fun listenToDisplay() {
+        if (displayListening) return
+        displayListening = true
+        getSystemService(DisplayManager::class.java)?.registerDisplayListener(displayListener, mainHandler)
     }
 
     override fun onDestroy() {
+        rotationEvent(RotationEvent.SERVICE_DESTROY)
+        if (displayListening) getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayListener)
+        destroyed = true
+        outcomePending = null
+        endHold()
+        getSystemService(android.media.AudioManager::class.java)?.unregisterAudioRecordingCallback(recordingCallback)
+        MicrophoneOwner.remove(microphoneOwnerListener)
         unregisterReceiver(screenOff)
-        discardTake("service destroyed")
+        session.invalidate()
+        if (takeActive) interruptTake()
+        if (releaseRetry) MicrophoneOwner.retryRelease()
         feedback?.stop()
         ring?.follow(null)
         super.onDestroy()
     }
 
     private fun startRecording() {
-        if (takeActive) return
+        if (takeActive || held != null || outcomePending != null) return // Held text is never dropped by starting a take.
+        if (MicrophoneOwner.state().occupied) {
+            interruptedView = true
+            updateSharedMicrophone()
+            return
+        }
+        MicrophoneOwner.acceptExplicitStart()
+        interruptedView = false
+        choice = null
+        renderChoice()
+        previewAllowed = true
         if (!hasMicPermission()) {
             showStatus(R.string.status_no_permission)
             setMicrophone(false, R.string.status_no_permission)
             return
         }
+        // Latch current policy for each new take, including explicit restarts.
+        val liveCheck = Engine.liveReceipt() != null
+        saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
+        banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
         if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
+        rotationTake++
+        rotationEvent(RotationEvent.CAPTURE_START)
+        var started = false // This start produced a take that will deliver finished().
         try {
             val liveTakeId = startupTake
-            val token = session.token()
-            recordingToken = token
+            val generation = ++takeGeneration
+            outcomePending = generation
+            val currentRotationTake = rotationTake
+            recordingToken = session.token()
+            takeHeldForRotation = false
+            takeField = FieldIdentity.of(currentInputEditorInfo)
+            takeConnection = currentInputConnection
+            takePackage = editorPackage
+            takeLocked = false
+            authority = null
+            fun authorityForThisTake() = authority.takeIf { generation == takeGeneration }
             val save = saveTake
+            val retentionEligible = editorRetentionEligible
+            takeRetentionEligible = retentionEligible
+            renderNotice()
             var identity: () -> org.json.JSONObject? = { null }
+            var attempted = false
             val output = object : TakeOutput {
-                override fun preview(text: String) = showPreview(text)
-                override fun commit(text: String) = commitForSession(token, text)
+                override fun preview(text: String) = publishPreview(generation, text)
+                override fun captureReleaseFailed() {
+                    if (generation != takeGeneration) return
+                    releaseRetry = true
+                    showStatus(R.string.status_release_failed)
+                    setMicrophone(true, R.string.retry_release)
+                }
+                override fun commit(text: String) = commitForSession(authorityForThisTake(), text) { attempted = true }
+                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(authorityForThisTake(), text, allowed) { attempted = true }
+                override fun commitAttempted() = attempted
                 override fun returnToKeyboard(): Boolean {
+                    if (!session.matches(authorityForThisTake())) return false
                     // Switching the IME can synchronously invalidate input. The result has
                     // already been submitted; do not turn that hand-back into cancellation.
                     returning = true
@@ -262,22 +832,73 @@ class DictationImeService : InputMethodService() {
                     finally { mainHandler.post { returning = false } }
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
+                    // Synchronous on the main thread; only a late read-back look marks it pending again.
+                    if (outcomePending == generation) outcomePending = null
+                    // A write that is still being read back reports its terminal event at the second look.
+                    val lateLook = pendingConfirm != null && !result.interrupted && result.outcome == TakeOutcome.COMMIT_REJECTED
+                    if (!lateLook) rotationTrace?.event(when (result.outcome) {
+                        TakeOutcome.COMPLETED -> RotationEvent.TERMINAL_COMPLETED
+                        TakeOutcome.CANCELLED -> RotationEvent.TERMINAL_CANCELLED
+                        TakeOutcome.INPUT_CHANGED -> RotationEvent.TERMINAL_INPUT_CHANGED
+                        TakeOutcome.FAILED -> RotationEvent.TERMINAL_FAILED
+                        TakeOutcome.COMMIT_REJECTED -> RotationEvent.TERMINAL_COMMIT_REJECTED
+                    }, take = currentRotationTake)
                     identity()?.let { startup?.liveResult(liveTakeId, it, result) }
-                    if (save && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)) {
-                        saveBenchmarkTake(pcm, result)
-                    }
+                    if (!result.interrupted) saveBenchmarkTake(save && !RotationTrace.probeActive(), pcm, result)
+                    if (generation != takeGeneration) return
+                    // The take's History output is dropped with the take; only a write awaiting its second look keeps it.
+                    if (pendingConfirm == null || result.interrupted || result.outcome != TakeOutcome.COMMIT_REJECTED) takeHistory = null
                     recordingToken = null
+                    authority = null
                     startupTake = null
+                    latestPreview = ""
+                    endHoldAndClearDeliveryHold()
+                    if (result.interrupted) {
+                        pendingConfirm = null
+                        take = null
+                        finishing = false
+                        choice = null
+                        showPreview("")
+                        // Whether History kept it shows on the History page; the private-field line says when it cannot.
+                        val keep = textToHold(result)
+                        if (keep != null) holdText(keep, result.historySaved) else {
+                            showStatus(R.string.status_unable_insert)
+                            setMicrophone(true, R.string.start_recording)
+                        }
+                        return
+                    }
+                    choice = null
                     showIdle()
-                    if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
-                        Log.e(tag, "take failed: ${result.outcome}", result.failure)
+                    val pending = pendingConfirm
+                    pendingConfirm = null
+                    if (pending != null && result.outcome == TakeOutcome.COMMIT_REJECTED) {
+                        // The write may still show up: the held text, or the hand-back, waits for the second look.
+                        confirmLater(pending, result, currentRotationTake, generation)
+                        return
+                    }
+                    val keep = textToHold(result)
+                    if (keep != null) {
+                        // The text is in History where the field allows it; the panel also holds it for Copy.
+                        holdText(keep, result.historySaved)
+                    } else if (notInsertedText(result) != null) {
+                        // Not this app's panel any more, or the screen went off: status only, History where eligible.
+                        showStatus(R.string.status_unable_insert)
+                        setMicrophone(true, R.string.start_recording)
+                    } else if (result.outcome == TakeOutcome.FAILED || result.outcome == TakeOutcome.COMMIT_REJECTED) {
+                        Log.e(tag, "take failed: ${result.outcome}")
                         showStatus(R.string.status_failed)
                         setMicrophone(true, R.string.retry_recording)
                     }
+                    if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
                 }
             }
             showStatus(R.string.status_opening)
             showPreview("")
+            latestPreview = ""
+            // The panel is visible now; only rotations after this point count for this take.
+            observeRotation()
+            rotationsWhenVisible = rotationChanges
+            endHoldAndClearDeliveryHold()
             finishing = false
             setMicrophone(false, R.string.status_opening)
             val currentFeedback = RecordingFeedback()
@@ -286,7 +907,12 @@ class DictationImeService : InputMethodService() {
             ring?.follow(currentFeedback)
             val trace = startup
             val traceTake = startupTake
-            val capture = MicrophoneCapture(onStarted = {
+            val traceRotation = rotationTrace
+            val traceRotationTake = rotationTake
+            val unexpectedEnd = AtomicBoolean(false)
+            captureEnded = { unexpectedEnd.get() }
+            val microphoneCapture = MicrophoneCapture(onStarted = {
+                traceRotation?.event(RotationEvent.CAPTURE_STARTED, take = traceRotationTake)
                 trace?.event("recordingStarted", traceTake)
                 mainHandler.post {
                     if (feedback === currentFeedback && takeActive && !finishing) {
@@ -296,42 +922,112 @@ class DictationImeService : InputMethodService() {
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
-                mainHandler.post {
-                    if (feedback === currentFeedback && takeActive && !finishing) {
-                        // Preserve the existing ability to finish the audio captured before interruption.
-                        showStatus(R.string.status_capture_ended)
-                        setMicrophone(true, R.string.finish_transcription)
-                        ring?.follow(null)
+                unexpectedEnd.set(true)
+                traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
+                postCaptureEnd(mainHandler, Runnable {
+                    if (feedback === currentFeedback && takeActive) {
+                        // Unexpected capture end is a system interruption: revoke insertion,
+                        // release capture, then finish only the audio already accepted.
+                        interruptTake()
+                    }
+                })
+            }, recorder = recorderFactory())
+            val capture = object : TakeCapture {
+                override fun start(accept: (FloatArray) -> Unit) {
+                    try { microphoneCapture.start(accept) }
+                    catch (failure: Throwable) {
+                        traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        throw failure
                     }
                 }
-            })
-            val observer = if (trace == null) null else TimelineObserver { event ->
-                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
-                    trace.event(event.phase, traceTake, event.ns)
+                override fun stop(done: (Result<ByteArray>) -> Unit) {
+                    microphoneCapture.stop { result ->
+                        if (result.isFailure) traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        else traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
+                        done(result)
+                    }
+                }
+                override fun cancel(done: () -> Unit) {
+                    microphoneCapture.cancel {
+                        traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
+                        done()
+                    }
+                }
+                override fun pause() = microphoneCapture.pause()
+                override fun resume() = microphoneCapture.resume()
+                override fun cancelWithResult(done: (Result<Unit>) -> Unit) {
+                    microphoneCapture.cancelWithResult { result ->
+                        traceRotation?.event(if (result.isSuccess) RotationEvent.CAPTURE_RELEASED else RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
+                        done(result)
+                    }
                 }
             }
-            take = Engine.openTake(this) { runtime, receipt ->
-                identity = receipt
-                runtime.open(capture, output, mainExecutor, observer).also { it.start() }
+            val observer = if (trace == null && traceRotation == null) null else TimelineObserver { event ->
+                val rotationEvent = when (event.phase) {
+                    "stopRequested" -> RotationEvent.STOP_REQUESTED
+                    "captureStopped" -> RotationEvent.CAPTURE_STOPPED
+                    "finalReady" -> RotationEvent.FINAL_READY
+                    "takeEnded" -> RotationEvent.TAKE_ENDED
+                    else -> null
+                }
+                if (rotationEvent != null) traceRotation?.event(rotationEvent, take = traceRotationTake)
+                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
+                    trace?.event(event.phase, traceTake, event.ns)
+                }
+                if (event.phase in setOf("scenario", "captureStart", "captureSampleAnchor", "captureStopAnchor", "chunkReady", "chunkEnqueue",
+                        "chunkWorkerStart", "chunkWorkerEnd", "checkpointQueued", "checkpointDurable", "checkpointFailed",
+                        "stopRequested", "producerStop", "captureStopped", "finishCall", "finishEnqueue",
+                        "finishWorkerStart", "finishWorkerEnd", "finalReady", "commitAccepted", "commitRejected",
+                        "returnRequested", "takeEnded")) {
+                    startup?.timing(traceTake, event)
+                }
             }
+            val startedTake = Engine.openTake(this) { runtime, receipt ->
+                identity = receipt
+                val history = HistoryTakeOutput(output,
+                    { HistoryIo.store(historyRootFor(this)) }, HistoryIo.executor,
+                    { recordHistoryNotice(HistoryNotice.SAVE) }, delivery = mainExecutor,
+                    onDeleteFailure = { recordHistoryNotice(HistoryNotice.DELETE) },
+                    onReceiptFailure = { recordHistoryNotice(HistoryNotice.RECEIPT) },
+                    onTakeFailure = { hasPrefix -> if (hasPrefix) recordHistoryNotice(HistoryNotice.INCOMPLETE) },
+                    timeline = observer)
+                takeHistory = history
+                runtime.open(capture, history, mainExecutor, observer,
+                    retentionEligible = retentionEligible).also { it.start() }
+            }
+            take = startedTake
+            started = true
+            renderChoice()
+            microphoneCapture.setReleaseRetry { startedTake.retryCaptureRelease() }
             Log.i(tag, "recording started")
         } catch (e: Exception) {
+            rotationEvent(RotationEvent.CAPTURE_FAILED)
+            rotationEvent(RotationEvent.CAPTURE_NOT_ACQUIRED)
+            rotationEvent(RotationEvent.TERMINAL_FAILED)
             startup?.event("recordingFailed", startupTake)
+            if (!started) outcomePending = null
             startupTake = null
             feedback?.stop()
             showIdle()
-            Log.e(tag, "start failed", e)
+            Log.e(tag, "start failed")
             showStatus(R.string.status_failed)
             setMicrophone(true, R.string.retry_recording)
+            if (MicrophoneOwner.state().occupied) updateSharedMicrophone()
         }
     }
 
     private fun stopAndInsert() {
         if (!takeActive || finishing) return
+        // Stop settles the take on this editor.
+        if (editorRetention.excludesSettledTake) excludeTakeFromHistory()
+        // Stop grants authority to the input session the visible panel is attached to.
+        authority = recordingToken?.takeIf { session.matches(it) && !fieldMismatch }
+        authorityMoves = false
         finishing = true
+        renderNotice()
+        feedback?.stop()
         showStatus(R.string.status_finishing)
         setMicrophone(false, R.string.status_finishing)
-        feedback?.stop()
         ring?.follow(null)
         take?.stop()
     }
@@ -340,18 +1036,88 @@ class DictationImeService : InputMethodService() {
      * The only path that writes to a field. Commits on the main thread and only
      * while the session that started the take is still the live one.
      */
-    private fun commitForSession(token: Long?, text: String): Boolean {
+    private fun commitForSession(token: Long?, text: String, allowed: () -> Boolean = { true }, onAttempt: () -> Unit): Boolean {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
-        if (!session.matches(token)) { Log.w(tag, "input session changed; dropping result"); return false }
-        val ic = currentInputConnection
-        if (ic == null) { Log.w(tag, "no input connection; dropping result"); return false }
-        // Dictating after existing text: separate with a space unless there is one already.
-        val before = ic.getTextBeforeCursor(1, 0)
-        val lead = if (!before.isNullOrEmpty() && !before[0].isWhitespace()) " " else ""
-        return ic.commitText(lead + text, 1)
+        rotationEvent(RotationEvent.COMMIT_ATTEMPT)
+        val result = commitToInput(session, token, currentInputConnection, { currentInputConnection }, allowed,
+            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); writeAndVerify(ic, content, token) }, text,
+            requireLive = takeHeldForRotation, refused = {
+                onAttempt()
+                Log.w(tag, "commit refused: connection inactive")
+                rotationEvent(RotationEvent.COMMIT_REFUSED_INACTIVE)
+            })
+        if (result == null) return false
+        return result.also {
+            rotationEvent(if (it) RotationEvent.COMMIT_ACCEPTED else RotationEvent.COMMIT_REJECTED)
+        }
     }
 
-    private fun saveBenchmarkTake(pcm: ByteArray, result: TakeResult) {
+    /** A write after a rotation hold whose read-back did not show the text at once; the second look is at [CONFIRM_DELAY_MS]. */
+    private class PendingConfirm(val connection: android.view.inputmethod.InputConnection, val content: String,
+                                 val extractedBefore: Int?, val token: Long?)
+
+    private fun extractedLength(ic: android.view.inputmethod.InputConnection): Int? =
+        runCatching { ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = 100_000 }, 0)?.text?.length }.getOrNull()
+
+    private fun readBack(ic: android.view.inputmethod.InputConnection, content: String, extractedBefore: Int?): InsertCheck {
+        val before = runCatching { ic.getTextBeforeCursor(InsertReadBack.READ_CHARS, 0) }.getOrNull()
+        // The extracted text is only read when the text before the cursor did not show the write.
+        val first = InsertReadBack.check(content, before, extractedBefore, null)
+        if (first != InsertCheck.NONE) return first
+        return InsertReadBack.check(content, before, extractedBefore, extractedLength(ic))
+    }
+
+    /**
+     * The one write. A take that went through a rotation hold is read back at once (ADR-010): a write's
+     * return value and a non-null read prove nothing, so it only counts as inserted when the text is seen
+     * in the field. Not seen yet: the write is reported rejected for now and looked at once more shortly
+     * (see [confirmLater]), without blocking the main thread.
+     */
+    private fun writeAndVerify(ic: android.view.inputmethod.InputConnection, content: String, token: Long?): Boolean {
+        if (!takeHeldForRotation) return ic.commitText(content, 1)
+        val extractedBefore = extractedLength(ic)
+        if (!ic.commitText(content, 1)) return false
+        val check = readBack(ic, content, extractedBefore)
+        if (check != InsertCheck.NONE) { traceVerified(true, check); return true }
+        pendingConfirm = PendingConfirm(ic, content, extractedBefore, token)
+        return false
+    }
+
+    private fun traceVerified(verified: Boolean, check: InsertCheck) =
+        rotationEvent(RotationEvent.COMMIT_VERIFIED, verified, detail = mapOf("verified" to verified, "check" to check.ordinal))
+
+    /**
+     * The take ended with a write that was not confirmed yet. Look once more; seen now, it was inserted (hand
+     * back, nothing held); otherwise hold the text with a status that admits the uncertainty.
+     */
+    private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long, generation: Long) {
+        outcomePending = generation
+        setMicrophone(false, R.string.status_stopping_recording)
+        val history = takeHistory
+        mainHandler.postDelayed({
+            takeHistory = null
+            if (outcomePending == generation) { outcomePending = null; setMicrophone(true, R.string.start_recording) }
+            if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
+            val live = currentInputConnection === pending.connection && session.matches(pending.token)
+            val check = if (live) readBack(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
+            traceVerified(check != InsertCheck.NONE, check)
+            if (check != InsertCheck.NONE) {
+                // The write was seen after all: the receipt the rejected write left is corrected, and the take completed.
+                history?.receipt(HistoryDelivery.ACCEPTED)
+                rotationTrace?.event(RotationEvent.TERMINAL_COMPLETED, take = rotationTake)
+                if (held == null) returnToKeyboard()
+                return@postDelayed
+            }
+            rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake)
+            val keep = textToHold(result)
+            if (keep != null) holdText(keep, result.historySaved, unconfirmed = true) else {
+                showStatus(R.string.status_unable_insert)
+                setMicrophone(true, R.string.start_recording)
+            }
+        }, CONFIRM_DELAY_MS)
+    }
+
+    private fun saveBenchmarkTake(enabled: Boolean, pcm: ByteArray, result: TakeResult) {
         fun ms(from: String, to: String): Long {
             val start = result.eventsNs[from]
             val end = result.eventsNs[to]
@@ -370,15 +1136,52 @@ class DictationImeService : InputMethodService() {
                 .put("outcome", result.outcome.name)
                 .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
                 .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
-            val name = BenchmarkStore.of(this).save(pcm, SAMPLE_RATE, json.toString(2))
-            Log.i(tag, "benchmark take saved: $name")
+            val name = BenchmarkStore.of(this).saveIfEligible(enabled, result, pcm, SAMPLE_RATE, json.toString(2))
+            if (name != null) Log.i(tag, "benchmark take saved: $name")
         } catch (e: Exception) {
             Log.e(tag, "benchmark save failed", e)
         }
     }
 
+    /** System interruption: revokes authority to insert, then stops capture. */
+    private fun interruptTake() {
+        val old = take ?: return
+        // A system interruption overrides any open or moved choice; the take goes to History.
+        endHoldAndClearDeliveryHold()
+        MicrophoneOwner.requireExplicitStart()
+        revokeAuthority()
+        // A system interruption overrides an open choice (paused audio already captured goes to History).
+        choice = null
+        if (interruptedView) { renderChoice(); return }
+        interruptedView = true
+        val generation = takeGeneration
+        session.invalidate()
+        finishing = true
+        latestPreview = ""
+        showPreview("")
+        feedback?.stop()
+        ring?.follow(null)
+        // Truthful while the microphone is released; then "Unable to insert text" with its marker.
+        showStatus(R.string.status_stopping_recording)
+        setMicrophone(false, R.string.status_stopping_recording)
+        old.interrupt {
+            if (generation == takeGeneration) {
+                // Decode and History may continue, but capture ownership has ended.
+                releaseRetry = false
+                take = null
+                recordingToken = null
+                authority = null
+                startupTake = null
+                showStatus(R.string.status_unable_insert)
+                // The microphone stays off until the outcome is in; finished() then offers it.
+                if (outcomePending == null) setMicrophone(true, R.string.start_recording)
+            }
+        }
+    }
+
     private fun discardTake(reason: String) {
         if (!takeActive) return
+        rotationEvent(RotationEvent.CANCEL_REQUESTED)
         take?.cancel(inputChanged = reason != "by user")
         Log.i(tag, "cancelled: $reason")
     }
@@ -389,14 +1192,215 @@ class DictationImeService : InputMethodService() {
      */
     private fun discardAndReturn(reason: String) {
         if (returning) return
+        val token = recordingToken
         discardTake(reason)
         showIdle()
+        if (!session.matches(token)) return
         returning = true
-        mainHandler.post { returnToKeyboard(); returning = false }
+        mainHandler.post { if (session.matches(token)) returnToKeyboard(); returning = false }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && held != null) { cancelAndReturn(); return true }
+        if (keyCode == KeyEvent.KEYCODE_BACK && takeActive) {
+            // Back on an open choice is its safe default; otherwise it opens the choice.
+            if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /**
+     * Cancel while recording pauses the take (#61): the platform recording stops, the microphone
+     * stays owned by this take, and the choice opens inline in the panel. No window opens, so the
+     * editor sees no focus change and restarts nothing. If capture already ended or cannot pause,
+     * this is a system interruption (History).
+     */
+    private fun openRecordingChoice() {
+        if (choice != null || !takeActive || finishing || interruptedView) return
+        if (captureEnded()) { interruptTake(); return }
+        if (take?.pause() != true) { interruptTake(); return }
+        rotationTrace?.event(RotationEvent.CAPTURE_PAUSED, take = rotationTake)
+        choice = PanelChoice.RECORDING
+        ring?.follow(null)
+        showStatus(R.string.status_paused)
+        setMicrophone(false, R.string.status_paused)
+        renderChoice()
+    }
+
+    /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
+    private fun openFinishingChoice() {
+        if (choice != null || !takeActive || !finishing || interruptedView) return
+        if (take?.holdDelivery() != true) return
+        choice = PanelChoice.FINISHING
+        showStatus(R.string.status_finishing_choice)
+        renderChoice()
+    }
+
+    /** Continue recording (resumes the same take) or Keep finishing. Also system Back and the Back arrow. */
+    private fun chooseSafe() {
+        when (choice) {
+            PanelChoice.RECORDING -> {
+                choice = null
+                if (take?.resume() != true) { renderChoice(); interruptTake(); return }
+                rotationTrace?.event(RotationEvent.CAPTURE_RESUMED, take = rotationTake)
+                showStatus(R.string.status_recording)
+                setMicrophone(true, R.string.stop_recording)
+                if (!holding) ring?.follow(feedback)
+                renderChoice()
+            }
+            PanelChoice.FINISHING -> {
+                choice = null
+                showStatus(R.string.status_finishing)
+                renderChoice()
+                // A rotation that still holds the result releases it once the panel has settled.
+                if (!deliveryHeldForRotation) take?.resumeDelivery()
+            }
+            null -> Unit
+        }
+    }
+
+    /** Stop and insert: exactly Stop, from the paused take. */
+    private fun chooseStop() {
+        if (choice != PanelChoice.RECORDING) return
+        choice = null
+        renderChoice()
+        if (captureEnded()) interruptTake() else stopAndInsert()
+    }
+
+    /**
+     * Discard take: final at once (#36, owner 2026-11-11). Insertion revoked, saved text removed,
+     * capture released; late callbacks cannot bring the take back. The panel stays, idle, and a
+     * new take needs the microphone tap: a panel shown again (a rotation) never starts one itself.
+     */
+    private fun chooseDiscard() {
+        if (choice == null) return
+        val current = take ?: return
+        rotationEvent(RotationEvent.CANCEL_REQUESTED)
+        choice = null
+        authority = null
+        MicrophoneOwner.requireExplicitStart()
+        current.cancel()
+        Log.i(tag, "cancelled: by user")
+        showIdle()
+    }
+
+    /** Renders the take's state (choice, Preparing text, marker, glyph, Back label) on the current panel. */
+    private fun renderChoice() {
+        // Held text owns the status line (what to do, and whether History keeps it); otherwise the take's status.
+        val shown = held?.status ?: statusText
+        status?.setText(shown)
+        val view = panel ?: return
+        val open = choice
+        val running = takeActive && !interruptedView
+        renderPanel(view, PanelFrame(
+            choice = open,
+            preparing = running && finishing && open == null,
+            stopGlyph = running && !finishing,
+            unableToInsert = statusText == R.string.status_unable_insert,
+            held = held != null,
+            uncertain = held?.unconfirmed == true,
+            backLabel = when {
+                open == PanelChoice.RECORDING -> R.string.continue_recording
+                open == PanelChoice.FINISHING -> R.string.keep_finishing
+                held?.warned == true -> R.string.back_discard_text
+                running && finishing -> R.string.back_hold_and_choose
+                running -> R.string.discard_recording
+                else -> R.string.back_to_keyboard
+            }))
     }
 
     private fun cancelAndReturn() {
-        discardTake("by user"); showIdle(); returnToKeyboard()
+        if (held != null) {
+            // Back never writes to the clipboard: the first Back only warns, the second discards and leaves.
+            val state = held
+            if (state != null && !state.warned) { state.warned = true; renderChoice(); return }
+            val token = session.token()
+            clearHeld()
+            MicrophoneOwner.acceptExplicitStart()
+            showIdle()
+            if (token != null && session.matches(token)) returnToKeyboard()
+            return
+        }
+        if (choice != null) { chooseSafe(); return }
+        if (takeActive && !interruptedView) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
+        renderChoice()
+        // An interrupted take keeps finishing into History; Back only leaves.
+        if (takeActive) { returnToKeyboard(); return }
+        // Idle (no take, or it already ended): Back belongs to the live editor session.
+        val token = recordingToken ?: session.token()
+        discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
+    }
+
+    /** The text of a take that was not inserted; the panel holds it for Copy. [from] is the editor's app. */
+    private class HeldText(
+        val text: String, val from: String?,
+        /** History keeps the take (the editor is retention-eligible); the status says where to find it. */
+        val inHistory: Boolean,
+        /** The first Back warned that a second one discards the uncopied text. */
+        var warned: Boolean = false,
+        /** A write was made but not seen in the field (rotation safety net): the status admits the uncertainty. */
+        val unconfirmed: Boolean = false,
+    ) {
+        val status: Int get() = when {
+            warned -> R.string.status_back_warning
+            unconfirmed -> R.string.status_unconfirmed
+            inHistory -> R.string.status_unable_history
+            else -> R.string.status_unable_unsaved
+        }
+    }
+
+    /**
+     * Every outcome of a take that has text and did not insert it: the commit was rejected (the
+     * write returned false, or the connection was dead), failed after decoding before an accepted
+     * commit, or the input changed under it. Recognition worked, so these never say "Recognition
+     * failed"; only an outcome with no text does.
+     */
+    private fun notInsertedText(result: TakeResult): String? = when (result.outcome) {
+        TakeOutcome.COMMIT_REJECTED, TakeOutcome.INPUT_CHANGED -> result.text
+        TakeOutcome.FAILED -> result.text.takeIf { result.commitAccepted != true }
+        TakeOutcome.COMPLETED, TakeOutcome.CANCELLED -> null
+    }?.takeIf { it.isNotBlank() }
+
+    /**
+     * The text this panel may hold for the take: only for the app the take started in and still
+     * shown in (never another app's panel), and never after the screen went off during the take.
+     */
+    private fun textToHold(result: TakeResult): String? =
+        notInsertedText(result)?.takeIf { !takeLocked && editorPackage == takePackage }
+
+    /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
+    private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
+        held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
+        showPreview("")
+        setMicrophone(true, R.string.start_recording)
+        renderChoice()
+    }
+
+    private fun clearHeld() { held = null }
+
+    /** The panel's filled button: Copy text while text is held, otherwise the open choice's safe action. */
+    private fun onSafeAction() { if (held != null) copyHeld() else chooseSafe() }
+
+    /** The panel's dashed button: Discard text while text is held, otherwise Discard take. */
+    private fun onDiscardAction() { if (held != null) discardHeld() else chooseDiscard() }
+
+    /** Copy text: on the clipboard, the held text gone, back to the previous keyboard at once. */
+    private fun copyHeld() {
+        val state = held ?: return
+        copyTranscript(this, state.text)
+        clearHeld()
+        MicrophoneOwner.acceptExplicitStart()
+        showIdle()
+        returnToKeyboard()
+    }
+
+    /** Discard text: gone at once; the panel is idle, the next time it opens it records. */
+    private fun discardHeld() {
+        clearHeld()
+        MicrophoneOwner.acceptExplicitStart()
+        Log.i(tag, "held text discarded")
+        showIdle()
     }
 
     private fun returnToKeyboard(): Boolean {
@@ -412,30 +1416,79 @@ class DictationImeService : InputMethodService() {
         feedback = null
         ring?.follow(null)
         finishing = false
-        showStatus(R.string.status_idle)
         showPreview("")
-        setMicrophone(true, R.string.start_recording)
+        if (!takeActive) releaseRetry = false
+        when {
+            releaseRetry && takeActive -> {
+                showStatus(R.string.status_release_failed)
+                setMicrophone(true, R.string.retry_release)
+            }
+            takeActive || outcomePending != null -> {
+                showStatus(R.string.status_stopping_recording)
+                setMicrophone(false, R.string.status_stopping_recording)
+            }
+            MicrophoneOwner.state().occupied -> updateSharedMicrophone()
+            else -> {
+                showStatus(R.string.status_idle)
+                setMicrophone(true, R.string.start_recording)
+            }
+        }
+        renderChoice()
+    }
+
+    private fun updateSharedMicrophone() {
+        val owner = MicrophoneOwner.state()
+        if (takeActive) return
+        if (owner.occupied) {
+            interruptedView = true
+            if (owner.releaseFailed) {
+                showStatus(R.string.status_release_failed)
+                setMicrophone(true, R.string.retry_release)
+            } else {
+                showStatus(R.string.status_stopping_recording)
+                setMicrophone(false, R.string.status_stopping_recording)
+            }
+        } else if (interruptedView) showIdle()
+    }
+
+    /**
+     * Secondary notice line (own view, so recording/finishing status stays truthful): the private-field line.
+     */
+    private fun renderNotice() {
+        val message = if (takeRetentionEligible == false) R.string.retention_field_off else null
+        retentionNotice?.let { PanelDisclosure.bind(it, message) }
+    }
+
+    /** History warnings are shown on the History page only, never on the recording panel. */
+    private fun recordHistoryNotice(notice: HistoryNotice) {
+        historyNotices(this).record(notice)
     }
 
     private fun showStatus(label: Int) {
         statusText = label
-        status?.setText(label)
+        renderChoice()
     }
 
     private fun setMicrophone(enabled: Boolean, label: Int) {
         microphoneEnabled = enabled
         microphoneLabel = label
+        // One disk colour in every state (#36): the glyph and the status say what it does.
         microphone?.apply {
             isEnabled = enabled
-            alpha = if (enabled) 1f else 0.55f
             contentDescription = getString(label)
         }
     }
 
     /** The end of the text so far; the view is a few lines high. */
+    private fun publishPreview(generation: Long, text: String) {
+        if (generation != takeGeneration || interruptedView) return
+        latestPreview = text
+        if (previewAllowed) showPreview(text)
+    }
+
     private fun showPreview(text: String) {
-        previewText = text.takeLast(240)
-        preview?.text = previewText
+        previewText = PanelPreview.tail(held?.text ?: text)
+        preview?.let { PanelPreview.bind(it, previewText) }
     }
 
     private fun hasMicPermission() =

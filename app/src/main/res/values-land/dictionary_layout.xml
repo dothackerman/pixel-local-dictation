@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Landscape: a short window, so Add term lives in the top bar and covers no row (#36 critique round 3). -->
+    <bool name="dictionary_add_in_toolbar">true</bool>
+    <dimen name="dictionary_list_bottom">24dp</dimen>
+</resources>

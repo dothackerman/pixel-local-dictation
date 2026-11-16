@@ -4,28 +4,47 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
         <com.google.android.material.appbar.MaterialToolbar android:id="@+id/dictionary_toolbar"
             android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp"
-            app:title="@string/dictionary_title" app:navigationIcon="@drawable/ic_dictionary_back" app:navigationIconTint="?attr/colorOnSurface" app:navigationContentDescription="@string/dictionary_back" />
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp" android:layout_marginBottom="20dp"
-            android:text="@string/dictionary_explanation" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
-        <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginHorizontal="20dp" android:layout_marginBottom="16dp" app:hintEnabled="false"
-            app:boxCornerRadiusTopStart="28dp" app:boxCornerRadiusTopEnd="28dp" app:boxCornerRadiusBottomStart="28dp" app:boxCornerRadiusBottomEnd="28dp"
-            style="@style/Widget.Material3.TextInputLayout.FilledBox" app:endIconMode="clear_text"
-            app:boxStrokeWidth="0dp" app:boxStrokeWidthFocused="0dp" app:startIconDrawable="@drawable/ic_dictionary_search">
-            <com.google.android.material.textfield.TextInputEditText android:id="@+id/dictionary_search" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:hint="@string/dictionary_search" android:textColorHint="?attr/colorOnSurfaceVariant" android:inputType="text" android:imeOptions="actionSearch|flagNoPersonalizedLearning" android:maxLines="1" android:singleLine="true" android:importantForAutofill="no" />
-        </com.google.android.material.textfield.TextInputLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="26dp" android:paddingBottom="8dp" android:gravity="center_vertical">
-            <TextView android:id="@+id/dictionary_count" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" />
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/dictionary_languages" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" />
-        </LinearLayout>
-        <TextView android:id="@+id/dictionary_state" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="24dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium" android:accessibilityLiveRegion="polite" android:visibility="gone" />
-        <androidx.recyclerview.widget.RecyclerView android:id="@+id/dictionary_list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
-            android:paddingHorizontal="16dp" android:paddingBottom="104dp" android:clipToPadding="false" />
+            app:title="@string/dictionary_title" app:navigationIcon="@drawable/ic_arrow_back" app:navigationContentDescription="@string/dictionary_back"
+            app:menu="@menu/dictionary" />
+        <View android:layout_width="match_parent" android:layout_height="2dp" android:background="?attr/colorOnSurface" />
+        <!-- The explanation, search and count scroll away with the list and come back on the first
+             scroll up, so a short landscape window at font 2× still shows rows (#36 critique round 3). -->
+        <androidx.coordinatorlayout.widget.CoordinatorLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <com.google.android.material.appbar.AppBarLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="?attr/colorSurface" android:stateListAnimator="@null" app:liftOnScroll="false">
+                <TextView android:id="@+id/dictionary_explanation" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp" android:layout_marginTop="12dp" android:layout_marginBottom="16dp" app:layout_scrollFlags="scroll|enterAlways"
+                    android:text="@string/dictionary_explanation" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                <!-- No box mode: Material's filled box moves the text down at font 1.3× and 2×, off the
+                     magnifier's line; this field keeps one padding top and bottom at every scale. -->
+                <com.google.android.material.textfield.TextInputLayout android:id="@+id/dictionary_search_layout" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp" android:layout_marginBottom="16dp" app:layout_scrollFlags="scroll|enterAlways" app:hintEnabled="false"
+                    app:boxBackgroundMode="none" android:background="?attr/colorSurfaceContainerHigh" app:endIconMode="clear_text"
+                    app:startIconDrawable="@drawable/ic_search">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/dictionary_search" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:paddingTop="16dp" android:paddingBottom="16dp" android:background="@null"
+                        android:hint="@string/dictionary_search" android:textColorHint="?attr/colorOnSurfaceVariant" android:inputType="text" android:imeOptions="actionSearch|flagNoPersonalizedLearning|flagNoExtractUi" android:maxLines="1" android:singleLine="true" android:importantForAutofill="no" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <!-- Count and languages over an ink rule; hidden with the search on an empty dictionary,
+                     where the state line alone speaks (#36 critique). -->
+                <LinearLayout android:id="@+id/dictionary_summary" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="24dp" android:paddingBottom="8dp"
+                    android:gravity="center_vertical" app:layout_scrollFlags="scroll|enterAlways">
+                    <TextView android:id="@+id/dictionary_count" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceTitleSmall" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/dictionary_languages" android:textAppearance="?attr/textAppearanceTitleSmall" android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <View android:id="@+id/dictionary_summary_rule" android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOnSurface" app:layout_scrollFlags="scroll|enterAlways" />
+            </com.google.android.material.appbar.AppBarLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+                app:layout_behavior="@string/appbar_scrolling_view_behavior">
+                <TextView android:id="@+id/dictionary_state" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="24dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface" android:accessibilityLiveRegion="polite" android:visibility="gone" />
+                <androidx.recyclerview.widget.RecyclerView android:id="@+id/dictionary_list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+                    android:paddingBottom="@dimen/dictionary_list_bottom" android:clipToPadding="false" />
+            </LinearLayout>
+        </androidx.coordinatorlayout.widget.CoordinatorLayout>
     </LinearLayout>
+    <!-- Portrait only; landscape uses the top bar's Add term (dictionary_add_item). -->
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton android:id="@+id/dictionary_add"
         android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|end" android:layout_margin="24dp"
-        android:text="@string/dictionary_add" app:icon="@drawable/ic_dictionary_add" />
+        android:text="@string/dictionary_add" app:icon="@drawable/ic_add" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

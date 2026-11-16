@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The panel's status block, shared by both orientations: Back, status and its marker slot, the
+     private-field line and the preview (newest of three lines last). -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <ImageButton
+            android:id="@+id/back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            android:contentDescription="@string/back_to_keyboard" />
+        <!-- Status and its mark as one unit: the mark sits directly after the words. A long
+             status shrinks (weight on a wrap_content width) rather than pushing the mark out of
+             the row. Not a compound drawable: that would sit at the far edge of a wrapped status. -->
+        <LinearLayout
+            tools:ignore="UseCompoundDrawables"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/status"
+                tools:ignore="InefficientWeight"
+                android:layout_width="wrap_content"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:breakStrategy="high_quality"
+                android:hyphenationFrequency="normal"
+                android:lineBreakWordStyle="phrase"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/status_opening" />
+            <!-- One mark, only when nothing else on the panel shows the state (Unable to insert
+                 text). Its words are the status text, so the glyph itself is not announced. -->
+            <ImageView
+                android:id="@+id/status_marker"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="8dp"
+                android:importantForAccessibility="no"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+    <TextView
+        android:id="@+id/retention_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="56dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="@dimen/panel_notice_gap"
+        android:drawableStart="@drawable/ic_lock"
+        tools:ignore="UseCompatTextViewDrawableXml"
+        android:drawablePadding="6dp"
+        android:gravity="center_vertical"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+    <!-- The preview's measure stops at 28em (about 70 characters, PreviewTextView), which only
+         the wide landscape column reaches. -->
+    <ch.og.dictation.PreviewTextView
+        android:id="@+id/preview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="56dp"
+        android:paddingEnd="12dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:minLines="3"
+        android:maxLines="3"
+        android:ellipsize="start"
+        android:gravity="bottom"
+        android:breakStrategy="high_quality"
+        android:hyphenationFrequency="normal" />
+</merge>

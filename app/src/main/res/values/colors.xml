@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crate B2 (#36): one fixed light scheme for every surface (panel, Settings, Dictionary,
+     History). The only place colours are written as hex; everything else resolves theme roles
+     (themes.xml). Contrast pairs: ThemeContrastTest. -->
+<resources>
+    <color name="b2_surface">#F3E9D4</color>
+    <color name="b2_surface_container">#E9DCC1</color>
+    <color name="b2_surface_container_high">#DDCEAF</color>
+    <color name="b2_on_surface">#1C1A12</color>
+    <color name="b2_on_surface_variant">#4E4838</color>
+    <color name="b2_outline">#6D6550</color>
+    <color name="b2_outline_variant">#C7B999</color>
+    <color name="b2_primary">#A52E07</color>
+    <color name="b2_on_primary">#FFFFFF</color>
+    <color name="b2_primary_container">#FFD8C6</color>
+    <color name="b2_on_primary_container">#3A0E00</color>
+    <color name="b2_inverse_primary">#FFB59A</color>
+    <color name="b2_secondary">#2E4A21</color>
+    <color name="b2_on_secondary">#FFFFFF</color>
+    <color name="b2_secondary_container">#CFE0BC</color>
+    <color name="b2_on_secondary_container">#13240A</color>
+    <color name="b2_error">#8A1145</color>
+    <color name="b2_on_error">#FFFFFF</color>
+    <color name="b2_error_container">#F8D7E3</color>
+    <color name="b2_on_error_container">#3D0019</color>
+</resources>

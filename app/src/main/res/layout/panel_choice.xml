@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paused (#36): three icon-only buttons at one height, inside the panel (no window, so
+     no focus change and nothing to re-attach after a rotation). Each target is 76×68dp; what is
+     drawn is the mock's 64×56dp button, 6dp inside it (choice_*.xml), with a 26dp glyph. Continue
+     first, filled, with a fixed 3dp selected ring 3dp outside its fill; Stop and insert outlined,
+     16dp from it; then choice_gap, so Discard take (dashed, error colour) sits 72dp from Stop
+     (52dp in the phone's landscape stage). The words are in the content descriptions and
+     tooltips. While preparing text only Keep preparing (same button, preparing glyph) and Discard
+     show. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/choice"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:accessibilityPaneTitle="@string/choice_title"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:visibility="gone">
+    <ImageButton
+        android:id="@+id/choice_safe"
+        android:layout_width="76dp"
+        android:layout_height="68dp"
+        android:background="@drawable/choice_continue"
+        android:src="@drawable/ic_play_arrow"
+        android:tint="?attr/colorOnPrimary"
+        tools:ignore="UseAppTint"
+        android:scaleType="fitCenter"
+        android:paddingHorizontal="25dp"
+        android:paddingVertical="21dp"
+        android:contentDescription="@string/continue_recording"
+        android:tooltipText="@string/continue_recording" />
+    <ImageButton
+        android:id="@+id/choice_stop"
+        android:layout_width="76dp"
+        android:layout_marginStart="4dp"
+        android:layout_height="68dp"
+        android:background="@drawable/choice_stop"
+        android:src="@drawable/ic_stop"
+        android:tint="?attr/colorOnSurface"
+        tools:ignore="UseAppTint"
+        android:scaleType="fitCenter"
+        android:paddingHorizontal="25dp"
+        android:paddingVertical="21dp"
+        android:contentDescription="@string/finish_transcription"
+        android:tooltipText="@string/finish_transcription" />
+    <View
+        android:id="@+id/choice_gap"
+        android:layout_width="@dimen/choice_gap"
+        android:layout_height="16dp"
+        android:importantForAccessibility="no" />
+    <ImageButton
+        android:id="@+id/choice_discard"
+        android:layout_width="76dp"
+        android:layout_height="68dp"
+        android:background="@drawable/choice_discard"
+        android:src="@drawable/ic_delete"
+        android:tint="?attr/colorError"
+        tools:ignore="UseAppTint"
+        android:scaleType="fitCenter"
+        android:paddingHorizontal="25dp"
+        android:paddingVertical="21dp"
+        android:contentDescription="@string/discard_take"
+        android:tooltipText="@string/discard_take" />
+</LinearLayout>

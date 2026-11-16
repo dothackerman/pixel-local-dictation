@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Theme.Dictation (#36 Crate B2): the one application theme. Fixed light scheme, no DayNight,
+     no dynamic colour. Activities use it from the manifest; the recording panel inflates from a
+     ContextThemeWrapper with it (DictationImeService.onCreateInputView). Corners are 0dp except
+     the microphone disk and ring. -->
+<resources>
+    <style name="Theme.Dictation" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/b2_primary</item>
+        <item name="colorOnPrimary">@color/b2_on_primary</item>
+        <item name="colorPrimaryContainer">@color/b2_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/b2_on_primary_container</item>
+        <item name="colorPrimaryInverse">@color/b2_inverse_primary</item>
+        <item name="colorSecondary">@color/b2_secondary</item>
+        <item name="colorOnSecondary">@color/b2_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/b2_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/b2_on_secondary_container</item>
+        <!-- No third accent: tertiary roles follow secondary so no Material lavender appears. -->
+        <item name="colorTertiary">@color/b2_secondary</item>
+        <item name="colorOnTertiary">@color/b2_on_secondary</item>
+        <item name="colorTertiaryContainer">@color/b2_secondary_container</item>
+        <item name="colorOnTertiaryContainer">@color/b2_on_secondary_container</item>
+        <item name="colorError">@color/b2_error</item>
+        <item name="colorOnError">@color/b2_on_error</item>
+        <item name="colorErrorContainer">@color/b2_error_container</item>
+        <item name="colorOnErrorContainer">@color/b2_on_error_container</item>
+        <item name="android:colorBackground">@color/b2_surface</item>
+        <item name="colorOnBackground">@color/b2_on_surface</item>
+        <item name="colorSurface">@color/b2_surface</item>
+        <item name="colorSurfaceBright">@color/b2_surface</item>
+        <item name="colorSurfaceDim">@color/b2_surface_container_high</item>
+        <item name="colorOnSurface">@color/b2_on_surface</item>
+        <item name="colorSurfaceVariant">@color/b2_surface_container_high</item>
+        <item name="colorOnSurfaceVariant">@color/b2_on_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/b2_surface</item>
+        <item name="colorSurfaceContainerLow">@color/b2_surface</item>
+        <item name="colorSurfaceContainer">@color/b2_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/b2_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/b2_surface_container_high</item>
+        <item name="colorSurfaceInverse">@color/b2_on_surface</item>
+        <item name="colorOnSurfaceInverse">@color/b2_surface</item>
+        <item name="colorOutline">@color/b2_outline</item>
+        <item name="colorOutlineVariant">@color/b2_outline_variant</item>
+        <item name="android:textColorHighlight">@color/b2_primary_container</item>
+        <!-- Flat kraft card: no primary elevation tint on sheets, dialogs or menus (critique P2). -->
+        <item name="elevationOverlayEnabled">false</item>
+
+        <!-- Default face through the default text appearance (a theme-level fontFamily would
+             override every role's face). -->
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.BodyMedium</item>
+        <item name="textAppearanceDisplaySmall">@style/TextAppearance.Dictation.TitleLarge</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.Dictation.TitleLarge</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.Dictation.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.Dictation.TitleMedium</item>
+        <item name="textAppearanceTitleSmall">@style/TextAppearance.Dictation.TitleSmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.Dictation.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.Dictation.LabelMedium</item>
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.Dictation.LabelMedium</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.Dictation.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.Dictation.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.Dictation.BodyMedium</item>
+
+        <item name="shapeAppearanceCornerExtraSmall">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerSmall">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerMedium">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerLargeIncreased">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerExtraLargeIncreased">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceCornerExtraExtraLarge">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Dictation.Square</item>
+
+        <item name="toolbarStyle">@style/Widget.Dictation.Toolbar</item>
+        <item name="materialButtonStyle">@style/Widget.Dictation.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.Dictation.Button.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.Dictation.Button.Text</item>
+        <item name="materialIconButtonStyle">@style/Widget.Dictation.Button.Icon</item>
+        <item name="extendedFloatingActionButtonStyle">@style/Widget.Dictation.ExtendedFab</item>
+        <item name="materialSwitchStyle">@style/Widget.Dictation.Switch</item>
+        <item name="textInputStyle">@style/Widget.Dictation.TextInput</item>
+        <item name="snackbarStyle">@style/Widget.Dictation.Snackbar</item>
+        <item name="snackbarButtonStyle">@style/Widget.Dictation.Snackbar.Button</item>
+        <item name="snackbarTextViewStyle">@style/Widget.Dictation.Snackbar.Text</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Dictation.BottomSheetDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dictation.Dialog</item>
+        <item name="popupMenuStyle">@style/Widget.Dictation.PopupMenu</item>
+        <item name="actionOverflowMenuStyle">@style/Widget.Dictation.PopupMenu.Overflow</item>
+        <item name="materialDividerStyle">@style/Widget.Dictation.Divider</item>
+
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+
+    <style name="ShapeAppearance.Dictation.Square" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">0dp</item>
+    </style>
+
+    <!-- Shared toolbar: 64dp, display-face title, a 2dp rule closes it (layout/toolbar_rule). -->
+    <style name="Widget.Dictation.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:minHeight">64dp</item>
+        <item name="titleTextAppearance">@style/TextAppearance.Dictation.TitleLarge</item>
+        <item name="titleTextColor">?attr/colorOnSurface</item>
+        <item name="navigationIconTint">?attr/colorOnSurface</item>
+        <item name="popupTheme">@style/ThemeOverlay.Dictation.Popup</item>
+    </style>
+
+    <style name="Widget.Dictation.Button" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <style name="Widget.Dictation.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
+        <item name="strokeColor">?attr/colorOnSurface</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <style name="Widget.Dictation.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <!-- Delete benchmark data: error-coloured underlined text (UnderlineSpan in SettingsActivity). -->
+    <style name="Widget.Dictation.Button.Text.Destructive">
+        <item name="android:textColor">?attr/colorError</item>
+        <item name="iconTint">?attr/colorError</item>
+    </style>
+    <style name="Widget.Dictation.Button.Text.Neutral">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+    <style name="Widget.Dictation.Button.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+    </style>
+    <style name="Widget.Dictation.ExtendedFab" parent="Widget.Material3.ExtendedFloatingActionButton.Icon.Primary">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <!-- Filled primary like the sheet's Add and the panel's Continue, not the peach container. -->
+        <item name="backgroundTint">@color/commit_container</item>
+        <item name="android:textColor">@color/commit_content</item>
+        <item name="iconTint">@color/commit_content</item>
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
+    </style>
+
+    <!-- Square switch: 0dp track and thumb, rind-green track when on, thumb moves to the end. -->
+    <style name="Widget.Dictation.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="android:thumb">@drawable/switch_thumb</item>
+        <item name="track">@drawable/switch_track</item>
+        <item name="trackDecoration">@null</item>
+        <item name="thumbTint">@null</item>
+        <item name="trackTint">@null</item>
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.BodyLarge</item>
+    </style>
+
+    <style name="Widget.Dictation.TextInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="boxStrokeColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="Widget.Dictation.Snackbar" parent="Widget.Material3.Snackbar">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+    </style>
+    <style name="Widget.Dictation.Snackbar.Button" parent="Widget.Material3.Button.TextButton.Snackbar">
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.LabelLarge</item>
+        <item name="android:textColor">?attr/colorPrimaryInverse</item>
+    </style>
+    <style name="Widget.Dictation.Snackbar.Text" parent="Widget.Material3.Snackbar.TextView">
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.BodyMedium</item>
+    </style>
+
+    <style name="ThemeOverlay.Dictation.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Dictation.BottomSheet</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+    <style name="Widget.Dictation.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearance">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="backgroundTint">?attr/colorSurface</item>
+    </style>
+
+    <style name="ThemeOverlay.Dictation.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurfaceContainerHigh">@color/b2_surface</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Dictation.Square</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/Dictation.Dialog.Title</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Dictation.Button.Text</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Dictation.Button.Text</item>
+        <item name="elevationOverlayEnabled">false</item>
+    </style>
+    <!-- Confirmation of an irreversible delete (Clear History, Delete benchmark data): the confirm
+         is error-coloured, Cancel stays neutral ink. -->
+    <style name="ThemeOverlay.Dictation.Dialog.Destructive">
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Dictation.Button.Text.Destructive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Dictation.Button.Text.Neutral</item>
+    </style>
+    <style name="Dictation.Dialog.Title" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textAppearance">@style/TextAppearance.Dictation.TitleLarge</item>
+    </style>
+
+    <!-- Menus sit on the screen ground, not the panel's container. No Material parent: a
+         ThemeOverlay.Material3.Light parent reset every colour role to the Material baseline, so
+         the overflow menu drew on Material's lilac-white instead of kraft. -->
+    <style name="ThemeOverlay.Dictation.Popup" parent="">
+        <item name="colorSurfaceContainer">@color/b2_surface</item>
+        <item name="popupMenuStyle">@style/Widget.Dictation.PopupMenu</item>
+        <item name="textAppearanceLargePopupMenu">@style/TextAppearance.Dictation.BodyLarge</item>
+        <item name="textAppearanceSmallPopupMenu">@style/TextAppearance.Dictation.BodyLarge</item>
+    </style>
+    <style name="Widget.Dictation.PopupMenu" parent="Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@drawable/menu_background</item>
+    </style>
+    <style name="Widget.Dictation.PopupMenu.Overflow" parent="Widget.Material3.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/menu_background</item>
+    </style>
+
+    <style name="Widget.Dictation.Divider" parent="Widget.Material3.MaterialDivider">
+        <item name="dividerColor">?attr/colorOutlineVariant</item>
+        <item name="dividerThickness">1dp</item>
+    </style>
+</resources>

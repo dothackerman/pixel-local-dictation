@@ -173,7 +173,7 @@ class PanelPerformanceTest {
             override fun cancel(done: () -> Unit) = done()
         }
         val output = object : TakeOutput {
-            override fun preview(text: String) { preview?.text = text.takeLast(240) }
+            override fun preview(text: String) { preview?.text = PanelPreview.tail(text) }
             override fun commit(text: String) = true
             override fun returnToKeyboard() = true
             override fun finished(result: TakeResult, pcm: ByteArray) { completed.complete(result) }

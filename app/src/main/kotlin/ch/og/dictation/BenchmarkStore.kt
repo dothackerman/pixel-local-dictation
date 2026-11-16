@@ -18,6 +18,12 @@ class BenchmarkStore(private val dir: File) {
         private const val PREFS = "settings"
         private const val KEY_ENABLED = "benchmark"
 
+        /** Shared retention gate for benchmark now and future content writers. */
+        fun shouldSave(enabled: Boolean, result: TakeResult): Boolean =
+            enabled && result.retentionEligible && !result.interrupted && result.outcome !in setOf(TakeOutcome.CANCELLED, TakeOutcome.INPUT_CHANGED)
+
+        fun recordingEnabled(optIn: Boolean, liveReceipt: Boolean): Boolean = optIn && !liveReceipt
+
         fun of(context: Context) = BenchmarkStore(File(context.filesDir, "benchmark"))
 
         fun isEnabled(context: Context): Boolean =
@@ -50,6 +56,10 @@ class BenchmarkStore(private val dir: File) {
         File(dir, "$name.json").writeText(json)
         return name
     }
+
+    /** Applies the take-latched privacy decision at the file-writing boundary. */
+    fun saveIfEligible(enabled: Boolean, result: TakeResult, pcm: ByteArray, sampleRate: Int, json: String): String? =
+        if (shouldSave(enabled, result)) save(pcm, sampleRate, json) else null
 
     fun takeCount(): Int = dir.listFiles { f -> f.name.endsWith(".wav") }?.size ?: 0
 

@@ -7,12 +7,35 @@ interface TakeCapture {
     fun start(accept: (FloatArray) -> Unit)
     fun stop(done: (Result<ByteArray>) -> Unit)
     fun cancel(done: () -> Unit)
+    fun cancelWithResult(done: (Result<Unit>) -> Unit) = cancel { done(Result.success(Unit)) }
+    /** Stops capturing audio without ending the take; throws if it cannot. */
+    fun pause(): Unit = throw UnsupportedOperationException("pause")
+    /** Captures audio again after [pause]; throws if it cannot. */
+    fun resume(): Unit = throw UnsupportedOperationException("resume")
 }
+
+/** The platform did not confirm release; the owner must retain the capture. */
+class CaptureReleaseUnconfirmed : Exception()
 
 /** Called on the delivery executor. commit must check the live editor immediately before writing. */
 interface TakeOutput {
     fun preview(text: String)
+    fun preview(text: String, sourceEndSample: Long?) = preview(text)
+    fun captureReleaseFailed() {}
+    fun startHistory(eligible: Boolean) {}
+    fun finishingHistory() {}
     fun commit(text: String): Boolean
+    fun commit(text: String, allowed: () -> Boolean): Boolean = if (allowed()) commit(text) else false
+    /** False if commit was skipped because the originating editor was unavailable. */
+    fun commitAttempted(): Boolean = true
+    fun stage(text: String, retentionEligible: Boolean, ready: (saved: Boolean) -> Unit) = ready(false)
+    fun stage(text: String, retentionEligible: Boolean, sourceEndSample: Long?, ready: (saved: Boolean) -> Unit) =
+        stage(text, retentionEligible, ready)
+    fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) = done(false)
+    fun receipt(status: HistoryDelivery) {}
+    /** Stop keeping this take and remove what was kept (the take continues). */
+    fun excludeHistory() {}
+    fun discardStaged(done: (Boolean) -> Unit = {}) { done(true) }
     fun returnToKeyboard(): Boolean
     /** PCM is borrowed for this callback only and wiped immediately afterwards. */
     fun finished(result: TakeResult, pcm: ByteArray)
@@ -28,6 +51,11 @@ data class TakeResult(
     val commitAccepted: Boolean? = null,
     val returnAccepted: Boolean? = null,
     val failure: Throwable? = null,
+    /** Latched from the editor that opened this take; false forbids every content writer. */
+    val retentionEligible: Boolean = true,
+    val interrupted: Boolean = false,
+    /** The kept History entry is complete and the take is still eligible. */
+    val historySaved: Boolean = false,
 )
 
 /**
@@ -39,11 +67,14 @@ class TakeSession internal constructor(
     private val capture: TakeCapture,
     private val output: TakeOutput,
     private val deliver: Executor,
-    private val transcribe: (Executor, TimelineObserver?, (String) -> Unit) -> TakeTranscriber,
+    private val transcribe: (Executor, TimelineObserver?, (String, Long?) -> Unit) -> TakeTranscriber,
     private val timeline: TimelineObserver?,
     private val clock: () -> Long,
+    retentionEligible: Boolean,
     private val releaseSegmenter: () -> Unit,
 ) {
+    /** Latched from the starting editor; only [excludeFromHistory] changes it, and only to false. */
+    private var retentionEligible = retentionEligible
     private enum class State { NEW, RECORDING, DRAINING, FINISHING, COMPLETING, ENDED }
     @Volatile private var state = State.NEW
     private var take: TakeTranscriber? = null
@@ -51,7 +82,22 @@ class TakeSession internal constructor(
     private var captureReleased = true
     private var cleaned = false
     private var terminal: TakeResult? = null
+    private var deliveryHeld = false
+    private var pendingDelivery: String? = null
+    private var dispatching = false
+    private var invalidatedDuringDispatch = false
+    private var deliberatelyCancelledDuringDispatch = false
+    private var deferredDiscard: ((Boolean) -> Unit)? = null
+    private val audioLock = Any()
+    private var interrupted = false
+    private var releaseNotice: (() -> Unit)? = null
+    private var historySaved = false
+    private var cancelling = false
+    private var interruptionFailure: Throwable? = null
+    private var staged = false
     private val events = linkedMapOf<String, Long>()
+    private var capturedSamples = 0L
+    private var lastSampleAnchor = -SAMPLE_RATE.toLong()
     /** Remains active while cancellation drains capture, so a new microphone take must wait. */
     val active: Boolean get() = state != State.NEW && (state != State.ENDED || !captureReleased)
 
@@ -64,22 +110,30 @@ class TakeSession internal constructor(
     fun start() {
         check(state == State.NEW) { "a session can start only once" }
         state = State.RECORDING
+        output.startHistory(retentionEligible)
         captureReleased = false
         try {
-            take = transcribe(deliver, timeline) { text ->
+            take = transcribe(deliver, timeline) { text, sampleEnd ->
                 if (active) {
                     synchronized(events) { if ("previewReady" !in events) mark("previewReady") }
-                    output.preview(text)
+                    output.preview(text, sampleEnd)
                 }
             }
             mark("captureStart")
             capture.start { samples ->
-                if (state == State.RECORDING || state == State.DRAINING) {
+                synchronized(audioLock) { if (!interrupted && (state == State.RECORDING || state == State.DRAINING)) {
+                    val startSample = capturedSamples
+                    capturedSamples += samples.size
+                    if (capturedSamples - lastSampleAnchor >= SAMPLE_RATE) {
+                        lastSampleAnchor = capturedSamples
+                        timeline?.emit(TimelineEvent("captureSampleAnchor", samples = samples.size,
+                            sampleStart = startSample, sampleEnd = capturedSamples))
+                    }
                     if (timeline != null && samples.isNotEmpty()) synchronized(events) {
                         if ("firstAudio" !in events) mark("firstAudio")
                     }
                     take?.feed(samples)
-                }
+                } }
             }
         } catch (failure: Throwable) {
             cancelCapture()
@@ -89,25 +143,48 @@ class TakeSession internal constructor(
 
     fun stop() {
         if (state != State.RECORDING) return
+        paused = false
         state = State.DRAINING
-        mark("stopRequested")
+        output.finishingHistory()
+        synchronized(audioLock) {
+            val now = clock()
+            synchronized(events) { events["stopRequested"] = now }
+            timeline?.emit(TimelineEvent("stopRequested", ns = now, sampleEnd = capturedSamples))
+        }
         take?.timelineSnapshot("producerStop")
         try {
             capture.stop { result ->
                 deliver.execute {
+                    if (result.exceptionOrNull() is CaptureReleaseUnconfirmed) {
+                        if (!captureReleased) {
+                            if (state != State.ENDED) finish(TakeOutcome.FAILED, failure = CaptureReleaseUnconfirmed())
+                            output.captureReleaseFailed()
+                        }
+                        return@execute
+                    }
                     if (state != State.DRAINING) {
                         result.getOrNull()?.fill(0)
                         captureReleased = true
+                        releaseNotice?.also { releaseNotice = null; it() }
                         cleanup()
                     } else {
                         captureReleased = true
+                        releaseNotice?.also { releaseNotice = null; it() }
                         result.fold({ audio ->
                             pcm = audio
+                            timeline?.emit(TimelineEvent("captureStopAnchor", sampleEnd = synchronized(audioLock) { capturedSamples }))
                             mark("captureStopped")
                             state = State.FINISHING
                             try { take!!.finish(::decoded) }
                             catch (failure: Throwable) { finish(TakeOutcome.FAILED, failure = failure) }
-                        }, { failure -> finish(TakeOutcome.FAILED, failure = failure) })
+                        }, { failure ->
+                            if (interrupted) {
+                                interruptionFailure = failure
+                                state = State.FINISHING
+                                try { take!!.finish(::decoded) }
+                                catch (decodeFailure: Throwable) { finish(TakeOutcome.FAILED, failure = decodeFailure) }
+                            } else finish(TakeOutcome.FAILED, failure = failure)
+                        })
                     }
                 }
             }
@@ -117,11 +194,79 @@ class TakeSession internal constructor(
         }
     }
 
-    fun cancel(inputChanged: Boolean = false) {
+    /**
+     * The take moved to an editor that excludes retention: keep nothing of it from now on and
+     * remove what was saved. Retention never loosens.
+     */
+    fun excludeFromHistory() {
+        if (!retentionEligible || state == State.ENDED) return
+        retentionEligible = false
+        output.excludeHistory()
+    }
+
+    /** While recording: no audio is captured until [resume]; Stop, cancel and interrupt still apply. */
+    var paused = false
+        private set
+
+    /** Pauses capture during recording; false if the take is not recording or capture cannot pause. */
+    fun pause(): Boolean {
+        if (state != State.RECORDING || interrupted || paused) return false
+        if (runCatching { capture.pause() }.isFailure) return false
+        paused = true
+        return true
+    }
+
+    /** Resumes the same capture; false if the take is no longer paused or capture cannot restart. */
+    fun resume(): Boolean {
+        if (!paused) return false
+        if (state != State.RECORDING || interrupted) { paused = false; return false }
+        if (runCatching { capture.resume() }.isFailure) return false
+        paused = false
+        return true
+    }
+
+    /** Hold only before dispatch; once a commit starts it cannot be retracted. */
+    fun holdDelivery(): Boolean {
+        if ((dispatching && output.commitAttempted()) || interrupted || state !in setOf(State.DRAINING, State.FINISHING, State.COMPLETING)) return false
+        deliveryHeld = true
+        return true
+    }
+
+    fun resumeDelivery() {
+        deliveryHeld = false
+        pendingDelivery?.also { pendingDelivery = null; complete(it) }
+    }
+
+    /** Revoke audio acceptance before stopping capture; retain accepted audio for History only. */
+    fun interrupt(onCaptureReleased: () -> Unit = {}) {
+        if (state == State.NEW || state == State.ENDED || interrupted) return
+        synchronized(audioLock) { interrupted = true }
+        if (captureReleased) onCaptureReleased() else releaseNotice = onCaptureReleased
+        if (dispatching) { invalidatedDuringDispatch = true; return }
+        resumeDelivery()
+        if (state == State.RECORDING) stop()
+    }
+
+    fun cancel(inputChanged: Boolean = false, onDiscarded: (Boolean) -> Unit = {}) {
         if (state == State.ENDED) return
+        if (dispatching) {
+            invalidatedDuringDispatch = true
+            if (!inputChanged) { deliberatelyCancelledDuringDispatch = true; deferredDiscard = onDiscarded }
+            return
+        }
+        cancelling = true // Late History acknowledgements (a synchronous delivery runs them now) must not complete the take.
+        var cancellationApplied = false
+        var immediateDeletion: Boolean? = null
+        if (inputChanged) {
+            if (staged) output.receipt(HistoryDelivery.NOT_ATTEMPTED)
+        } else output.discardStaged { deleted ->
+            if (cancellationApplied) onDiscarded(deleted) else immediateDeletion = deleted
+        }
         take?.cancel()
         cancelCapture()
         finish(if (inputChanged) TakeOutcome.INPUT_CHANGED else TakeOutcome.CANCELLED)
+        cancellationApplied = true
+        immediateDeletion?.let(onDiscarded)
     }
 
     private fun decoded(result: Result<String>) {
@@ -129,21 +274,71 @@ class TakeSession internal constructor(
         mark("finalReady")
         val text = result.getOrElse { finish(TakeOutcome.FAILED, failure = it); return }
         state = State.COMPLETING
+        if (interrupted) { saveInterrupted(text); return }
+        if (text.isEmpty()) { complete(text); return }
+        staged = true
+        output.stage(text, retentionEligible, synchronized(audioLock) { capturedSamples }) { saved ->
+            historySaved = saved
+            if (state == State.COMPLETING && !cancelling) complete(text)
+        }
+    }
+
+    private fun saveInterrupted(text: String) {
+        output.saveInterrupted(text, retentionEligible) { saved ->
+            historySaved = saved
+            if (state == State.COMPLETING && !cancelling) finish(
+                if (interruptionFailure == null) TakeOutcome.INPUT_CHANGED else TakeOutcome.FAILED,
+                text, failure = interruptionFailure)
+        }
+    }
+
+    private fun complete(text: String) {
+        if (deliveryHeld && !interrupted) { pendingDelivery = text; return }
+        if (interrupted) { saveInterrupted(text); return }
+        var accepted: Boolean? = null
         try {
-            val accepted = if (text.isEmpty()) null else output.commit(text)
+            dispatching = true
+            accepted = try { if (text.isEmpty()) null else output.commit(text) { !deliveryHeld && !invalidatedDuringDispatch && state == State.COMPLETING } }
+                finally { dispatching = false }
+            if (deliberatelyCancelledDuringDispatch && accepted == false && !output.commitAttempted()) {
+                output.discardStaged { deferredDiscard?.invoke(it); deferredDiscard = null }
+                finish(TakeOutcome.CANCELLED)
+                return
+            }
+            if (deliveryHeld && !interrupted && accepted == false && !output.commitAttempted()) { pendingDelivery = text; return }
+            if (accepted != null) output.receipt(if (accepted) HistoryDelivery.ACCEPTED else
+                if (output.commitAttempted()) HistoryDelivery.REJECTED else HistoryDelivery.NOT_ATTEMPTED)
+            if (invalidatedDuringDispatch) {
+                finish(if (accepted == true) TakeOutcome.COMPLETED else TakeOutcome.INPUT_CHANGED, text, accepted)
+                return
+            }
             if (state != State.COMPLETING) return // An editor callback invalidated this take.
             if (accepted == false) {
+                if (!output.commitAttempted()) {
+                    finish(TakeOutcome.INPUT_CHANGED, text, null) // Never written: not a rejection.
+                    return
+                }
                 mark("commitRejected")
                 finish(TakeOutcome.COMMIT_REJECTED, text, accepted)
                 return
             }
             if (accepted == true) mark("commitAccepted")
-            val returned = output.returnToKeyboard()
+            dispatching = true
+            val returned = try { output.returnToKeyboard() } finally { dispatching = false }
+            if (invalidatedDuringDispatch) {
+                finish(TakeOutcome.COMPLETED, text, accepted, returned)
+                return
+            }
             if (state != State.COMPLETING) return
             mark("returnRequested")
             finish(TakeOutcome.COMPLETED, text, accepted, returned)
         } catch (failure: Throwable) {
-            finish(TakeOutcome.FAILED, text, failure = failure)
+            if (text.isNotEmpty() && accepted == null && deliberatelyCancelledDuringDispatch && !output.commitAttempted()) {
+                output.discardStaged { deferredDiscard?.invoke(it); deferredDiscard = null }
+                finish(TakeOutcome.CANCELLED)
+                return
+            }
+            finish(TakeOutcome.FAILED, text, committed = accepted, failure = failure)
         }
     }
 
@@ -154,19 +349,26 @@ class TakeSession internal constructor(
         if (state == State.ENDED) return
         state = State.ENDED
         take?.cancel()
-        terminal = TakeResult(outcome, text, emptyMap(), committed, returned, failure)
+        terminal = TakeResult(outcome, text, emptyMap(), committed, returned, failure, retentionEligible, interrupted, historySaved && retentionEligible)
         cleanup()
     }
 
     private fun cancelCapture() {
         if (captureReleased) return
-        capture.cancel {
+        capture.cancelWithResult { result ->
             deliver.execute {
+                if (result.isFailure) {
+                    output.captureReleaseFailed()
+                    return@execute
+                }
                 captureReleased = true
+                releaseNotice?.also { releaseNotice = null; it() }
                 cleanup()
             }
         }
     }
+
+    fun retryCaptureRelease() { if (!captureReleased && state == State.ENDED) cancelCapture() }
 
     private fun cleanup() {
         if (state == State.ENDED && captureReleased && !cleaned) {
