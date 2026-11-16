@@ -14,7 +14,6 @@ import ch.og.dictation.history.HistoryNotice
 import ch.og.dictation.history.HistoryTakeOutput
 import ch.og.dictation.history.copyTranscript
 import ch.og.dictation.history.historyNotices
-import ch.og.dictation.history.historyRoot
 import ch.og.dictation.ime.InputSession
 import ch.og.dictation.ime.PermissionActivity
 import ch.og.dictation.ime.commitToInput
@@ -24,7 +23,6 @@ import ch.og.dictation.panel.PanelFrame
 import ch.og.dictation.panel.PanelPreview
 import ch.og.dictation.panel.RecordingRingView
 import ch.og.dictation.panel.renderPanel
-import ch.og.dictation.recognition.Engine
 import ch.og.dictation.recognition.SAMPLE_RATE
 import ch.og.dictation.take.EditorDecision
 import ch.og.dictation.take.EditorEvent
@@ -81,12 +79,6 @@ class DictationImeService : InputMethodService() {
     companion object {
         /** The second read-back after a write that was not seen in the field at once (ADR-010). */
         internal const val CONFIRM_DELAY_MS = 100L
-        internal var recorderFactory: () -> Recorder = ::Recorder
-        internal var postCaptureEnd: (Handler, Runnable) -> Unit = { handler, callback -> handler.post(callback) }
-        /** Asks Android to show this input method's own panel on the current input session. */
-        internal var requestPanel: (InputMethodService) -> Unit = { it.requestShowSelf(0) }
-        /** Where takes are kept; device demos point it at an isolated root, never the owner's History. */
-        internal var historyRootFor: (android.content.Context) -> java.io.File = ::historyRoot
     }
     private val tag = "DictationIme"
     private var status: TextView? = null
@@ -263,11 +255,12 @@ class DictationImeService : InputMethodService() {
         getSystemService(android.media.AudioManager::class.java)?.registerAudioRecordingCallback(recordingCallback, mainHandler)
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         MicrophoneOwner.observe(microphoneOwnerListener)
-        val ready = Engine.warmUp(this)
+        val engine = wiring.engine
+        val ready = engine.warmUp()
         startup?.event("warmUpReturned")
         ready.whenComplete { _, failure ->
             startup?.event(if (failure == null) "modelReady" else "modelFailed",
-                ns = Engine.modelReadyNs ?: System.nanoTime())
+                ns = engine.modelReadyNs ?: System.nanoTime())
         }
         startup?.event("serviceCreateEnd")
     }
@@ -396,7 +389,7 @@ class DictationImeService : InputMethodService() {
             return
         }
         takeRetentionEligible = null
-        startupTake = startup?.beginTake(Engine.modelReadyNs != null)
+        startupTake = startup?.beginTake(wiring.engine.modelReadyNs != null)
         observeGeometry(startupTake)
         showIdle()
         if (hasMicPermission()) startRecording() else requestMicPermission()
@@ -648,7 +641,7 @@ class DictationImeService : InputMethodService() {
     }
 
     private val panelRequest = Runnable {
-        if (holding && inputStarted && !inputViewVisible && !destroyed) requestPanel(this)
+        if (holding && inputStarted && !inputViewVisible && !destroyed) wiring.requestPanel(this)
     }
 
     /** The panel settled after a rotation: release a result held for it, unless the finishing choice holds it. */
@@ -829,10 +822,12 @@ class DictationImeService : InputMethodService() {
             return
         }
         // Latch current policy for each new take, including explicit restarts.
-        val liveCheck = Engine.liveReceipt() != null
+        // Read once per take: a take keeps the Wiring it started with (its History root above all).
+        val wiring = this.wiring
+        val liveCheck = wiring.engine.liveReceipt() != null
         saveTake = !RotationTrace.probeActive() && BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(this), liveCheck) && editorRetentionEligible
         banner?.visibility = if (saveTake) View.VISIBLE else View.GONE
-        if (startupTake == null) startupTake = startup?.beginTake(Engine.modelReadyNs != null)
+        if (startupTake == null) startupTake = startup?.beginTake(wiring.engine.modelReadyNs != null)
         rotationTake++
         rotationEvent(RotationEvent.CAPTURE_START)
         var started = false // This start produced a take that will deliver finished().
@@ -967,14 +962,14 @@ class DictationImeService : InputMethodService() {
             }, feedback = currentFeedback, onInterrupted = {
                 unexpectedEnd.set(true)
                 traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
-                postCaptureEnd(mainHandler, Runnable {
+                wiring.postCaptureEnd(mainHandler, Runnable {
                     if (feedback === currentFeedback && takeActive) {
                         // Unexpected capture end is a system interruption: revoke insertion,
                         // release capture, then finish only the audio already accepted.
                         interruptTake()
                     }
                 })
-            }, recorder = recorderFactory())
+            }, recorder = wiring.recorderFactory())
             val capture = object : TakeCapture {
                 override fun start(accept: (FloatArray) -> Unit) {
                     try { microphoneCapture.start(accept) }
@@ -1025,10 +1020,11 @@ class DictationImeService : InputMethodService() {
                     startup?.timing(traceTake, event)
                 }
             }
-            val startedTake = Engine.openTake(this) { runtime, receipt ->
+            val historyRoot = wiring.historyRoot
+            val startedTake = wiring.engine.openTake { runtime, receipt ->
                 identity = receipt
                 val history = HistoryTakeOutput(output,
-                    { HistoryIo.store(historyRootFor(this)) }, HistoryIo.executor,
+                    { HistoryIo.store(historyRoot) }, HistoryIo.executor,
                     { recordHistoryNotice(HistoryNotice.SAVE) }, delivery = mainExecutor,
                     onDeleteFailure = { recordHistoryNotice(HistoryNotice.DELETE) },
                     onReceiptFailure = { recordHistoryNotice(HistoryNotice.RECEIPT) },

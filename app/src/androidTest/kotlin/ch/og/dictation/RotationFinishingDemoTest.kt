@@ -274,10 +274,8 @@ class RotationFinishingDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         starts.set(0)
-        val previousRecorder = DictationImeService.recorderFactory
-        val previousHistory = DictationImeService.historyRootFor
-        DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
-        DictationImeService.historyRootFor = { testHistory }
+        // Fixture audio and an isolated History root: the owner's History is never used.
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, historyRoot = testHistory) }
         clearTestHistory()
         val run = UUID.randomUUID().toString()
         makeRoomForRotationTrace(context)
@@ -349,10 +347,9 @@ class RotationFinishingDemoTest {
             heldHistory = null
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
-            DictationImeService.recorderFactory = previousRecorder
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             runCatching { Thread.sleep(1_000); clearTestHistory() } // Synthetic rows only.
-            DictationImeService.historyRootFor = previousHistory
+            wiring.close()
             if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
     }

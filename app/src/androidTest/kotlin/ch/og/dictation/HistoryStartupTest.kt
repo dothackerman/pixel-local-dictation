@@ -3,7 +3,7 @@ package ch.og.dictation
 import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryStore
-import ch.og.dictation.history.historyRoot
+import ch.og.dictation.history.startHistory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -21,11 +21,7 @@ class HistoryStartupTest {
         try {
             HistoryStore(root).save(entry)
             val obstruction = File(root, "abandoned.tmp").apply { mkdir(); File(this, "partial").writeText("synthetic") }
-            val app = object : DictationApplication() {
-                override fun historyRoot() = root
-                override fun ownsHistory() = true
-            }
-            app.onCreate()
+            startHistory(owns = true, root = root)
             HistoryIo.executor.submit {}.get(10, TimeUnit.SECONDS)
             assertEquals(entry, HistoryStore(root).get(entry.id))
             obstruction.deleteRecursively()
@@ -40,11 +36,7 @@ class HistoryStartupTest {
         val root = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "history-startup-").toFile()
         val temp = File(root, "abandoned.tmp").apply { writeText("synthetic") }
         try {
-            val app = object : DictationApplication() {
-                override fun historyRoot() = root
-                override fun ownsHistory() = true
-            }
-            app.onCreate()
+            startHistory(owns = true, root = root)
             HistoryIo.executor.submit {}.get(10, TimeUnit.SECONDS)
             assertFalse(temp.exists())
         } finally { root.deleteRecursively() }

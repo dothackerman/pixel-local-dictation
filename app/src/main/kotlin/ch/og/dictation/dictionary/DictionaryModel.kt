@@ -1,6 +1,6 @@
 package ch.og.dictation.dictionary
 
-import ch.og.dictation.recognition.Engine
+import ch.og.dictation.wiring
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
@@ -31,7 +31,7 @@ class DictionaryModel(application: Application) : AndroidViewModel(application) 
         val event = state.value?.event ?: 0
         state.value = State(event = event)
         reader.execute {
-            val result = runCatching { Engine.dictionaryStore(getApplication()).read() }
+            val result = runCatching { getApplication<Application>().wiring.engine.dictionaryStore().read() }
             getApplication<Application>().mainExecutor.execute {
                 state.value = result.fold({ State(it, false, event = event) }, { State(busy = false, error = true, event = event) })
             }
@@ -44,13 +44,13 @@ class DictionaryModel(application: Application) : AndroidViewModel(application) 
         if (before.busy) return
         undoEntries = null
         state.value = before.copy(busy = true, error = false, action = action, problem = null)
-        Engine.saveDictionary(getApplication(), snapshot, entries).whenComplete { saved, failure ->
+        getApplication<Application>().wiring.engine.saveDictionary(snapshot, entries).whenComplete { saved, failure ->
             val cause = generateSequence(failure) { it.cause }.lastOrNull()
             if (cause is DictionaryRevisionConflict) {
                 // Never retry an old whole-list mutation with a new revision token.
                 // Refresh first; the Activity retains its draft and rebuilds the next mutation.
                 reader.execute {
-                    val fresh = runCatching { Engine.dictionaryStore(getApplication()).read() }
+                    val fresh = runCatching { getApplication<Application>().wiring.engine.dictionaryStore().read() }
                     getApplication<Application>().mainExecutor.execute {
                         state.value = State(fresh.getOrNull(), false, true, before.event + 1, action, Problem.CONFLICT)
                     }

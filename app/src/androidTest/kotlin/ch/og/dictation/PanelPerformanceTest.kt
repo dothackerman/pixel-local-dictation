@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
 import ch.og.dictation.panel.PanelPreview
 import ch.og.dictation.recognition.ArtifactFiles
 import ch.og.dictation.recognition.DictationRuntime
@@ -75,9 +76,9 @@ class PanelPerformanceTest {
             }
             report.put("phase", "model warm-up")
             outputFile.writeText(report.toString(2))
-            val runtime = Engine.runtime(context)
+            val runtime = context.wiring.engine.runtime()
             runtime.warmUp().get(10, TimeUnit.MINUTES)
-            val identity = requireNotNull(Engine.liveReceipt())
+            val identity = requireNotNull(context.wiring.engine.liveReceipt())
             assertEquals("candidate-a-stream-dictionary", identity.getString("baseline"))
             assertTrue(identity.getBoolean("verified"))
             report.put("identity", identity)

@@ -1,5 +1,6 @@
 package ch.og.dictation.recognition
 
+import ch.og.dictation.wiring
 import ch.og.dictation.R
 import ch.og.dictation.dictionary.DictionaryModelUnavailable
 import android.app.Application
@@ -19,20 +20,20 @@ import org.robolectric.annotation.Config
 class ColdDictionarySaveTest {
     @Test fun missingProvisioningRejectsColdEditAndPreservesWorkingFallback() {
         val app: Application = RuntimeEnvironment.getApplication()
-        val store = Engine.dictionaryStore(app)
+        val store = app.wiring.engine.dictionaryStore()
         val original = store.read()
         val manifest = JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })
         val lab = File(app.filesDir, "lab")
         assertNull(ProvisionalBaseline.load(lab, manifest, original))
 
         assertThrows(ExecutionException::class.java) {
-            Engine.saveDictionary(app, original, listOf("Bärlauch")).get(5, TimeUnit.SECONDS)
+            app.wiring.engine.saveDictionary(original, listOf("Bärlauch")).get(5, TimeUnit.SECONDS)
         }
 
         assertEquals(original, store.read())
         assertFalse(File(app.filesDir, "dictionary/current.json").exists())
         assertNull(ProvisionalBaseline.load(lab, manifest, store.read()))
-        assertEquals(0, Engine.dictionaryModelLoads)
+        assertEquals(0, app.wiring.engine.dictionaryModelLoads)
     }
 
     @Test fun coldSaveRequiresEveryProvisionedArtifactButDoesNotLoadOrHashModels() {
@@ -44,14 +45,14 @@ class ColdDictionarySaveTest {
                 writeText(if (path == manifest.getJSONObject("variant").getJSONObject("hotwords").getString("file")) "Original\n" else "availability fixture")
             }
         }.toList()
-        val store = Engine.dictionaryStore(app)
+        val store = app.wiring.engine.dictionaryStore()
         val original = store.read()
         // Each incomplete provisioning must leave the saved pointer alone.
         for (artifact in artifacts) {
             val bytes = artifact.readBytes()
             artifact.delete()
             val failure = assertThrows(ExecutionException::class.java) {
-                Engine.saveDictionary(app, original, listOf("New term")).get(5, TimeUnit.SECONDS)
+                app.wiring.engine.saveDictionary(original, listOf("New term")).get(5, TimeUnit.SECONDS)
             }
             assertTrue(failure.cause is DictionaryModelUnavailable)
             assertFalse(File(app.filesDir, "dictionary/current.json").exists())
@@ -59,13 +60,13 @@ class ColdDictionarySaveTest {
         }
         // Synthetic, deliberately wrong model hashes demonstrate this is a stat-only preflight.
         // Full cryptographic verification remains required at first recognition.
-        val saved = Engine.saveDictionary(app, original, listOf("New term")).get(5, TimeUnit.SECONDS)
+        val saved = app.wiring.engine.saveDictionary(original, listOf("New term")).get(5, TimeUnit.SECONDS)
         assertEquals(saved, store.read())
-        val empty = Engine.saveDictionary(app, saved, emptyList()).get(5, TimeUnit.SECONDS)
+        val empty = app.wiring.engine.saveDictionary(saved, emptyList()).get(5, TimeUnit.SECONDS)
         assertTrue(empty.edited)
         assertTrue(store.read().entries.isEmpty())
         assertNotNull(ProvisionalBaseline.load(File(app.filesDir, "lab"), manifest, empty))
-        assertEquals(0, Engine.dictionaryModelLoads)
+        assertEquals(0, app.wiring.engine.dictionaryModelLoads)
     }
 
 }

@@ -1,5 +1,6 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.wiring
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryStore
 import ch.og.dictation.history.HistoryTakeOutput
@@ -94,7 +95,7 @@ class CheckpointProducerService : Service() {
                 if (event.phase == "checkpointDurable") readyCheckpoint.countDown()
                 if (event.phase == "checkpointFailed") laterFailure.countDown()
             }
-            Engine.warmUp(applicationContext).get(10, TimeUnit.MINUTES)
+            applicationContext.wiring.engine.warmUp().get(10, TimeUnit.MINUTES)
             val direct = Executor { it.run() }
             val delegate = object : TakeOutput {
                 override fun preview(text: String) {}
@@ -125,7 +126,7 @@ class CheckpointProducerService : Service() {
                 override fun stop(done: (Result<ByteArray>) -> Unit) = done(Result.success(ByteArray(0)))
                 override fun cancel(done: () -> Unit) = done()
             }
-            val take = Engine.openTake(applicationContext) { runtime, _ ->
+            val take = applicationContext.wiring.engine.openTake { runtime, _ ->
                 runtime.open(capture, output, direct, timeline, retentionEligible = true).also { it.start() }
             }
             when (mode) {

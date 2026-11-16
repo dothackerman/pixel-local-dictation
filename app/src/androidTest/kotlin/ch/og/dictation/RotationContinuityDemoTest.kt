@@ -137,8 +137,7 @@ class RotationContinuityDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         val starts = AtomicInteger()
-        val previousRecorder = DictationImeService.recorderFactory
-        DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }) }
         val run = UUID.randomUUID().toString()
         makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
@@ -271,7 +270,7 @@ class RotationContinuityDemoTest {
         } finally {
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
-            DictationImeService.recorderFactory = previousRecorder
+            wiring.close()
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }

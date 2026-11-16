@@ -1,5 +1,6 @@
 package ch.og.dictation.dictionary
 
+import ch.og.dictation.wiring
 import ch.og.dictation.R
 import ch.og.dictation.recognition.Engine
 import android.app.Application
@@ -80,8 +81,8 @@ class DictionaryEditorRecoveryTest {
         reopened.save(reopened.state.value!!.snapshot!!.entries + "My draft", "add")
         idle(reopened)
         assertFalse(reopened.state.value!!.error)
-        assertEquals(listOf("Original", "First addition", "My draft"), Engine.dictionaryStore(app).read().entries)
-        assertEquals(0, Engine.dictionaryModelLoads)
+        assertEquals(listOf("Original", "First addition", "My draft"), app.wiring.engine.dictionaryStore().read().entries)
+        assertEquals(0, app.wiring.engine.dictionaryModelLoads)
     }
 
     @Test fun firstSaveAfterProcessDeathClearsDraftAndReportsCompletion() {
@@ -107,7 +108,7 @@ class DictionaryEditorRecoveryTest {
             editor.findViewById<TextInputEditText>(R.id.dictionary_entry).setText("After death")
             editor.findViewById<MaterialButton>(R.id.dictionary_commit).performClick()
             idle(freshModel)
-            assertTrue(Engine.dictionaryStore(app).read().entries.contains("After death"))
+            assertTrue(app.wiring.engine.dictionaryStore().read().entries.contains("After death"))
             assertEquals("", editor.findViewById<TextInputEditText>(R.id.dictionary_entry).text.toString())
             assertEquals(app.getString(R.string.dictionary_added), editor.findViewById<TextView>(R.id.dictionary_editor_feedback).text.toString())
         } finally { restored.pause().stop().destroy() }
@@ -128,7 +129,7 @@ class DictionaryEditorRecoveryTest {
         assertNull(deleting.undoEntries)
         assertEquals(listOf("Other addition"), deleting.state.value!!.snapshot!!.entries)
         deleting.undo()
-        assertEquals(listOf("Other addition"), Engine.dictionaryStore(app).read().entries)
+        assertEquals(listOf("Other addition"), app.wiring.engine.dictionaryStore().read().entries)
     }
 
     @Test fun rotationRetainsDraftWithoutReplayingConsumedAddCompletion() {
@@ -230,10 +231,10 @@ class DictionaryEditorRecoveryTest {
             assertEquals("My edit", input.text.toString())
             assertTrue(editor.isShowing)
             assertEquals(app.getString(R.string.dictionary_add_as_new), commit.text.toString())
-            assertEquals(listOf("Replacement"), Engine.dictionaryStore(app).read().entries)
+            assertEquals(listOf("Replacement"), app.wiring.engine.dictionaryStore().read().entries)
             commit.performClick()
             idle(editing)
-            assertEquals(listOf("Replacement", "My edit"), Engine.dictionaryStore(app).read().entries)
+            assertEquals(listOf("Replacement", "My edit"), app.wiring.engine.dictionaryStore().read().entries)
             assertEquals("", input.text.toString())
         } finally { controller.pause().stop().destroy() }
     }

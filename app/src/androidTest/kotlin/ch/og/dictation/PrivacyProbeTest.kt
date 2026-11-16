@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
 import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.diagnostics.RotationTrace
 import ch.og.dictation.history.HistoryIo
@@ -41,7 +42,7 @@ class PrivacyProbeTest {
         HistoryIo.executor.submit {}.get()
         val afterHistory = inventory(history)
         val afterBenchmark = inventory(benchmark)
-        val benchmarkEligible = BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null)
+        val benchmarkEligible = BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), context.wiring.engine.liveReceipt() != null)
         Log.i("PrivacyProbe", "benchmark retention enabled for ordinary take: $benchmarkEligible")
         if (caseName == "privacy-ordinary") {
             assertTrue("ordinary take did not create a History file", afterHistory.keys.any { it.endsWith(".history") && it !in beforeHistory })

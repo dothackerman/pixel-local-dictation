@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
 import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.diagnostics.RotationTrace
 import ch.og.dictation.history.HistoryIo
@@ -79,7 +80,7 @@ class GuidedVisitTest {
                         .put("benchmarkChanged", beforeBenchmark != afterBenchmark)
                         .put("historyAdded", afterHistory.keys.any { it.endsWith(".history") && it !in beforeHistory })
                         .put("benchmarkAdded", afterBenchmark.keys.any { it.endsWith(".wav") && it !in beforeBenchmark })
-                        .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null))
+                        .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), context.wiring.engine.liveReceipt() != null))
                 }
                 output.appendText(row.toString() + "\n")
                 progress.record(outcome)
