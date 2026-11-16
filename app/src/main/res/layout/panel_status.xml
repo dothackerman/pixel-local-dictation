@@ -69,7 +69,7 @@
         android:visibility="gone" />
     <!-- The preview's measure stops at 28em (about 70 characters, PreviewTextView), which only
          the wide landscape column reaches. -->
-    <ch.og.dictation.PreviewTextView
+    <ch.og.dictation.panel.PreviewTextView
         android:id="@+id/preview"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

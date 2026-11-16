@@ -1,5 +1,12 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryClearStatus
+import ch.og.dictation.history.HistoryCompletion
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.HistoryProcess
+import ch.og.dictation.history.HistoryStore
+import ch.og.dictation.probe.HistoryTestActivity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context

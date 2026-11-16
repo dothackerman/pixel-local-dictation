@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.dictionary.DictionaryActivity
+import ch.og.dictation.history.HistoryActivity
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.historyRoot
+import ch.og.dictation.recognition.Engine
 import android.content.Intent
 import android.os.Bundle
 import android.text.SpannableString

@@ -1,5 +1,18 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryActivity
+import ch.og.dictation.history.HistoryCompletion
+import ch.og.dictation.history.HistoryDelivery
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryMarker
+import ch.og.dictation.history.HistoryNotice
+import ch.og.dictation.history.HistoryProcess
+import ch.og.dictation.history.HistoryRows
+import ch.og.dictation.history.HistoryStore
+import ch.og.dictation.history.historyNotices
+import ch.og.dictation.history.message
+import ch.og.dictation.probe.HistoryTestActivity
+import ch.og.dictation.probe.SettingsLargeTextPreviewActivity
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap

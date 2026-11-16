@@ -1,5 +1,14 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.NativeRoleProfiler
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.ModelFiles
+import ch.og.dictation.recognition.Pipeline
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.recognition.Variant
+import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.take.TimelineEvent
+import ch.og.dictation.take.TimelineObserver
 import android.content.Context
 import android.os.Debug
 import android.os.Process

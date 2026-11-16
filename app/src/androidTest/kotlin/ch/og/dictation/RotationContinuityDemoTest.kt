@@ -1,5 +1,12 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.diagnostics.RotationEvent
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.probe.SelfRotationProbeActivity
+import ch.og.dictation.probe.SyntheticFixtureAudio
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle

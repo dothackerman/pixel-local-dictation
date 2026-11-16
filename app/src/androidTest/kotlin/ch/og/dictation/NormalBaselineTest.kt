@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.recognition.ArtifactFiles
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File

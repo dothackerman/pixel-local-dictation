@@ -1,5 +1,10 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryCompletion
+import ch.og.dictation.history.HistoryDelivery
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.HistoryOwner
+import ch.og.dictation.history.HistoryStore
 import android.content.Intent
 import android.app.ActivityManager
 import android.content.Context
@@ -41,7 +46,7 @@ class HistoryProcessTest {
     private fun runScenario(context: Context, id: String, mode: String, fixtureId: String): ScenarioResult {
         val root = File(context.noBackupFilesDir, "issue54-producer/$id")
         root.deleteRecursively()
-        val intent = Intent().setClassName(context, "ch.og.dictation.CheckpointProducerService")
+        val intent = Intent().setClassName(context, "ch.og.dictation.probe.CheckpointProducerService")
             .putExtra("mode", mode).putExtra("case_id", id).putExtra("fixture_id", fixtureId)
         try {
         context.startService(intent)
@@ -84,7 +89,7 @@ class HistoryProcessTest {
         val root = File(context.noBackupFilesDir, "checkpoint-process-test")
         root.deleteRecursively()
         try {
-            context.startService(Intent().setClassName(context, "ch.og.dictation.CheckpointProducerService")
+            context.startService(Intent().setClassName(context, "ch.og.dictation.probe.CheckpointProducerService")
                 .putExtra("zero_checkpoint", true))
             val deadline = SystemClock.uptimeMillis() + 10000
             while (!File(root, "producer-ready").exists() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(20)
@@ -108,7 +113,7 @@ class HistoryProcessTest {
             HistoryIo.executor.submit {}.get(10, TimeUnit.SECONDS)
             assertTrue(normalRoot.isDirectory || normalRoot.mkdirs())
             pending.writeText("synthetic pending checkpoint")
-            context.startService(Intent().setClassName(context, "ch.og.dictation.CheckpointProducerService"))
+            context.startService(Intent().setClassName(context, "ch.og.dictation.probe.CheckpointProducerService"))
             val deadline = SystemClock.uptimeMillis() + 10000
             while (!File(root, "producer-ready").exists() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(20)
             assertTrue(File(root, "producer-ready").exists())

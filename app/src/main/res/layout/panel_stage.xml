@@ -3,12 +3,12 @@
      disk (70dp, one colour in every state; its 28dp glyph is the mic or the Stop square). The
      arc is 64dp, as in the mock. -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <ch.og.dictation.RecordingRingView
+    <ch.og.dictation.panel.RecordingRingView
         android:id="@+id/recording_ring"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:importantForAccessibility="no" />
-    <ch.og.dictation.PreparingArcView
+    <ch.og.dictation.panel.PreparingArcView
         android:id="@+id/processing"
         android:layout_width="64dp"
         android:layout_height="64dp"

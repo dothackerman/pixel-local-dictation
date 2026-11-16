@@ -1,5 +1,10 @@
 package ch.og.dictation
 
+import ch.og.dictation.dictionary.DictionaryActivity
+import ch.og.dictation.dictionary.DictionaryModel
+import ch.og.dictation.dictionary.DictionarySnapshot
+import ch.og.dictation.probe.DictionaryLargeTextPreviewActivity
+import ch.og.dictation.recognition.ArtifactFiles
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas

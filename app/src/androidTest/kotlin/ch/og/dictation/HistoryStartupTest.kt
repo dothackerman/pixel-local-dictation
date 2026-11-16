@@ -1,5 +1,9 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.HistoryStore
+import ch.og.dictation.history.historyRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File

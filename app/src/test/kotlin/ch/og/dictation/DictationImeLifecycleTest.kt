@@ -1,5 +1,18 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.MicrophoneCapture
+import ch.og.dictation.audio.MicrophoneOwner
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.ime.InputSession
+import ch.og.dictation.recognition.Chunk
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.recognition.Recognizer
+import ch.og.dictation.recognition.Segmenter
+import ch.og.dictation.recognition.Variant
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import android.view.inputmethod.EditorInfo
 import android.widget.TextView
 import android.widget.ImageButton

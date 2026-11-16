@@ -1,5 +1,12 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.RecordingFeedback
+import ch.og.dictation.panel.PanelChoice
+import ch.og.dictation.panel.PanelDisclosure
+import ch.og.dictation.panel.PanelFrame
+import ch.og.dictation.panel.PanelPreview
+import ch.og.dictation.panel.RecordingRingView
+import ch.og.dictation.panel.renderPanel
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap

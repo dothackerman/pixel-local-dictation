@@ -66,12 +66,12 @@ alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 | Concern | Where | Decision |
 |---|---|---|
 | IME lifecycle: record on initial open; confirmed discard removes the take; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](docs/adr/010-ime-lifecycle.md), amendment for #36 |
-| Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](docs/adr/017-shared-take-experiments.md) |
-| Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
-| Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
-| Dictionary revisions and one leased loaded model | [DictionaryStore](app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt), [DictionaryModels](app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt) | ADR-027 |
-| Lab engines (Cohere one recognizer, Canary two) | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt), [pipeline.py](tools/experiments/pipeline.py) | [ADR-007](docs/adr/007-fp32-cohere.md) |
-| Allocation settings for recognizer and LID | [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt), [runtime_config.py](tools/experiments/runtime_config.py) | [ADR-012](docs/adr/012-allocation-outcome.md) |
+| Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/take/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/recognition/DictationRuntime.kt) | [ADR-017](docs/adr/017-shared-take-experiments.md) |
+| Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/recognition/Engine.kt) `build` | ADR-026, ADR-027 |
+| Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/recognition/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
+| Dictionary revisions and one leased loaded model | [DictionaryStore](app/src/main/kotlin/ch/og/dictation/dictionary/DictionaryStore.kt), [DictionaryModelLeases](app/src/main/kotlin/ch/og/dictation/recognition/DictionaryModelLeases.kt) | ADR-027 |
+| Lab engines (Cohere one recognizer, Canary two) | [Engine](app/src/main/kotlin/ch/og/dictation/recognition/Engine.kt), [pipeline.py](tools/experiments/pipeline.py) | [ADR-007](docs/adr/007-fp32-cohere.md) |
+| Allocation settings for recognizer and LID | [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/recognition/RuntimeConfig.kt), [runtime_config.py](tools/experiments/runtime_config.py) | [ADR-012](docs/adr/012-allocation-outcome.md) |
 
 Not visible in the code:
 
@@ -98,10 +98,10 @@ text or editor identity. Each file is append-only, capped at 2 MiB, never overwr
 
 | File | Protocol | Schema source |
 |---|---|---|
-| `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/StartupTrace.kt), DictationImeService |
+| `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/diagnostics/StartupTrace.kt), DictationImeService |
 | `geometry.jsonl` | `ime-geometry-v1` | StartupTrace `geometry` |
 | `live-results.jsonl` | `ime-candidate-live-v1` | StartupTrace `liveResult` |
-| `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt) |
+| `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/probe/EditorProbeActivity.kt) |
 
 Reading rules (frozen meanings):
 
@@ -165,6 +165,15 @@ Repository folders: `app/` (the app; Kotlin packages by feature, tests mirror th
 `assets/` (asset fetch, model export and quantization), `profiling/` (native and timing
 profiles, thermal status). Run each script from the repository root, e.g.
 `python3 tools/evaluation/score.py`.
+
+App packages under `ch.og.dictation`: `ime` (input session, permission), `take` (take session,
+transcriber, editor policies), `audio` (recorder, microphone capture and owner), `recognition`
+(engine, runtime, recognizers, variant, baseline, `WrittenForm`), `history`, `dictionary`,
+`panel` (panel views and frame), `diagnostics` (traces, benchmark store, profiler). Three
+classes stay in the root package because Android stores their names: `DictationApplication`,
+`DictationImeService` (the enabled keyboard) and `SettingsActivity` (launcher and keyboard-list
+entry). Benchmark-only activities and services are in `probe`. Host tests mirror the packages;
+device suites stay in the root package, since `phone run` names them.
 
 ## Agent skills
 

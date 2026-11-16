@@ -13,19 +13,19 @@ class PlainLogicImportTest {
     private val root = File("src/main/kotlin/ch/og/dictation")
 
     private val plain = listOf(
-        "EditorEventPolicy.kt",
-        "TakeSession.kt",
-        "TakeTranscriber.kt",
-        "InsertReadBack.kt",
-        "InputSession.kt",
-        "WrittenForm.kt",
-        "Recognizer.kt",
-        "DictationRuntime.kt",
-        "Variant.kt",
-        "DictionaryStore.kt",
-        "HistoryRows.kt",
-        "HistoryTakeOutput.kt",
-        "RecordingFeedback.kt",
+        "take/EditorEventPolicy.kt",
+        "take/TakeSession.kt",
+        "take/TakeTranscriber.kt",
+        "take/InsertReadBack.kt",
+        "ime/InputSession.kt",
+        "recognition/WrittenForm.kt",
+        "recognition/Recognizer.kt",
+        "recognition/DictationRuntime.kt",
+        "recognition/Variant.kt",
+        "dictionary/DictionaryStore.kt",
+        "history/HistoryRows.kt",
+        "history/HistoryTakeOutput.kt",
+        "audio/RecordingFeedback.kt",
     )
 
     /** `android.` as a package reference outside comments: imports and fully qualified uses alike. */

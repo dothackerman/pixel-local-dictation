@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.historyRoot
 import android.app.Application
 import java.io.File
 

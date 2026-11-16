@@ -1,5 +1,14 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.probe.GuidedVisit
+import ch.og.dictation.probe.GuidedVisitProgress
+import ch.og.dictation.probe.Outcome
+import ch.og.dictation.probe.RotationProbeActivity
+import ch.og.dictation.probe.StepResult
+import ch.og.dictation.recognition.Engine
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry

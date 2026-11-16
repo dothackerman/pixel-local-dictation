@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeOutcome
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
