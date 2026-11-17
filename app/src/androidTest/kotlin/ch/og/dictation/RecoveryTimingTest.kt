@@ -73,7 +73,6 @@ class RecoveryTimingTest {
     }
 
     private fun appendReceipts(file: File, processId: String, takeId: String, events: List<TimelineEvent>) {
-        file.parentFile?.mkdirs()
         val rows = synchronized(events) { events.toList() }
         val lines = rows.map { event ->
             JSONObject().put("protocol", "recovery-timing-v1").put("clock", "CLOCK_MONOTONIC")
@@ -88,9 +87,7 @@ class RecoveryTimingTest {
                     event.revision?.let { row.put("revision", it) }
                 }.toString()
         }
-        val bytes = (lines.joinToString("\n", postfix = "\n")).toByteArray(Charsets.UTF_8)
-        check(file.length() + bytes.size <= 2 * 1024 * 1024) { "timing receipt file full; pull it before rerunning" }
-        file.appendBytes(bytes)
+        LabReceipts.append(file, lines.joinToString("\n", postfix = "\n"))
     }
 
     private class PacedFixtureCapture(private val audio: FloatArray) : TakeCapture {

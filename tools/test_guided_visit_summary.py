@@ -1,8 +1,10 @@
 """Synthetic guided-visit file and rotation trace; no phone data."""
 import json
+import os
+import tempfile
 import unittest
 
-from guided_visit_summary import summarize
+from guided_visit_summary import load_trace, summarize
 
 
 def check(i, answer, text='t'):
@@ -96,6 +98,17 @@ class SummaryTests(unittest.TestCase):
                  ev(3000, 'DISPLAY_CHANGED', rotations=2, process=2, service=1), ev(4000, 'DISPLAY_CHANGED', rotations=5, process=1, service=1)]
         out = summarize([visit_row('A2', 'r2', ['passed'])], trace)['rotations']
         self.assertEqual([line.split(':')[0] for line in out], ['A2 rotation 1', 'A2 rotation 2', 'A2 rotation 3'])
+
+    def test_a_rotated_previous_trace_generation_is_read_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            current = os.path.join(directory, 'rotation-probe.jsonl')
+            with open(os.path.join(directory, 'rotation-probe.prev.jsonl'), 'w', encoding='utf-8') as handle:
+                handle.write(json.dumps(ev(0, 'SERVICE_ATTACH')) + '\n')
+            with open(current, 'w', encoding='utf-8') as handle:
+                handle.write(json.dumps(ev(1, 'DISPLAY_CHANGED')) + '\n')
+            self.assertEqual(['SERVICE_ATTACH', 'DISPLAY_CHANGED'], [row['event'] for row in load_trace(current)])
+            os.remove(os.path.join(directory, 'rotation-probe.prev.jsonl'))
+            self.assertEqual(['DISPLAY_CHANGED'], [row['event'] for row in load_trace(current)])
 
 
 if __name__ == '__main__':

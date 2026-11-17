@@ -44,7 +44,7 @@ enum class RotationEvent {
 }
 
 /** One service's observations; the shared writer serializes rows from successive services. */
-class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 1024 * 1024) {
+class RotationTrace(private val file: File, private val maxBytes: Long = LabReceipts.MAX_BYTES) {
     companion object {
         private val process = UUID.randomUUID().toString()
         private val services = AtomicLong()
@@ -193,15 +193,11 @@ class RotationTrace(private val file: File, private val maxBytes: Long = 2 * 102
         detail?.forEach { (key, value) -> if (value is Boolean || value is Int) row.put(key, value) }
         val line = row.toString() + "\n"
         writer.execute {
-            if (!failed) try {
-                check(file.length() + line.toByteArray(Charsets.UTF_8).size <= maxBytes)
-                file.parentFile?.mkdirs()
-                file.appendText(line)
-            } catch (_: Exception) { failed = true }
+            if (!failed && !LabReceipts.append(file, line, maxBytes)) failed = true
         }
     }
 
-    /** Waits for previously submitted rows and reports errors or capacity exhaustion. */
+    /** Waits for previously submitted rows; false after a write failed (a full file rotates, it does not fail). */
     fun flush(): Boolean = try { writer.submit<Boolean> { !failed }.get() } catch (_: Exception) { false }
     @Synchronized fun close(): Boolean {
         closed = true

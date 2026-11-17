@@ -29,7 +29,7 @@ class StartupTraceTest {
             val deadline = SystemClock.uptimeMillis() + 5_000
             var rows = emptyList<JSONObject>()
             while (SystemClock.uptimeMillis() < deadline) {
-                rows = runCatching { file.readLines().map { JSONObject(it) } }.getOrDefault(emptyList())
+                rows = runCatching { LabReceipts.lines(file).map { JSONObject(it) } }.getOrDefault(emptyList())
                 if (rows.size == 3) break
                 SystemClock.sleep(10)
             }
@@ -46,7 +46,7 @@ class StartupTraceTest {
             assertEquals(create.getString("processId"), draw.getString("processId"))
             assertEquals(456_000_000L, rows[2].getLong("ns"))
             assertFalse("observer uptime must not be paired with a historical event", rows[2].has("uptimeMs"))
-            assertTrue(file.length() <= 2 * 1024 * 1024)
+            assertTrue(file.length() <= LabReceipts.MAX_BYTES)
         } finally {
             directory.deleteRecursively()
         }

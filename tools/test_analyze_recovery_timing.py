@@ -11,6 +11,7 @@ class RecoveryTimingTests(unittest.TestCase):
     def test_reports_source_lag_backlog_stop_wait_and_zero_checkpoint_truth(self):
         rows = [
             dict(phase="scenario", ns=0, fixtureId="fixture-c", sampleRate=16000),
+            dict(phase="captureStart", ns=900_000_000),
             dict(phase="captureSampleAnchor", ns=1_000_000_000, sampleEnd=16000),
             dict(phase="chunkReady", ns=1_100_000_000, chunkId=0, sampleEnd=16000),
             dict(phase="chunkEnqueue", ns=1_110_000_000, queued=2),
@@ -43,7 +44,8 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertEqual(2, result["maxDecodeQueue"])
 
     def test_missing_terminal_events_are_incomplete_not_zero_checkpoint(self):
-        rows = [dict(phase="captureSampleAnchor", ns=1, sampleEnd=1),
+        rows = [dict(phase="captureStart", ns=0),
+                dict(phase="captureSampleAnchor", ns=1, sampleEnd=1),
                 dict(phase="captureStopAnchor", ns=2, sampleEnd=1),
                 dict(phase="stopRequested", ns=3)]
         with TemporaryDirectory() as directory:
@@ -54,6 +56,27 @@ class RecoveryTimingTests(unittest.TestCase):
         self.assertEqual("incomplete_receipts", result["status"])
         self.assertIsNone(result["zeroCheckpoint"])
         self.assertIsNone(result["atRiskBacklogAtStopSec"])
+
+    def test_a_take_whose_head_was_rotated_away_yields_no_lag_or_backlog_numbers(self):
+        # Everything but the head (captureStart and what preceded this window) survives;
+        # the durable frontier before it is unknown, so lags and backlog would be invented.
+        rows = [dict(phase="captureSampleAnchor", ns=5_000_000_000, sampleEnd=80000),
+                dict(phase="checkpointQueued", ns=5_100_000_000, revision=7, sampleEnd=80000),
+                dict(phase="chunkReady", ns=5_150_000_000, chunkId=4, sampleEnd=80000),
+                dict(phase="checkpointDurable", ns=5_200_000_000, revision=7, sampleEnd=80000),
+                dict(phase="stopRequested", ns=5_300_000_000, sampleEnd=80000),
+                dict(phase="captureStopAnchor", ns=5_310_000_000, sampleEnd=80000),
+                dict(phase="finalReady", ns=5_400_000_000),
+                dict(phase="takeEnded", ns=5_500_000_000)]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "timing.jsonl"
+            path.write_text("\n".join(json.dumps(dict(protocol="recovery-timing-v1", clock="CLOCK_MONOTONIC",
+                processId="p", takeId="t", **row)) for row in rows))
+            result = analyze(path)["takes"][0]
+        self.assertEqual("incomplete_receipts", result["status"])
+        for key in ("oldestNewlyDurableAudioLagMs", "newestNewlyDurableAudioLagMs", "chunkToDurableLagMs",
+                    "checkpointQueueLagMs", "atRiskBacklogMaxSec", "atRiskBacklogAtStopSec", "zeroCheckpoint"):
+            self.assertIsNone(result[key], key)
 
     def test_transcript_or_audio_fields_are_rejected(self):
         with TemporaryDirectory() as directory:
@@ -69,6 +92,17 @@ class RecoveryTimingTests(unittest.TestCase):
             path.write_text('{"protocol":"recovery-timing-v1"')
             with self.assertRaisesRegex(ValueError, "invalid receipt"):
                 analyze(path)
+
+    def test_a_rotated_previous_generation_is_read_first(self):
+        def line(**row):
+            return json.dumps(dict(protocol="recovery-timing-v1", clock="CLOCK_MONOTONIC", processId="p", takeId="t", **row))
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "recovery-timing.jsonl"
+            (Path(directory) / "recovery-timing.prev.jsonl").write_text(line(phase="stopRequested", ns=3_000_000) + "\n")
+            path.write_text(line(phase="finalReady", ns=4_000_000) + "\n" + line(phase="takeEnded", ns=5_000_000) + "\n")
+            result = analyze(path)["takes"]
+        self.assertEqual(1, len(result))
+        self.assertEqual(2.0, result[0]["terminalStopWaitMs"])
 
 
 if __name__ == "__main__":
