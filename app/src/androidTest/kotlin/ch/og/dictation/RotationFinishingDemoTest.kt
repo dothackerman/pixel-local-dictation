@@ -1,5 +1,16 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.diagnostics.RotationEvent
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.probe.SelfRotationProbeActivity
+import ch.og.dictation.probe.SyntheticFixtureAudio
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
+import ch.og.dictation.take.ROTATION_SETTLE_MS
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
@@ -264,10 +275,8 @@ class RotationFinishingDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         starts.set(0)
-        val previousRecorder = DictationImeService.recorderFactory
-        val previousHistory = DictationImeService.historyRootFor
-        DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
-        DictationImeService.historyRootFor = { testHistory }
+        // Fixture audio and an isolated History root: the owner's History is never used.
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, historyRoot = testHistory) }
         clearTestHistory()
         val run = UUID.randomUUID().toString()
         RotationTrace.beginProbe(case, run)
@@ -338,10 +347,9 @@ class RotationFinishingDemoTest {
             heldHistory = null
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
-            DictationImeService.recorderFactory = previousRecorder
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             runCatching { Thread.sleep(1_000); clearTestHistory() } // Synthetic rows only.
-            DictationImeService.historyRootFor = previousHistory
+            wiring.close()
             if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
     }

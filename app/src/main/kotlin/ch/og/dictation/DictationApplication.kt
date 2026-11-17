@@ -1,14 +1,19 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.startHistory
 import android.app.Application
-import java.io.File
 
 open class DictationApplication : Application() {
-    protected open fun historyRoot() = File(noBackupFilesDir, "history")
-    protected open fun ownsHistory() = getProcessName() == applicationInfo.processName
+    @Volatile private var current: Wiring? = null
+
+    /** This process's [Wiring], created on first use. */
+    val wiring: Wiring
+        get() = current ?: synchronized(this) { current ?: Wiring.forApp(this).also { current = it } }
+
+    internal fun replaceWiring(value: Wiring) { synchronized(this) { current = value } }
 
     override fun onCreate() {
         super.onCreate()
-        if (ownsHistory()) HistoryIo.start(historyRoot())
+        startHistory(owns = getProcessName() == applicationInfo.processName, root = wiring.historyRoot)
     }
 }

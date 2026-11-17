@@ -9,7 +9,7 @@ This is an experimental Android app developed for one device and workflow, not a
 Build from source with an Android SDK configured. Model assets and signing material are not included in Git.
 
 ```sh
-tools/fetch-assets.sh
+tools/assets/fetch-assets.sh
 tools/set-signing-password.sh
 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease
 ```
@@ -35,7 +35,7 @@ The provisional baseline uses Parakeet v3 FP32 on CPU, beam 8 and dictionary sco
 
 Recognition can still change meaning, including negation, numbers and units. Review dictated text before sending it. Dictionary edits are supported, but arbitrary new entries have not been accuracy-validated. Startup delays, longer battery-only model retention and some keyboard handoff behavior remain unresolved or unverified. Recorded timings are specific observations, not performance guarantees.
 
-See [the baseline decision and evidence](adrs/026-dictionary-first.md), [dictionary behavior](adrs/027-editable-dictionary.md), and [known gaps](DEVELOPMENT.md#known-gaps). Current work is tracked in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues).
+See [the baseline decision and evidence](docs/adr/026-dictionary-first.md), [dictionary behavior](docs/adr/027-editable-dictionary.md), and [known gaps](DEVELOPMENT.md#known-gaps). Current work is tracked in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues).
 
 ## Privacy
 
@@ -47,7 +47,7 @@ Personal recordings, transcripts, dictionaries, signing credentials and evaluati
 
 ## Contribute
 
-Read [AGENTS.md](AGENTS.md) before agent-assisted work. The [development reference](DEVELOPMENT.md) preserves requirements, architecture, phone procedures and evaluation limits; [ADRs](adrs/) explain the decisions behind them.
+Read [AGENTS.md](AGENTS.md) before agent-assisted work. The [development reference](DEVELOPMENT.md) preserves requirements, architecture, phone procedures and evaluation limits; [ADRs](docs/adr/) explain the decisions behind them.
 
 Run host checks with:
 

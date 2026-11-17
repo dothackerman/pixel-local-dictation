@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.history.HistoryActivity
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryNotice
+import ch.og.dictation.history.HistoryStore
+import ch.og.dictation.history.historyNotices
+import ch.og.dictation.probe.HistoryTestActivity
 import android.content.Intent
 import android.view.View
 import android.widget.TextView

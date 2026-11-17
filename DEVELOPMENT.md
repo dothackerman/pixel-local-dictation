@@ -2,7 +2,7 @@
 
 For anyone changing, building, measuring or operating the app. [README](README.md)
 covers use; [AGENTS.md](AGENTS.md) covers agent conduct and phone access;
-[ADRs](adrs/) record decisions and their evidence; [GLOSSARY](GLOSSARY.md) fixes terms.
+[ADRs](docs/adr/) record decisions and their evidence; [GLOSSARY](GLOSSARY.md) fixes terms.
 Planned work lives only in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues);
 a plan, gate, schedule or checklist in a tracked file is a defect. The `ready-for-agent`
 label marks a prepared spec; it does not authorize a phone run.
@@ -14,13 +14,13 @@ As of 2026-11-01 (from merged PRs and closed issues):
 - Installed baseline: **Candidate A** (Parakeet v3 FP32, CPU, beam 8, dictionary score 1.5).
   The owner selected it on 2026-10-27 for its error/Stop-wait trade-off although the frozen
   #15 comparison rejected it on the 2.5 s median gate; the rejection stays on record
-  ([ADR-026](adrs/026-dictionary-first.md)).
-- Fallback: the historical INT8 pipeline ([ADR-003](adrs/003-working-engine.md)) when
+  ([ADR-026](docs/adr/026-dictionary-first.md)).
+- Fallback: the historical INT8 pipeline ([ADR-003](docs/adr/003-working-engine.md)) when
   provisioning is missing or blank and no dictionary was saved. A deliberately empty saved
-  dictionary keeps FP32 without vocabulary help ([ADR-027](adrs/027-editable-dictionary.md)).
+  dictionary keeps FP32 without vocabulary help ([ADR-027](docs/adr/027-editable-dictionary.md)).
 - Settings dictionary editor (#31, PR #33) merged; the owner accepted its smoke test (ADR-027).
 - Recording-panel ring (#30, PR #32) merged; the owner approved the panel on video. Status
-  unverified: [research/issue30](research/issue30-panel-performance.md) left the live Cancel
+  unverified: [docs/research/issue30](docs/research/issue30-panel-performance.md) left the live Cancel
   path as the remaining manual acceptance item, and no later record closes it.
 - Startup: the owner accepts roughly 1.3 s cold / 0.25 s warm handoff for now; #14 partial,
   #17 deferred (ADR-026).
@@ -28,12 +28,12 @@ As of 2026-11-01 (from merged PRs and closed issues):
   a tracked file. ADR-026's `0efa5b2` pair and issue30's final UI APK both predate it.
 
 Closed campaigns (allocation, Moonshine, profiling, accelerators, WebGPU encoder) and
-their outcomes: ADR-004 to ADR-025. [ADR-013](adrs/013-future-investigations.md) lists
+their outcomes: ADR-004 to ADR-025. [ADR-013](docs/adr/013-future-investigations.md) lists
 parked hypotheses.
 
 ## Requirements
 
-Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](adrs/026-dictionary-first.md)); R9 added 11-12.
+Confirmed 2026-10-09; R7 added 10-10; R4 revised and R8 added 10-25 ([ADR-026](docs/adr/026-dictionary-first.md)); R9 added 11-12.
 They apply to every engine.
 
 | ID | Requirement |
@@ -46,7 +46,7 @@ They apply to every engine.
 | R6 | Follow the security rules in [AGENTS.md](AGENTS.md). Support return to FUTO and retain its baseline model. |
 | R7 | Use Swiss spelling: replace ß with ss. The scorer treats both forms equally. |
 | R8 | The panel and recording start at once; model loading never delays them. |
-| R9 | Spoken numbers become digits where context makes them unambiguous, Swiss style for German (`WrittenForm`, [research](research/number-itn.md)). Lab replays stay raw. |
+| R9 | Spoken numbers become digits where context makes them unambiguous, Swiss style for German (`WrittenForm`, [research](docs/research/number-itn.md)). Lab replays stay raw. |
 
 A single-language engine is acceptable if routing is automatic. Mixed-language
 conversation and diarization are out of scope. Dialect support, Stop behavior
@@ -65,13 +65,13 @@ alone, without state from earlier chunks (carrying state was rejected, ADR-026).
 
 | Concern | Where | Decision |
 |---|---|---|
-| IME lifecycle: record on initial open; confirmed discard removes the take; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](adrs/010-ime-lifecycle.md), amendment for #36 |
-| Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/DictationRuntime.kt) | [ADR-017](adrs/017-shared-take-experiments.md) |
-| Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt) `build` | ADR-026, ADR-027 |
-| Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
-| Dictionary revisions and one leased loaded model | [DictionaryStore](app/src/main/kotlin/ch/og/dictation/DictionaryStore.kt), [DictionaryModels](app/src/main/kotlin/ch/og/dictation/DictionaryModels.kt) | ADR-027 |
-| Lab engines (Cohere one recognizer, Canary two) | [Engine](app/src/main/kotlin/ch/og/dictation/Engine.kt), [pipeline.py](tools/pipeline.py) | [ADR-007](adrs/007-fp32-cohere.md) |
-| Allocation settings for recognizer and LID | [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/RuntimeConfig.kt), [runtime_config.py](tools/runtime_config.py) | [ADR-012](adrs/012-allocation-outcome.md) |
+| IME lifecycle: record on initial open; confirmed discard removes the take; restart, hide, lock or microphone interruption stop capture and recover eligible text to History | [DictationImeService](app/src/main/kotlin/ch/og/dictation/DictationImeService.kt), [method.xml](app/src/main/res/xml/method.xml) | [ADR-010](docs/adr/010-ime-lifecycle.md), amendment for #36 |
+| Take lifecycle shared by IME and phone replay | [TakeSession](app/src/main/kotlin/ch/og/dictation/take/TakeSession.kt), [DictationRuntime](app/src/main/kotlin/ch/og/dictation/recognition/DictationRuntime.kt) | [ADR-017](docs/adr/017-shared-take-experiments.md) |
+| Runtime selection: Candidate A, edited dictionary, INT8 fallback | [Engine](app/src/main/kotlin/ch/og/dictation/recognition/Engine.kt) `build` | ADR-026, ADR-027 |
+| Candidate A identities (plan, model, dictionary, VAD, runtime) | [ProvisionalBaseline](app/src/main/kotlin/ch/og/dictation/recognition/ProvisionalBaseline.kt), [candidate_a.json](app/src/main/res/raw/candidate_a.json) | ADR-026 |
+| Dictionary revisions and one leased loaded model | [DictionaryStore](app/src/main/kotlin/ch/og/dictation/dictionary/DictionaryStore.kt), [DictionaryModelLeases](app/src/main/kotlin/ch/og/dictation/recognition/DictionaryModelLeases.kt) | ADR-027 |
+| Lab engines (Cohere one recognizer, Canary two) | [Engine](app/src/main/kotlin/ch/og/dictation/recognition/Engine.kt), [pipeline.py](tools/experiments/pipeline.py) | [ADR-007](docs/adr/007-fp32-cohere.md) |
+| Allocation settings for recognizer and LID | [RuntimeConfig](app/src/main/kotlin/ch/og/dictation/recognition/RuntimeConfig.kt), [runtime_config.py](tools/experiments/runtime_config.py) | [ADR-012](docs/adr/012-allocation-outcome.md) |
 
 Not visible in the code:
 
@@ -87,7 +87,7 @@ Not visible in the code:
   saved revision. Edited receipts carry their own configuration hash; the frozen
   acceptance record stays intact (ADR-027).
 - `NormalBaselineTest` checks retained DE/EN output hashes, runtime fingerprint and reuse.
-- `tools/promote_baseline.py` stages only frozen candidate artifacts into the private
+- `tools/evaluation/promote_baseline.py` stages only frozen candidate artifacts into the private
   corpus for the phone wrapper; it authorizes no installation.
 
 ## Benchmark diagnostics
@@ -98,7 +98,7 @@ text or editor identity. The Settings Benchmark switch gates only saved take aud
 receipts.
 
 Capacity (#64): the six files below are a rolling window for deliberate measurements, not an
-archive. Each is written through [LabReceipts](app/src/main/kotlin/ch/og/dictation/LabReceipts.kt):
+archive. Each is written through [LabReceipts](app/src/main/kotlin/ch/og/dictation/diagnostics/LabReceipts.kt):
 append-only up to 2 MiB; the row that would cross the cap first moves the file to `NAME.prev.jsonl`
 (replacing the older generation) and starts a new file. A full file therefore never stops
 collection. LabReceipts logs rotation and write failure itself, each once per file per process.
@@ -111,12 +111,12 @@ is outside the cap.
 
 | File | Protocol | Schema source |
 |---|---|---|
-| `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/StartupTrace.kt), DictationImeService |
+| `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/diagnostics/StartupTrace.kt), DictationImeService |
 | `geometry.jsonl` | `ime-geometry-v1` | StartupTrace `geometry` |
 | `live-results.jsonl` | `ime-candidate-live-v1` | StartupTrace `liveResult` |
-| `recovery-timing.jsonl` | `recovery-timing-v1` | StartupTrace `timing`, RecoveryTimingTest; [analyzer](tools/analyze_recovery_timing.py) |
-| `rotation-probe.jsonl` | `ime-rotation-v1` | [RotationTrace](app/src/main/kotlin/ch/og/dictation/RotationTrace.kt) |
-| `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/EditorProbeActivity.kt) |
+| `recovery-timing.jsonl` | `recovery-timing-v1` | StartupTrace `timing`, RecoveryTimingTest; [analyzer](tools/profiling/analyze_recovery_timing.py) |
+| `rotation-probe.jsonl` | `ime-rotation-v1` | [RotationTrace](app/src/main/kotlin/ch/og/dictation/diagnostics/RotationTrace.kt) |
+| `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/probe/EditorProbeActivity.kt) |
 
 Reading rules (frozen meanings):
 
@@ -157,8 +157,8 @@ cross-window behavior.
 
 ## Build and host checks
 
-1. `tools/fetch-assets.sh` fetches pinned assets ([assets.lock](assets.lock)). The
-   shipped selective encoder comes from `tools/export-fp32.sh` and `tools/quant_variant.py`;
+1. `tools/assets/fetch-assets.sh` fetches pinned assets ([assets.lock](assets.lock)). The
+   shipped selective encoder comes from `tools/assets/export-fp32.sh` and `tools/assets/quant_variant.py`;
    a clean full FP32 export is unverified.
 2. `tools/set-signing-password.sh` configures signing ([app/build.gradle.kts](app/build.gradle.kts)).
    The host gate's Gradle step also needs it, so a fresh worktree cannot commit until signing is set.
@@ -167,6 +167,44 @@ cross-window behavior.
 `python3 tools/quality.py` is the host gate (no device tests). The pre-commit hook runs it
 with `--staged`: tracked edits and new source, test and build inputs must be staged, so
 `git commit PATH` with other changes pending fails, and index changes during the run fail it.
+It also fails on a broken relative Markdown link and on skill folders that drift from their
+installers ([repo_checks.py](tools/repo_checks.py)).
+
+Repository folders: `app/` (the app; Kotlin packages by feature, tests mirror them),
+`docs/adr/` (decisions; numbers never change), `docs/research/`, `docs/design/`,
+`docs/explainers/`, `native-role-profiler/` (native profiler sources), `variants/`.
+`tools/` holds the gate (`quality.py`, `repo_checks.py`), the shared lab-receipt reader
+(`lab_receipts.py`), the phone wrapper (`phone`, `gate/`,
+`git-hooks/`; paths fixed by ADR-024) and Python grouped by job, each folder with its tests:
+`evaluation/` (scoring, evaluators, guard set, baseline promotion, visit summary),
+`experiments/` (comparisons, variants, runtime config, laptop pipeline, lab cleanup),
+`assets/` (asset fetch, model export and quantization), `profiling/` (native and timing
+profiles, thermal status). Run each script from the repository root, e.g.
+`python3 tools/evaluation/score.py`.
+
+App packages under `ch.og.dictation`: `ime` (input session, permission), `take` (take session,
+transcriber, editor policies), `audio` (recorder, microphone capture and owner), `recognition`
+(engine, runtime, recognizers, variant, baseline, `WrittenForm`), `history`, `dictionary`,
+`panel` (panel views and frame), `diagnostics` (traces, benchmark store, profiler). Three
+classes stay in the root package because Android stores their names: `DictationApplication`,
+`DictationImeService` (the enabled keyboard) and `SettingsActivity` (launcher and keyboard-list
+entry). Benchmark-only activities and services are in `probe`. Host tests mirror the packages;
+device suites stay in the root package, since `phone run` names them.
+
+## Agent skills
+
+Two installers own the skill folders; both serve Claude and Codex. Never hand-edit, merge or
+re-link what they write. `.claude/skills`, `.claude/hooks` and settings are write-protected
+for agents: an agent prepares the commands, the owner runs them.
+
+| Installer | Owns | Update |
+|---|---|---|
+| Matt Pocock skills (`npx skills`, pinned in [skills-lock.json](skills-lock.json)) | one copy per skill in `.agents/skills/<name>/`; `.claude/skills/<name>` is a symlink to it | `npx skills update`, then commit `skills-lock.json` and `.agents/skills/` |
+| Impeccable (`npx impeccable`) | one rendered copy per harness, on purpose: Codex in `.agents/skills/impeccable/` (`$impeccable`, sub-agents as `.toml` in its `agents/`, called by `.codex/hooks.json`); Claude in `.claude/skills/impeccable/` (`/impeccable`) with sub-agents in `.claude/agents/` | `npx impeccable update` (updates both copies) |
+
+Both Impeccable copies are 4.8.0 (engine 0.1.18). The gate checks that every lock entry exists
+with a resolving `.claude/skills` symlink, both Impeccable copies report the same version,
+and no other `.claude/skills` entry is a real folder.
 
 ## Daily use and rollback
 
@@ -181,7 +219,7 @@ the benchmark build is debuggable.
 ## Phone lab operations
 
 [AGENTS.md](AGENTS.md) gives the shim path and approval rules; `phone help` lists verbs;
-[ADR-024](adrs/024-phone-access-rewrite.md) is the contract.
+[ADR-024](docs/adr/024-phone-access-rewrite.md) is the contract.
 
 - Every call, even `status`, overwrites `corpus/lab/last.json`; save it if later work needs it.
 - Typical visit: `snapshot NAME` → `check APP.apk TEST.apk` → `install` → `push DIR` →
@@ -204,7 +242,7 @@ the benchmark build is debuggable.
   chosen steps with `steps=A2,A3,A7,A8,B9` or starts at one with `start=A7`. Rotation and
   Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
   and `phone pull files/lab/rotation-probe.jsonl` (plus `rotation-probe.prev.jsonl` if present), then
-  `python3 tools/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
+  `python3 tools/evaluation/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
   per-rotation panel/hide/silenced/hold timings).
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs
   `bash tools/gate/apply.sh`. Then, in a fresh unescalated agent session, run
@@ -214,9 +252,9 @@ the benchmark build is debuggable.
 
 ## Evaluation
 
-Rules: [ADR-004](adrs/004-closed-loop.md), [ADR-005](adrs/005-dictionary.md),
-[ADR-006](adrs/006-adapter-evaluator.md), [ADR-011](adrs/011-measurement-contract.md),
-[ADR-017](adrs/017-shared-take-experiments.md) as amended by ADR-026.
+Rules: [ADR-004](docs/adr/004-closed-loop.md), [ADR-005](docs/adr/005-dictionary.md),
+[ADR-006](docs/adr/006-adapter-evaluator.md), [ADR-011](docs/adr/011-measurement-contract.md),
+[ADR-017](docs/adr/017-shared-take-experiments.md) as amended by ADR-026.
 
 - Laptop screening needs no freeze; an adoption-deciding phone comparison needs a frozen
   plan in `corpus/lab/<id>/`. Deployment is a separate decision.
@@ -233,8 +271,8 @@ Tools (`--help` gives each interface; none runs phone commands):
 
 | Tool | Purpose |
 |---|---|
-| `tools/lab.py` | prepare, check, freeze, reserve, record, compare one frozen comparison |
-| `tools/dictionary_score.py` | versioned word scoring; historical scorers keep their rules |
+| `tools/experiments/lab.py` | prepare, check, freeze, reserve, record, compare one frozen comparison |
+| `tools/evaluation/dictionary_score.py` | versioned word scoring; historical scorers keep their rules |
 
 Completed one-off tools are retired from the tree: the greedy-boosting screen
 (`dictionary_screen.py`, `dictionary_boost.py`, `tdt_decoder.py`, `tdt-runtime/`;
@@ -262,5 +300,5 @@ owner's agreement.
 - `corpus/retained/evidence.json` indexes selected reports for ADR-003 to ADR-016.
 - `corpus/lab/issue11/` holds #11 evidence; `HANDOFF.md` indexes it.
 - `corpus/references/baseline-v1.json` is the scoring reference; its hash identifies it.
-- Retired orchestration and runbooks are in Git history; [ADR-008](adrs/008-three-stage-loop.md)
+- Retired orchestration and runbooks are in Git history; [ADR-008](docs/adr/008-three-stage-loop.md)
   explains source recovery.

@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -17,15 +23,15 @@ import org.junit.runner.RunWith
 class DictionaryRuntimeUpdateTest {
     @Test fun coldSettingsChangesDoNotInitialiseTheModel() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("run this check first in a fresh instrumentation process", 0, Engine.dictionaryModelLoads)
+        assertEquals("run this check first in a fresh instrumentation process", 0, context.wiring.engine.dictionaryModelLoads)
         val pointer = File(context.filesDir, "dictionary/current.json")
         val originalPointer = if (pointer.exists()) pointer.readBytes() else null
-        val store = Engine.dictionaryStore(context)
+        val store = context.wiring.engine.dictionaryStore()
         val original = store.read()
         try {
-            val saved = Engine.saveDictionary(context, original, original.entries + "Quarzblütenpost").get(10, TimeUnit.SECONDS)
+            val saved = context.wiring.engine.saveDictionary(original, original.entries + "Quarzblütenpost").get(10, TimeUnit.SECONDS)
             assertEquals(saved, store.read())
-            assertEquals("editing alone must not initialise ASR", 0, Engine.dictionaryModelLoads)
+            assertEquals("editing alone must not initialise ASR", 0, context.wiring.engine.dictionaryModelLoads)
         } finally {
             restorePointer(pointer, originalPointer)
         }
@@ -35,7 +41,7 @@ class DictionaryRuntimeUpdateTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val pointer = File(context.filesDir, "dictionary/current.json")
         val originalPointer = if (pointer.exists()) pointer.readBytes() else null
-        val store = Engine.dictionaryStore(context)
+        val store = context.wiring.engine.dictionaryStore()
         val original = store.read()
         val direct = Executor { it.run() }
         val ended = CompletableFuture<TakeResult>()
@@ -50,44 +56,44 @@ class DictionaryRuntimeUpdateTest {
             override fun returnToKeyboard() = true
             override fun finished(result: TakeResult, pcm: ByteArray) { ended.complete(result) }
         }
-        val old = Engine.runtime(context)
-        Engine.warmUp(context).get(2, TimeUnit.MINUTES)
-        val take = Engine.openTake(context) { runtime, _ -> runtime.open(capture, output, direct).also { it.start() } }
+        val old = context.wiring.engine.runtime()
+        context.wiring.engine.warmUp().get(2, TimeUnit.MINUTES)
+        val take = context.wiring.engine.openTake { runtime, _ -> runtime.open(capture, output, direct).also { it.start() } }
         try {
-            val initialLoads = Engine.dictionaryModelLoads
-            val saved = Engine.saveDictionary(context, original, original.entries + "Quarzblütenexpress").get(2, TimeUnit.MINUTES)
-            assertEquals("first edit must reuse the loaded model", initialLoads, Engine.dictionaryModelLoads)
+            val initialLoads = context.wiring.engine.dictionaryModelLoads
+            val saved = context.wiring.engine.saveDictionary(original, original.entries + "Quarzblütenexpress").get(2, TimeUnit.MINUTES)
+            assertEquals("first edit must reuse the loaded model", initialLoads, context.wiring.engine.dictionaryModelLoads)
             assertTrue(take.active)
-            assertEquals(saved, Engine.dictionaryStore(context).read())
-            val updated = Engine.runtime(context)
+            assertEquals(saved, context.wiring.engine.dictionaryStore().read())
+            val updated = context.wiring.engine.runtime()
             assertNotSame(old, updated)
-            assertSame(updated, Engine.runtime(context))
-            val receipt = requireNotNull(Engine.liveReceipt())
+            assertSame(updated, context.wiring.engine.runtime())
+            val receipt = requireNotNull(context.wiring.engine.liveReceipt())
             assertEquals("candidate-a-user-dictionary", receipt.getString("baseline"))
             assertTrue(receipt.getBoolean("verified"))
             assertEquals(saved.sha256, receipt.getString("dictionary_sha256"))
             take.stop(); take.stop()
             assertEquals(TakeOutcome.COMPLETED, ended.get(1, TimeUnit.MINUTES).outcome)
-            val loads = Engine.dictionaryModelLoads
-            val edited = Engine.saveDictionary(context, saved, original.entries + "Quarzblütenpost").get(2, TimeUnit.MINUTES)
-            assertEquals("editing must reuse the loaded model", loads, Engine.dictionaryModelLoads)
+            val loads = context.wiring.engine.dictionaryModelLoads
+            val edited = context.wiring.engine.saveDictionary(saved, original.entries + "Quarzblütenpost").get(2, TimeUnit.MINUTES)
+            assertEquals("editing must reuse the loaded model", loads, context.wiring.engine.dictionaryModelLoads)
             assertNotEquals(saved.sha256, edited.sha256)
-            val removed = Engine.saveDictionary(context, edited, original.entries).get(2, TimeUnit.MINUTES)
-            assertEquals("removal must reuse the loaded model", loads, Engine.dictionaryModelLoads)
+            val removed = context.wiring.engine.saveDictionary(edited, original.entries).get(2, TimeUnit.MINUTES)
+            assertEquals("removal must reuse the loaded model", loads, context.wiring.engine.dictionaryModelLoads)
             // Removing the synthetic term must recover the exact retained DE/EN outputs.
             NormalBaselineTest().checkRetainedOutputs("candidate-a-user-dictionary", "edited-dictionary-parity-result.json")
-            val empty = Engine.saveDictionary(context, removed, emptyList()).get(2, TimeUnit.MINUTES)
+            val empty = context.wiring.engine.saveDictionary(removed, emptyList()).get(2, TimeUnit.MINUTES)
             assertTrue(empty.entries.isEmpty())
-            assertEquals("empty must keep the same loaded model", loads, Engine.dictionaryModelLoads)
-            assertEquals("candidate-a-user-dictionary", requireNotNull(Engine.liveReceipt()).getString("baseline"))
-            assertSame(Engine.runtime(context), Engine.runtime(context))
-            val restored = Engine.saveDictionary(context, empty, original.entries).get(2, TimeUnit.MINUTES)
+            assertEquals("empty must keep the same loaded model", loads, context.wiring.engine.dictionaryModelLoads)
+            assertEquals("candidate-a-user-dictionary", requireNotNull(context.wiring.engine.liveReceipt()).getString("baseline"))
+            assertSame(context.wiring.engine.runtime(), context.wiring.engine.runtime())
+            val restored = context.wiring.engine.saveDictionary(empty, original.entries).get(2, TimeUnit.MINUTES)
             assertEquals(original.entries, restored.entries)
         } finally {
             if (take.active) take.cancel()
             // Native restoration first; finally restore exact persistence identity, including absent pointer.
             val current = store.read()
-            if (current.entries != original.entries) Engine.saveDictionary(context, current, original.entries).get(2, TimeUnit.MINUTES)
+            if (current.entries != original.entries) context.wiring.engine.saveDictionary(current, original.entries).get(2, TimeUnit.MINUTES)
             restorePointer(pointer, originalPointer)
         }
     }

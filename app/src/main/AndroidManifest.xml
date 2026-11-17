@@ -36,12 +36,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".HistoryActivity" android:exported="false"
+        <activity android:name=".history.HistoryActivity" android:exported="false"
             android:theme="@style/Theme.Dictation" />
-        <activity android:name=".DictionaryActivity" android:exported="false"
+        <activity android:name=".dictionary.DictionaryActivity" android:exported="false"
             android:theme="@style/Theme.Dictation" android:windowSoftInputMode="adjustResize" />
         <activity
-            android:name=".PermissionActivity"
+            android:name=".ime.PermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true" />

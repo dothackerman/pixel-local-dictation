@@ -1,5 +1,12 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.recognition.ArtifactFiles
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -25,16 +32,16 @@ class NormalBaselineTest {
 
     @Test fun normalRuntimeSurvivesWarmUpAndRepeatedPanelRequests() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val first = Engine.runtime(context)
-        assertSame("repeated panels must retain the runtime", first, Engine.runtime(context))
-        Engine.warmUp(context).get(10, TimeUnit.MINUTES)
-        val verified = requireNotNull(Engine.liveReceipt())
+        val first = context.wiring.engine.runtime()
+        assertSame("repeated panels must retain the runtime", first, context.wiring.engine.runtime())
+        context.wiring.engine.warmUp().get(10, TimeUnit.MINUTES)
+        val verified = requireNotNull(context.wiring.engine.liveReceipt())
         assertEquals("candidate-a-stream-dictionary", verified.getString("baseline"))
         assertTrue(verified.getBoolean("verified"))
         assertFalse(verified.isNull("build_sha256"))
         repeat(2) {
-            assertSame("warm-up and panel requests must share the runtime", first, Engine.runtime(context))
-            val receipt = requireNotNull(Engine.liveReceipt())
+            assertSame("warm-up and panel requests must share the runtime", first, context.wiring.engine.runtime())
+            val receipt = requireNotNull(context.wiring.engine.liveReceipt())
             assertTrue("panel request must retain verified identity", receipt.getBoolean("verified"))
             assertEquals(verified.getString("build_sha256"), receipt.getString("build_sha256"))
         }
@@ -48,9 +55,9 @@ class NormalBaselineTest {
         val lab = File(context.filesDir, "lab")
         val cases = JSONObject(File(lab, "baseline-parity.json").readText())
         require(cases.length() == 2) { "one retained take per language required" }
-        val runtime = Engine.runtime(context)
+        val runtime = context.wiring.engine.runtime()
         runtime.warmUp().get(10, TimeUnit.MINUTES)
-        val receipt = requireNotNull(Engine.liveReceipt())
+        val receipt = requireNotNull(context.wiring.engine.liveReceipt())
         assertEquals(expectedBaseline, receipt.getString("baseline"))
         assertTrue(receipt.getBoolean("verified"))
         val rows = JSONArray()

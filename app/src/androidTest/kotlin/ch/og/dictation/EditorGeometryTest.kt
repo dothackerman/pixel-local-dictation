@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.probe.EditorProbeActivity
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry

@@ -1,5 +1,15 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.probe.GuidedVisit
+import ch.og.dictation.probe.GuidedVisitProgress
+import ch.og.dictation.probe.Outcome
+import ch.og.dictation.probe.RotationProbeActivity
+import ch.og.dictation.probe.StepResult
+import ch.og.dictation.recognition.Engine
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -47,7 +57,7 @@ class GuidedVisitTest {
             val run = UUID.randomUUID().toString()
             val traceCase = step.traceCase
             HistoryIo.executor.submit {}.get()
-            val history = File(context.noBackupFilesDir, "history")
+            val history = context.wiring.historyRoot
             val benchmark = File(context.filesDir, "benchmark")
             val beforeHistory = inventory(history)
             val beforeBenchmark = inventory(benchmark)
@@ -69,7 +79,7 @@ class GuidedVisitTest {
                         .put("benchmarkChanged", beforeBenchmark != afterBenchmark)
                         .put("historyAdded", afterHistory.keys.any { it.endsWith(".history") && it !in beforeHistory })
                         .put("benchmarkAdded", afterBenchmark.keys.any { it.endsWith(".wav") && it !in beforeBenchmark })
-                        .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null))
+                        .put("benchmarkEligible", BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), context.wiring.engine.liveReceipt() != null))
                 }
                 output.appendText(row.toString() + "\n")
                 progress.record(outcome)

@@ -1,5 +1,9 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.diagnostics.RotationEvent
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.probe.SelfRotationProbeActivity
 import android.app.Instrumentation
 import android.content.Intent
 import android.media.AudioManager

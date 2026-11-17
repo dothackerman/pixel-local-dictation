@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.RecordingFeedback
+import ch.og.dictation.panel.PanelChoice
+import ch.og.dictation.panel.PanelFrame
+import ch.og.dictation.panel.PanelPreview
+import ch.og.dictation.panel.RecordingRingView
+import ch.og.dictation.panel.renderPanel
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -67,10 +73,10 @@ class RecordingPanelTest {
 
             // Rebind the same latched decision after the system recreates the panel.
             val latchedEligible = false
-            PanelDisclosure.bind(disclosure, if (latchedEligible) null else R.string.retention_field_off)
+            bindNotice(disclosure, if (latchedEligible) null else R.string.retention_field_off)
             val recreated = panelOf(instrumentation.targetContext)
             val recreatedNotice = recreated.findViewById<TextView>(R.id.retention_notice)
-            PanelDisclosure.bind(recreatedNotice, if (latchedEligible) null else R.string.retention_field_off)
+            bindNotice(recreatedNotice, if (latchedEligible) null else R.string.retention_field_off)
             assertEquals(View.VISIBLE, recreatedNotice.visibility)
             assertEquals(disclosure.text.toString(), recreatedNotice.text.toString())
             assertEquals(instrumentation.targetContext.getString(R.string.status_finishing), status.text.toString())
@@ -91,7 +97,7 @@ class RecordingPanelTest {
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 status.setText(R.string.status_capture_ended)
                 val notice = panel.findViewById<TextView>(R.id.retention_notice)
-                PanelDisclosure.bind(notice, R.string.retention_field_off)
+                bindNotice(notice, R.string.retention_field_off)
                 preview.text = "An invented preview sentence for checking larger text. ".repeat(8)
                 val width = (320 * density).toInt()
                 panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -158,6 +164,24 @@ class RecordingPanelTest {
         return panel to context
     }
 
+    /** The private-field line alone, as renderPanel binds it, for checks that set status and preview themselves. */
+    private fun bindNotice(view: TextView, message: Int?) {
+        if (message == null) view.text = "" else view.setText(message)
+        view.visibility = if (message == null) View.GONE else View.VISIBLE
+        view.compoundDrawablesRelative[0]?.let { lock ->
+            val size = (view.textSize * 16 / 14).roundToInt()
+            lock.setBounds(0, 0, size, size)
+            view.setCompoundDrawablesRelative(lock, null, null, null)
+        }
+        if (view.resources.getBoolean(R.bool.panel_preview_yields_to_notice)) {
+            (view.parent as? View)?.findViewById<TextView>(R.id.preview)?.let { preview ->
+                val lines = if (message == null) 3 else 2
+                preview.minLines = lines
+                preview.maxLines = lines
+            }
+        }
+    }
+
     /** The view's box in [root]'s coordinates; its own scroll (the preview shows its newest lines) does not move it. */
     private fun bounds(view: View, root: View): Rect {
         val r = Rect(view.scrollX, view.scrollY, view.scrollX + view.width, view.scrollY + view.height)
@@ -172,7 +196,7 @@ class RecordingPanelTest {
             for (fontScale in listOf(1f, 2f)) {
                 val (panel, context) = landscapePanel(fontScale, night = false)
                 val density = context.resources.displayMetrics.density
-                PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), R.string.retention_field_off)
+                bindNotice(panel.findViewById(R.id.retention_notice), R.string.retention_field_off)
                 panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
@@ -293,7 +317,7 @@ class RecordingPanelTest {
         instrumentation.runOnMainSync {
             for (night in listOf(false)) for (fontScale in listOf(1f, 2f)) for (privateField in listOf(false, true)) {
                 val (panel, _) = landscapePanel(fontScale, night)
-                PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
+                bindNotice(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
                 panel.measure(View.MeasureSpec.makeMeasureSpec(panel.width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 panel.layout(0, 0, panel.measuredWidth, panel.measuredHeight)
@@ -366,10 +390,9 @@ class RecordingPanelTest {
                 val text = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
                 val ring = panel.findViewById<RecordingRingView>(R.id.recording_ring)
                 fun state(name: String, label: Int, frame: PanelFrame, words: String = text, privateField: Boolean = false) {
-                    status.setText(label)
-                    PanelPreview.bind(preview, words)
-                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (privateField) R.string.retention_field_off else null)
-                    renderPanel(panel, frame)
+                    renderPanel(panel, frame.copy(status = label, preview = words, microphoneEnabled = true,
+                        microphoneLabel = R.string.start_recording,
+                        notice = if (privateField) R.string.retention_field_off else null), null, null)
                     layOut(panel, width)
                     // Recording draws the real ribbon: the service attaches the take's feedback;
                     // here mid-loudness speech, as it looks while talking. Every other frame rests.
@@ -473,10 +496,9 @@ class RecordingPanelTest {
                 val preview = panel.findViewById<TextView>(R.id.preview)
                 val words = PanelPreview.tail("… zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on Saturday. ".repeat(3).trim())
                 fun draw(name: String, label: Int, frame: PanelFrame, private: Boolean): Int {
-                    status.setText(label)
-                    PanelPreview.bind(preview, if (frame.held) words else "")
-                    PanelDisclosure.bind(panel.findViewById(R.id.retention_notice), if (private) R.string.retention_field_off else null)
-                    renderPanel(panel, frame)
+                    renderPanel(panel, frame.copy(status = label, preview = if (frame.held) words else "", microphoneEnabled = true,
+                        microphoneLabel = R.string.start_recording,
+                        notice = if (private) R.string.retention_field_off else null), null, null)
                     layOut(panel, width)
                     val image = Bitmap.createBitmap(panel.width, panel.height, Bitmap.Config.ARGB_8888)
                     try {

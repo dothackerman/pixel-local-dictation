@@ -1,5 +1,18 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.MicrophoneCapture
+import ch.og.dictation.audio.MicrophoneOwner
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.ime.InputSession
+import ch.og.dictation.recognition.Chunk
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.recognition.Recognizer
+import ch.og.dictation.recognition.Segmenter
+import ch.og.dictation.recognition.Variant
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import android.view.inputmethod.EditorInfo
 import android.widget.TextView
 import android.widget.ImageButton
@@ -14,20 +27,16 @@ import org.junit.After
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 
 /** Exercises the service lifecycle with a controlled platform capture boundary. */
 @RunWith(RobolectricTestRunner::class)
 class DictationImeLifecycleTest {
-    private val engineRuntime = Engine::class.java.getDeclaredField("runtime").apply { isAccessible = true }
-    private val modelReady = Engine::class.java.getDeclaredField("modelReadyNs").apply { isAccessible = true }
-    private var previousRuntime: Any? = null
-    private var previousModelReady: Any? = null
+    private lateinit var wiring: WiringOverride
     private lateinit var warmupRuntime: DictationRuntime
 
     @Before fun isolateEngineWarmup() {
-        previousRuntime = engineRuntime.get(Engine)
-        previousModelReady = modelReady.get(Engine)
         warmupRuntime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { it.run() }, { Recognizer { "" } }, {
             object : Segmenter {
                 override fun accept(samples: FloatArray) = emptyList<Chunk>()
@@ -35,12 +44,11 @@ class DictationImeLifecycleTest {
                 override fun reset() {}
             }
         })
-        engineRuntime.set(Engine, warmupRuntime)
+        wiring = RuntimeEnvironment.getApplication().overrideWiring { it.with(engine = Engine.prepared(warmupRuntime)) }
     }
 
     @After fun restoreEngineWarmup() {
-        engineRuntime.set(Engine, previousRuntime)
-        modelReady.set(Engine, previousModelReady)
+        wiring.close()
         warmupRuntime.close().join()
         MicrophoneOwner.acceptExplicitStart()
     }

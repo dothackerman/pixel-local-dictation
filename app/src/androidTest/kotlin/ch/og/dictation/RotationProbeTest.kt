@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.probe.RotationProbeActivity
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry

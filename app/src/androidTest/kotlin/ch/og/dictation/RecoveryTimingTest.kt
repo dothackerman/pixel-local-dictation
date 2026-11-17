@@ -1,5 +1,18 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.wiring
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.HistoryStore
+import ch.og.dictation.history.HistoryTakeOutput
+import ch.og.dictation.probe.SyntheticFixtureAudio
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
+import ch.og.dictation.take.TimelineEvent
+import ch.og.dictation.take.TimelineObserver
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -20,7 +33,7 @@ class RecoveryTimingTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test fun safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts() {
-        Engine.warmUp(context).get(10, TimeUnit.MINUTES)
+        context.wiring.engine.warmUp().get(10, TimeUnit.MINUTES)
         val receipts = File(context.filesDir, "lab/recovery-timing.jsonl")
         for (fixtureId in listOf("continuous", "paused")) {
             val wav = SyntheticFixtureAudio.file(context.filesDir, fixtureId)
@@ -49,7 +62,7 @@ class RecoveryTimingTest {
             val capture = PacedFixtureCapture(samples)
             val output = HistoryTakeOutput(delegate, { store }, HistoryIo.executor, {}, id = takeId,
                 delivery = executor, timeline = timeline)
-            val take = Engine.openTake(context) { runtime, _ ->
+            val take = context.wiring.engine.openTake { runtime, _ ->
                 runtime.open(capture, output, executor, timeline, retentionEligible = true).also { it.start() }
             }
             capture.awaitInput()

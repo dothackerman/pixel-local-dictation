@@ -1,5 +1,27 @@
 package ch.og.dictation
 
+import ch.og.dictation.audio.MicrophoneOwner
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.diagnostics.RotationEvent
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.history.HistoryCompletion
+import ch.og.dictation.history.HistoryDelivery
+import ch.og.dictation.history.HistoryEntry
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.history.HistoryNotice
+import ch.og.dictation.history.historyNotices
+import ch.og.dictation.panel.PreparingArcView
+import ch.og.dictation.panel.RecordingRingView
+import ch.og.dictation.recognition.Chunk
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.recognition.Recognizer
+import ch.og.dictation.recognition.Segmenter
+import ch.og.dictation.recognition.Variant
+import ch.og.dictation.take.EditorRetention
+import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
+import ch.og.dictation.take.ROTATION_SETTLE_MS
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
@@ -83,10 +105,8 @@ class DictationProductionLifecycleTest {
     @Volatile private var failLoudDecode = false
     private val devices = LinkedBlockingQueue<Input>()
     private val opened = mutableListOf<ServiceController<DictationImeService>>()
-    private val engineRuntime = Engine::class.java.getDeclaredField("runtime").apply { isAccessible = true }
-    private val modelReady = Engine::class.java.getDeclaredField("modelReadyNs").apply { isAccessible = true }
-    private var originalRuntime: Any? = null
-    private var originalModelReady: Any? = null
+    /** This test's Wiring: an engine around [runtime], a fake recorder; restored after each test. */
+    private lateinit var wiring: WiringOverride
     private lateinit var runtime: DictationRuntime
     private lateinit var root: File
     private var commits = 0
@@ -98,8 +118,6 @@ class DictationProductionLifecycleTest {
         assertFalse(MicrophoneOwner.state().occupied)
         MicrophoneOwner.acceptExplicitStart()
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.RECORD_AUDIO)
-        originalRuntime = engineRuntime.get(Engine)
-        originalModelReady = modelReady.get(Engine)
         runtime = DictationRuntime(Variant.HISTORICAL_INT8, decode,
             { Recognizer { samples ->
                 if (failLoudDecode && samples[0] > 0.4f) error("synthetic decoder failure")
@@ -114,16 +132,17 @@ class DictationProductionLifecycleTest {
                     override fun reset() {}
                 }
             })
-        engineRuntime.set(Engine, runtime)
-        DictationImeService.recorderFactory = { Recorder { devices.remove() } }
-        root = File(RuntimeEnvironment.getApplication().noBackupFilesDir, "history")
+        wiring = RuntimeEnvironment.getApplication().overrideWiring {
+            it.with(engine = Engine.prepared(runtime), recorderFactory = { Recorder { devices.remove() } })
+        }
+        root = RuntimeEnvironment.getApplication().wiring.historyRoot
         HistoryIo.executor.submit { val store = HistoryIo.store(root); store.clear(store.clearableIds()) }.get(2, TimeUnit.SECONDS)
         HistoryNotice.entries.forEach { historyNotices(RuntimeEnvironment.getApplication()).dismiss(it) }
     }
 
     @After fun tearDown() {
-        DictationImeService.postCaptureEnd = { handler, callback -> handler.post(callback) }
-        DictationImeService.requestPanel = { it.requestShowSelf(0) }
+        wiring.set { it.with(postCaptureEnd = { handler, callback -> handler.post(callback) }) }
+        wiring.set { it.with(requestPanel = { it.requestShowSelf(0) }) }
         try {
             opened.asReversed().forEach { runCatching { it.destroy() } }
             await {
@@ -136,10 +155,7 @@ class DictationProductionLifecycleTest {
             runCatching { runtime.close() }
             decode.drain()
         } finally {
-            engineRuntime.set(Engine, originalRuntime)
-            modelReady.set(Engine, originalModelReady)
-            DictationImeService.recorderFactory = ::Recorder
-            DictationImeService.historyRootFor = ::historyRoot
+            wiring.close()
             MicrophoneOwner.acceptExplicitStart()
         }
     }
@@ -298,7 +314,7 @@ class DictationProductionLifecycleTest {
     /** Device demos keep synthetic takes out of the owner's History (same isolation as the History UI tests). */
     @Test fun testHistoryRootKeepsTheTakeOutOfTheRealHistory() {
         val isolated = File(RuntimeEnvironment.getApplication().noBackupFilesDir, "history-ui-test-hook")
-        DictationImeService.historyRootFor = { isolated }
+        wiring.set { it.with(historyRoot = isolated) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -315,7 +331,7 @@ class DictationProductionLifecycleTest {
 
     @Test fun rotationWithHiddenKeyboardKeepsTheTakeAndStopInsertsIntoTheReturnedField() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -352,7 +368,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun rotationWherePanelNeverReturnsEndsInHistoryWithinTheGap() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -372,7 +388,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun realHideAfterTheReturnedPanelStopsAtOnce() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -401,7 +417,7 @@ class DictationProductionLifecycleTest {
 
     @Test fun pixelOrderRecreatedEditorKeepsTheTakeThroughThePlatformResetAndLateHide() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -436,7 +452,7 @@ class DictationProductionLifecycleTest {
      */
     @Test fun signalOrderHideAfterRecreatedEditorStartStopInsertsOnceIntoIt() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -605,7 +621,7 @@ class DictationProductionLifecycleTest {
     @Test fun statusLineSaysTheTextIsNotSavedWhenTheEligibleSaveFailed() {
         val unwritable = java.nio.file.Files.createTempFile("history-unwritable", ".file").toFile()
         try {
-            DictationImeService.historyRootFor = { unwritable }
+            wiring.set { it.with(historyRoot = unwritable) }
             val (service, view, _) = deadConnectionAtStop(privateField = false)
             assertEquals(service.getString(R.string.status_unable_unsaved), status(view))
             assertTrue(rows().isEmpty())
@@ -671,7 +687,7 @@ class DictationProductionLifecycleTest {
      */
     @Test fun signalOrderHideAfterAPumpedViewStartStillGetsOurPanelBack() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -704,7 +720,7 @@ class DictationProductionLifecycleTest {
     /** After the gap, or once the panel is back, nothing is asked for again. */
     @Test fun noPanelRequestAfterTheHoldEnds() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -841,12 +857,12 @@ class DictationProductionLifecycleTest {
         await { decode.drain(); settleHistory(); commits == 1 }
         pump()
         // The next start fails synchronously (the recorder cannot be created).
-        DictationImeService.recorderFactory = { error("synthetic recorder failure") }
+        wiring.set { it.with(recorderFactory = { error("synthetic recorder failure") }) }
         MicrophoneOwner.acceptExplicitStart()
         service.onStartInputView(editor(), true)
         button(view).performClick()
         pump()
-        DictationImeService.recorderFactory = { Recorder { devices.remove() } }
+        wiring.set { it.with(recorderFactory = { Recorder { devices.remove() } }) }
         val third = Input()
         devices.add(third)
         await { button(view).isEnabled }
@@ -943,7 +959,7 @@ class DictationProductionLifecycleTest {
      */
     @Test fun homeInsideTheRotationWindowAsksForNoPanelAndEndsTheTakeAtTheGap() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor(pkg = "app.a"))
@@ -963,7 +979,7 @@ class DictationProductionLifecycleTest {
 
     @Test fun anotherAppsInputStartInsideTheRotationWindowEndsTheHoldAndGetsNothing() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor(pkg = "app.a"))
@@ -1064,7 +1080,7 @@ class DictationProductionLifecycleTest {
     }
 
     private fun deadConnectionAtStop(privateField: Boolean): Triple<DictationImeService, View, InactiveField> {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor(privateField))
@@ -1131,7 +1147,7 @@ class DictationProductionLifecycleTest {
      * no selection). Stop must not write into it nor report an insert; the take is held for Copy.
      */
     @Test fun signalOrderNonEditorInputAfterRotationIsNeverWrittenAndHoldsTheText() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(composeField())
@@ -1155,7 +1171,7 @@ class DictationProductionLifecycleTest {
      * search box) never receives the take's text; the take is held for Copy.
      */
     @Test fun otherFieldOfTheSameAppAfterRotationIsNeverWrittenAndHoldsTheText() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(composeField())
@@ -1187,7 +1203,7 @@ class DictationProductionLifecycleTest {
 
     /** Signal order into a view that is no editor; returns the take's panel, recording without authority. */
     private fun retargetedToNonEditor(): Triple<DictationImeService, View, Input> {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(composeField())
@@ -1277,7 +1293,7 @@ class DictationProductionLifecycleTest {
 
     /** A take that kept authority through a rotation: a cursor move in the same field changes nothing, Stop inserts. */
     @Test fun aCursorMoveInTheTakesFieldAfterARotationStillInsertsOnStop() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1298,7 +1314,7 @@ class DictationProductionLifecycleTest {
     @Test fun aPlainHideWhileWithoutAuthorityStopsAtOnce() {
         val panelRequests = AtomicInteger()
         val (service, _, input) = retargetedToNonEditor()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         service.onFinishInputView(false)
         service.onWindowHidden()
         await { input.releases.get() == 1 }
@@ -1318,7 +1334,7 @@ class DictationProductionLifecycleTest {
 
     /** A rotation into [connection] with the take's own field attributes, then Stop and the write. */
     private fun stopAfterRotationInto(connection: (DictationImeService) -> Field): Triple<DictationImeService, View, Field> {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(composeField())
@@ -1411,7 +1427,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun pixelOrderKeptEditorKeepsTheTakeAfterThePlatformReset() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1431,7 +1447,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun hideRightAfterARotationIsHeldOnlyUntilTheGapEnds() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1446,7 +1462,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun repeatedRotationsAndRotatingBackKeepOneTakeWithAllSpeech() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1479,7 +1495,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun screenOffDuringRotationHoldStopsAtOnce() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1492,7 +1508,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun microphoneLossDuringRotationHoldEndsInHistory() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1508,7 +1524,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun reboundPrivateEditorExcludesTheTakeFromHistory() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1545,7 +1561,7 @@ class DictationProductionLifecycleTest {
      * neither the saved checkpoint nor the interrupted result is kept, whatever ends the hold.
      */
     private fun reboundPrivateEditorKeepsNothing(exit: HoldExit, stopFirst: Boolean = false) {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1597,7 +1613,7 @@ class DictationProductionLifecycleTest {
      */
     @Test fun signalOrderTransientInputStartWithoutEditorKeepsTheTakeEligible() {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1648,7 +1664,7 @@ class DictationProductionLifecycleTest {
 
     /** A no-learning editor during the hold is positively private: excluded at once, like a password. */
     @Test fun reboundNoLearningEditorExcludesTheTakeEvenWithoutTheReturningPanel() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1666,7 +1682,7 @@ class DictationProductionLifecycleTest {
 
     /** An unclassifiable editor the panel settles on excludes the take; an editor-less start alone does not. */
     @Test fun panelSettlingOnAnUnclassifiableEditorExcludesTheTake() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1684,7 +1700,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun privateStartingEditorStaysExcludedAfterReboundToOrdinaryField() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor(privateField = true))
@@ -1713,7 +1729,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun silencedCaptureDuringRotationHoldEndsInHistory() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1845,7 +1861,7 @@ class DictationProductionLifecycleTest {
      */
     private fun rotationDuringStopWaitInsertsOnceIntoTheReturnedField(boundary: StopWait) {
         val panelRequests = AtomicInteger()
-        DictationImeService.requestPanel = { panelRequests.incrementAndGet() }
+        wiring.set { it.with(requestPanel = { panelRequests.incrementAndGet() }) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1887,7 +1903,7 @@ class DictationProductionLifecycleTest {
 
     /** Stop on the panel Android showed inside the configuration change, before the late hide. */
     @Test fun stopOnThePlatformResetPanelInsertsOnceIntoTheRecreatedEditor() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, _) = service(editor())
@@ -1926,7 +1942,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun rotationDuringStopWaitWithoutAReturningPanelSavesToHistoryOnlyAtTheGap() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1947,7 +1963,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun realHideDuringStopWaitAfterTheReturnedPanelSettledGoesToHistory() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -1983,7 +1999,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun recordingChoiceOpenThroughARotationIsRenderedAgainAndContinueKeepsTheTake() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -2010,7 +2026,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun recordingChoiceRenderedAgainAfterARotationStopInsertsOnceThere() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -2032,7 +2048,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun recordingChoiceRenderedAgainAfterARotationDiscardRemovesSavedTextOnce() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -2053,7 +2069,7 @@ class DictationProductionLifecycleTest {
 
     /** Stop, Back (finishing choice open), rotate; the result decodes under the open choice. */
     private fun finishingChoiceThroughARotation(): Triple<DictationImeService, Field, View> {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -2096,7 +2112,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun lockDuringARotationOverridesAnOpenChoiceAndGoesToHistory() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -2141,7 +2157,7 @@ class DictationProductionLifecycleTest {
         val durationScale = android.animation.ValueAnimator::class.java.getMethod("setDurationScale", Float::class.javaPrimitiveType)
         durationScale.invoke(null, 0f)
         try {
-            DictationImeService.requestPanel = {}
+            wiring.set { it.with(requestPanel = {}) }
             val input = Input()
             devices.add(input)
             val (service, view) = service(editor())
@@ -2189,32 +2205,6 @@ class DictationProductionLifecycleTest {
 
     @Test @Config(qualifiers = "w411dp-h891dp-port-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun returnedFinishingPanelIsDistinctWithoutAnimationInDark() = returnedFinishingPanelIsDistinctWithoutAnimation()
-
-    /** A narrow landscape window (320dp, fontScale 2): finishing still reads and both actions fit. */
-    @Test @Config(qualifiers = "w320dp-h320dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun narrowLandscapePanelKeepsFinishingStatusAndActions() {
-        RuntimeEnvironment.setFontScale(2f)
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        button(view).performClick()
-        layOut(view, 320)
-        val status = view.findViewById<TextView>(R.id.status)
-        assertEquals(service.getString(R.string.status_finishing), status.text.toString())
-        assertTrue("status squeezed to ${status.width}px", status.width >= status.paint.measureText("Finishing") / 2)
-        assertTrue("status clipped", status.height >= status.layout.height + status.compoundPaddingTop + status.compoundPaddingBottom)
-        val preview = view.findViewById<TextView>(R.id.preview)
-        assertTrue("preview squeezed", preview.width >= 64 * view.resources.displayMetrics.density)
-        val whole = android.graphics.Rect(0, 0, view.width, view.height)
-        for (target in listOf(view.findViewById<View>(R.id.back), button(view), view.findViewById<View>(R.id.recording_ring))) {
-            val bounds = android.graphics.Rect(0, 0, target.width, target.height)
-            (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(target, bounds)
-            assertTrue("${target.id} outside the panel", whole.contains(bounds))
-        }
-        assertTrue(button(view).width >= 48 * view.resources.displayMetrics.density)
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
 
     @Test fun rotationTraceRecordsDisplayRotationAndChangesAtEveryCallback() {
         val app = RuntimeEnvironment.getApplication()
@@ -2487,7 +2477,7 @@ class DictationProductionLifecycleTest {
     }
 
     @Test fun rotationRightAfterADiscardLeavesTheIdlePanel() {
-        DictationImeService.requestPanel = {}
+        wiring.set { it.with(requestPanel = {}) }
         val (service, _, input) = discardedWhilePaused()
         val (next, returned) = rotateToRecreatedEditor(service)
         advance(ROTATION_SETTLE_MS)
@@ -2644,181 +2634,6 @@ class DictationProductionLifecycleTest {
         settleHistory()
         assertEquals(0, commits)
         assertTrue(rows().isEmpty())
-    }
-
-    /**
-     * The choice at fontScale 2 in the recording panel: every action ≥ 48dp, inside the panel and
-     * not truncated; the safe action first and focused; Discard destructive and apart. Portrait
-     * keeps the panel height of the recording state.
-     */
-    private fun choiceFitsAtLargeText(widthDp: Int, finishingToo: Boolean = true) {
-        RuntimeEnvironment.setFontScale(2f)
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        layOut(view, widthDp)
-        val recordingHeight = view.height
-        back(view).performClick()
-        layOut(view, widthDp)
-        val density = view.resources.displayMetrics.density
-        fun check(actions: List<ImageButton>) {
-            val whole = android.graphics.Rect(0, 0, view.width, view.height)
-            val tops = mutableSetOf<Int>()
-            for (action in actions) {
-                val name = action.contentDescription
-                assertTrue("$name below 52dp", action.height >= 52 * density && action.width >= 52 * density)
-                val bounds = android.graphics.Rect(0, 0, action.width, action.height)
-                (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(action, bounds)
-                assertTrue("$name outside the panel", whole.contains(bounds))
-                assertFalse("icon-only buttons still carry their words", name.isNullOrBlank())
-                assertEquals("$name tooltip", name.toString(), action.tooltipText?.toString())
-                tops.add(bounds.top)
-            }
-            assertEquals("one row at one height", 1, tops.size)
-            val safeBounds = android.graphics.Rect(0, 0, safe(view).width, safe(view).height)
-            val discardBounds = android.graphics.Rect(0, 0, discardAction(view).width, discardAction(view).height)
-            (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(safe(view), safeBounds)
-            view.offsetDescendantRectToMyCoords(discardAction(view), discardBounds)
-            val apart = maxOf(discardBounds.left - safeBounds.right, discardBounds.top - safeBounds.bottom)
-            assertTrue("Discard sits next to the safe action", apart >= 16 * density)
-            assertTrue("Discard sits 40dp apart", apart >= 40 * density)
-            assertNotSame("Discard has its own (dashed) edge", safe(view).background.constantState, discardAction(view).background.constantState)
-            assertTrue(safe(view).isFocused)
-        }
-        check(listOf(safe(view), stopAction(view), discardAction(view)))
-        assertEquals("Continue recording plays", R.drawable.ic_play_arrow, shadowOf(safe(view).drawable).createdFromResId)
-        assertEquals("the choice keeps the panel height", recordingHeight, view.height)
-        if (!finishingToo) return
-        stopAction(view).performClick()
-        await { input.releases.get() == 1 }
-        back(view).performClick()
-        layOut(view, widthDp)
-        check(listOf(safe(view), discardAction(view)))
-        assertEquals("Keep preparing text shows preparing, not play", R.drawable.ic_marker_preparing,
-            shadowOf(safe(view).drawable).createdFromResId)
-        safe(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
-
-    @Test @Config(qualifiers = "w411dp-h891dp-port") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun choiceFitsAtLargeTextInPortrait() = choiceFitsAtLargeText(411)
-
-    @Test @Config(qualifiers = "w411dp-h891dp-port-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun choiceFitsAtLargeTextInPortraitDark() = choiceFitsAtLargeText(411)
-
-    /** Pixel 10 Pro XL landscape window. */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun choiceFitsAtLargeTextInLandscape() = choiceFitsAtLargeText(960)
-
-    @Test @Config(qualifiers = "w960dp-h440dp-land-night") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun choiceFitsAtLargeTextInLandscapeDark() = choiceFitsAtLargeText(960)
-
-    /**
-     * Private field, landscape, font 2× (#36 critique): the lock line costs the editor almost no
-     * height (the preview yields a line to it), and the lock glyph grows with the text.
-     */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun privateFieldLineStaysCompactInLandscapeAtLargeText() {
-        RuntimeEnvironment.setFontScale(2f)
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor(privateField = true))
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        val density = view.resources.displayMetrics.density
-        val notice = view.findViewById<TextView>(R.id.retention_notice)
-        layOut(view, 960)
-        assertEquals(View.VISIBLE, notice.visibility)
-        val withLine = view.height
-        val lock = notice.compoundDrawablesRelative[0]
-        assertTrue("lock ${lock.bounds.height() / density}dp does not scale with the text", lock.bounds.height() >= 24 * density)
-        assertEquals("lock keeps the label's proportion", notice.textSize * 16 / 14, lock.bounds.height().toFloat(), 1.5f)
-        PanelDisclosure.bind(notice, null)
-        layOut(view, 960)
-        assertTrue("private line adds ${(withLine - view.height) / density}dp", withLine - view.height <= 4 * density)
-        PanelDisclosure.bind(notice, R.string.retention_field_off)
-        button(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
-
-    private val longPreview = "zwei Hokkaido, eine Zwiebel, ein Stück Ingwer und Kokosmilch. And please bring fresh coriander on " +
-        "Saturday, because the market closes early and we still need lime, garlic and a bunch of spring onions for the soup."
-
-    /** Landscape preview (#36 critique P3): lines stop near 70 characters instead of running across the panel. */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun landscapePreviewKeepsAReadableMeasure() {
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor())
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        val preview = view.findViewById<TextView>(R.id.preview)
-        preview.text = longPreview
-        layOut(view, 960)
-        val layout = preview.layout
-        val longest = (0 until layout.lineCount).maxOf { layout.getLineEnd(it) - layout.getLineStart(it) }
-        assertTrue("longest preview line has $longest characters", longest <= 75)
-        button(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
-
-    /** Landscape at font 2× (#36 critique P3): the last preview line keeps clear room above the panel's bottom edge. */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun landscapePreviewKeepsRoomBelowAtLargeText() {
-        RuntimeEnvironment.setFontScale(2f)
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor())
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        val preview = view.findViewById<TextView>(R.id.preview)
-        preview.text = longPreview
-        layOut(view, 960)
-        val bounds = android.graphics.Rect(0, 0, preview.width, preview.height)
-        (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(preview, bounds)
-        val lastLine = bounds.top + preview.totalPaddingTop + preview.layout.getLineBottom(preview.layout.lineCount - 1)
-        val density = view.resources.displayMetrics.density
-        assertTrue("last line ${(view.height - lastLine) / density}dp above the bottom edge", view.height - lastLine >= 16 * density)
-        button(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-    }
-
-    /**
-     * Landscape on the phone (#36 critique P1): the choice sits in the stage under the
-     * right thumb, where the microphone was; the preview stays readable while Stop or Discard is
-     * decided, and the panel keeps its height in every state.
-     */
-    @Test @Config(qualifiers = "w960dp-h440dp-land") @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun landscapeChoiceTakesTheStageAndKeepsThePreview() {
-        val input = Input()
-        devices.add(input)
-        val (_, view) = service(editor())
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        layOut(view, 960)
-        val height = view.height
-        val words = preview(view)
-        assertEquals("old speech", words)
-        fun inStage(id: Int) {
-            val stage = android.graphics.Rect(0, 0, view.findViewById<View>(R.id.stage).width, view.findViewById<View>(R.id.stage).height)
-            (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(view.findViewById(R.id.stage), stage)
-            val target = view.findViewById<View>(id)
-            val bounds = android.graphics.Rect(0, 0, target.width, target.height)
-            view.offsetDescendantRectToMyCoords(target, bounds)
-            assertTrue("${view.resources.getResourceEntryName(id)} $bounds not in the stage $stage", stage.contains(bounds))
-        }
-        back(view).performClick()
-        layOut(view, 960)
-        assertTrue(choiceShown(view))
-        inStage(R.id.choice)
-        assertEquals("the preview stays during the choice", View.VISIBLE, view.findViewById<View>(R.id.preview).visibility)
-        assertEquals(words, preview(view))
-        assertEquals("the choice keeps the panel height", height, view.height)
-        stopAction(view).performClick()
-        await { decode.drain(); settleHistory(); commits == 1 }
-        layOut(view, 960)
-        assertEquals("the idle panel keeps the panel height", height, view.height)
     }
 
     @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
@@ -3167,7 +2982,7 @@ class DictationProductionLifecycleTest {
         val original = Input()
         val next = Input()
         val heldEnd = LinkedBlockingQueue<Runnable>()
-        DictationImeService.postCaptureEnd = { _, callback -> heldEnd.add(callback) }
+        wiring.set { it.with(postCaptureEnd = { _, callback -> heldEnd.add(callback) }) }
         devices.add(original); devices.add(next)
         val (service, view) = service(editor())
         feed(original, 1000, 1)

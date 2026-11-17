@@ -1,5 +1,11 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.history.HistoryIo
+import ch.og.dictation.probe.RotationProbeActivity
+import ch.og.dictation.recognition.Engine
 import android.content.Intent
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -24,7 +30,7 @@ class PrivacyProbeTest {
         assertFalse("rotation trace must be inactive", RotationTrace.probeActive())
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
-        val history = File(context.noBackupFilesDir, "history")
+        val history = context.wiring.historyRoot
         val benchmark = File(context.filesDir, "benchmark")
         HistoryIo.executor.submit {}.get()
         val beforeHistory = inventory(history)
@@ -36,7 +42,7 @@ class PrivacyProbeTest {
         HistoryIo.executor.submit {}.get()
         val afterHistory = inventory(history)
         val afterBenchmark = inventory(benchmark)
-        val benchmarkEligible = BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), Engine.liveReceipt() != null)
+        val benchmarkEligible = BenchmarkStore.recordingEnabled(BenchmarkStore.isEnabled(context), context.wiring.engine.liveReceipt() != null)
         Log.i("PrivacyProbe", "benchmark retention enabled for ordinary take: $benchmarkEligible")
         if (caseName == "privacy-ordinary") {
             assertTrue("ordinary take did not create a History file", afterHistory.keys.any { it.endsWith(".history") && it !in beforeHistory })

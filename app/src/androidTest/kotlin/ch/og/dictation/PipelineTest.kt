@@ -1,5 +1,8 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.take.TakeOutcome
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
@@ -30,13 +33,13 @@ class PipelineTest {
     @Test fun savedTakesThroughTheServicePipeline() {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
         assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
-        Engine.warmUp(ctx)
+        ctx.wiring.engine.warmUp()
         val out = JSONArray()
         for (f in takes) {
             val b = ByteBuffer.wrap(f.readBytes()).order(ByteOrder.LITTLE_ENDIAN).apply { position(44) }
             val x = FloatArray(b.remaining() / 2) { b.short / 32768f }
             val previews = java.util.Collections.synchronizedList(ArrayList<String>())
-            val result = replaySession(Engine.runtime(ctx), x, paced = false) { previews.add(it) }
+            val result = replaySession(ctx.wiring.engine.runtime(), x, paced = false) { previews.add(it) }
             assertTrue("session failed: ${result.outcome}", result.outcome == TakeOutcome.COMPLETED)
             val text = requireNotNull(result.text)
             Log.i("ReplayTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters, " +

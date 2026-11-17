@@ -1,5 +1,12 @@
 package ch.og.dictation
 
+import ch.og.dictation.recognition.ModelFiles
+import ch.og.dictation.recognition.Pipeline
+import ch.og.dictation.recognition.Recognizer
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.recognition.VadSegmenter
+import ch.og.dictation.recognition.Variant
+import ch.og.dictation.take.TakeTranscriber
 import android.content.Context
 import android.os.BatteryManager
 import android.os.Debug

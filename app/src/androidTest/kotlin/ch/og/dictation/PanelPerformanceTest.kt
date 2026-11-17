@@ -1,5 +1,14 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.panel.PanelPreview
+import ch.og.dictation.recognition.ArtifactFiles
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.Engine
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -67,9 +76,9 @@ class PanelPerformanceTest {
             }
             report.put("phase", "model warm-up")
             outputFile.writeText(report.toString(2))
-            val runtime = Engine.runtime(context)
+            val runtime = context.wiring.engine.runtime()
             runtime.warmUp().get(10, TimeUnit.MINUTES)
-            val identity = requireNotNull(Engine.liveReceipt())
+            val identity = requireNotNull(context.wiring.engine.liveReceipt())
             assertEquals("candidate-a-stream-dictionary", identity.getString("baseline"))
             assertTrue(identity.getBoolean("verified"))
             report.put("identity", identity)
@@ -140,13 +149,13 @@ class PanelPerformanceTest {
             view = panel(width)
             image = Bitmap.createBitmap(width, view.height, Bitmap.Config.ARGB_8888)
             fun find(node: View) {
-                if (node.javaClass.name == "${context.packageName}.RecordingRingView") ring = node
+                if (node.javaClass.name == "${context.packageName}.panel.RecordingRingView") ring = node
                 if (node is ViewGroup) repeat(node.childCount) { find(node.getChildAt(it)) }
             }
             find(view)
             preview = view.findViewById(context.resources.getIdentifier("preview", "id", context.packageName))
             ring?.let {
-                val type = Class.forName("${context.packageName}.RecordingFeedback")
+                val type = Class.forName("${context.packageName}.audio.RecordingFeedback")
                 feedback = type.getConstructor().newInstance()
                 type.getMethod("start").invoke(feedback)
                 it.javaClass.getMethod("follow", type).invoke(it, feedback)

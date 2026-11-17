@@ -1,5 +1,10 @@
 package ch.og.dictation
 
+import ch.og.dictation.wiring
+import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.dictionary.DictionaryActivity
+import ch.og.dictation.history.HistoryActivity
+import ch.og.dictation.history.HistoryIo
 import android.content.Intent
 import android.os.Bundle
 import android.text.SpannableString
@@ -59,7 +64,7 @@ open class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); showStored(); showHistoryCount(); showDictionaryCount() }
 
-    protected open fun historyRoot() = historyRoot(this)
+    protected open fun historyRoot() = wiring.historyRoot
 
     /** The History row shows only how many transcripts are saved; warnings live on the History page. */
     private fun showHistoryCount() {
@@ -83,7 +88,7 @@ open class SettingsActivity : AppCompatActivity() {
         val countView = findViewById<TextView>(R.id.settings_dictionary_count)
         val app = applicationContext
         counts.execute {
-            val count = runCatching { Engine.dictionaryStore(app).read().entries.size }.getOrNull()
+            val count = runCatching { app.wiring.engine.dictionaryStore().read().entries.size }.getOrNull()
             runOnUiThread {
                 if (isDestroyed || count == null) return@runOnUiThread
                 countView.text = resources.getQuantityString(R.plurals.dictionary_count, count, count)

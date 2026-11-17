@@ -1,5 +1,13 @@
 package ch.og.dictation
 
+import ch.og.dictation.recognition.DictationRuntime
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeOutput
+import ch.og.dictation.take.TakeResult
+import ch.og.dictation.take.TimelineEvent
+import ch.og.dictation.take.TimelineObserver
+import ch.og.dictation.take.emit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit

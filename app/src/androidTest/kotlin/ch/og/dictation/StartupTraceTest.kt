@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.diagnostics.StartupTrace
 import android.content.ContextWrapper
 import android.os.Process
 import android.os.SystemClock

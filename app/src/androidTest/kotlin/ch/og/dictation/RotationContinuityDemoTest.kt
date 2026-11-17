@@ -1,5 +1,13 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
+import ch.og.dictation.audio.Recorder
+import ch.og.dictation.diagnostics.RotationEvent
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.probe.SelfRotationProbeActivity
+import ch.og.dictation.probe.SyntheticFixtureAudio
+import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
@@ -130,8 +138,7 @@ class RotationContinuityDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         val starts = AtomicInteger()
-        val previousRecorder = DictationImeService.recorderFactory
-        DictationImeService.recorderFactory = { Recorder { FixtureInput(audio, starts) } }
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }) }
         val run = UUID.randomUUID().toString()
         RotationTrace.beginProbe(case, run)
         val marks = RotationTrace(traceFile)
@@ -263,7 +270,7 @@ class RotationContinuityDemoTest {
         } finally {
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
-            DictationImeService.recorderFactory = previousRecorder
+            wiring.close()
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
             if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }
