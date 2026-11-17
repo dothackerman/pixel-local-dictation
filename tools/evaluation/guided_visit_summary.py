@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Turns files/lab/guided-visit-<id>.jsonl (+ rotation-probe.jsonl) into the #61 check table
-and per-rotation timings for the Signal rotation steps. Reads sanitized metadata only."""
+"""Turns files/lab/guided-visit-<id>.jsonl (+ rotation-probe.jsonl and its .prev.jsonl) into the
+#61 check table and per-rotation timings for the Signal rotation steps. Reads sanitized metadata only."""
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # tools/: shared imports work when run directly
+from lab_receipts import generations  # noqa: E402
 
 ROTATION_STEPS = {'A2', 'A3'}
 
@@ -10,6 +14,11 @@ ROTATION_STEPS = {'A2', 'A3'}
 def load(path):
     with open(path, encoding='utf-8') as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def load_trace(path):
+    """Both generations of a rotated trace, older rows first."""
+    return [row for source in generations(path) for row in load(source)]
 
 
 def checks(rows):
@@ -88,9 +97,10 @@ def summarize(rows, trace):
 
 def main(argv):
     if not 1 <= len(argv) <= 2:
-        print('usage: guided_visit_summary.py guided-visit-<id>.jsonl [rotation-probe.jsonl]', file=sys.stderr)
+        print('usage: guided_visit_summary.py guided-visit-<id>.jsonl [rotation-probe.jsonl]\n'
+              '  a pulled rotation-probe.prev.jsonl beside rotation-probe.jsonl is read too', file=sys.stderr)
         return 2
-    result = summarize(load(argv[0]), load(argv[1]) if len(argv) == 2 else [])
+    result = summarize(load(argv[0]), load_trace(argv[1]) if len(argv) == 2 else [])
     print('\n'.join(result['checks']))
     if result['rotations']:
         print('\nSignal rotation (settle/gap evidence)')

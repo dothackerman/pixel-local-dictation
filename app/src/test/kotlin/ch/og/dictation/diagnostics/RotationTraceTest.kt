@@ -42,7 +42,20 @@ class RotationTraceTest {
         assertEquals(1, file.readLines().size)
     }
 
-    @Test fun fullFileReportsFailureWithoutAppendingPartialRow() {
+    @Test fun fullFileRotatesAndKeepsRecording() {
+        val file = Files.createTempDirectory("rotation-trace").resolve("trace.jsonl").toFile()
+        val trace = RotationTrace(file, maxBytes = 300)
+        repeat(6) { trace.event(RotationEvent.CONFIGURATION, rotation = it) }
+        assertTrue(trace.flush())
+        assertTrue(file.length() <= 300)
+        val rows = LabReceipts.lines(file).map(::JSONObject)
+        assertTrue(LabReceipts.previous(file).isFile)
+        assertEquals(rows.map { it.getInt("sequence") }.sorted(), rows.map { it.getInt("sequence") })
+        assertEquals(6, rows.last().getInt("sequence"))
+        trace.close()
+    }
+
+    @Test fun rowLargerThanTheCapReportsFailureWithoutAppendingPartialRow() {
         val file = Files.createTempDirectory("rotation-trace").resolve("trace.jsonl").toFile()
         val trace = RotationTrace(file, maxBytes = 1)
         trace.event(RotationEvent.SERVICE_CREATE)

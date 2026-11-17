@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.diagnostics.RotationEvent
 import ch.og.dictation.diagnostics.RotationTrace
@@ -152,8 +153,8 @@ class RotationFinishingDemoTest {
     private fun statusText(): String = keys.ourNode(R.id.status)?.text?.toString().orEmpty()
     private fun click(node: AccessibilityNodeInfo?) =
         assertTrue("button not on screen", node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
-    private fun rows(): List<JSONObject> = if (!traceFile.exists()) emptyList() else traceFile.readLines()
-        .filter { it.isNotBlank() }.map { JSONObject(it) }.filter { it.optString("run") == current!!.run }
+    private fun rows(): List<JSONObject> = LabReceipts.lines(traceFile)
+        .map { JSONObject(it) }.filter { it.optString("run") == current!!.run }
     private fun count(event: String) = rows().count { it.getString("event") == event }
     /** First [a] row precedes first [b] row (a missing [b] counts as later). */
     private fun before(a: String, b: String): Boolean {
@@ -278,7 +279,6 @@ class RotationFinishingDemoTest {
         val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, historyRoot = testHistory) }
         clearTestHistory()
         val run = UUID.randomUUID().toString()
-        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(case, run)
         val state = Run(case, run, RotationTrace(traceFile))
         current = state

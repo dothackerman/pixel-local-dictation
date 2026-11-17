@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.probe.EditorProbeActivity
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,8 +31,8 @@ class EditorGeometryTest {
             assertTrue("no laid-out editor geometry captured", receipt.geometryRows > 0)
             assertTrue("current keyboard never became visible; collection insufficient", receipt.sawIme)
             assertEquals("collection must reach its bounded observation deadline", "duration", receipt.reason)
-            val rows = File(instrumentation.targetContext.filesDir, "lab/editor-geometry.jsonl")
-                .readLines().map { JSONObject(it) }
+            val rows = LabReceipts.lines(File(instrumentation.targetContext.filesDir, "lab/editor-geometry.jsonl"))
+                .map { JSONObject(it) }
             val start = rows.last { it.getString("phase") == "start" }.getLong("runStartNs")
             val run = rows.filter { it.getLong("runStartNs") == start }
             assertTrue("every row must identify the selected experimental mode", run.all {
@@ -50,7 +51,7 @@ class EditorGeometryTest {
             assertEquals("start", run.first().getString("phase"))
             assertEquals("end", run.last().getString("phase"))
             assertTrue("receipt file exceeds byte budget", File(instrumentation.targetContext.filesDir,
-                "lab/editor-geometry.jsonl").length() <= 2 * 1024 * 1024)
+                "lab/editor-geometry.jsonl").length() <= LabReceipts.MAX_BYTES)
             val geometry = run.filter { it.getString("phase") == "geometry" }
             assertEquals(receipt.geometryRows, geometry.size)
             assertTrue(geometry.size <= 4096)

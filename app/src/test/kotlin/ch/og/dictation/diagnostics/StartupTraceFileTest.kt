@@ -19,7 +19,7 @@ class StartupTraceFileTest {
     private fun rows(file: File, count: Int): List<JSONObject> {
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
-            val rows = if (file.exists()) file.readLines().map { JSONObject(it) } else emptyList()
+            val rows = if (file.exists()) file.readLines().filter { it.isNotBlank() }.map { JSONObject(it) } else emptyList()
             if (rows.size >= count) return rows
             Thread.sleep(10)
         }
@@ -27,7 +27,7 @@ class StartupTraceFileTest {
         throw AssertionError()
     }
 
-    @Test fun eachReceiptKeepsItsProtocolFileAndStopsBeforeTwoMebibytes() {
+    @Test fun eachReceiptKeepsItsProtocolFileAndRotatesAtTheCap() {
         val directory = Files.createTempDirectory("trace").toFile()
         val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
         try {
@@ -51,13 +51,14 @@ class StartupTraceFileTest {
             assertEquals(3L, result.getJSONObject("eventsNs").getLong("finalReady"))
             assertFalse("no recognized text in receipts", live.readText().contains("never written"))
 
-            // A file just under the bound refuses a row that would cross it.
-            val bound = 2 * 1024 * 1024L
+            // A row that would cross the cap rotates the file instead of being lost (#64).
+            val bound = LabReceipts.MAX_BYTES
             live.writeBytes(ByteArray((bound - 10).toInt()) { ' '.code.toByte() })
             trace.liveResult(take, JSONObject(), TakeResult(TakeOutcome.CANCELLED, null, emptyMap()))
-            trace.event("marker")
-            rows(File(directory, "lab/startup.jsonl"), 2) // the single writer has passed the refused row
-            assertEquals(bound - 10, live.length())
+            trace.liveResult(take, JSONObject(), TakeResult(TakeOutcome.FAILED, null, emptyMap()))
+            val after = rows(live, 2)
+            assertEquals(listOf("CANCELLED", "FAILED"), after.map { it.getString("outcome") })
+            assertEquals(bound - 10, LabReceipts.previous(live).length())
         } finally { directory.deleteRecursively() }
     }
 }

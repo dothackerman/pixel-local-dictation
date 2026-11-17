@@ -1,5 +1,6 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.history.message
 import android.app.Activity
 import android.os.Bundle
@@ -37,7 +38,6 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
     private val startNs = System.nanoTime()
     private val durationMs = 90_000L
     private val maxRows = 4096
-    private val maxBytes = 2 * 1024 * 1024L
     private lateinit var root: FrameLayout
     private lateinit var editor: EditText
     private var lastGeometry: String? = null
@@ -172,14 +172,8 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
             .put("ns", System.nanoTime()).put("mode", mode).put("phase", phase).put("values", values)
             .toString() + "\n"
         writer.execute {
-            if (writeFailure.get() == null) runCatching {
-                val file = File(filesDir, "lab/editor-geometry.jsonl")
-                file.parentFile?.mkdirs()
-                check(file.length() + line.toByteArray(Charsets.UTF_8).size <= maxBytes) {
-                    "editor geometry file full; pull and archive before collecting again"
-                }
-                file.appendText(line)
-            }.onFailure { writeFailure.compareAndSet(null, it.message ?: "write failed") }
+            if (writeFailure.get() == null && !LabReceipts.append(File(filesDir, "lab/editor-geometry.jsonl"), line))
+                writeFailure.compareAndSet(null, "write failed; LabReceipts logged the cause")
         }
     }
 

@@ -94,13 +94,28 @@ Not visible in the code:
 
 Benchmark builds append timing and geometry receipts under `files/lab/`; release
 collection is off. Receipts hold timing, identity and geometry only, never audio,
-text or editor identity. Each file is append-only, capped at 2 MiB, never overwritten.
+text or editor identity. The Settings Benchmark switch gates only saved take audio, not these
+receipts.
+
+Capacity (#64): the six files below are a rolling window for deliberate measurements, not an
+archive. Each is written through [LabReceipts](app/src/main/kotlin/ch/og/dictation/diagnostics/LabReceipts.kt):
+append-only up to 2 MiB; the row that would cross the cap first moves the file to `NAME.prev.jsonl`
+(replacing the older generation) and starts a new file. A full file therefore never stops
+collection. LabReceipts logs rotation and write failure itself, each once per file per process.
+The phone is guaranteed to hold the last cap of rows and holds at most two; for
+`recovery-timing.jsonl` one cap is about an hour of speech (estimate from #64, not measured).
+Older rows are gone, so pull `NAME.jsonl` and `NAME.prev.jsonl` right after measuring. The two
+analyzers named in this file and the device tests that read these files read both generations,
+older first. The per-visit `guided-visit-<id>.jsonl` is written by `GuidedVisitTest` directly and
+is outside the cap.
 
 | File | Protocol | Schema source |
 |---|---|---|
 | `startup.jsonl` | `ime-startup-v1` | [StartupTrace](app/src/main/kotlin/ch/og/dictation/diagnostics/StartupTrace.kt), DictationImeService |
 | `geometry.jsonl` | `ime-geometry-v1` | StartupTrace `geometry` |
 | `live-results.jsonl` | `ime-candidate-live-v1` | StartupTrace `liveResult` |
+| `recovery-timing.jsonl` | `recovery-timing-v1` | StartupTrace `timing`, RecoveryTimingTest; [analyzer](tools/profiling/analyze_recovery_timing.py) |
+| `rotation-probe.jsonl` | `ime-rotation-v1` | [RotationTrace](app/src/main/kotlin/ch/og/dictation/diagnostics/RotationTrace.kt) |
 | `editor-geometry.jsonl` | `editor-geometry-v1` | [EditorProbeActivity](app/src/benchmark/kotlin/ch/og/dictation/probe/EditorProbeActivity.kt) |
 
 Reading rules (frozen meanings):
@@ -158,7 +173,8 @@ installers ([repo_checks.py](tools/repo_checks.py)).
 Repository folders: `app/` (the app; Kotlin packages by feature, tests mirror them),
 `docs/adr/` (decisions; numbers never change), `docs/research/`, `docs/design/`,
 `docs/explainers/`, `native-role-profiler/` (native profiler sources), `variants/`.
-`tools/` holds the gate (`quality.py`, `repo_checks.py`), the phone wrapper (`phone`, `gate/`,
+`tools/` holds the gate (`quality.py`, `repo_checks.py`), the shared lab-receipt reader
+(`lab_receipts.py`), the phone wrapper (`phone`, `gate/`,
 `git-hooks/`; paths fixed by ADR-024) and Python grouped by job, each folder with its tests:
 `evaluation/` (scoring, evaluators, guard set, baseline promotion, visit summary),
 `experiments/` (comparisons, variants, runtime config, laptop pipeline, lab cleanup),
@@ -225,7 +241,7 @@ the benchmark build is debuggable.
   screen (Do, Expect, Passed/Failed/Not observed; script in `GuidedVisitScript.kt`). A re-visit runs only
   chosen steps with `steps=A2,A3,A7,A8,B9` or starts at one with `start=A7`. Rotation and
   Cancel steps carry the sanitized rotation trace. Afterwards `phone pull files/lab/guided-visit-<id>.jsonl`
-  and `phone pull files/lab/rotation-probe.jsonl`, then
+  and `phone pull files/lab/rotation-probe.jsonl` (plus `rotation-probe.prev.jsonl` if present), then
   `python3 tools/evaluation/guided_visit_summary.py guided-visit-<id>.jsonl rotation-probe.jsonl` (check table and
   per-rotation panel/hide/silenced/hold timings).
 - Wrapper changes: edit `tools/phone` and `tools/test_phone.py`; the owner runs

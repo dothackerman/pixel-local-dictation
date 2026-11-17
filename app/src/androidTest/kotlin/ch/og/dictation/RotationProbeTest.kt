@@ -18,7 +18,6 @@ class RotationProbeTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val caseName = requireNotNull(InstrumentationRegistry.getArguments().getString("case")) { "case argument required" }
-        makeRoomForRotationTrace(context)
         RotationTrace.beginProbe(caseName)
         RotationProbeActivity.done = CountDownLatch(1)
         try {
@@ -27,7 +26,7 @@ class RotationProbeTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             assertTrue("owner did not finish probe within five minutes",
                 RotationProbeActivity.done.await(5, TimeUnit.MINUTES))
-            assertTrue("view teardown or take terminal acknowledgement missing; trace unavailable or full",
+            assertTrue("view teardown or take terminal acknowledgement missing; or trace write failed",
                 RotationTrace.finishProbe(10_000))
         } finally {
             RotationTrace.abortProbe()

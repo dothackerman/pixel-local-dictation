@@ -4,7 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # tools/: shared imports work when run directly
+from lab_receipts import generations  # noqa: E402
 
 SAMPLE_RATE = 16_000
 FORBIDDEN = {"text", "transcript", "audio", "pcm", "editor", "editorinfo", "content"}
@@ -55,14 +59,16 @@ def _sample_time(offset: int, anchors: list[dict]) -> int | None:
 
 def analyze(path: Path) -> dict:
     groups: dict[tuple[str, str], list[dict]] = {}
-    for line_number, line in enumerate(path.read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            row = _validate(json.loads(line))
-        except (json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"invalid receipt at line {line_number}: {exc}") from exc
-        groups.setdefault((row["processId"], row["takeId"]), []).append(row)
+    for source in generations(path):
+        for line_number, line in enumerate(source.read_text().splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                row = _validate(json.loads(line))
+            except (json.JSONDecodeError, ValueError) as exc:
+                where = "" if source == path else f" in {source.name}"
+                raise ValueError(f"invalid receipt at line {line_number}{where}: {exc}") from exc
+            groups.setdefault((row["processId"], row["takeId"]), []).append(row)
 
     takes = []
     for (process_id, take_id), events in sorted(groups.items()):
@@ -118,7 +124,9 @@ def analyze(path: Path) -> dict:
         stop_ns = stops[0]["ns"] if stops else None
         final_ns = finals[0]["ns"] if finals else None
         terminal_ns = terminals[-1]["ns"] if terminals else None
-        complete = bool(anchors and stop_anchors and stops and finals and terminals)
+        # captureStart is the first row every take writes: without it the head was rotated away
+        # (#64) and the frontier reconstruction above started mid-take.
+        complete = bool(phase.get("captureStart") and anchors and stop_anchors and stops and finals and terminals)
         fixture_ids = [e["fixtureId"] for e in phase.get("scenario", []) if e.get("fixtureId")]
         first_durable = min(durable, key=lambda e: e.get("sampleEnd", 0), default=None)
         audio_start_ns = _sample_time(0, source_anchors)
@@ -131,10 +139,10 @@ def analyze(path: Path) -> dict:
             "initialZeroCheckpointIntervalMs": round((first_durable["ns"] - audio_start_ns) / 1e6, 2) if first_durable and audio_start_ns is not None else None,
             "zeroCheckpointObservedThroughMs": round((terminal_ns - audio_start_ns) / 1e6, 2) if complete and not durable and audio_start_ns is not None else None,
             "firstDurableSourceSec": round(min(durable, key=lambda e: e.get("sampleEnd", 0))["sampleEnd"] / SAMPLE_RATE, 3) if durable else None,
-            "oldestNewlyDurableAudioLagMs": _range(newly_oldest_lags),
-            "newestNewlyDurableAudioLagMs": _range(newly_newest_lags),
-            "chunkToDurableLagMs": _range(chunk_to_durable_lags),
-            "checkpointQueueLagMs": _range(checkpoint_queue_lags),
+            "oldestNewlyDurableAudioLagMs": _range(newly_oldest_lags) if complete else None,
+            "newestNewlyDurableAudioLagMs": _range(newly_newest_lags) if complete else None,
+            "chunkToDurableLagMs": _range(chunk_to_durable_lags) if complete else None,
+            "checkpointQueueLagMs": _range(checkpoint_queue_lags) if complete else None,
             "durableCheckpointCount": len(durable),
             "failedCheckpointCount": len(failed),
             "zeroCheckpoint": not durable if complete else None,
@@ -148,7 +156,8 @@ def analyze(path: Path) -> dict:
             "queuedAtStop": stop_state.get("queued"),
             "limitations": ["Capture callback anchors bound/interpolate audio sample time; they are not word timestamps.",
                             "Source frontiers include pauses and chunk padding.",
-                            "A missing terminal receipt is incomplete, not a measured zero-checkpoint run."],
+                            "A missing terminal receipt is incomplete, not a measured zero-checkpoint run.",
+                            "A take without captureStart lost its head to receipt rotation: incomplete, no lag or backlog numbers."],
         })
     return {"protocol": "recovery-timing-summary-v1", "sampleRate": SAMPLE_RATE,
             "takeCount": len(takes), "takes": takes,
@@ -158,7 +167,7 @@ def analyze(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl")
+    parser.add_argument("receipts", type=Path, help="metadata-only recovery-timing.jsonl; a pulled recovery-timing.prev.jsonl beside it is read first")
     args = parser.parse_args()
     print(json.dumps(analyze(args.receipts), indent=2, sort_keys=True))
 

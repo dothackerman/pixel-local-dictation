@@ -80,18 +80,13 @@ class StartupTrace(private val context: Context) {
     }
 
     /**
-     * Rows are built and written on the writer thread, off the IME callbacks. Never silently
-     * overwrite visit evidence: each files/lab/[name].jsonl stops growing before it exceeds 2 MiB.
+     * Rows are built and written on the writer thread, off the IME callbacks. Each
+     * files/lab/[name].jsonl rotates at the shared cap; [LabReceipts] logs rotation and write
+     * failure itself, once per file per process. Only a row that cannot be built is logged here.
      */
     private fun append(name: String, row: () -> JSONObject) = writer.execute {
-        runCatching {
-            val line = row().toString() + "\n"
-            val file = File(context.filesDir, "lab/$name.jsonl")
-            file.parentFile?.mkdirs()
-            check(file.length() + line.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
-                "$name receipt file full; pull and archive it"
-            }
-            file.appendText(line)
-        }.onFailure { Log.e("StartupTrace", "$name receipt unavailable", it) }
+        runCatching { row().toString() + "\n" }
+            .onSuccess { LabReceipts.append(File(context.filesDir, "lab/$name.jsonl"), it) }
+            .onFailure { Log.e("StartupTrace", "$name receipt row could not be built", it) }
     }
 }
