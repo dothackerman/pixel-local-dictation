@@ -1,0 +1,34 @@
+> open on a text field
+[new panel] status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | ringLive | preview: ""
+status_opening | microphone off: status_opening | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+> speech
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words"
+> rotate to landscape
+[new panel] status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words"
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph | preview: "first words"
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words"
+> rotation settled
+> more speech
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words second words"
+> rotate back to portrait
+[new panel] status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words second words"
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph | preview: "first words second words"
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words second words"
+> rotation settled
+> Stop
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | preparing ringLive | preview: "first words second words"
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | preparing | preview: "first words second words"
+status_finishing | microphone off: status_finishing | back: back_hold_and_choose | preparing | preview: "first words second words"
+> microphone released
+> text prepared
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | preview: "first words second words"
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""

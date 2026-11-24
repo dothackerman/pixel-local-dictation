@@ -17,6 +17,12 @@ import kotlin.math.roundToInt
 private const val PREVIEW_LINES = 3
 
 /**
+ * Test seam, null in the app: sees each frame a panel is about to show (`fresh`: on a new panel).
+ * The golden frame sequences record it (#77).
+ */
+@Volatile internal var onPanelFrame: ((frame: PanelFrame, fresh: Boolean) -> Unit)? = null
+
+/**
  * Renders [frame] on [panel] (built from ime.xml, either orientation) and returns it as the frame
  * now [shown] there; null [shown] means a fresh panel. An identical frame writes nothing; a
  * change of the preview alone binds only the preview; any other change renders the whole panel
@@ -33,6 +39,7 @@ fun renderPanel(panel: View, frame: PanelFrame, shown: PanelFrame?, feedback: Re
     val ringTarget = if (frame.ringLive) feedback else null
     if (ring != null && ring.following !== ringTarget) ring.follow(ringTarget)
     if (frame == shown) return frame
+    onPanelFrame?.invoke(frame, shown == null)
     val preview = panel.findViewById<TextView>(R.id.preview)
     if (shown != null && frame == shown.copy(preview = frame.preview)) {
         preview?.let { PanelPreview.bind(it, frame.preview) }

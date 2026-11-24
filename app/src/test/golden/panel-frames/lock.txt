@@ -1,0 +1,20 @@
+> open on a text field
+[new panel] status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | ringLive | preview: ""
+status_opening | microphone off: status_opening | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+> speech
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words"
+> screen off
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: back_to_keyboard | ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: back_to_keyboard | preview: ""
+status_stopping_recording | microphone off: status_stopping_recording | back: back_to_keyboard | preview: ""
+> microphone released
+status_unable_insert | microphone off: status_stopping_recording | back: back_to_keyboard | unableToInsert | preview: ""
+> text prepared
+status_unable_insert | microphone on: start_recording | back: back_to_keyboard | unableToInsert | preview: ""
+> unlock
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""

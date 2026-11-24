@@ -92,6 +92,15 @@ tasks.withType<Test>().configureEach {
     // Android 16's FileDescriptor bridge in Robolectric needs this JDK 21 export.
     jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
 }
+// Golden panel-frame sequences (#77) are test inputs; -PupdateGolden rewrites them from this run
+// (only after the owner decided from the BEFORE/AFTER pairs).
+tasks.withType<Test>().matching { it.name == "testBenchmarkUnitTest" }.configureEach {
+    inputs.dir("src/test/golden").withPathSensitivity(PathSensitivity.RELATIVE)
+    if (providers.gradleProperty("updateGolden").isPresent) {
+        systemProperty("golden.update", "true")
+        outputs.upToDateWhen { false }
+    }
+}
 // Release host tests are the ones written for release (src/testRelease); the shared suite runs on the lab build.
 tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
     filter { includeTestsMatching("ch.og.dictation.storage.Release*") }

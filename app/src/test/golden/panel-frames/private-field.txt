@@ -1,0 +1,25 @@
+> open on a password field
+[new panel] status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | notice: retention_field_off | ringLive | preview: ""
+status_opening | microphone off: status_opening | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: ""
+> speech
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: "first words"
+> Back arrow
+status_recording | microphone on: stop_recording | back: continue_recording | choice: RECORDING | notice: retention_field_off | stopGlyph | preview: "first words"
+status_paused | microphone off: status_paused | back: continue_recording | choice: RECORDING | notice: retention_field_off | stopGlyph | preview: "first words"
+> Continue recording
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph | preview: "first words"
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: "first words"
+> Stop
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | notice: retention_field_off | preparing ringLive | preview: "first words"
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | notice: retention_field_off | preparing | preview: "first words"
+status_finishing | microphone off: status_finishing | back: back_hold_and_choose | notice: retention_field_off | preparing | preview: "first words"
+> microphone released
+> text prepared
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | notice: retention_field_off | preview: "first words"
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | preview: ""

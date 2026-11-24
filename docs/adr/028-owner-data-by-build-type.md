@@ -72,3 +72,19 @@ Revisit when an emulator runs the remaining phone checks, or a second device exi
   Published for the wrapper in `app/src/benchmark/test-folders.json`.
 - Owner layout: History in `no_backup/history`; `files/timing-receipts` is reserved (#63).
 - Host check: `tools/storage_guard.py`; its exception list names the stores not yet behind Storage.
+
+## Visible change (#77)
+
+A differing frame or image stops the work: the owner decides from the BEFORE/AFTER pairs; text alone is
+not accepted.
+
+- Frames: scripted take scenarios run on the host through the service and record every frame a panel
+  shows; one golden file per scenario in `app/src/test/golden/panel-frames`
+  (`PanelFrameSequenceTest`). A golden file is rewritten only after the owner decided.
+- Images: the panel gallery renders every panel state, and every frame of a differing sequence, in
+  portrait, narrow and wide landscape, light, dark and at font 2×, to `app/build/panel-gallery`
+  (Robolectric native graphics, the same bytes on every run). `tools/visible_change.py before` stores
+  them at a ticket's start; `compare` gives the pairs and the list and prints the rule. The PR names
+  the folder by absolute path.
+- No test disappears unnoticed: `tools/removed_tests.py` in the gate; a removed name needs an entry in
+  `tools/removed_tests.json`.

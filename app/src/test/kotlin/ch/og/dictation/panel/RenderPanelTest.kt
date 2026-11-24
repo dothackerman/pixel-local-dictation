@@ -80,6 +80,21 @@ class RenderPanelTest {
         assertSame("a new take's feedback is followed even when the frame is equal", next, ring.following)
     }
 
+    /** The seam of the golden frame sequences (#77): each frame a panel is about to show, once. */
+    @Test fun everyFrameAPanelIsAboutToShowReachesTheObserverOnce() {
+        val seen = mutableListOf<Pair<PanelFrame, Boolean>>()
+        onPanelFrame = { frame, fresh -> seen += frame to fresh }
+        try {
+            val panel = inflate()
+            var shown = renderPanel(panel, recording, null, null)
+            shown = renderPanel(panel, recording, shown, null)
+            val newer = recording.copy(preview = "newer words")
+            shown = renderPanel(panel, newer, shown, null)
+            renderPanel(inflate(), newer, null, null)
+            assertEquals(listOf(recording to true, newer to false, newer to true), seen)
+        } finally { onPanelFrame = null }
+    }
+
     @Test fun theMicrophoneBannerAndNoticeComeFromTheFrame() {
         val panel = inflate()
         renderPanel(panel, recording.copy(banner = true, notice = R.string.retention_field_off), null, null)
@@ -95,26 +110,7 @@ class RenderPanelTest {
         assertEquals(View.GONE, notice.visibility)
     }
 
-    /** Every take state the panel shows, each also in a private field. */
-    private val states: List<Pair<String, PanelState>> = listOf(
-        "opening" to PanelState(PanelPhase.OPENING, running = true),
-        "recording" to PanelState(PanelPhase.RECORDING, running = true, preview = "words so far", ringLive = true),
-        "paused" to PanelState(PanelPhase.PAUSED, PanelChoice.RECORDING, running = true, preview = "words so far"),
-        "preparing" to PanelState(PanelPhase.FINISHING, running = true, finishing = true, preview = "words so far"),
-        "finishing-choice" to PanelState(PanelPhase.FINISHING_CHOICE, PanelChoice.FINISHING, running = true, finishing = true),
-        "stopping" to PanelState(PanelPhase.STOPPING),
-        "release-failed" to PanelState(PanelPhase.RELEASE_FAILED),
-        "idle" to PanelState(PanelPhase.IDLE),
-        "no-permission" to PanelState(PanelPhase.NO_PERMISSION),
-        "failed" to PanelState(PanelPhase.FAILED),
-        "not-inserted" to PanelState(PanelPhase.NOT_INSERTED),
-        "not-inserted-waiting" to PanelState(PanelPhase.NOT_INSERTED_WAITING),
-        "idle-waiting" to PanelState(PanelPhase.IDLE_WAITING),
-        "held" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = true), preview = "held words"),
-        "held-unsaved" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = false), preview = "held words"),
-        "held-uncertain" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, unconfirmed = true), preview = "held words"),
-        "held-warned" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, warned = true), preview = "held words"),
-    ).flatMap { (name, state) -> listOf(name to state, "$name-private" to state.copy(privateField = true)) }
+    private val states = PanelStates.all(words = "words so far", heldWords = "held words")
 
     private fun everyState(widthDp: Int) {
         val panel = inflate()
