@@ -65,7 +65,6 @@ EXCEPTIONS = {
     _DEVICE + 'PhoneReadyTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'PipelineTest.kt': {'files folder': 'recordings'},
     _DEVICE + 'PrivacyProbeTest.kt': {'files folder': 'recordings'},
-    _DEVICE + 'RecordingPanelTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'RecoveryTimingTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'ReplayTest.kt': {'files folder': 'recordings'},
     _DEVICE + 'RotationContinuityDemoTest.kt': {'files folder': 'lab folder'},
