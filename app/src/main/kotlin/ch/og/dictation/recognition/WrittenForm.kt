@@ -4,11 +4,11 @@ package ch.og.dictation.recognition
  * Take text in the owner's written form: spoken numbers that the recognizer left as words become
  * digits where the context makes the number clear, in Swiss style for German (docs/research/number-itn.md).
  * A wrong digit is worse than a word, so every rule needs context:
- * - cardinals from 13 always; 0 to 12 only before a unit, currency or %, or after a counter noun
+ * - cardinals from 13 always; 0 to 12 only before a unit or duration (8 Minuten), currency or %, or after a counter noun
  *   (Gleis, Seite, platform…); ein/eine/einen, lone eins/one and bare hundert/hundred never;
  * - times: German "<h> Uhr [<m>]" → 12.46 Uhr, English "<h> [<m>] AM/PM" → 12:46 p.m.;
  * - dates: an ordinal only next to a month (5. Juni, June 5, the 3rd of October);
- * - money: "vier Franken achtzig" → 4.80 Franken, "four pounds eighty" → £4.80; decimals with Komma/point;
+ * - money: "vier Franken achtzig" → 4.80 Franken, "four pounds eighty" → £4.80 but "ten pounds" → 10 pounds (weight?); decimals with Komma/point;
  * - Swiss format for digits the recognizer already wrote: 9:20 Uhr → 9.20 Uhr, 4,80 Franken → 4.80 Franken.
  * Pure and idempotent; runs on the joined take text, so preview, insertion and History agree.
  */
@@ -57,6 +57,7 @@ object WrittenForm {
             return germanTime(i) ?: englishTime(i) ?: germanDate(i) ?: englishDate(i) ?: money(i) ?: decimal(i) ?: cardinal(i)
         }
 
+        private fun gap(i: Int) = if (i <= 0 || i >= items.size) null else raw.substring(items[i - 1].end, items[i].start)
         private fun unchanged(i: Int, end: Int) = Match(end, items[end - 1].end, raw.substring(items[i].start, items[end - 1].end))
         private fun isDeNum(i: Int): Boolean {
             val k = key(i) ?: return false
@@ -150,7 +151,8 @@ object WrittenForm {
             }
             if (cents == null && items[i].digits != null) return null
             val amount = if (cents == null) group(n, symbol != null) else "$n.${cents.toString().padStart(2, '0')}"
-            val text = if (symbol != null) "$symbol$amount" else "$amount ${items[c].text}"
+            // "ten pounds" may be weight: only pounds with pence get the £ sign.
+            val text = if (symbol != null && !(symbol == "£" && cents == null)) "$symbol$amount" else "$amount ${items[c].text}"
             return match(i, end, text)
         }
 
@@ -181,6 +183,12 @@ object WrittenForm {
             val (n, len) = english ?: deRun(i) ?: return null
             // Two English numbers in a row (years, codes) are left as said.
             if (english != null && (joined(i + len) && en(i + len) != null || joined(i) && en(i - 1) != null)) return null
+            // "two thousand, twenty eight": a comma inside one spoken number; both parts stay words.
+            if (gap(i + len) == ", ") {
+                val last = key(i + len - 1)!!
+                if (english != null && last in BARE) en(i + len)?.let { return unchanged(i, i + len + it.second) }
+                if (english == null && (last.endsWith("tausend") || last.endsWith("hundert"))) deRun(i + len)?.let { return unchanged(i, i + len + it.second) }
+            }
             if (len == 1 && (key(i) in NEVER_ALONE || key(i) in BARE)) return null
             if (n < 13) {
                 if (key(i) in AMBIGUOUS && (english != null || !german)) return null
@@ -349,7 +357,9 @@ object WrittenForm {
         "centimetre", "centimetres", "centimeters", "millimetre", "millimetres", "millimeters", "litre", "litres",
         "liters", "millilitre", "millilitres", "milliliters", "mile", "miles", "degree", "degrees", "percent",
         "dollars", "euros", "franc", "francs", "pence", "cent", "cents", "gigabytes", "megabytes", "terabytes",
-        "volts", "watts", "bytes", "foot", "feet", "inch", "inches", "yards",
+        "volts", "watts", "bytes",
+        // Durations: small numbers before them read better as digits (owner choice, 2026-11-24).
+        "minute", "minuten", "minutes", "sekunde", "sekunden", "second", "seconds", "stunde", "stunden", "hour", "hours", "foot", "feet", "inch", "inches", "yards",
     )
     private val COUNTERS = setOf("gleis", "perron", "nummer", "nr", "seite", "kapitel", "zimmer",
         "platform", "number", "page", "chapter", "room", "gate", "track")

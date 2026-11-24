@@ -117,10 +117,31 @@ class WrittenFormTest {
 
     @Test fun englishMoneyAndDecimals() = check(
         "A sandwich costs three pounds twenty." to "A sandwich costs £3.20.",
-        "The repair was sixty five pounds." to "The repair was £65.",
+        "The repair was sixty five pounds." to "The repair was 65 pounds.",
         "It costs eighteen dollars." to "It costs $18.",
         "The score rose by two point seven percent." to "The score rose by 2.7 percent.",
         "Make your point five times." to "Make your point five times.",
+    )
+
+    @Test fun smallNumbersBeforeADurationBecomeDigits() = check(
+        "Die Sauce kocht acht Minuten, dann zwei Stunden ruhen." to "Die Sauce kocht 8 Minuten, dann 2 Stunden ruhen.",
+        "Nach zehn Sekunden war es still." to "Nach 10 Sekunden war es still.",
+        "Wait five minutes, then two hours, then ten seconds." to "Wait 5 minutes, then 2 hours, then 10 seconds.",
+    )
+
+    @Test fun durationRuleLeavesOtherNounsAndArticles() = same(
+        "Wir sind acht Freunde und haben eine Stunde Zeit.",
+        "Wait a second, it takes one minute.",
+    )
+
+    @Test fun poundsWithoutPenceMayBeWeight() = check(
+        "I lost ten pounds this year." to "I lost 10 pounds this year.",
+        "A sandwich costs three pounds twenty." to "A sandwich costs £3.20.",
+    )
+
+    @Test fun aCommaInsideASpokenYearKeepsItWhole() = same(
+        "On April three, two thousand, twenty eight we met.",
+        "Im Jahr zweitausend, achtundzwanzig begann es.",
     )
 
     @Test fun spokenYearsAndCodesStayWhole() = same(
