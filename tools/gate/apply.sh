@@ -3,11 +3,22 @@
 #   bash tools/gate/apply.sh
 # Run it again whenever tools/phone or tools/gate/* changed on the branch you
 # trust. Agents cannot write any of the target paths.
+# Only from the main checkout, on any branch, and never a wrapper without the
+# marker guard (ADR-028): a stale branch must not downgrade the installed one.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 gate=tools/gate
 store="${XDG_DATA_HOME:-$HOME/.local/share}/pixel-phone"
+
+if [ "$(git rev-parse --path-format=absolute --git-common-dir)" != "$(git rev-parse --path-format=absolute --git-dir)" ]; then
+  echo "refused: the gate is installed only from the main checkout, not from a worktree" >&2
+  exit 3
+fi
+if ! grep -q '^MARKER_GUARD = [1-9]' tools/phone; then
+  echo "refused: tools/phone has no marker guard (ADR-028); this branch is older than the installed wrapper allows" >&2
+  exit 3
+fi
 
 python3 -I -m py_compile tools/phone
 (cd tools && python3 -m unittest -q test_phone test_agent_guard)

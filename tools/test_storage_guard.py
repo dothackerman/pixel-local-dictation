@@ -91,6 +91,19 @@ class GuardTests(unittest.TestCase):
                          storage_guard.marker_problems(self.tree(manifests)))
         self.assertEqual([], storage_guard.marker_problems())
 
+    def test_the_wrappers_excluded_locations_must_equal_the_test_layout(self):
+        layout = '{"labFolder": "files/lab", "testFolders": ["files/test", "no_backup/test", "shared_prefs/test_settings.xml"]}'
+        wrapper = "PKG = 'x'\nEXCLUDED = ('files/lab', 'files/test', 'no_backup/test',\n            %s)\n"
+        tree = lambda entry: self.tree({'app/src/benchmark/test-folders.json': layout, 'tools/phone': wrapper % entry})
+        self.assertEqual([], storage_guard.wrapper_problems(tree("'shared_prefs/test_settings.xml'")))
+        self.assertEqual(['tools/phone: EXCLUDED lacks shared_prefs/test_settings.xml of the test layout'],
+                         storage_guard.wrapper_problems(tree("")))
+        self.assertEqual(['tools/phone: EXCLUDED names files/dictionary, which the test layout does not'],
+                         storage_guard.wrapper_problems(tree("'shared_prefs/test_settings.xml', 'files/dictionary'")))
+        missing = self.tree({'app/src/benchmark/test-folders.json': layout, 'tools/phone': "PKG = 'x'\nEXCLUDED = FOLDERS\n"})
+        self.assertEqual(['tools/phone: EXCLUDED must be one literal tuple of locations'], storage_guard.wrapper_problems(missing))
+        self.assertEqual([], storage_guard.wrapper_problems())
+
 
 if __name__ == '__main__':
     unittest.main()

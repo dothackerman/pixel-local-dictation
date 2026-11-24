@@ -106,5 +106,21 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(['release: malformed build marker layout=owner'], self.problems('layout=owner', test, test))
 
 
+class WrapperTests(unittest.TestCase):
+    def test_the_phone_wrapper_reads_the_same_entry_and_accepts_the_same_values(self):
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader('phone_for_marker', str(Path(__file__).with_name('phone')))
+        wrapper = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(wrapper)
+        self.assertEqual(build_marker.NAME, wrapper.MARKER_NAME)
+        build = 'commit=' + 'a' * 40 + ';hash=' + 'b' * 64
+        for value, valid in (('layout=test;' + build, True), ('layout=owner;' + build, True),
+                             ('layout=lab;' + build, False), ('layout=test;' + build[:-1], False),
+                             ('layout=test;' + build + 'c', False), (build, False), ('', False)):
+            self.assertEqual(valid, bool(build_marker.FORMAT.fullmatch(value)), value)
+            self.assertEqual(valid, bool(wrapper.MARKER.fullmatch(value)), value)
+
+
 if __name__ == '__main__':
     unittest.main()

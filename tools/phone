@@ -5,6 +5,9 @@ Runs through `.claude/hooks/phone`, which executes the copy of this file the
 user installed with `tools/gate/apply.sh`. Every device command is built from fixed templates with the
 package constant; caller strings reach the device only as validated names.
 
+Owner data (ADR-028): APKs are told apart by their build marker; `run`, `push` and `stop` work only in
+an open Visit whose fingerprint equals its copy; device verbs only from the main checkout.
+
 Exit 0: success, one JSON object on stdout.
 Exit 3: `refused: <reason>` (policy).  Exit 1: `failed: <reason>` (device/transport).
 """
@@ -41,7 +44,19 @@ NETWORK = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STA
 DATA_DIRS = ('files', 'shared_prefs', 'databases')
 PULL_ROOTS = ('files/lab', 'files/benchmark')
 NAME = re.compile(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*')
-LIVE_VERBS = ('install', 'restore', 'stop', 'uninstall')
+HOST_VERBS = ('help', '-h', '--help', 'check')  # no device, no lock, no state: from any worktree
+MARKER_GUARD = 1  # tools/gate/apply.sh refuses to install a wrapper without this line
+MARKER_NAME = PKG + '.build'
+MARKER = re.compile(r'layout=(owner|test);commit=[0-9a-f]{40};hash=[0-9a-f]{64}')
+# Left out of the fingerprint and of copies: the lab folder (speech model, test output) and the test
+# folders. tools/storage_guard.py fails when this differs from the test layout.
+EXCLUDED = ('files/lab', 'files/test', 'no_backup/test', 'shared_prefs/test_history_notices.xml',
+            'shared_prefs/test_settings.xml')
+# Written by Android and androidx on their own (caches, cleared on update; the profile installer's note
+# of the last update). Never owner data; left out of the fingerprint too.
+SYSTEM_FILES = ('cache', 'code_cache', 'files/profileInstalled')
+LAB_RUN = PKG + '.labrun'  # Lab run classes live here; `run` refuses them
+VISIT_FIELDS = {'name', 'started', 'ended', 'release', 'copy', 'fingerprint', 'model', 'lab_builds'}
 
 
 class Refused(Exception):
@@ -70,6 +85,42 @@ def sha_file(path):
         for block in iter(lambda: stream.read(1 << 20), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def marker_layout(app, test=None):
+    """The storage layout of an APK pair whose markers and debuggability agree; else refuse."""
+    match = MARKER.fullmatch(app['marker'] or '')
+    if not match:
+        raise Refused('app APK has no build marker: a build from before ADR-028 reaches owner data'
+                      if app['marker'] is None else 'app APK has a malformed build marker')
+    layout = match.group(1)
+    if app['debuggable'] != (layout == 'test'):
+        raise Refused('app APK is %s but its marker names the %s layout'
+                      % ('debuggable' if app['debuggable'] else 'not debuggable', layout))
+    if test is not None:
+        if not MARKER.fullmatch(test['marker'] or ''):
+            raise Refused('test APK has no build marker')
+        if test['marker'] != app['marker']:
+            raise Refused('test APK comes from another build than the app APK')
+    return layout
+
+
+def main_checkout(caller, home):
+    """`home` when the caller's directory lies in it outside any worktree; else refuse (ADR-028)."""
+    if not caller:
+        raise Refused('no caller directory: the phone is reached only through the shim, from the main checkout')
+    path = Path(caller)
+    if not path.is_absolute() or not path.is_dir():
+        raise Refused('caller directory must be an existing absolute path')
+    path = path.resolve()
+    for folder in (path, *path.parents):
+        if (folder / '.git').is_dir():
+            if folder != Path(home).resolve():
+                break
+            return folder
+        if (folder / '.git').exists():
+            raise Refused('the phone is reached only from the main checkout, not from a worktree')
+    raise Refused('the phone is reached only from the main checkout; the caller is outside it')
 
 
 class Device:
@@ -186,6 +237,19 @@ class Device:
             files[name(path)] = digest
         return files
 
+    def fingerprint(self):
+        """Names, sizes and digests of every app-data file outside EXCLUDED and SYSTEM_FILES, reduced
+        on the phone to one digest and a file count; nothing else leaves it."""
+        skipped = ' -o '.join('-path ' + shlex.quote('./' + rel) for rel in EXCLUDED + SYSTEM_FILES)
+        walk = 'find . \\( %s \\) -prune -o' % skipped
+        code = ('{ %(walk)s -type f -exec sha256sum {} + && %(walk)s -type f -exec stat -c "%%s %%n" {} + && '
+                '%(walk)s ! -type f ! -type d -print; } | sort | sha256sum && %(walk)s -type f -print | wc -l'
+                ) % {'walk': walk}
+        words = self.private(code, timeout=900).split()
+        if len(words) != 3 or not re.fullmatch(r'[0-9a-f]{64}', words[0]) or not words[2].isdigit():
+            raise Failed('unreadable fingerprint answer from the phone')
+        return {'digest': words[0], 'files': int(words[2])}
+
     def logcat(self, uid, since=None, crash=False):
         if not crash and (type(uid) is not int or uid < 10000):
             raise Refused('logs need our app uid; system or unknown uids are out of scope')
@@ -241,8 +305,12 @@ class Device:
         signers = set(re.findall(r'certificate SHA-256 digest: ([0-9a-f]{64})', signing))
         if len(signers) != 1:
             raise Refused('need exactly one APK signer')
+        marker = re.search(r':name\(0x01010003\)="%s"[^\n]*\n\s*A: [^\n]*:value\(0x01010024\)="([^"]*)"'
+                           % re.escape(MARKER_NAME), tree)
         return {'package': pkg, 'versionCode': int(header.group(2) or 0), 'sha256': sha_file(path),
-                'signer': signers.pop(), 'permissions': sorted(perms)}
+                'signer': signers.pop(), 'permissions': sorted(perms),
+                'debuggable': bool(re.search(r'^application-debuggable\b', badging, re.M)),
+                'marker': marker.group(1) if marker else None}
 
     # --- mutations --------------------------------------------------------
     def install(self, path):
@@ -348,11 +416,11 @@ def validate_tar(payload):
 
 
 class Phone:
-    """The command layer. `state` is corpus/lab."""
+    """The command layer. `state` is corpus/lab of the main checkout; None for host-only verbs."""
 
     def __init__(self, device, state):
         self.device = device
-        self.state = Path(state)
+        self.state = Path(state) if state is not None else None
 
     # --- helpers ---------------------------------------------------------
     def app(self):
@@ -375,6 +443,79 @@ class Phone:
         ime = self.device.ime()
         if ime['bound'] or ime['input_shown']:
             raise Refused(verb + ' refused: the dictation keyboard is in use right now')
+
+    def markers(self):
+        """sha256 -> marker of every APK `install` accepted or a later verb read from the phone."""
+        path = self.state / 'markers.json'
+        return json.loads(path.read_text()) if path.is_file() else {}
+
+    def remember(self, infos):
+        self.state.mkdir(parents=True, exist_ok=True)
+        known = {**self.markers(), **{info['sha256']: info['marker'] for info in infos}}
+        (self.state / 'markers.json').write_text(json.dumps(known, indent=1, sort_keys=True))
+
+    def installed_apk(self, package):
+        """Marker and debuggability of an installed APK: as recorded for its hash, else read from the
+        pulled APK. Never `run-as`, so it answers for release too."""
+        marker = self.markers().get(package['sha256'])
+        if marker is not None:
+            return {'sha256': package['sha256'], 'marker': marker, 'debuggable': marker.startswith('layout=test;')}
+        with tempfile.TemporaryDirectory() as folder:
+            local = Path(folder) / 'installed.apk'
+            self.device.pull_apk(package['apk_path'], local)
+            info = self.device.apk_info(local)
+        if info['sha256'] != package['sha256']:
+            raise Failed('pulled APK differs from the installed one')
+        return info
+
+    def lab_build(self, verb):
+        """The installed app and test package when they are one lab build; else refuse."""
+        app, test = self.device.package(PKG), self.device.package(TEST)
+        if not app['installed']:
+            raise Refused(verb + ' refused: app not installed')
+        if not test['installed']:
+            raise Refused(verb + ' refused: test package is not installed; use install APP.apk TEST.apk')
+        try:
+            facts = self.installed_apk(app)
+            layout = marker_layout(facts)
+            if layout != 'test':
+                raise Refused('app is the release build (owner layout); nothing runs on it')
+            both = [facts, self.installed_apk(test)]
+            marker_layout(*both)
+        except Refused as error:
+            raise Refused('%s refused: installed %s' % (verb, error)) from None
+        self.remember(both)
+        return app, test
+
+    def visits(self):
+        """Every kept Visit record, oldest first. One per Visit at visits/NAME/visit.json: the pulled
+        release APK (or none), the Visit copy, fingerprint and model inventory at start, the lab
+        builds installed during it, and when it ended."""
+        records = []
+        for path in sorted((self.state / 'visits').glob('*/visit.json')):
+            record = json.loads(path.read_text())
+            if not isinstance(record, dict) or set(record) != VISIT_FIELDS or record['name'] != path.parent.name:
+                raise Refused('unreadable Visit record %s; nothing runs until it is repaired' % path.parent.name)
+            records.append(record)
+        return sorted(records, key=lambda record: record['started'])
+
+    def visit_copy(self, visit):
+        return self.state / 'visits' / name(visit['name']) / name(visit['copy']['archive'])
+
+    def in_visit(self, verb):
+        """The open Visit, when the installed lab build belongs to it and owner data equals its copy."""
+        app, test = self.lab_build(verb)
+        current = [visit for visit in self.visits() if visit['ended'] is None]
+        if not current:
+            raise Refused(verb + ' refused: no Visit is open; a Visit starts by installing the lab build over release')
+        visit = current[-1]
+        if not any(build['app_sha256'] == app['sha256'] and build['test_sha256'] == test['sha256']
+                   for build in visit['lab_builds']):
+            raise Refused('%s refused: the installed lab build is not part of Visit %s' % (verb, visit['name']))
+        if self.device.fingerprint() != visit['fingerprint']:
+            raise Refused('%s refused: owner data differs from the Visit copy %s; restore it first'
+                          % (verb, self.visit_copy(visit)))
+        return visit
 
     def lock(self):
         import fcntl
@@ -413,6 +554,7 @@ class Phone:
             raise Refused('arguments are APP.apk then TEST.apk')
         if len({i['signer'] for i in infos}) != 1:
             raise Refused('app and test APK must share one signer')
+        marker_layout(*infos)
         return infos
 
     def install(self, app_apk, test_apk=None):
@@ -426,11 +568,13 @@ class Phone:
         after = self.identity()
         if after['app_sha256'] != infos[0]['sha256'] or (test_apk and after['test_sha256'] != infos[1]['sha256']):
             raise Failed('installed identity does not match the given APKs')
+        self.remember(infos)
         return {'outcome': 'installed', **after, 'meta': str(folder / 'meta.json')}
 
     def push(self, directory, rel='lab'):
         rel = name(rel)
         directory = validate_directory(directory)
+        self.in_visit('push')
         expected = {p.relative_to(directory).as_posix(): sha_file(p) for p in directory.rglob('*') if p.is_file()}
         before = self.device.inventory('files/' + rel) or {}
         changed = {item for item, digest in expected.items() if before.get(item) != digest}
@@ -471,14 +615,19 @@ class Phone:
             if not eq or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', key) or len(value) > 256:
                 raise Refused('extras are key=value with a short value')
             pairs.append((key, value))
-        if not self.device.package(TEST)['installed']:
-            raise Refused('test package is not installed; use install APP.apk TEST.apk')
+        if any(item.startswith(LAB_RUN + '.') for item in classes.split(',')):
+            raise Refused('run refused: %s holds Lab run classes; they measure and never run as tests' % LAB_RUN)
+        visit = self.in_visit('run')
+        self.not_live('run')
         folder = self.meta('run', classes=classes, extras=pairs)
         since = self.device.device_time()
         uid = self.app()['uid']
         output = self.device.instrument(classes, pairs, timeout)
         (folder / 'instrumentation.txt').write_text(output)
         (folder / 'logcat.txt').write_text(self.device.logcat(uid, since=since))
+        if self.device.fingerprint() != visit['fingerprint']:
+            raise Failed('owner data changed during this run; Visit copy: %s; run output: %s'
+                         % (self.visit_copy(visit), folder))
         ok = bool(re.search(r'^OK \(\d+ tests?\)', output, re.M)) and 'INSTRUMENTATION_CODE: -1' in output
         return {'outcome': 'passed' if ok else 'failed', 'path': str(folder),
                 'lab': self.device.inventory('files/lab')}
@@ -493,6 +642,7 @@ class Phone:
         return {'crash': self.device.logcat(None, crash=True)}
 
     def stop(self):
+        self.in_visit('stop')
         self.not_live('stop')
         self.device.stop()
         return {'outcome': 'stopped'}
@@ -567,17 +717,23 @@ USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON objec
   status                          phone connected and permitted
   device                          allowlisted hardware/OS props, thermal status, GPU/TPU driver libs
   app                             our app, test package, our IME state, FUTO versions, files/lab inventory
-  check APP.apk [TEST.apk]        host-only: would install accept these APKs? (no phone needed)
+  check APP.apk [TEST.apk]        host-only: would install accept these APKs? (no phone, any worktree)
   install APP.apk [TEST.apk]      only our packages; permission allowlist; no network permissions
   push DIR [NAME]                 make files/NAME (default lab) equal DIR; sends only changed files
   pull PATH... [--to DIR]         from files/lab or files/benchmark into corpus/lab/pull/<ts>/
-  run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat
+  run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat;
+                                  owner data is fingerprinted before and after
   logs [--since 'MM-DD HH:MM:SS.mmm'] | crash
   stop                            force-stop our app
   snapshot NAME | restore NAME    retained APKs + files/, shared_prefs/, databases/; reports what it cannot restore
   uninstall                       needs corpus/lab/.allow-uninstall created by the user
 Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
-install, restore, stop, uninstall refuse while the keyboard is in use.
+install, run, restore, stop, uninstall refuse while the keyboard is in use.
+Build marker: a debuggable APK must carry the test layout, a release APK the owner layout, the test
+APK the app's marker; an APK without a marker is refused by check, install and run.
+run, push, stop need an open Visit on that lab build with owner data equal to the Visit copy; run
+refuses classes under ch.og.dictation.labrun (Lab runs).
+Every verb but help and check works only from the main checkout, never from a worktree.
 Visit: snapshot NAME, check, install, push DIR, run, pull, restore NAME.
 Owner present (phone time is scarce): build, check, install and push before asking; the owner
 only unlocks, keeps FUTO selected and the screen awake; run ch.og.dictation.PhoneReadyTest
@@ -620,23 +776,34 @@ def dispatch(argv, phone):
 
 
 def main(argv):
-    root = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
-    if root.returncode:
-        raise Failed('run from inside the checkout')
-    state = Path(root.stdout.strip()) / 'corpus' / 'lab'
-    os.umask(0o077)
-    phone = Phone(Device(os.environ.get('ANDROID_HOME', Path.home() / 'Android/Sdk')), state)
+    caller = None
+    if argv[:1] == ['--caller']:  # passed by the shim, first; a later one is just an unknown verb
+        if len(argv) < 2:
+            raise Refused('--caller needs a directory')
+        caller, argv = argv[1], argv[2:]
     verb = argv[0] if argv else 'help'
-    handle = phone.lock() if verb not in ('help', '-h', '--help', 'status') else None
+    os.umask(0o077)
+    device = Device(os.environ.get('ANDROID_HOME', Path.home() / 'Android/Sdk'))
+    if verb in HOST_VERBS:
+        result = dispatch(argv, Phone(device, None))
+        print(result['usage'] if isinstance(result, dict) and set(result) == {'usage'}
+              else json.dumps(result, indent=1, sort_keys=True))
+        return 0
+    common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                            capture_output=True, text=True)
+    if common.returncode:
+        raise Failed('run from inside the checkout')
+    state = main_checkout(caller, Path(common.stdout.strip()).parent) / 'corpus' / 'lab'
+    phone = Phone(device, state)
+    handle = phone.lock() if verb != 'status' else None
     try:
         result = dispatch(argv, phone)
     finally:
         if handle:
             handle.close()
-    text = result['usage'] if isinstance(result, dict) and set(result) == {'usage'} else json.dumps(result, indent=1, sort_keys=True)
-    if verb not in ('help', '-h', '--help'):
-        state.mkdir(parents=True, exist_ok=True)
-        (state / 'last.json').write_text(text)  # the shim must run alone; read this instead of piping
+    text = json.dumps(result, indent=1, sort_keys=True)
+    state.mkdir(parents=True, exist_ok=True)
+    (state / 'last.json').write_text(text)  # the shim must run alone; read this instead of piping
     print(text)
     return 0
 

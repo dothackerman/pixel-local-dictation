@@ -5,8 +5,13 @@ Checked: app, lab-build and device-test sources. Storage is `ch/og/dictation/sto
 source sets. A banned call anywhere else needs a named exception; EXCEPTIONS holds the stores not
 yet behind Storage and shrinks with each one that moves. An exception nothing needs any more fails too.
 
+The wrapper's excluded locations (`EXCLUDED` in tools/phone: what its fingerprint and copies leave out)
+must equal the test layout's lab folder and test folders.
+
 python3 tools/storage_guard.py   prints each problem; exit 1 when any exists.
 """
+import ast
+import json
 import re
 import sys
 from pathlib import Path
@@ -15,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('app/src/main', 'app/src/release', 'app/src/benchmark', 'app/src/androidTest')
 STORAGE = tuple(f'{source}/kotlin/ch/og/dictation/storage/' for source in SOURCES[:3])
 MANIFESTS = ('app/src/main/AndroidManifest.xml', 'app/src/androidTest/AndroidManifest.xml')
+LAYOUT, WRAPPER = 'app/src/benchmark/test-folders.json', 'tools/phone'
 MARKER = re.compile(r'android:name="ch\.og\.dictation\.build"\s+android:value="\$\{buildMarker\}"')
 
 RULES = {name: re.compile(pattern) for name, pattern in {
@@ -112,8 +118,26 @@ def marker_problems(root=ROOT):
             if not MARKER.search((Path(root) / name).read_text(encoding='utf-8'))]
 
 
+def wrapper_problems(root=ROOT):
+    """The wrapper leaves out exactly the lab folder and the test folders the test layout publishes."""
+    root = Path(root)
+    layout = json.loads((root / LAYOUT).read_text(encoding='utf-8'))
+    expected = {layout['labFolder'], *layout['testFolders']}
+    excluded = None
+    for node in ast.parse((root / WRAPPER).read_text(encoding='utf-8')).body:
+        if isinstance(node, ast.Assign) and [getattr(target, 'id', None) for target in node.targets] == ['EXCLUDED']:
+            try:
+                excluded = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    if not isinstance(excluded, tuple) or not all(isinstance(item, str) for item in excluded):
+        return [f'{WRAPPER}: EXCLUDED must be one literal tuple of locations']
+    return ([f'{WRAPPER}: EXCLUDED lacks {item} of the test layout' for item in sorted(expected - set(excluded))]
+            + [f'{WRAPPER}: EXCLUDED names {item}, which the test layout does not' for item in sorted(set(excluded) - expected)])
+
+
 def main():
-    found = problems() + marker_problems()
+    found = problems() + marker_problems() + wrapper_problems()
     if found:
         print('\n'.join(found), file=sys.stderr)
     return 1 if found else 0

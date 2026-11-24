@@ -71,3 +71,40 @@ Open:
 - Operating guidance lives in `AGENTS.md` and `phone help` (`DEVELOPMENT.md`, which also held it, was removed 2026-11-24); README no longer has a phone section.
 - `tools/encoder_probe.py`, named above as an example host tool, is retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)).
 - Status unverified: the git interim (`git *` unsandboxed) is still the operating rule in `AGENTS.md`; Codex verification and the upstream report are not recorded.
+
+## Amendment (2026-11-24, ADR-028): owner data, wrapper guard (#75)
+
+- `check`/`install` read the marker of both APKs (layout, commit, build hash): debuggable ⇔ test,
+  non-debuggable ⇔ owner, test marker = app marker; no marker is refused for install and run. `install`
+  records hash → marker in `corpus/lab/markers.json`; an installed hash nobody recorded is read from the
+  pulled APK (no `run-as`) and then recorded.
+- App data is fingerprinted as a whole (names, sizes, digests computed on the phone; one digest and a file
+  count leave it): everything except the lab folder (speech model, test output) and the test folders,
+  one constant `EXCLUDED` that the host check compares with the test layout. Also left out, as a second
+  constant: `cache/`, `code_cache/` and `files/profileInstalled`. Android and androidx write these on
+  their own (the update clears `code_cache/`, the first frame refills it, the profile installer notes the
+  update time), so with them no fingerprint would survive an install; none is owner data.
+- Visit record: `corpus/lab/visits/NAME/visit.json` with `name`, `started`, `ended` (null while open),
+  `release` (the pulled release APK, or null), `copy` (archive name and digest), `fingerprint` and `model`
+  (inventory) at start, `lab_builds` (app hash, test hash, marker of each lab build installed). Kept
+  until `forget`. An unreadable record refuses instead of being skipped.
+- `run`, `push` and `stop` refuse outside an open Visit, on a build that is not that Visit's lab build
+  with equal app and test markers, and when the fingerprint differs from the Visit's; `run` also while
+  our keyboard is in use. `run` fingerprints again afterwards; a difference fails the call and names the
+  Visit copy. `run` refuses classes in the Lab run package `ch.og.dictation.labrun`; the wrapper holds
+  the package name only, never a class list.
+- Every device verb refuses unless called from the main checkout: the shim passes the caller's directory,
+  and a worktree, another clone, a folder outside the checkout or no caller directory are refused. `help`
+  and the host-only `check` are exempt; `check` takes no lock and writes no state (not `last.json`
+  either), so the repository copy runs it from any worktree. State is always the main checkout's
+  `corpus/lab`.
+- `apply.sh` installs only from the main checkout, on any branch: anchoring to `main` stays dropped
+  (revision 2, it forced a merge per wrapper change); instead it refuses to install a wrapper without the
+  marker guard, so no stale branch can downgrade it. Laptop work in a Claude worktree needs no gate
+  installation; "Copied configs require owner installation in the new checkout before agent work" is
+  withdrawn for it. Codex works in the main checkout.
+- Asking stays a harness rule: `install`, `restore`, `stop`, `forget` are not in the allow list
+  (asserted by `tools/test_gate_installation.py`).
+- Supersedes above: "`install restore stop uninstall` refuse while our IME is bound" now includes `run`;
+  "`python3 tools/phone` … irrelevant" still holds for device verbs, while `python3 tools/phone check`
+  is the supported host-only call.
