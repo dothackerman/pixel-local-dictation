@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Host-only quality gate: Python regressions (host checks included), Kotlin unit tests for the lab
-build and release, Android lint and the build markers of the merged manifests.
+"""Host-only quality gate: removed-test check, Python regressions (host checks included), Kotlin unit
+tests for the lab build and release, Android lint and the build markers of the merged manifests.
 
 --staged requires tracked worktree/index parity and staged source/test inputs.
 It tests this checkout; stage relevant files first. No instrumentation runs.
@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from prepare_checkout import ROBOLECTRIC_JARS
+import removed_tests
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +38,16 @@ def preparation_problem(root=ROOT):
     missing = [name for name in needed if not (root / name).exists()]
     return ('unprepared worktree, missing ' + ', '.join(missing)
             + ': run python3 tools/prepare_checkout.py') if missing else None
+
+
+def removed_test_problems(root=ROOT):
+    """Tests gone since this branch left main, without an entry in tools/removed_tests.json."""
+    for trunk in ('main', 'origin/main'):
+        base = subprocess.run(['git', 'merge-base', 'HEAD', trunk], cwd=root, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        if base.returncode == 0:
+            return removed_tests.problems(root, base.stdout.strip())
+    return ['removed-test check: no main or origin/main to compare test names with']
 
 
 def jvm_environment(root, environment):
@@ -72,6 +83,9 @@ def main():
         if errors:
             print('\n'.join(errors), file=sys.stderr)
             return 1
+    if problems := removed_test_problems():
+        print('\n'.join(problems), file=sys.stderr)
+        return 1
     for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
                     # Release is compiled and its own host tests assert the owner layout and marker (ADR-028).
                     [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'testReleaseUnitTest',
