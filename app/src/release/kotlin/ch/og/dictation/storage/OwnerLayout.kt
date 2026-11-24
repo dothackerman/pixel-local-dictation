@@ -8,10 +8,13 @@ internal object OwnerLayout : StorageLayout {
     const val TIMING_RECEIPTS = "files/timing-receipts"
 
     override val name = "owner"
-    override fun historyRoot(folders: AppFolders) = File(folders.noBackup, "history")
-    override fun requireHistoryRoot(folders: AppFolders, root: File) =
-        require(root == historyRoot(folders)) { "the owner layout has one History root" }
-    override fun dictionaryRoot(folders: AppFolders) = File(folders.files, "dictionary")
+    override fun historyRoot(data: AppData) = File(data.noBackup, "history")
+    override fun requireHistoryRoot(data: AppData, root: File) =
+        require(root == historyRoot(data)) { "the owner layout has one History root" }
+    override fun dictionaryRoot(data: AppData) = File(data.files, "dictionary")
+    override val historyNotices = "history_notices"
+    override val settings = "settings"
+    override fun clipboard(system: Clipboard) = system
 }
 
 internal val buildLayout: StorageLayout = OwnerLayout

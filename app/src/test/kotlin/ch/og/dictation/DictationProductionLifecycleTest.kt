@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.lastCopy
 import ch.og.dictation.audio.MicrophoneOwner
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.diagnostics.BenchmarkStore
@@ -521,35 +522,33 @@ class DictationProductionLifecycleTest {
     /** Discard text: the text is gone, the panel is idle and the open panel does not start a take. */
     @Test fun discardTextEndsTheHeldStateAndStaysIdle() {
         val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.clearPrimaryClip()
+        service.wiring.storage.clipboard.copy("copied earlier")
         assertEquals(service.getString(R.string.discard_text), discardAction(returned).contentDescription.toString())
         discardAction(returned).performClick()
         assertEquals(service.getString(R.string.status_idle), status(returned))
         assertEquals("", preview(returned))
         assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
         assertEquals(View.VISIBLE, button(returned).visibility)
-        assertNull(clipboard.primaryClip) // Discard never copies.
+        assertEquals("copied earlier", lastCopy(service)) // Discard never copies.
         assertFalse(MicrophoneOwner.state().explicitStartRequired) // The next opening records.
     }
 
     /** Back never writes to the clipboard: uncopied text gets a warning first, the second Back discards. */
     @Test fun firstBackOnUncopiedTextOnlyWarnsAndTheSecondDiscards() {
         val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.clearPrimaryClip()
+        service.wiring.storage.clipboard.copy("copied earlier")
         assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
         back(returned).performClick()
         assertEquals(service.getString(R.string.status_back_warning), status(returned))
         // The arrow says what the next press does.
         assertEquals(service.getString(R.string.back_discard_text), back(returned).contentDescription.toString())
         assertEquals("old speech", preview(returned))
-        assertNull("Back never copies", clipboard.primaryClip)
+        assertEquals("Back never copies", "copied earlier", lastCopy(service))
         assertEquals(View.VISIBLE, returned.findViewById<View>(R.id.status_marker).visibility)
         back(returned).performClick()
         assertEquals(service.getString(R.string.status_idle), status(returned))
         assertEquals("", preview(returned))
-        assertNull(clipboard.primaryClip)
+        assertEquals("copied earlier", lastCopy(service))
     }
 
     @Test fun hardwareBackFollowsTheArrowWarnThenDiscard() {
@@ -1412,15 +1411,15 @@ class DictationProductionLifecycleTest {
         assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
     }
 
-    /** Copy puts exactly the take text on the clipboard as plain text (no sensitive flag), drops the held text and hands the keyboard back. */
+    /**
+     * Copy puts exactly the take text on the build's clipboard, drops the held text and hands the keyboard
+     * back. Plain text without the sensitive flag on the system clipboard: ReleaseStorageTest.
+     */
     private fun assertCopyPutsTakeTextOnClipboard(service: DictationImeService, panel: View) {
-        val clipboard = service.getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.clearPrimaryClip()
+        service.wiring.storage.clipboard.copy("copied earlier")
         org.robolectric.shadows.ShadowLog.clear()
         panel.findViewById<View>(R.id.choice_safe).performClick()
-        val clip = clipboard.primaryClip!!
-        assertEquals("old speech", clip.getItemAt(0).text.toString())
-        assertEquals(false, clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE") ?: false)
+        assertEquals("old speech", lastCopy(service))
         assertEquals(service.getString(R.string.status_idle), status(panel))
         assertEquals("", preview(panel))
         assertEquals(View.GONE, panel.findViewById<View>(R.id.choice).visibility)

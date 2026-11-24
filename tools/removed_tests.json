@@ -2,5 +2,6 @@
   "ch.og.dictation.WiringTest.oneValuePerProcessWithTheOwnersHistoryRoot": "ch.og.dictation.WiringTest.oneValuePerProcessWithOneStorage",
   "ch.og.dictation.probe.TestHistoryTest.testScreensRefuseTheOwnersHistoryRoot": "ch.og.dictation.storage.LabBuildStorageTest.thereIsNoOwnerPath",
   "ch.og.dictation.RecordingPanelTest.captureEveryPanelStateAtBothFontScales": "ch.og.dictation.RecordingPanelTest.everyPanelStateKeepsItsTargetsStatusAndHeightAtBothFontScales",
-  "ch.og.dictation.RecordingPanelTest.captureLandscapePanel": "ch.og.dictation.panel.PanelGalleryTest.everyPanelStateInEveryLookIsRenderedToTheGallery"
+  "ch.og.dictation.RecordingPanelTest.captureLandscapePanel": "ch.og.dictation.panel.PanelGalleryTest.everyPanelStateInEveryLookIsRenderedToTheGallery",
+  "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem": "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesAndLeavesTheConfirmationToTheSystem"
 }

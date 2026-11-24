@@ -1,6 +1,7 @@
 package ch.og.dictation.diagnostics
 
 import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.wiring
 import ch.og.dictation.take.TakeResult
 import android.content.Context
 import java.io.File
@@ -17,7 +18,6 @@ import java.util.Locale
  */
 class BenchmarkStore(private val dir: File) {
     companion object {
-        private const val PREFS = "settings"
         private const val KEY_ENABLED = "benchmark"
 
         /** Shared retention gate for benchmark now and future content writers. */
@@ -28,12 +28,9 @@ class BenchmarkStore(private val dir: File) {
 
         fun of(context: Context) = BenchmarkStore(File(context.filesDir, "benchmark"))
 
-        fun isEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+        fun isEnabled(context: Context): Boolean = context.wiring.storage.settings.flag(KEY_ENABLED)
 
-        fun setEnabled(context: Context, enabled: Boolean) {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, enabled).apply()
-        }
+        fun setEnabled(context: Context, enabled: Boolean) = context.wiring.storage.settings.setFlag(KEY_ENABLED, enabled)
 
         fun timestamp(now: Date = Date()): String =
             SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(now)

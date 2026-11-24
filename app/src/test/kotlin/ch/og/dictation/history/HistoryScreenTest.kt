@@ -1,5 +1,6 @@
 package ch.og.dictation.history
 
+import ch.og.dictation.storage.lastCopy
 import ch.og.dictation.wiring
 import ch.og.dictation.R
 import android.app.Application
@@ -121,8 +122,8 @@ class HistoryScreenTest {
         return (0 until list.childCount).map(list::getChildAt).filter { it.findViewById<View>(R.id.history_row_body) != null }[n]
     }
     private fun firstRow(page: Page) = rowAt(page, 0)
-    private fun clipboard() = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-    private fun clipText() = clipboard().primaryClip?.getItemAt(0)?.text?.toString()
+    /** The build's clipboard (in the lab build the in-app one; plain text on the system clipboard: ReleaseStorageTest). */
+    private fun clipText() = lastCopy(app)
     private fun toolbar(page: Page) = page.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar)
 
     @Test fun detailHasItsOwnTitleIconActionsInOrderAndNoClearHistoryOrTextButtons() {
@@ -257,20 +258,14 @@ class HistoryScreenTest {
         assertTrue(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
     }
 
-    @Test fun detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem() {
+    @Test fun detailCopyIconCopiesAndLeavesTheConfirmationToTheSystem() {
         val page = open()
         firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         toolbar(page).menu.performIdentifierAction(R.id.history_copy_item, 0)
         settle { clipText() == "First synthetic transcript" }
-        assertNotSensitive()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(shown(page, "Copied"))
-    }
-
-    private fun assertNotSensitive() {
-        val extras = clipboard().primaryClip!!.description.extras
-        assertFalse(extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) ?: false)
     }
 
     @Test fun detailDeleteIconReturnsToTheListWithUndo() {
@@ -293,7 +288,6 @@ class HistoryScreenTest {
         assertTrue(row.isLongClickable)
         assertTrue(row.performLongClick())
         settle { clipText() == "Second synthetic transcript" }
-        assertNotSensitive()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(shown(page, "Copied"))
         // Still the list: long-press does not open the detail.

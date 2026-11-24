@@ -50,11 +50,9 @@ _LAB = 'app/src/benchmark/kotlin/ch/og/dictation/probe/'
 _DEVICE = 'app/src/androidTest/kotlin/ch/og/dictation/'
 EXCEPTIONS = {
     _MAIN + 'DictationImeService.kt': {'files folder': 'lab folder'},
-    _MAIN + 'diagnostics/BenchmarkStore.kt': {'files folder': 'recordings', 'preferences': 'settings'},
+    _MAIN + 'diagnostics/BenchmarkStore.kt': {'files folder': 'recordings'},
     _MAIN + 'diagnostics/StartupTrace.kt': {'files folder': 'lab folder'},
     _MAIN + 'recognition/Engine.kt': {'files folder': 'lab folder'},
-    _MAIN + 'history/Clipboard.kt': {'clipboard service': 'clipboard'},
-    _MAIN + 'history/HistoryNotices.kt': {'preferences': 'History notices'},
     _LAB + 'CheckpointProducerService.kt': {'files folder': 'lab folder'},
     _LAB + 'EditorProbeActivity.kt': {'files folder': 'lab folder'},
     _LAB + 'SyntheticFixtureAudio.kt': {'files folder': 'lab folder'},

@@ -2,9 +2,15 @@ package ch.og.dictation.storage
 
 import ch.og.dictation.DictationApplication
 import ch.og.dictation.Wiring
+import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.dictionary.DictionaryStore
+import ch.og.dictation.history.HistoryNotice
+import ch.og.dictation.history.copyTranscript
+import ch.og.dictation.history.historyNotices
 import ch.og.dictation.overrideWiring
 import ch.og.dictation.wiring
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import java.io.File
 import java.nio.file.Files
@@ -53,6 +59,67 @@ class LabBuildStorageTest {
         try {
             assertEquals(listOf("Test term"), Wiring.forApp(app).engine.dictionaryStore().read().entries)
         } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+    }
+
+    @Test fun historyNoticesAndSettingsResolveInsideTheTestFolders() {
+        val storage = app.wiring.storage
+        storage.historyNotices.setNames("pending", setOf("SAVE"))
+        storage.settings.setFlag("benchmark", true)
+        assertEquals(setOf("SAVE"), app.getSharedPreferences("test_history_notices", 0).getStringSet("pending", null))
+        assertTrue(app.getSharedPreferences("test_settings", 0).getBoolean("benchmark", false))
+        assertTrue(File(app.dataDir, "shared_prefs/test_history_notices.xml").isFile)
+        assertFalse("the owner's notices stay untouched", app.getSharedPreferences("history_notices", 0).contains("pending"))
+        assertFalse("the owner's settings stay untouched", app.getSharedPreferences("settings", 0).contains("benchmark"))
+        // The keyboard, the History page and Settings read and write there, in every process.
+        assertEquals(setOf(HistoryNotice.SAVE), historyNotices(app).pending())
+        assertTrue(BenchmarkStore.isEnabled(app))
+        historyNotices(app).dismiss(HistoryNotice.SAVE)
+        BenchmarkStore.setEnabled(app, false)
+        ShadowApplication.setProcessName("ch.og.dictation:checkpoint_producer")
+        try {
+            val second = Wiring.forApp(app).storage
+            assertEquals(emptySet<String>(), second.historyNotices.names("pending"))
+            assertFalse(second.settings.flag("benchmark"))
+        } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+        val published = JSONObject(File("src/benchmark/test-folders.json").readText()).getJSONArray("testFolders")
+        val names = (0 until published.length()).map(published::getString)
+        assertTrue(names.containsAll(listOf("shared_prefs/test_history_notices.xml", "shared_prefs/test_settings.xml")))
+    }
+
+    @Test fun aTemporaryRootKeepsNoticesAndSettingsInTheTestFolders() {
+        val base = Files.createTempDirectory("storage").toFile()
+        Storage.under(base).historyNotices.setNames("pending", setOf("DELETE", "RECEIPT"))
+        Storage.under(base).settings.setFlag("benchmark", true)
+        assertEquals("saved, not held in memory", setOf("DELETE", "RECEIPT"), Storage.under(base).historyNotices.names("pending"))
+        assertTrue(Storage.under(base).settings.flag("benchmark"))
+        assertFalse(Storage.under(base).settings.flag("other"))
+        assertEquals(setOf("test_history_notices.xml", "test_settings.xml"), File(base, "shared_prefs").list()!!.toSet())
+        Storage.under(base).historyNotices.setNames("pending", emptySet())
+        assertEquals(emptySet<String>(), Storage.under(base).historyNotices.names("pending"))
+        base.deleteRecursively()
+    }
+
+    @Test fun copyStaysInTheAppAndNeverReachesTheSystemClipboard() {
+        val system = app.getSystemService(ClipboardManager::class.java)
+        system.setPrimaryClip(ClipData.newPlainText("owner", "the owner's clipboard"))
+        val storage = app.wiring.storage
+        storage.clipboard.copy("Test transcript")
+        assertEquals("Test transcript", storage.copiedText)
+        // History's copy and the panel's Copy go the same way.
+        copyTranscript(app, "Second test transcript")
+        assertEquals("Second test transcript", storage.copiedText)
+        assertEquals("one clipboard, whichever History root", "Second test transcript", storage.withTestHistory("demo").copiedText)
+        assertEquals("the owner's clipboard", system.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(1, system.primaryClip!!.itemCount)
+        // A temporary root: its stand-in for the system clipboard is never written either.
+        val base = Files.createTempDirectory("storage").toFile()
+        val temporary = Storage.under(base)
+        assertEquals(null, temporary.copiedText)
+        temporary.clipboard.copy("Third test transcript")
+        assertEquals("Third test transcript", temporary.copiedText)
+        assertFalse(File(base, "clipboard").exists())
+        assertEquals("the owner's clipboard", system.primaryClip!!.getItemAt(0).text.toString())
+        base.deleteRecursively()
     }
 
     @Test fun aTemporaryRootKeepsTheLayout() {

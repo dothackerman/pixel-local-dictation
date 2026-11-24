@@ -1,6 +1,7 @@
 package ch.og.dictation.history
 
 import ch.og.dictation.R
+import ch.og.dictation.wiring
 import android.content.Context
 
 enum class HistoryNotice { SAVE, INCOMPLETE, RECEIPT, DELETE }
@@ -16,13 +17,10 @@ class HistoryNotices(private val read: () -> Set<String>, private val write: (Se
     fun dismiss(notice: HistoryNotice) = synchronized(lock) { write(read() - notice.name) }
 }
 
-/** The app's notice store in shared preferences: warning kinds only. */
+/** The build's notice store (Storage): warning kinds only. */
 fun historyNotices(context: Context): HistoryNotices {
-    val prefs = context.applicationContext.getSharedPreferences("history_notices", Context.MODE_PRIVATE)
-    return HistoryNotices(
-        { prefs.getStringSet("pending", emptySet())?.toSet() ?: emptySet() },
-        { prefs.edit().putStringSet("pending", it).commit() },
-    )
+    val stored = context.wiring.storage.historyNotices
+    return HistoryNotices({ stored.names("pending") }, { stored.setNames("pending", it) })
 }
 
 fun HistoryNotice.message(): Int = when (this) {
