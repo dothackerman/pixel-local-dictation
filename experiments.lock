@@ -1,4 +1,4 @@
-# Assets of the experiment loop (docs/autoresearch.md), downloaded once by the setup session on
+# Assets of the experiment loop (spec in Git history before 7319ccd), downloaded once by the setup session on
 # 2026-10-10 into models/ (gitignored). The loop downloads nothing. Columns: sha256 bytes file url.
 # Unpacked next to the archive with: tar -xjf models/<file> -C models/
 b11acbbcd660b44a8e0df33724feb5aaa709cf65668f2823d59f656312544f22 563790207 sherpa-onnx-whisper-turbo.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-turbo.tar.bz2
