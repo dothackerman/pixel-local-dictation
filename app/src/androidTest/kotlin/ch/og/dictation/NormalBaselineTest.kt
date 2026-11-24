@@ -47,18 +47,18 @@ class NormalBaselineTest {
         }
     }
 
-    @Test fun normalPathMatchesRetainedCandidateAOutputs() =
-        checkRetainedOutputs("candidate-a-stream-dictionary", "normal-baseline-result.json")
-
-    fun checkRetainedOutputs(expectedBaseline: String, resultFile: String) {
+    /** The lab build reads the test Dictionary; with no revision saved there, the frozen Candidate A list applies. */
+    @Test fun normalPathMatchesRetainedCandidateAOutputs() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertFalse("the test Dictionary holds a saved revision; the frozen Candidate A list must apply",
+            context.wiring.engine.dictionaryStore().read().edited)
         val lab = File(context.filesDir, "lab")
         val cases = JSONObject(File(lab, "baseline-parity.json").readText())
         require(cases.length() == 2) { "one retained take per language required" }
         val runtime = context.wiring.engine.runtime()
         runtime.warmUp().get(10, TimeUnit.MINUTES)
         val receipt = requireNotNull(context.wiring.engine.liveReceipt())
-        assertEquals(expectedBaseline, receipt.getString("baseline"))
+        assertEquals("candidate-a-stream-dictionary", receipt.getString("baseline"))
         assertTrue(receipt.getBoolean("verified"))
         val rows = JSONArray()
         val delivery = Executors.newSingleThreadExecutor()
@@ -95,7 +95,7 @@ class NormalBaselineTest {
                 assertEquals("normal output differs: $id", item.getString("output_sha256"), outputHash)
                 rows.put(JSONObject().put("id", id).put("output_sha256", outputHash).put("commits", commits))
             }
-            File(lab, resultFile).writeText(JSONObject().put("protocol", "normal-baseline-parity-v1")
+            File(lab, "normal-baseline-result.json").writeText(JSONObject().put("protocol", "normal-baseline-parity-v1")
                 .put("identity", receipt).put("takes", rows).put("passed", true).toString(2))
         } finally { delivery.shutdown() }
     }

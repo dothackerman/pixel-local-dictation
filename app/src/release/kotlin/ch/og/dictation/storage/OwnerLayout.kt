@@ -11,6 +11,7 @@ internal object OwnerLayout : StorageLayout {
     override fun historyRoot(folders: AppFolders) = File(folders.noBackup, "history")
     override fun requireHistoryRoot(folders: AppFolders, root: File) =
         require(root == historyRoot(folders)) { "the owner layout has one History root" }
+    override fun dictionaryRoot(folders: AppFolders) = File(folders.files, "dictionary")
 }
 
 internal val buildLayout: StorageLayout = OwnerLayout

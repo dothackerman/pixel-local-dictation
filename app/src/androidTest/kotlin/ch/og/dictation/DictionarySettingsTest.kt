@@ -20,11 +20,12 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** App-owned views only. Synthetic preview state is never saved into the owner's dictionary. */
+/**
+ * The add sheet above the real keyboard. App-owned views only; the synthetic preview state is never saved.
+ * The portrait cases (default look; light theme at large text) run on the laptop: host DictionarySettingsTest.
+ */
 @RunWith(AndroidJUnit4::class)
 class DictionarySettingsTest {
-    @Test fun nativeEditorShowsSearchValidationAndLargeTouchTargets() = preview(DictionaryActivity::class.java, "phone")
-    @Test fun nativeEditorSupportsLightThemeAndLargeText() = preview(DictionaryLargeTextPreviewActivity::class.java, "phone-large-light")
     /** #36 critique: the add sheet held sideways at font 2×, its commit above the keyboard. */
     @Test fun addSheetKeepsItsCommitAboveTheKeyboardInLandscapeAtLargeText() =
         preview(DictionaryLargeTextPreviewActivity.Landscape::class.java, "phone-land-font2")
@@ -35,15 +36,8 @@ class DictionarySettingsTest {
         val activity = instrumentation.startActivitySync(Intent(context, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as DictionaryActivity
         fun settle() { android.os.SystemClock.sleep(450); instrumentation.waitForIdleSync() }
         try {
-            if (prefix == "phone-large-light") {
-                assertEquals(android.content.res.Configuration.UI_MODE_NIGHT_NO,
-                    activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                assertEquals(1.3f, activity.resources.configuration.fontScale, 0.01f)
-            }
-            if (prefix == "phone-land-font2") {
-                assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
-                assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
-            }
+            assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
+            assertEquals(2f, activity.resources.configuration.fontScale, 0.01f)
             val loaded = java.util.concurrent.CountDownLatch(1)
             instrumentation.runOnMainSync {
                 val model = androidx.lifecycle.ViewModelProvider(activity)[DictionaryModel::class.java]
@@ -71,11 +65,9 @@ class DictionarySettingsTest {
                 activity.findViewById<TextInputEditText>(R.id.dictionary_search).setText("")
                 // Landscape: Add term is in the top bar and nothing floats over the rows (#36 critique round 3).
                 val toolbar = activity.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.dictionary_toolbar)
-                if (prefix == "phone-land-font2") {
-                    assertFalse(activity.findViewById<View>(R.id.dictionary_add).isShown)
-                    assertTrue(toolbar.menu.findItem(R.id.dictionary_add_item).isVisible)
-                    toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
-                } else activity.findViewById<View>(R.id.dictionary_add).performClick()
+                assertFalse(activity.findViewById<View>(R.id.dictionary_add).isShown)
+                assertTrue(toolbar.menu.findItem(R.id.dictionary_add_item).isVisible)
+                toolbar.menu.performIdentifierAction(R.id.dictionary_add_item, 0)
             }
             settle()
             lateinit var dialogRoot: View

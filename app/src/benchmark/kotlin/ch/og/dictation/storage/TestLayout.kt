@@ -23,6 +23,8 @@ internal object TestLayout : StorageLayout {
         require(path != folder && path.startsWith(folder)) { "outside the test folders: $root" }
     }
 
+    override fun dictionaryRoot(folders: AppFolders) = File(folders.files, "test/dictionary")
+
     fun testHistoryRoot(folders: AppFolders, name: String) =
         File(historyFolder(folders), name).also { requireHistoryRoot(folders, it) }
 }

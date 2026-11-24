@@ -2,6 +2,7 @@ package ch.og.dictation.storage
 
 import ch.og.dictation.DictationApplication
 import ch.og.dictation.Wiring
+import ch.og.dictation.dictionary.DictionaryStore
 import ch.og.dictation.overrideWiring
 import ch.og.dictation.wiring
 import android.content.pm.PackageManager
@@ -32,10 +33,33 @@ class LabBuildStorageTest {
         assertEquals(File(testFolder, "issue54-producer/case"), app.wiring.storage.testHistoryRoot("issue54-producer/case"))
     }
 
+    @Test fun theDictionaryResolvesInsideTheTestFolders() {
+        assertEquals(File(app.filesDir, "test/dictionary"), app.wiring.storage.dictionaryRoot)
+        assertEquals(File(app.filesDir, "test/dictionary"), Wiring.forApp(app).storage.dictionaryRoot)
+        val published = JSONObject(File("src/benchmark/test-folders.json").readText()).getJSONArray("testFolders")
+        val root = app.wiring.storage.dictionaryRoot.relativeTo(app.filesDir.parentFile!!).invariantSeparatorsPath
+        assertTrue("the Dictionary lies in a published test folder",
+            (0 until published.length()).any { root.startsWith(published.getString(it) + "/") })
+    }
+
+    /** Settings, the Dictionary screen, the keyboard and the checkpoint producer all read through this engine. */
+    @Test fun everyProcessReadsTheTestDictionaryAndNeverTheOwners() {
+        fun save(root: File, term: String) = DictionaryStore(root, File(root, "none")).let { it.commit(it.prepare(listOf(term)), it.read()) }
+        save(File(app.filesDir, "dictionary"), "Owner term")
+        assertFalse("nothing saved in the test folders: the provisioned list applies", app.wiring.engine.dictionaryStore().read().edited)
+        save(File(app.filesDir, "test/dictionary"), "Test term")
+        assertEquals(listOf("Test term"), app.wiring.engine.dictionaryStore().read().entries)
+        ShadowApplication.setProcessName("ch.og.dictation:checkpoint_producer")
+        try {
+            assertEquals(listOf("Test term"), Wiring.forApp(app).engine.dictionaryStore().read().entries)
+        } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+    }
+
     @Test fun aTemporaryRootKeepsTheLayout() {
         val base = Files.createTempDirectory("storage").toFile()
         app.overrideWiring { it.with(storage = Storage.under(base)) }.use {
             assertEquals(File(base, "no_backup/test/history"), app.wiring.storage.historyRoot)
+            assertEquals(File(base, "files/test/dictionary"), app.wiring.storage.dictionaryRoot)
             val moved = app.wiring.storage.withTestHistory("demo")
             assertEquals(File(base, "no_backup/test/demo"), moved.historyRoot)
         }
@@ -61,6 +85,7 @@ class LabBuildStorageTest {
             Wiring.forApp(app).storage.historyRoot)
         assertTrue(handedOut.all { it.toPath().startsWith(testFolder.toPath()) })
         assertFalse(handedOut.any { it == ownersHistory })
+        assertTrue(storage.dictionaryRoot.toPath().startsWith(File(app.filesDir, "test").toPath()))
     }
 
     @Test fun theFolderSetIsPublishedForTheWrapperAsTheLayoutHasIt() {

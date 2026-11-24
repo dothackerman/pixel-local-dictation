@@ -31,7 +31,7 @@ class ColdDictionarySaveTest {
         }
 
         assertEquals(original, store.read())
-        assertFalse(File(app.filesDir, "dictionary/current.json").exists())
+        assertFalse(File(app.wiring.storage.dictionaryRoot, "current.json").exists())
         assertNull(ProvisionalBaseline.load(lab, manifest, store.read()))
         assertEquals(0, app.wiring.engine.dictionaryModelLoads)
     }
@@ -55,7 +55,7 @@ class ColdDictionarySaveTest {
                 app.wiring.engine.saveDictionary(original, listOf("New term")).get(5, TimeUnit.SECONDS)
             }
             assertTrue(failure.cause is DictionaryModelUnavailable)
-            assertFalse(File(app.filesDir, "dictionary/current.json").exists())
+            assertFalse(File(app.wiring.storage.dictionaryRoot, "current.json").exists())
             artifact.writeBytes(bytes)
         }
         // Synthetic, deliberately wrong model hashes demonstrate this is a stat-only preflight.

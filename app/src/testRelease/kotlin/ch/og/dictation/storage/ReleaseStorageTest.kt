@@ -2,6 +2,7 @@ package ch.og.dictation.storage
 
 import ch.og.dictation.DictationApplication
 import ch.og.dictation.Wiring
+import ch.og.dictation.dictionary.DictionaryStore
 import ch.og.dictation.overrideWiring
 import ch.og.dictation.wiring
 import android.content.pm.PackageManager
@@ -28,10 +29,22 @@ class ReleaseStorageTest {
         assertTrue(root.path, root.path.endsWith("/no_backup/history"))
     }
 
+    @Test fun theDictionaryIsTheOwnersDictionary() {
+        val root = app.wiring.storage.dictionaryRoot
+        assertEquals(File(app.filesDir, "dictionary"), root)
+        assertTrue(root.path, root.path.endsWith("/files/dictionary"))
+        // The engine saves and reads there: the owner's list, where it has always been.
+        val store = DictionaryStore(root, File(root, "none"))
+        store.commit(store.prepare(listOf("Owner term")), store.read())
+        assertEquals(listOf("Owner term"), app.wiring.engine.dictionaryStore().read().entries)
+        assertTrue(File(app.filesDir, "dictionary/current.json").isFile)
+    }
+
     @Test fun aTemporaryRootKeepsTheLayoutAndNoOtherHistoryRootExists() {
         val base = Files.createTempDirectory("storage").toFile()
         app.overrideWiring { it.with(storage = Storage.under(base)) }.use {
             assertEquals(File(base, "no_backup/history"), app.wiring.storage.historyRoot)
+            assertEquals(File(base, "files/dictionary"), app.wiring.storage.dictionaryRoot)
         }
         assertThrows(IllegalArgumentException::class.java) {
             app.wiring.storage.withHistoryRoot(File(app.noBackupFilesDir, "test/history"))

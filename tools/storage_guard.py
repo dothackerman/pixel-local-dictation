@@ -44,7 +44,7 @@ RULES = {name: re.compile(pattern) for name, pattern in {
 }.items()}
 
 # path -> {banned kind: the store it still reaches directly}. Stores not yet behind Storage (#73);
-# History is, so nothing here names the no-backup folder.
+# History and the Dictionary are, so nothing here names the no-backup folder or the Dictionary.
 _MAIN = 'app/src/main/kotlin/ch/og/dictation/'
 _LAB = 'app/src/benchmark/kotlin/ch/og/dictation/probe/'
 _DEVICE = 'app/src/androidTest/kotlin/ch/og/dictation/'
@@ -52,13 +52,12 @@ EXCEPTIONS = {
     _MAIN + 'DictationImeService.kt': {'files folder': 'lab folder'},
     _MAIN + 'diagnostics/BenchmarkStore.kt': {'files folder': 'recordings', 'preferences': 'settings'},
     _MAIN + 'diagnostics/StartupTrace.kt': {'files folder': 'lab folder'},
-    _MAIN + 'recognition/Engine.kt': {'files folder': 'lab folder, Dictionary'},
+    _MAIN + 'recognition/Engine.kt': {'files folder': 'lab folder'},
     _MAIN + 'history/Clipboard.kt': {'clipboard service': 'clipboard'},
     _MAIN + 'history/HistoryNotices.kt': {'preferences': 'History notices'},
     _LAB + 'CheckpointProducerService.kt': {'files folder': 'lab folder'},
     _LAB + 'EditorProbeActivity.kt': {'files folder': 'lab folder'},
     _LAB + 'SyntheticFixtureAudio.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'DictionaryRuntimeUpdateTest.kt': {'files folder': 'Dictionary'},
     _DEVICE + 'DictionarySettingsTest.kt': {'files folder': 'lab folder', 'cache folder': 'scratch files'},
     _DEVICE + 'EditorGeometryTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'GuidedVisitTest.kt': {'files folder': 'lab folder, recordings'},

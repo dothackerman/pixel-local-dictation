@@ -39,7 +39,8 @@ class Wiring private constructor(
     companion object {
         fun forApp(context: Context): Wiring {
             val app = context.applicationContext
-            return Wiring(::Recorder, Storage.forApp(app), lazy { Engine.forApp(app) },
+            val storage = Storage.forApp(app)
+            return Wiring(::Recorder, storage, lazy { Engine.forApp(app, storage) },
                 { it.requestShowSelf(0) }, { handler, callback -> handler.post(callback) })
         }
     }

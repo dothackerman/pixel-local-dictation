@@ -3,6 +3,7 @@ package ch.og.dictation.recognition
 import ch.og.dictation.R
 import ch.og.dictation.dictionary.DictionarySnapshot
 import ch.og.dictation.dictionary.DictionaryStore
+import ch.og.dictation.storage.Storage
 import ch.og.dictation.take.TakeSession
 import android.content.Context
 import android.util.Log
@@ -108,11 +109,14 @@ class Engine(
     }
 
     companion object {
-        /** The app's engine: Candidate A from `files/lab`, or the INT8 control from the APK's assets. */
-        fun forApp(context: Context): Engine {
+        /**
+         * The app's engine: Candidate A from `files/lab`, or the INT8 control from the APK's assets.
+         * The Dictionary is the one [storage] names, for as long as this engine lives.
+         */
+        fun forApp(context: Context, storage: Storage): Engine {
             val app = context.applicationContext
             val runtimes = AppRuntimes(app)
-            return Engine(runtimes::dictionaryStore, { app.resources.getBoolean(R.bool.benchmark_receipts) }, runtimes)
+            return Engine({ DictionaryStore(storage.dictionaryRoot, runtimes.provisionedDictionary()) }, { app.resources.getBoolean(R.bool.benchmark_receipts) }, runtimes)
         }
 
         /** Host tests: an engine around a prepared runtime; no dictionary, no receipts. */
@@ -136,8 +140,9 @@ private class AppRuntimes(private val app: Context) : Engine.Runtimes {
     private fun acceptance() =
         org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })
 
-    fun dictionaryStore() = DictionaryStore(File(app.filesDir, "dictionary"),
-        File(lab(), acceptance().getJSONObject("variant").getJSONObject("hotwords").getString("file")))
+    /** The frozen Candidate A list: what the Dictionary holds until a revision is saved. */
+    fun provisionedDictionary() =
+        File(lab(), acceptance().getJSONObject("variant").getJSONObject("hotwords").getString("file"))
 
     override fun requireAvailable(staged: DictionarySnapshot) =
         requireNotNull(ProvisionalBaseline.load(lab(), acceptance(), staged)).requireAvailable()
