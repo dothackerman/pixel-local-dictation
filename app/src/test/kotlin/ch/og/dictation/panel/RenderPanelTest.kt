@@ -2,11 +2,15 @@ package ch.og.dictation.panel
 
 import ch.og.dictation.R
 import ch.og.dictation.audio.RecordingFeedback
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -198,5 +202,37 @@ class RenderPanelTest {
         renderPanel(panel, recording, shown, null)
         layOut(panel, 960)
         assertTrue("private line adds ${(withLine - panel.height) / density}dp", withLine - panel.height <= 4 * density)
+    }
+
+    /**
+     * The lock is as sharp as a freshly parsed one whatever was drawn before (#77). A vector
+     * drawable from the Resources cache copies the raster size of the cached one, and that size
+     * only grows: after a panel at font 2×, a cached lock at font 1× is drawn from the larger
+     * raster, scaled down. The cached one lives until a garbage collection, so the panel gallery
+     * differed from run to run.
+     */
+    @Test @Config(qualifiers = "w411dp-h891dp-port-xxhdpi") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun privateFieldLockIsSharpAfterAPanelAtLargerText() {
+        val private = recording.copy(notice = R.string.retention_field_off)
+        fun lock(fontScale: Float): Drawable {
+            RuntimeEnvironment.setFontScale(fontScale)
+            val panel = inflate()
+            renderPanel(panel, private, null, null)
+            return panel.findViewById<TextView>(R.id.retention_notice).compoundDrawablesRelative[0]
+        }
+        fun pixels(drawable: Drawable): IntArray {
+            val image = Bitmap.createBitmap(drawable.bounds.width(), drawable.bounds.height(), Bitmap.Config.ARGB_8888)
+            drawable.draw(Canvas(image))
+            return IntArray(image.width * image.height).also { image.getPixels(it, 0, image.width, 0, 0, image.width, image.height) }
+        }
+        val large = lock(2f)
+        val largePixels = pixels(large)
+        val small = lock(1f)
+        val context = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_Dictation)
+        val fresh = Drawable.createFromXml(context.resources, context.resources.getXml(R.drawable.ic_lock), context.theme)
+        fresh.bounds = small.bounds
+        assertArrayEquals(pixels(fresh), pixels(small))
+        // The larger lock is still referenced here, so the cache kept it throughout.
+        assertTrue(large.bounds.width() > small.bounds.width() && largePixels.size > small.bounds.width() * small.bounds.height())
     }
 }
