@@ -301,6 +301,11 @@ class PhoneTests(unittest.TestCase):
                 self.call(*argv)
         self.assertIn('usage', self.call('help'))
 
+    def test_help_teaches_the_owner_session_order_and_receipt_rollover(self):
+        usage = self.call('help')['usage']
+        for text in ('PhoneReadyTest', 'one batched run', '.prev.jsonl'):
+            self.assertIn(text, usage)
+
 
 class ScriptedRunner:
     """Scripted subprocess.run replacement; records every argv."""

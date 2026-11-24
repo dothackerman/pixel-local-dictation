@@ -12,7 +12,15 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Collection check only. Owner handoffs and their interpretation require the protocol. */
+/**
+ * Collection check only. Protocol: build, `phone check`, then `phone run` one of the two methods
+ * with the probe editor visible and the phone awake. Within the 90 s window, twice: tap FUTO's
+ * microphone, wait for our panel, Cancel. Then pull `files/lab/editor-geometry.jsonl` and the IME
+ * receipts into a `corpus/` visit directory. A pass validates collection only: the owner confirms
+ * the handoffs and two matching panel requests, never inferred from geometry. The callback method
+ * changes Android's animation routing, so compare the two as separate hosts. Polling sees framework
+ * geometry, not compositor motion, and the probe is not the original editor.
+ */
 @RunWith(AndroidJUnit4::class)
 class EditorGeometryTest {
     @Test fun collectManualKeyboardHandoffs() = collect(false)

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import jvm_environment, staged_errors
+from quality import jvm_environment, preparation_problem, staged_errors
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -36,6 +36,35 @@ class StagedQualityTests(unittest.TestCase):
             self.assertEqual(staged_errors(root), [])
             (root / 'tools/test_new.py').write_text('new test')
             self.assertTrue(staged_errors(root))
+
+
+class PreparationTests(unittest.TestCase):
+    """An unprepared worktree fails at once with the fix, not later inside Gradle."""
+    setUp = StagedQualityTests.setUp
+
+    def repository(self, base):
+        main = base / 'main'
+        subprocess.run(['git', 'init', '-q', str(main)], check=True)
+        subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'],
+                       cwd=main, check=True)
+        for name in ('local.properties', 'app/libs/a.aar', 'app/src/main/assets/m'):
+            (main / name).parent.mkdir(parents=True, exist_ok=True)
+            (main / name).write_text('x')
+        worktree = base / 'wt'
+        subprocess.run(['git', 'worktree', 'add', '-q', '--detach', str(worktree)], cwd=main, check=True)
+        return main, worktree
+
+    def test_fresh_worktree_names_the_setup_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main, worktree = self.repository(Path(directory))
+            self.assertIsNone(preparation_problem(main))
+            self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree))
+            for name in ('local.properties', 'app/libs', 'app/src/main/assets'):
+                (worktree / name).parent.mkdir(parents=True, exist_ok=True)
+                (worktree / name).symlink_to(main / name)
+            self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree), 'jars still missing')
+            (worktree / '.gradle/robolectric').mkdir(parents=True)
+            self.assertIsNone(preparation_problem(worktree))
 
 
 class JvmEnvironmentTests(unittest.TestCase):

@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
-# Installer-owned copies are never hand-edited (DEVELOPMENT.md, Agent skills); their links are theirs.
+# Installer-owned copies are never hand-edited; their links are theirs.
 VENDORED = ('.agents/skills/', '.claude/skills/', '.claude/agents/', 'licenses/')
 LINK = re.compile(r'!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 FENCE = re.compile(r'^\s*(```|~~~)')

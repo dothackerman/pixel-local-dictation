@@ -112,7 +112,7 @@ components:
 
 **Creative North Star: "Kraft card printed in two inks."** Red-orange (primary) and rind green (secondary) on a warm card ground, a condensed display face for everything that is a name, a time or a count, and a plain sans for what the owner reads. One fixed **light** scheme for every surface: the recording panel, inline choice, Settings, Dictionary (list, add/edit sheet, empty state), History (list, detail, empty state, status slot, dialogs, marks sheet) and Snackbars. Benchmark-only guide screens may stay plain. The light panel next to a dark keyboard is deliberate (owner decision).
 
-Approved direction and frames: [docs/design/issue-36/direction.md](docs/design/issue-36/direction.md), `direction.html` (#36; its marks sheet proposal, now labelled "Marks explained", is approved; the panel's Undo after Discard was approved, built, then removed by the owner on 2026-11-11: Discard is final at once).
+Approved direction and frames: `docs/design/issue-36/direction.md` and `direction.html` (removed 2026-11-24, in Git history; #36; its marks sheet proposal, now labelled "Marks explained", is approved; the panel's Undo after Discard was approved, built, then removed by the owner on 2026-11-11: Discard is final at once).
 
 Source of truth: `app/src/main/res/values/{colors,themes,type}.xml`, `res/font/*`, `res/drawable/ic_*.xml`, the layouts named below, `RecordingPanel.kt` (`renderPanel`), `PanelDisclosure.kt`, `RecordingRingView.kt`, `PreparingArcView.kt`, `HistoryRows.kt` (`HistoryMarker`). Frontmatter keeps Android dp/sp.
 

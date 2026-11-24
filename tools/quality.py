@@ -25,6 +25,19 @@ def staged_errors(root=ROOT):
     return errors
 
 
+def preparation_problem(root=ROOT):
+    """A linked worktree lacks the links tools/prepare_checkout.py makes; the main checkout owns its inputs."""
+    root = Path(root)
+    git = lambda option: subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', option],
+                                                 cwd=root, text=True).strip()
+    if git('--git-dir') == git('--git-common-dir'):
+        return None
+    needed = ('local.properties', 'app/libs', 'app/src/main/assets', str(ROBOLECTRIC_JARS))
+    missing = [name for name in needed if not (root / name).exists()]
+    return ('unprepared worktree, missing ' + ', '.join(missing)
+            + ': run python3 tools/prepare_checkout.py') if missing else None
+
+
 def jvm_environment(root, environment):
     """JVM options for the agent sandbox: temp files under $TMPDIR and, once
     tools/prepare_checkout.py linked the jars, Robolectric without its $HOME lock."""
@@ -49,6 +62,9 @@ def main():
     conventional_sdk = Path.home() / 'Android/Sdk'
     if 'ANDROID_HOME' not in environment and conventional_sdk.is_dir():
         environment['ANDROID_HOME'] = str(conventional_sdk)
+    if problem := preparation_problem():
+        print(problem, file=sys.stderr)
+        return 1
     index_before = subprocess.check_output(['git', 'ls-files', '--stage'], cwd=ROOT) if args.staged else None
     if args.staged:
         errors = staged_errors()

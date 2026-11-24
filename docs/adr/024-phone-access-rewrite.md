@@ -68,6 +68,6 @@ Open:
 ## Status (2026-11-01)
 
 - "`CLAUDE.md` symlinked" above is superseded: the installer writes regular `AGENTS.md`/`CLAUDE.md` copies (Harness, 26 October).
-- Operating guidance lives in `AGENTS.md`, [DEVELOPMENT.md](../../DEVELOPMENT.md#phone-lab-operations) and `phone help`; README no longer has a phone section.
+- Operating guidance lives in `AGENTS.md`, `DEVELOPMENT.md` (removed 2026-11-24; its phone guidance is in `phone help`) and `phone help`; README no longer has a phone section.
 - `tools/encoder_probe.py`, named above as an example host tool, is retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)).
 - Status unverified: the git interim (`git *` unsandboxed) is still the operating rule in `AGENTS.md`; Codex verification and the upstream report are not recorded.

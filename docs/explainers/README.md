@@ -1,9 +1,0 @@
-# Explainers
-
-Standalone beginner pages, one folder each, `index.html` opens in a browser.
-Terms follow [GLOSSARY.md](../../GLOSSARY.md). Findings live in `docs/adr/` and `docs/research/`;
-an explainer only teaches them.
-
-| Explainer | Teaches |
-|---|---|
-| [Teach the engine your words](next-direction/index.html) | What a take, a chunk and the model parts are; why the dictionary, not FP32 or beam search, carries the accuracy gain; the dictionary-boosting direction and the laptop-first test loop ([ADR-026](../adr/026-dictionary-first.md), spec #11) |
