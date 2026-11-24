@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import staged_errors
+from quality import jvm_environment, preparation_problem, staged_errors
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -36,3 +36,47 @@ class StagedQualityTests(unittest.TestCase):
             self.assertEqual(staged_errors(root), [])
             (root / 'tools/test_new.py').write_text('new test')
             self.assertTrue(staged_errors(root))
+
+
+class PreparationTests(unittest.TestCase):
+    """An unprepared worktree fails at once with the fix, not later inside Gradle."""
+    setUp = StagedQualityTests.setUp
+
+    def repository(self, base):
+        main = base / 'main'
+        subprocess.run(['git', 'init', '-q', str(main)], check=True)
+        subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'],
+                       cwd=main, check=True)
+        for name in ('local.properties', 'app/libs/a.aar', 'app/src/main/assets/m'):
+            (main / name).parent.mkdir(parents=True, exist_ok=True)
+            (main / name).write_text('x')
+        worktree = base / 'wt'
+        subprocess.run(['git', 'worktree', 'add', '-q', '--detach', str(worktree)], cwd=main, check=True)
+        return main, worktree
+
+    def test_fresh_worktree_names_the_setup_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main, worktree = self.repository(Path(directory))
+            self.assertIsNone(preparation_problem(main))
+            self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree))
+            for name in ('local.properties', 'app/libs', 'app/src/main/assets'):
+                (worktree / name).parent.mkdir(parents=True, exist_ok=True)
+                (worktree / name).symlink_to(main / name)
+            self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree), 'jars still missing')
+            (worktree / '.gradle/robolectric').mkdir(parents=True)
+            self.assertIsNone(preparation_problem(worktree))
+
+
+class JvmEnvironmentTests(unittest.TestCase):
+    def test_sandbox_temp_dir_and_prepared_robolectric_jars_reach_every_jvm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.gradle/robolectric').mkdir(parents=True)
+            env = jvm_environment(root, {'TMPDIR': '/sandbox/tmp', 'JAVA_TOOL_OPTIONS': '-Down=1'})
+            self.assertEqual(env['JAVA_TOOL_OPTIONS'].split(), [
+                '-Djava.io.tmpdir=/sandbox/tmp', '-Drobolectric.offline=true',
+                '-Drobolectric.dependency.dir=' + str(root / '.gradle/robolectric'), '-Down=1'])
+
+    def test_unprepared_checkout_without_tmpdir_keeps_the_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(jvm_environment(Path(directory), {'HOME': '/h'}), {'HOME': '/h'})

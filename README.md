@@ -14,7 +14,7 @@ tools/set-signing-password.sh
 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease
 ```
 
-[assets.lock](assets.lock) pins downloaded assets. The selected FP32 baseline requires additional local model and dictionary provisioning; building the APK alone does not reproduce the installed baseline. See [build details](DEVELOPMENT.md#build-and-host-checks) and [baseline configuration](DEVELOPMENT.md#current-design).
+[assets.lock](assets.lock) pins downloaded assets. The selected FP32 baseline requires additional local model and dictionary provisioning; building the APK alone does not reproduce the installed baseline.
 
 ## Use
 
@@ -27,7 +27,7 @@ Enable the app’s input method, grant microphone permission, and enable FUTO Ke
 
 English or German is selected automatically, with one language per take. German output uses Swiss spelling (`ss` instead of `ß`). Mixed-language conversation and speaker diarization are outside scope.
 
-To return to FUTO’s built-in recognition, disable its **Disable built-in voice input** setting before removing this app. See [daily use and rollback](DEVELOPMENT.md#daily-use-and-rollback).
+To return to FUTO’s built-in recognition, disable its **Disable built-in voice input** setting before removing this app.
 
 ## Status and limits
 
@@ -35,7 +35,7 @@ The provisional baseline uses Parakeet v3 FP32 on CPU, beam 8 and dictionary sco
 
 Recognition can still change meaning, including negation, numbers and units. Review dictated text before sending it. Dictionary edits are supported, but arbitrary new entries have not been accuracy-validated. Startup delays, longer battery-only model retention and some keyboard handoff behavior remain unresolved or unverified. Recorded timings are specific observations, not performance guarantees.
 
-See [the baseline decision and evidence](docs/adr/026-dictionary-first.md), [dictionary behavior](docs/adr/027-editable-dictionary.md), and [known gaps](DEVELOPMENT.md#known-gaps). Current work is tracked in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues).
+See [the baseline decision and evidence](docs/adr/026-dictionary-first.md) and [dictionary behavior](docs/adr/027-editable-dictionary.md). Current work is tracked in [GitHub Issues](https://github.com/dothackerman/pixel-local-dictation/issues).
 
 ## Privacy
 
@@ -47,7 +47,7 @@ Personal recordings, transcripts, dictionaries, signing credentials and evaluati
 
 ## Contribute
 
-Read [AGENTS.md](AGENTS.md) before agent-assisted work. The [development reference](DEVELOPMENT.md) preserves requirements, architecture, phone procedures and evaluation limits; [ADRs](docs/adr/) explain the decisions behind them.
+Read [AGENTS.md](AGENTS.md) before agent-assisted work. [ADRs](docs/adr/) record the decisions and their evidence.
 
 Run host checks with:
 

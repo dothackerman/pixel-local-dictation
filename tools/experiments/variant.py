@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The closed variant schema of the experiment loop (docs/autoresearch.md).
+"""The closed variant schema of the experiment loop (its spec: Git history before 7319ccd).
 
 A variant is a JSON file that fully describes one decode pipeline. The same file is read by the
 laptop runner (tools/experiments/pipeline.py) and by the phone (app: Variant.kt), so every key here has a

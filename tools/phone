@@ -577,7 +577,13 @@ USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON objec
   snapshot NAME | restore NAME    retained APKs + files/, shared_prefs/, databases/; reports what it cannot restore
   uninstall                       needs corpus/lab/.allow-uninstall created by the user
 Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
-install, restore, stop, uninstall refuse while the keyboard is in use."""
+install, restore, stop, uninstall refuse while the keyboard is in use.
+Visit: snapshot NAME, check, install, push DIR, run, pull, restore NAME.
+Owner present (phone time is scarce): build, check, install and push before asking; the owner
+only unlocks, keeps FUTO selected and the screen awake; run ch.og.dictation.PhoneReadyTest
+(one NOT READY line per unmet precondition), then one batched run A,B,C; analyse afterwards.
+Receipts in files/lab roll over at 2 MiB into NAME.prev.jsonl (one older generation):
+pull NAME.jsonl and NAME.prev.jsonl right after measuring."""
 
 
 def dispatch(argv, phone):

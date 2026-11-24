@@ -2,7 +2,7 @@
 """Build the public regression guard once, on the laptop (setup step, not part of the loop).
 
 Picks a fixed sample of read-speech clips, 5-20 s long, from two public test sets that were
-downloaded and pinned by tools/fetch-experiment-assets.sh:
+downloaded once and pinned in experiments.lock:
   German:  Multilingual LibriSpeech, test split (CC BY 4.0), models/guard-src/mls-german-test.parquet
   English: LibriSpeech test-clean (CC BY 4.0), models/guard-src/test-clean.tar.gz
 Writes models/guard/<lang>/<id>.wav (16 kHz mono PCM) and models/guard/refs.tsv
