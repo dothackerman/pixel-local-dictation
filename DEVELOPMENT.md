@@ -161,8 +161,15 @@ cross-window behavior.
    shipped selective encoder comes from `tools/assets/export-fp32.sh` and `tools/assets/quant_variant.py`;
    a clean full FP32 export is unverified.
 2. `tools/set-signing-password.sh` configures signing ([app/build.gradle.kts](app/build.gradle.kts)).
-   The host gate's Gradle step also needs it, so a fresh worktree cannot commit until signing is set.
+   The host gate's Gradle step also needs it; a fresh worktree links it with the command below.
 3. `ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleRelease`.
+
+`python3 tools/prepare_checkout.py` makes a checkout pass the host gate inside the agent
+sandbox, offline: in a worktree it links (never copies) the main checkout's `local.properties`,
+`app/libs/` and `app/src/main/assets/`, and in any checkout it links the cached Robolectric
+jar into `.gradle/robolectric/`. Missing inputs or caches fail it before any write, naming the
+fill command (run outside the sandbox). It does no gate installation (ADR-024). Rerun after a
+Robolectric upgrade.
 
 `python3 tools/quality.py` is the host gate (no device tests). The pre-commit hook runs it
 with `--staged`: tracked edits and new source, test and build inputs must be staged, so
@@ -173,7 +180,7 @@ installers ([repo_checks.py](tools/repo_checks.py)).
 Repository folders: `app/` (the app; Kotlin packages by feature, tests mirror them),
 `docs/adr/` (decisions; numbers never change), `docs/research/`, `docs/design/`,
 `docs/explainers/`, `native-role-profiler/` (native profiler sources), `variants/`.
-`tools/` holds the gate (`quality.py`, `repo_checks.py`), the shared lab-receipt reader
+`tools/` holds the gate (`quality.py`, `repo_checks.py`), the sandbox setup (`prepare_checkout.py`), the shared lab-receipt reader
 (`lab_receipts.py`), the phone wrapper (`phone`, `gate/`,
 `git-hooks/`; paths fixed by ADR-024) and Python grouped by job, each folder with its tests:
 `evaluation/` (scoring, evaluators, guard set, baseline promotion, visit summary),

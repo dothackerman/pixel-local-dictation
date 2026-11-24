@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from prepare_checkout import ROBOLECTRIC_JARS
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -23,11 +25,27 @@ def staged_errors(root=ROOT):
     return errors
 
 
+def jvm_environment(root, environment):
+    """JVM options for the agent sandbox: temp files under $TMPDIR and, once
+    tools/prepare_checkout.py linked the jars, Robolectric without its $HOME lock."""
+    options = []
+    if environment.get('TMPDIR'):
+        options.append('-Djava.io.tmpdir=' + environment['TMPDIR'])
+    jars = Path(root) / ROBOLECTRIC_JARS
+    if jars.is_dir():
+        options += ['-Drobolectric.offline=true', '-Drobolectric.dependency.dir=' + str(jars)]
+    if not options:
+        return environment
+    if environment.get('JAVA_TOOL_OPTIONS'):
+        options.append(environment['JAVA_TOOL_OPTIONS'])
+    return {**environment, 'JAVA_TOOL_OPTIONS': ' '.join(options)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--staged', action='store_true')
     args = parser.parse_args()
-    environment = os.environ.copy()
+    environment = jvm_environment(ROOT, os.environ.copy())
     conventional_sdk = Path.home() / 'Android/Sdk'
     if 'ANDROID_HOME' not in environment and conventional_sdk.is_dir():
         environment['ANDROID_HOME'] = str(conventional_sdk)

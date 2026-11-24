@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import staged_errors
+from quality import jvm_environment, staged_errors
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -36,3 +36,18 @@ class StagedQualityTests(unittest.TestCase):
             self.assertEqual(staged_errors(root), [])
             (root / 'tools/test_new.py').write_text('new test')
             self.assertTrue(staged_errors(root))
+
+
+class JvmEnvironmentTests(unittest.TestCase):
+    def test_sandbox_temp_dir_and_prepared_robolectric_jars_reach_every_jvm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / '.gradle/robolectric').mkdir(parents=True)
+            env = jvm_environment(root, {'TMPDIR': '/sandbox/tmp', 'JAVA_TOOL_OPTIONS': '-Down=1'})
+            self.assertEqual(env['JAVA_TOOL_OPTIONS'].split(), [
+                '-Djava.io.tmpdir=/sandbox/tmp', '-Drobolectric.offline=true',
+                '-Drobolectric.dependency.dir=' + str(root / '.gradle/robolectric'), '-Down=1'])
+
+    def test_unprepared_checkout_without_tmpdir_keeps_the_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(jvm_environment(Path(directory), {'HOME': '/h'}), {'HOME': '/h'})
