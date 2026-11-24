@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryNotice
 import ch.og.dictation.history.HistoryStore
@@ -25,7 +26,7 @@ import org.junit.runner.RunWith
 class HistoryUndoDeleteTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val suffix = UUID.randomUUID().toString()
-    private val root get() = File(context.noBackupFilesDir, "history-ui-test-$suffix")
+    private val root get() = context.wiring.storage.testHistoryRoot("history-ui-test-$suffix")
     private val store get() = HistoryStore(root)
     private val id = UUID.randomUUID().toString()
     private val other = UUID.randomUUID().toString()

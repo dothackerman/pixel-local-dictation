@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryActivity
 import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryNotice
@@ -37,7 +38,7 @@ class HistoryErrorTest {
     }
     @Test fun malformedHistoryShowsRetryAndPreservesGoodRecord() {
         val context = instrumentation.targetContext
-        val root = File(context.noBackupFilesDir, "history-ui-test").apply { mkdirs() }
+        val root = context.wiring.storage.testHistoryRoot("history-ui-test").apply { mkdirs() }
         val id = UUID.randomUUID().toString()
         val goodId = UUID.randomUUID().toString()
         val good = HistoryEntry(goodId, 123, "Synthetic preserved record")
@@ -56,7 +57,7 @@ class HistoryErrorTest {
     }
     @Test fun emptyHistoryIsNotAReadError() {
         val context = instrumentation.targetContext
-        val root = File(context.noBackupFilesDir, "history-ui-test")
+        val root = context.wiring.storage.testHistoryRoot("history-ui-test")
         root.deleteRecursively()
         val activity = launch()
         try {
@@ -77,7 +78,7 @@ class HistoryErrorTest {
         val notices = historyNotices(context)
         val original = notices.pending()
         HistoryNotice.entries.forEach(notices::dismiss)
-        val root = File(context.noBackupFilesDir, "history-ui-test")
+        val root = context.wiring.storage.testHistoryRoot("history-ui-test")
         val id = UUID.randomUUID().toString()
         val store = HistoryStore(root)
         store.save(HistoryEntry(id, 123, "Synthetic deletion test"))
@@ -107,7 +108,7 @@ class HistoryErrorTest {
     }
     @Test fun staleDetailCannotCopyAfterTheTranscriptIsGone() {
         val context = instrumentation.targetContext
-        val root = File(context.noBackupFilesDir, "history-ui-test")
+        val root = context.wiring.storage.testHistoryRoot("history-ui-test")
         val id = UUID.randomUUID().toString()
         val store = HistoryStore(root)
         store.save(HistoryEntry(id, 123, "Synthetic deletion test"))

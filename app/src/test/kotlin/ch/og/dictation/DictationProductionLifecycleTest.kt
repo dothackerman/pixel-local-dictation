@@ -16,6 +16,7 @@ import ch.og.dictation.panel.RecordingRingView
 import ch.og.dictation.recognition.Chunk
 import ch.og.dictation.recognition.DictationRuntime
 import ch.og.dictation.recognition.Engine
+import ch.og.dictation.storage.Storage
 import ch.og.dictation.recognition.Recognizer
 import ch.og.dictation.recognition.Segmenter
 import ch.og.dictation.recognition.Variant
@@ -135,7 +136,7 @@ class DictationProductionLifecycleTest {
         wiring = RuntimeEnvironment.getApplication().overrideWiring {
             it.with(engine = Engine.prepared(runtime), recorderFactory = { Recorder { devices.remove() } })
         }
-        root = RuntimeEnvironment.getApplication().wiring.historyRoot
+        root = RuntimeEnvironment.getApplication().wiring.storage.historyRoot
         HistoryIo.executor.submit { val store = HistoryIo.store(root); store.clear(store.clearableIds()) }.get(2, TimeUnit.SECONDS)
         HistoryNotice.entries.forEach { historyNotices(RuntimeEnvironment.getApplication()).dismiss(it) }
     }
@@ -313,8 +314,9 @@ class DictationProductionLifecycleTest {
 
     /** Device demos keep synthetic takes out of the owner's History (same isolation as the History UI tests). */
     @Test fun testHistoryRootKeepsTheTakeOutOfTheRealHistory() {
-        val isolated = File(RuntimeEnvironment.getApplication().noBackupFilesDir, "history-ui-test-hook")
-        wiring.set { it.with(historyRoot = isolated) }
+        val storage = Storage.under(File(RuntimeEnvironment.getApplication().cacheDir, "history-ui-test-hook"))
+        val isolated = storage.historyRoot
+        wiring.set { it.with(storage = storage) }
         val input = Input()
         devices.add(input)
         val (service, view) = service(editor())
@@ -621,7 +623,7 @@ class DictationProductionLifecycleTest {
     @Test fun statusLineSaysTheTextIsNotSavedWhenTheEligibleSaveFailed() {
         val unwritable = java.nio.file.Files.createTempFile("history-unwritable", ".file").toFile()
         try {
-            wiring.set { it.with(historyRoot = unwritable) }
+            wiring.set { it.with(storage = Storage.under(unwritable)) }
             val (service, view, _) = deadConnectionAtStop(privateField = false)
             assertEquals(service.getString(R.string.status_unable_unsaved), status(view))
             assertTrue(rows().isEmpty())

@@ -998,7 +998,7 @@ class DictationImeService : InputMethodService() {
                     startup?.timing(traceTake, event)
                 }
             }
-            val historyRoot = wiring.historyRoot
+            val historyRoot = wiring.storage.historyRoot
             val startedTake = wiring.engine.openTake { runtime, receipt ->
                 identity = receipt
                 val history = HistoryTakeOutput(output,

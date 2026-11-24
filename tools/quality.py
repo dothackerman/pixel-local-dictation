@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Host-only quality gate: Python regressions, Kotlin unit tests and Android lint.
+"""Host-only quality gate: Python regressions (host checks included), Kotlin unit tests for the lab
+build and release, Android lint and the build markers of the merged manifests.
 
 --staged requires tracked worktree/index parity and staged source/test inputs.
 It tests this checkout; stage relevant files first. No instrumentation runs.
@@ -72,8 +73,12 @@ def main():
             print('\n'.join(errors), file=sys.stderr)
             return 1
     for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
-                    [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest',
-                     'compileBenchmarkAndroidTestKotlin', 'lintBenchmark']):
+                    # Release is compiled and its own host tests assert the owner layout and marker (ADR-028).
+                    [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'testReleaseUnitTest',
+                     'compileBenchmarkAndroidTestKotlin', 'lintBenchmark', 'processReleaseManifest',
+                     'processBenchmarkManifest', 'processBenchmarkAndroidTestManifest'],
+                    # Release owner; lab build and its test APK test and equal; one build.
+                    [sys.executable, str(ROOT / 'tools/build_marker.py'), '--check']):
         result = subprocess.run(command, cwd=ROOT, env=environment)
         if result.returncode:
             return result.returncode

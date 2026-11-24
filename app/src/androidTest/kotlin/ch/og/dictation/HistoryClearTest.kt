@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryClearStatus
 import ch.og.dictation.history.HistoryCompletion
 import ch.og.dictation.history.HistoryEntry
@@ -33,7 +34,7 @@ class HistoryClearTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val rootSuffix = UUID.randomUUID().toString()
-    private val root get() = File(context.noBackupFilesDir, "history-ui-test-$rootSuffix")
+    private val root get() = context.wiring.storage.testHistoryRoot("history-ui-test-$rootSuffix")
     private val registeredIds = linkedSetOf<String>()
 
     private fun registerActive(id: String) {

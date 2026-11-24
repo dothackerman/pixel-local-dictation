@@ -109,7 +109,7 @@ open class SelfRotationProbeActivity : Activity() {
         /**
          * Intent extra: an ordinary field whose takes are kept in History, so a test can reach the
          * History save acknowledgement. The test points the service at an isolated test History
-         * root (Wiring.historyRoot, through WiringOverride) and clears it; the owner's History is never used.
+         * root (Storage.withTestHistory, through WiringOverride) and clears it.
          */
         const val HISTORY_ELIGIBLE = "historyEligible"
     }

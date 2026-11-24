@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryActivity
 import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryStore
@@ -19,7 +20,7 @@ class HistoryLayoutTest {
     @Test fun historyListAndDetailControlsFitLargeTypeInTheOneScheme() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val root = java.io.File(context.noBackupFilesDir, "history-ui-test-layout")
+        val root = context.wiring.storage.testHistoryRoot("history-ui-test-layout")
         root.deleteRecursively()
         val entry = HistoryEntry(java.util.UUID.randomUUID().toString(), 1, "Synthetic layout transcript")
         HistoryStore(root).save(entry)

@@ -7,6 +7,7 @@ import ch.og.dictation.recognition.DictationRuntime
 import ch.og.dictation.recognition.Engine
 import ch.og.dictation.recognition.Recognizer
 import ch.og.dictation.recognition.Segmenter
+import ch.og.dictation.storage.Storage
 import ch.og.dictation.recognition.Variant
 import java.io.File
 import java.util.concurrent.Executor
@@ -33,15 +34,15 @@ class WiringTest {
         }
     })
 
-    @Test fun oneValuePerProcessWithTheOwnersHistoryRoot() {
+    @Test fun oneValuePerProcessWithOneStorage() {
         assertSame(app.wiring, app.wiring)
-        assertEquals(File(app.noBackupFilesDir, "history"), app.wiring.historyRoot)
+        assertSame(app.wiring.storage, app.wiring.storage)
         assertSame("the engine is created once", app.wiring.engine, app.wiring.engine)
     }
 
     @Test fun derivedValuesShareTheEngineUnlessReplaced() {
         val base = app.wiring
-        val derived = base.with(historyRoot = File("elsewhere"))
+        val derived = base.with(storage = Storage.under(File(app.cacheDir, "elsewhere")))
         assertSame(base.engine, derived.engine)
         val prepared = Engine.prepared(runtime())
         assertSame(prepared, base.with(engine = prepared).engine)
@@ -50,11 +51,11 @@ class WiringTest {
 
     @Test fun scopedReplacementAlwaysRestoresTheValueItStartedFrom() {
         val original = app.wiring
-        val isolated = File(app.noBackupFilesDir, "history-wiring-test")
-        val scope = app.overrideWiring { it.with(historyRoot = isolated) }
-        assertEquals(isolated, app.wiring.historyRoot)
+        val isolated = Storage.under(File(app.cacheDir, "history-wiring-test"))
+        val scope = app.overrideWiring { it.with(storage = isolated) }
+        assertEquals(isolated.historyRoot, app.wiring.storage.historyRoot)
         scope.set { it.with(recorderFactory = { error("no microphone in this test") }) }
-        assertEquals("later changes derive from the current value", isolated, app.wiring.historyRoot)
+        assertSame("later changes derive from the current value", isolated, app.wiring.storage)
         scope.close()
         assertSame(original, app.wiring)
     }

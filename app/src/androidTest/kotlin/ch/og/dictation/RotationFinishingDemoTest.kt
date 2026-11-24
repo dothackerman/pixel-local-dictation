@@ -1,5 +1,7 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
+import ch.og.dictation.storage.withTestHistory
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.diagnostics.RotationEvent
@@ -38,8 +40,8 @@ import org.junit.runner.RunWith
  * room audio, nothing saved as audio). Each case asserts one take, one capture start (no restarted
  * microphone), at most one insertion (exactly one where Stop or Keep finishing was chosen), the
  * panel or choice back, and FUTO restored. Cases that reach the History save acknowledgement use
- * an ordinary field whose takes go to an isolated test History root (like the History UI tests),
- * never the owner's History. Sanitized trace rows and a summary go to files/lab only.
+ * an ordinary field whose takes go to their own test History root (like the History UI tests).
+ * Sanitized trace rows and a summary go to files/lab only.
  *
  * Owner preconditions: phone unlocked, screen on, FUTO the current keyboard, the fixture pushed
  * to files/lab/issue36-inputs (#54). Run: `phone run ch.og.dictation.RotationFinishingDemoTest`.
@@ -49,7 +51,7 @@ class RotationFinishingDemoTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
-    private val testHistory = File(context.noBackupFilesDir, "history-ui-test-demo53")
+    private val testHistory = context.wiring.storage.testHistoryRoot("history-ui-test-demo53")
 
     /** Rotate right after Stop, while the final decode is still running. */
     @Test fun recreatedEditorRotationBeforeFinalDecodeInsertsOnce() = demo("demo53-hidden-before-decode") {
@@ -228,7 +230,7 @@ class RotationFinishingDemoTest {
         override fun release() {}
     }
 
-    /** The isolated test History only (synthetic speech); the owner's History is never opened. */
+    /** This test's own History root (synthetic speech). */
     private fun testHistoryRows(): List<HistoryEntry> = HistoryIo.executor.submit<List<HistoryEntry>> {
         HistoryIo.store(testHistory).list()
     }.get(10, TimeUnit.SECONDS)
@@ -275,8 +277,8 @@ class RotationFinishingDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         starts.set(0)
-        // Fixture audio and an isolated History root: the owner's History is never used.
-        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, historyRoot = testHistory) }
+        // Fixture audio and its own test History root.
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, storage = it.storage.withTestHistory("history-ui-test-demo53")) }
         clearTestHistory()
         val run = UUID.randomUUID().toString()
         RotationTrace.beginProbe(case, run)

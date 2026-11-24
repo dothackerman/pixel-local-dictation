@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.wiring
 import ch.og.dictation.history.HistoryIo
@@ -47,7 +48,7 @@ class RecoveryTimingTest {
             val executor = Executors.newSingleThreadExecutor()
             val finished = CountDownLatch(1)
             var result: TakeResult? = null
-            val storage = File(context.noBackupFilesDir, "issue54-timing/$takeId")
+            val storage = context.wiring.storage.testHistoryRoot("issue54-timing/$takeId")
             val store = HistoryStore(storage)
             try {
             val delegate = object : TakeOutput {

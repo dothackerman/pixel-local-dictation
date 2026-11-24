@@ -1,5 +1,7 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.storage.testHistoryRoot
+import ch.og.dictation.wiring
 import ch.og.dictation.R
 import ch.og.dictation.SettingsActivity
 import ch.og.dictation.diagnostics.RotationTrace
@@ -241,7 +243,7 @@ class RotationProbeActivity : Activity() {
             setOnClickListener {
                 val suffix = "guided-visit"
                 HistoryTestActivity.historyRootSuffix = suffix
-                val root = java.io.File(noBackupFilesDir, "history-ui-test-$suffix")
+                val root = wiring.storage.testHistoryRoot("history-ui-test-$suffix")
                 HistoryStore(root).save(HistoryEntry(java.util.UUID.randomUUID().toString(), System.currentTimeMillis(), "Synthetic guided visit row"))
                 startActivity(android.content.Intent(this@RotationProbeActivity, HistoryTestActivity::class.java))
             }

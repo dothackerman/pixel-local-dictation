@@ -64,7 +64,7 @@ open class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); showStored(); showHistoryCount(); showDictionaryCount() }
 
-    protected open fun historyRoot() = wiring.historyRoot
+    protected open fun historyRoot() = wiring.storage.historyRoot
 
     /** The History row shows only how many transcripts are saved; warnings live on the History page. */
     private fun showHistoryCount() {

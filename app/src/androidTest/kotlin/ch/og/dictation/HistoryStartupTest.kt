@@ -4,6 +4,7 @@ import ch.og.dictation.history.HistoryEntry
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryStore
 import ch.og.dictation.history.startHistory
+import ch.og.dictation.storage.testHistoryRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -16,7 +17,7 @@ import org.junit.runner.RunWith
 class HistoryStartupTest {
     @Test fun applicationStartupSurvivesCleanupFailureAndCanRetry() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "history-startup-failure-").toFile()
+        val root = context.wiring.storage.testHistoryRoot("history-startup-failure-${java.util.UUID.randomUUID()}").apply { mkdirs() }
         val entry = HistoryEntry("b3de7a72-84ce-4721-8412-497b90c09315", 123, "synthetic existing data")
         try {
             HistoryStore(root).save(entry)
@@ -33,7 +34,7 @@ class HistoryStartupTest {
     @Test fun applicationStartupRemovesAbandonedTempWithoutOpeningHistory() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertTrue(context.applicationContext is DictationApplication)
-        val root = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "history-startup-").toFile()
+        val root = context.wiring.storage.testHistoryRoot("history-startup-${java.util.UUID.randomUUID()}").apply { mkdirs() }
         val temp = File(root, "abandoned.tmp").apply { writeText("synthetic") }
         try {
             startHistory(owns = true, root = root)

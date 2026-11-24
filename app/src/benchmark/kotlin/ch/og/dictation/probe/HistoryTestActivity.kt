@@ -1,12 +1,13 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.storage.testHistoryRoot
+import ch.og.dictation.wiring
 import ch.og.dictation.history.HistoryActivity
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatDelegate
-import java.io.File
 
 /** Isolated synthetic History for instrumentation. */
 class HistoryTestActivity : HistoryActivity() {
@@ -18,7 +19,6 @@ class HistoryTestActivity : HistoryActivity() {
     }
     override val undoWindowMs: Long get() = undoWindow
     override fun onCreate(savedInstanceState: Bundle?) {
-        refuseOwnersHistory(historyRoot())
         super.onCreate(savedInstanceState)
         // Test window only: the screen cannot time out mid-run (no wake lock, no setting).
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -39,5 +39,5 @@ class HistoryTestActivity : HistoryActivity() {
         } else base
         super.attachBaseContext(themed)
     }
-    override fun historyRoot() = File(noBackupFilesDir, "history-ui-test${historyRootSuffix?.let { "-$it" } ?: ""}")
+    override fun historyRoot() = wiring.storage.testHistoryRoot("history-ui-test${historyRootSuffix?.let { "-$it" } ?: ""}")
 }

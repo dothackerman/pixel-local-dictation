@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryActivity
 import ch.og.dictation.history.HistoryCompletion
 import ch.og.dictation.history.HistoryDelivery
@@ -49,8 +50,8 @@ class SettingsHistoryScreenshotTest {
         val notices = historyNotices(context)
         val originalNotices = notices.pending()
         HistoryNotice.entries.forEach(notices::dismiss)
-        val full = File(context.noBackupFilesDir, "history-ui-test-shots").apply { deleteRecursively() }
-        val empty = File(context.noBackupFilesDir, "history-ui-test-shots-empty").apply { deleteRecursively() }
+        val full = context.wiring.storage.testHistoryRoot("history-ui-test-shots").apply { deleteRecursively() }
+        val empty = context.wiring.storage.testHistoryRoot("history-ui-test-shots-empty").apply { deleteRecursively() }
         // Today, yesterday and an earlier day, so the day headers read as on the phone (#36 mock).
         val now = System.currentTimeMillis()
         val entries = listOf(
@@ -60,7 +61,7 @@ class SettingsHistoryScreenshotTest {
             HistoryEntry(UUID.randomUUID().toString(), now - 172_800_000, "Remind me to call the dentist about the appointment next week.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.INTERRUPTED, 1),
         )
         entries.forEach { HistoryStore(full).save(it) }
-        val marks = File(context.noBackupFilesDir, "history-ui-test-shots-marks").apply { deleteRecursively() }
+        val marks = context.wiring.storage.testHistoryRoot("history-ui-test-shots-marks").apply { deleteRecursively() }
         val markEntries = linkedMapOf(
             HistoryMarker.RECORDING to HistoryEntry(UUID.randomUUID().toString(), now - 30_000, "Still talking about the garden plan and the new", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.RECORDING),
             HistoryMarker.PREPARING to HistoryEntry(UUID.randomUUID().toString(), now - 90_000, "Book the train to Bern for Friday morning.", HistoryDelivery.NOT_ATTEMPTED, HistoryCompletion.FINISHING),

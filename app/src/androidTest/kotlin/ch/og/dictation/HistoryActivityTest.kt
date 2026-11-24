@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryCompletion
 import ch.og.dictation.history.HistoryDelivery
 import ch.og.dictation.history.HistoryEntry
@@ -64,13 +65,13 @@ class HistoryActivityTest {
         error("Detail metadata never contained: $text (was: ${detailMeta()})")
     }
     private fun save(vararg entries: HistoryEntry) {
-        val store = HistoryStore(File(context.noBackupFilesDir, "history-ui-test"))
+        val store = HistoryStore(context.wiring.storage.testHistoryRoot("history-ui-test"))
         val ready = CountDownLatch(1)
         HistoryIo.executor.execute { entries.forEach(store::save); ready.countDown() }
         assertTrue(ready.await(10, TimeUnit.SECONDS))
     }
     private fun deleteAll(vararg ids: String) {
-        val store = HistoryStore(File(context.noBackupFilesDir, "history-ui-test"))
+        val store = HistoryStore(context.wiring.storage.testHistoryRoot("history-ui-test"))
         val done = CountDownLatch(1)
         HistoryIo.executor.execute { ids.forEach(store::delete); done.countDown() }
         done.await(10, TimeUnit.SECONDS)
@@ -119,7 +120,7 @@ class HistoryActivityTest {
 
     @Test fun liveAndAbandonedCheckpointsShowTheirCompletionTruth() {
         val id = UUID.randomUUID().toString()
-        val store = HistoryStore(File(context.noBackupFilesDir, "history-ui-test"))
+        val store = HistoryStore(context.wiring.storage.testHistoryRoot("history-ui-test"))
         HistoryProcess.owner.register(id)
         val ready = CountDownLatch(1)
         HistoryIo.executor.execute {
@@ -219,7 +220,7 @@ class HistoryActivityTest {
 
     @Test fun rejectedTranscriptCanBeReadCopiedAndDeleted() {
         val id = UUID.randomUUID().toString()
-        val store = HistoryStore(File(context.noBackupFilesDir, "history-ui-test"))
+        val store = HistoryStore(context.wiring.storage.testHistoryRoot("history-ui-test"))
         val text = "Synthetic History test\nFull second line"
         save(HistoryEntry(id, 123, text))
         HistoryTestActivity.undoWindow = 400

@@ -38,7 +38,7 @@ class HistoryScreenTest {
 
     @Before fun seed() {
         app = RuntimeEnvironment.getApplication()
-        root = app.wiring.historyRoot
+        root = app.wiring.storage.historyRoot
         root.deleteRecursively()
         HistoryNotice.entries.forEach(historyNotices(app)::dismiss)
         HistoryStore(root).save(HistoryEntry(a, 200, "First synthetic transcript", HistoryDelivery.ACCEPTED))
