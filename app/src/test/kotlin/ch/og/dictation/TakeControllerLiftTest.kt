@@ -38,7 +38,7 @@ class TakeControllerLiftTest {
     @Test fun rotationHoldStateHasOneOwner() {
         fun fields(name: String) = Regex("""^\s*(?:private |internal )?var (\w+)""", RegexOption.MULTILINE).findAll(code(name)).map { it.groupValues[1] }.toSet()
         val owned = fields("take/RotationHold.kt")
-        assertEquals(setOf("rotationsWhenVisible", "holding", "inEpisode", "authorityMoves", "fieldMismatch", "mismatchFinal", "retargetSettle",
+        assertEquals(setOf("rotationsWhenVisible", "holding", "inEpisode", "authorityMoves", "fieldMismatch", "mismatchFinal",
             "gapExpiredPosted", "panelSettledPosted", "panelRequestPosted"), owned)
         assertEquals(emptySet<String>(), owned intersect (fields("take/TakeController.kt") + fields("DictationImeService.kt")))
         val timed = File(root, "take").walkTopDown().filter { it.isFile && it.extension == "kt" }

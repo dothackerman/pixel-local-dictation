@@ -25,9 +25,6 @@
             android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateUnchanged"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
-        <activity android:name=".probe.SelfRotationProbeActivity$SignalOrder" android:exported="false"
-            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize|stateUnchanged"
-            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".probe.HistoryTestActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
         <activity android:name=".probe.DictionaryLargeTextPreviewActivity" android:exported="false"

@@ -10,8 +10,8 @@ package ch.og.dictation.take
  * - **Gap**: from the first hold of a rotation, [ROTATION_HOLD_GAP_MS] long, once, never extended.
  * - **Settle**: the returned panel stayed visible for [ROTATION_SETTLE_MS]; the rotation is over.
  * - **Field judgement**: an input start inside the hold that is not the take's field withholds
- *   authority (mismatch); the take's own field starting again inside the hold returns it (retarget
- *   settle); a hold that settled on a mismatch is final.
+ *   authority (mismatch); the take's own field starting again inside the hold returns it; a hold
+ *   that settled on a mismatch is final.
  * - **Authority move**: Stop's authority, revoked by the hold, moves to the session the panel returns to.
  *
  * The rotation count is the service's ([RotationCounter]); it is only compared here, never read anew.
@@ -44,8 +44,6 @@ internal class RotationHold(
         private set
     /** The hold settled on a mismatch: it is final, the take's field never regains authority. */
     private var mismatchFinal = false
-    /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
-    private var retargetSettle = false
     private var gapExpiredPosted: TakeScheduler.Cancellable? = null
     private var panelSettledPosted: TakeScheduler.Cancellable? = null
     private var panelRequestPosted: TakeScheduler.Cancellable? = null
@@ -53,9 +51,14 @@ internal class RotationHold(
     /** What an input start inside a hold did to the take's authority ([judge]). */
     enum class Judgement { UNCHANGED, WITHHELD, RETURNED }
 
-    /** A rotation since the panel was last visible, or the take is without authority for another field. */
+    /**
+     * A rotation since the panel was last visible, or the take is without authority for another field.
+     * The take's field back inside the hold stays identified by the count alone: a judgement happens
+     * only inside a hold, a hold only on an identified rotation, and the count is compared with the
+     * same [rotationsWhenVisible] until the panel settles.
+     */
     fun identified(event: EditorEvent? = null): Boolean {
-        if (rotations.changes > rotationsWhenVisible || retargetSettle) return true
+        if (rotations.changes > rotationsWhenVisible) return true
         if (!fieldMismatch) return false
         if (!mismatchFinal) return true // The hold is still open: the editor is still reacting to the rotation.
         // Settled on a mismatch: a start is still judged, but a plain hide is not a rotation (ADR-010: no timer after it).
@@ -80,7 +83,6 @@ internal class RotationHold(
         !same && !fieldMismatch -> { fieldMismatch = true; Judgement.WITHHELD }
         same && fieldMismatch && !mismatchFinal -> {
             fieldMismatch = false
-            retargetSettle = true
             if (stopWait) authorityMoves = true
             Judgement.RETURNED
         }
@@ -139,7 +141,6 @@ internal class RotationHold(
     fun settle() {
         end()
         rotationsWhenVisible = rotations.changes
-        retargetSettle = false
         if (fieldMismatch) mismatchFinal = true
         authorityMoves = false
     }
@@ -157,7 +158,6 @@ internal class RotationHold(
         end()
         fieldMismatch = false
         mismatchFinal = false
-        retargetSettle = false
         authorityMoves = false
     }
 }
