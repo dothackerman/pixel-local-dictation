@@ -271,7 +271,7 @@ class DictationImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         rotationView++
-        held?.warned = false // A rotation cancels the Back warning.
+        held?.warn(false) // A rotation cancels the Back warning.
         rotationEvent(RotationEvent.VIEW_CREATE)
         startup?.event("inputViewCreateBegin")
         // The panel uses the one application theme (#36); the service's own theme is the platform's.
@@ -335,7 +335,7 @@ class DictationImeService : InputMethodService() {
         editorPackage = attribute?.packageName
         editorIdentity = fieldIdentityOf(attribute)
         inputStarted = true
-        held?.warned = false
+        held?.warn(false)
         if (held != null && editorPackage != held?.from) { clearHeld(); showIdle() } // A different app's editor.
         previewAllowed = false
         showPreview("")
@@ -678,7 +678,7 @@ class DictationImeService : InputMethodService() {
         fieldMismatch = false
         mismatchFinal = false
         retargetSettle = false
-        renderNotice()
+        render()
         authorityMoves = false
     }
 
@@ -714,7 +714,7 @@ class DictationImeService : InputMethodService() {
         if (takeRetentionEligible != true) return
         takeRetentionEligible = false
         take?.excludeFromHistory()
-        renderNotice()
+        render()
     }
 
     private fun settleAfterRotation() {
@@ -838,7 +838,7 @@ class DictationImeService : InputMethodService() {
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
-            renderNotice()
+            render()
             var identity: () -> org.json.JSONObject? = { null }
             var attempted = false
             val output = object : TakeOutput {
@@ -988,7 +988,7 @@ class DictationImeService : InputMethodService() {
         authority = recordingToken?.takeIf { session.matches(it) && !fieldMismatch }
         authorityMoves = false
         finishing = true
-        renderNotice()
+        render()
         feedback?.stop()
         setRingLive(false)
         showPhase(PanelPhase.FINISHING)
@@ -1233,7 +1233,7 @@ class DictationImeService : InputMethodService() {
         choice = choice,
         running = takeActive && !interruptedView,
         finishing = finishing,
-        held = held?.let { HeldPanel(it.inHistory, it.warned, it.unconfirmed) },
+        held = held?.panel,
         preview = previewText,
         privateField = takeRetentionEligible == false,
         banner = saveTake,
@@ -1255,7 +1255,7 @@ class DictationImeService : InputMethodService() {
         if (held != null) {
             // Back never writes to the clipboard: the first Back only warns, the second discards and leaves.
             val state = held
-            if (state != null && !state.warned) { state.warned = true; render(); return }
+            if (state != null && !state.panel.warned) { state.warn(true); render(); return }
             val token = session.token()
             clearHeld()
             MicrophoneOwner.acceptExplicitStart()
@@ -1273,16 +1273,14 @@ class DictationImeService : InputMethodService() {
         discardTake("by user"); showIdle(); if (session.matches(token)) returnToKeyboard()
     }
 
-    /** The text of a take that was not inserted; the panel holds it for Copy. [from] is the editor's app. */
-    private class HeldText(
-        val text: String, val from: String?,
-        /** History keeps the take (the editor is retention-eligible); the status says where to find it. */
-        val inHistory: Boolean,
-        /** The first Back warned that a second one discards the uncopied text. */
-        var warned: Boolean = false,
-        /** A write was made but not seen in the field (rotation safety net): the status admits the uncertainty. */
-        val unconfirmed: Boolean = false,
-    )
+    /**
+     * The text of a take that was not inserted; the panel holds it for Copy. [from] is the editor's app.
+     * [panel] is what the panel shows of it: whether History keeps it, the Back warning, an unconfirmed write.
+     */
+    private class HeldText(val text: String, val from: String?, var panel: HeldPanel) {
+        /** The first Back warns that a second one discards the uncopied text; a rotation or a new input start takes the warning back. */
+        fun warn(on: Boolean) { panel = panel.copy(warned = on) }
+    }
 
     /**
      * Every outcome of a take that has text and did not insert it: the commit was rejected (the
@@ -1305,7 +1303,7 @@ class DictationImeService : InputMethodService() {
 
     /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
     private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
-        held = HeldText(text, takePackage, historyKeepsIt, unconfirmed = unconfirmed)
+        held = HeldText(text, takePackage, HeldPanel(inHistory = historyKeepsIt, unconfirmed = unconfirmed))
         showPreview("")
         // Held text owns the status line; underneath, the take was not inserted and the microphone is free.
         showPhase(PanelPhase.NOT_INSERTED)
@@ -1379,11 +1377,6 @@ class DictationImeService : InputMethodService() {
             }
         } else if (interruptedView) showIdle()
     }
-
-    /**
-     * Secondary notice line (own view, so recording/finishing status stays truthful): the private-field line.
-     */
-    private fun renderNotice() = render()
 
     /** History warnings are shown on the History page only, never on the recording panel. */
     private fun recordHistoryNotice(notice: HistoryNotice) {

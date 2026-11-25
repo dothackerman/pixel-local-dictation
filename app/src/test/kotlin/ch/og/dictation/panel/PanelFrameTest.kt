@@ -74,4 +74,12 @@ class PanelFrameTest {
         assertTrue(frame.banner); assertTrue(frame.ringLive)
         assertNull(panelFrame(PanelState()).notice)
     }
+
+    /** The frame builder reads the phase itself, not its status text (#84). */
+    @Test fun onlyTheTwoNotInsertedPhasesCarryTheNotInsertedMark() {
+        assertEquals(setOf(PanelPhase.NOT_INSERTED, PanelPhase.NOT_INSERTED_WAITING),
+            PanelPhase.entries.filter { panelFrame(PanelState(phase = it)).unableToInsert }.toSet())
+        assertEquals(PanelPhase.entries.filter { it.status == R.string.status_unable_insert },
+            PanelPhase.entries.filter { it.notInserted })
+    }
 }

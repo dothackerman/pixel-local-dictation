@@ -24,7 +24,10 @@ enum class PanelPhase(val status: Int, val microphoneEnabled: Boolean, val micro
     /** Not inserted, and the take's outcome is still pending: the microphone stays off until it is in. */
     NOT_INSERTED_WAITING(R.string.status_unable_insert, false, R.string.status_stopping_recording),
     /** Idle while a write is looked at once more (ADR-010): the microphone stays off until that look. */
-    IDLE_WAITING(R.string.status_idle, false, R.string.status_stopping_recording),
+    IDLE_WAITING(R.string.status_idle, false, R.string.status_stopping_recording);
+
+    /** The take ended without insertion; without held text the status carries the "not inserted" marker. */
+    val notInserted: Boolean get() = this == NOT_INSERTED || this == NOT_INSERTED_WAITING
 }
 
 /** Text a take could not insert, held in the panel for Copy (plan B). */
@@ -108,7 +111,7 @@ fun panelFrame(state: PanelState): PanelFrame {
         choice = open,
         preparing = running && state.finishing && open == null,
         stopGlyph = running && !state.finishing,
-        unableToInsert = state.phase.status == R.string.status_unable_insert,
+        unableToInsert = state.phase.notInserted,
         held = held != null,
         uncertain = held?.unconfirmed == true,
         backLabel = when {

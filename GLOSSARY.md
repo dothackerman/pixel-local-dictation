@@ -116,3 +116,15 @@ _Avoid_: switch snapshot, full backup
 **Wiring**:
 What one app process is built from: the recorder factory, the storage layout and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
 _Avoid_: environment, container, hooks
+
+**Editor port**:
+The only way take code reaches the editor: write text, read the text before the cursor, read the extracted text's length, and compare connections (the one a take started on, the one written to, the live one). It decides nothing.
+_Avoid_: input connection wrapper, editor adapter, commit helper
+
+**Take diagnostics**:
+Everything take code traces. Each event gets the take's facts as arguments (take active, live session, view and take numbers, rotation); diagnostics never read take state back.
+_Avoid_: trace helper, rotation logger
+
+**Delivery hold**:
+A reason, kept in the take session, why a finished result is not dispatched yet: a rotation hold, or the open finishing choice. The result is dispatched when no reason is left.
+_Avoid_: hold flag, delivery lock, paused delivery
