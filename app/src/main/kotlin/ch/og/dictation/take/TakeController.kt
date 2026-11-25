@@ -63,7 +63,27 @@ class TakeController(
     /** Authority to insert: granted by Stop to the panel's session; text goes there or nowhere. */
     private var authority: Long? = null
     private var take: TakeSession? = null
-    private var takeGeneration = 0L
+    /**
+     * The per-take record: made when a take starts and kept, as [latest], until the next one starts.
+     * Its identity is the take's: every callback of a take holds its record, and one whose record is
+     * no longer [latest] is stale and changes nothing.
+     */
+    private class Take(
+        /** The take's number in the trace, counted from 1. */
+        val number: Long,
+    ) {
+        /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
+        var field: FieldIdentity? = null
+        var connection: EditorConnection? = null
+        /** The app whose editor the take started in; its text is only ever held and shown for that app. */
+        var appPackage: String? = null
+        /** The screen went off while this take was active: a lock never keeps its text. */
+        var locked = false
+        /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
+        var heldForRotation = false
+    }
+    /** The newest take's record, also after it ended; null before the first take. */
+    private var latest: Take? = null
     private var interruptedView = false
     private var releaseRetry = false
     private var previewAllowed = false
@@ -75,7 +95,6 @@ class TakeController(
     private var inputViewVisible = false
     /** Retention class of the editor that last started input. */
     private var editorRetention = EditorRetention.NO_EDITOR
-    private var rotationTake = 0L
     /**
      * The rotation count when the panel was last visible (settled, see ROTATION_SETTLE_MS); a higher
      * count identifies a rotation since.
@@ -87,11 +106,6 @@ class TakeController(
     private var rotationEpisode = false
     /** Stop granted authority and a rotation hold revoked it: it moves to the session the panel returns to. */
     private var authorityMoves = false
-    /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
-    private var takeHeldForRotation = false
-    /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
-    private var takeField: FieldIdentity? = null
-    private var takeConnection: EditorConnection? = null
     /** The editor that last started input, as identity values only. */
     private var editorIdentity: FieldIdentity? = null
     /**
@@ -104,9 +118,9 @@ class TakeController(
     private var mismatchFinal = false
     /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
     private var retargetSettle = false
+    /** The take whose outcome has not been delivered yet: from start until finished() (or its late read-back look) ends. */
+    private var outcomePending: Take? = null
     /** The read-back of a write that could not be confirmed at once; the second look is pending. */
-    /** Generation of the take whose outcome has not been delivered yet: from start until finished() (or its late read-back look) ends. */
-    private var outcomePending: Long? = null
     private var pendingConfirm: PendingConfirm? = null
     /** The History side of the current take: a late pass of the read-back corrects its delivery receipt. */
     private var takeHistory: HistoryTakeOutput? = null
@@ -118,10 +132,6 @@ class TakeController(
      */
     private var held: HeldText? = null
     private var editorPackage: String? = null
-    /** The app whose editor the take started in; its text is only ever held and shown for that app. */
-    private var takePackage: String? = null
-    /** The screen went off while this take was active: a lock never keeps its text. */
-    private var takeLocked = false
     /** An input is started (between onStartInput and onFinishInput); a panel is only requested then. */
     private var inputStarted = false
     /**
@@ -153,7 +163,7 @@ class TakeController(
     /** A locked phone must not keep listening. */
     fun screenOff() {
         // Also after Stop and during the read-back wait, until finished(): its text is refused, after unlock too.
-        if (outcomePending != null) takeLocked = true
+        outcomePending?.locked = true
         if (held != null) { clearHeld(); showIdle() }
         previewAllowed = false
         showPreview("")
@@ -292,10 +302,10 @@ class TakeController(
      */
     private fun judgeField() {
         val now = editorIdentity
-        val same = now?.isSameFieldAs(takeField) == true
+        val same = now?.isSameFieldAs(latest?.field) == true
         rotationEvent(RotationEvent.FIELD_JUDGED, same, detail = mapOf(
             "sameField" to same, "typeNull" to (now?.typeNull ?: true), "selValid" to (now?.selValid ?: false),
-            "connectionChanged" to (editor.live() != takeConnection)))
+            "connectionChanged" to (editor.live() != latest?.connection)))
         if (!same && !fieldMismatch) {
             fieldMismatch = true
             log.info("authority withheld: input is not the take's field")
@@ -309,7 +319,7 @@ class TakeController(
     }
 
     private fun anotherApp(): Boolean {
-        val mine = takePackage
+        val mine = latest?.appPackage
         val current = editorPackage
         return mine != null && current != null && current != mine
     }
@@ -317,7 +327,7 @@ class TakeController(
     /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
     private fun enterRotationHold(event: EditorEvent) {
         panelSettledPosted?.cancel()
-        takeHeldForRotation = true
+        latest?.heldForRotation = true
         if (!holding) {
             holding = true
             rotationEvent(RotationEvent.HOLD_ENTERED)
@@ -461,7 +471,7 @@ class TakeController(
     private fun traceFacts(): TakeTraceFacts {
         val rotation = rotations.observe()
         return TakeTraceFacts(active = takeActive, liveSession = recordingToken != null && session.matches(recordingToken),
-            view = rotations.view, take = rotationTake.takeIf { it > 0 }, rotation = rotation, rotations = rotations.changes)
+            view = rotations.view, take = latest?.number, rotation = rotation, rotations = rotations.changes)
     }
 
     /** onDestroy, first part: nothing scheduled runs for this service any more. */
@@ -502,22 +512,19 @@ class TakeController(
         saveTake = !RotationTrace.probeActive() && lab.recordingEnabled(liveCheck) && editorRetentionEligible
         render()
         if (lab.startupTake == null) lab.startupTake = lab.beginStartupTake()
-        rotationTake++
+        val record = Take((latest?.number ?: 0L) + 1)
+        latest = record
         rotationEvent(RotationEvent.CAPTURE_START)
         var started = false // This start produced a take that will deliver finished().
         try {
             val liveTakeId = lab.startupTake
-            val generation = ++takeGeneration
-            outcomePending = generation
-            val currentRotationTake = rotationTake
+            outcomePending = record
             recordingToken = session.token()
-            takeHeldForRotation = false
-            takeField = host.currentField()
-            takeConnection = editor.live()
-            takePackage = editorPackage
-            takeLocked = false
+            record.field = host.currentField()
+            record.connection = editor.live()
+            record.appPackage = editorPackage
             authority = null
-            fun authorityForThisTake() = authority.takeIf { generation == takeGeneration }
+            fun authorityForThisTake() = authority.takeIf { record === latest }
             val save = saveTake
             val retentionEligible = editorRetentionEligible
             takeRetentionEligible = retentionEligible
@@ -525,14 +532,14 @@ class TakeController(
             var identity: () -> org.json.JSONObject? = { null }
             var attempted = false
             val output = object : TakeOutput {
-                override fun preview(text: String) = publishPreview(generation, text)
+                override fun preview(text: String) = publishPreview(record, text)
                 override fun captureReleaseFailed() {
-                    if (generation != takeGeneration) return
+                    if (record !== latest) return
                     releaseRetry = true
                     showPhase(PanelPhase.RELEASE_FAILED)
                 }
-                override fun commit(text: String) = commitForSession(authorityForThisTake(), text) { attempted = true }
-                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(authorityForThisTake(), text, allowed) { attempted = true }
+                override fun commit(text: String) = commitForSession(record, authorityForThisTake(), text) { attempted = true }
+                override fun commit(text: String, allowed: () -> Boolean) = commitForSession(record, authorityForThisTake(), text, allowed) { attempted = true }
                 override fun commitAttempted() = attempted
                 override fun returnToKeyboard(): Boolean {
                     if (!session.matches(authorityForThisTake())) return false
@@ -544,13 +551,13 @@ class TakeController(
                 }
                 override fun finished(result: TakeResult, pcm: ByteArray) {
                     // Synchronous on the main thread; only a late read-back look marks it pending again.
-                    if (outcomePending == generation) outcomePending = null
+                    if (outcomePending === record) outcomePending = null
                     // A write that is still being read back reports its terminal event at the second look.
                     val lateLook = pendingConfirm != null && !result.interrupted && result.outcome == TakeOutcome.COMMIT_REJECTED
-                    if (!lateLook) diagnostics.terminal(result.outcome, currentRotationTake)
+                    if (!lateLook) diagnostics.terminal(result.outcome, record.number)
                     identity()?.let { lab.startup?.liveResult(liveTakeId, it, result) }
                     if (!result.interrupted) lab.saveRecording(save && !RotationTrace.probeActive(), pcm, result)
-                    if (generation != takeGeneration) return
+                    if (record !== latest) return
                     // The take's History output is dropped with the take; only a write awaiting its second look keeps it.
                     if (pendingConfirm == null || result.interrupted || result.outcome != TakeOutcome.COMMIT_REJECTED) takeHistory = null
                     recordingToken = null
@@ -565,8 +572,8 @@ class TakeController(
                         choice = null
                         showPreview("")
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
-                        val keep = textToHold(result)
-                        if (keep != null) holdText(keep, result.historySaved) else {
+                        val keep = textToHold(record, result)
+                        if (keep != null) holdText(record, keep, result.historySaved) else {
                             showPhase(PanelPhase.NOT_INSERTED)
                         }
                         return
@@ -577,13 +584,13 @@ class TakeController(
                     pendingConfirm = null
                     if (pending != null && result.outcome == TakeOutcome.COMMIT_REJECTED) {
                         // The write may still show up: the held text, or the hand-back, waits for the second look.
-                        confirmLater(pending, result, currentRotationTake, generation)
+                        confirmLater(pending, result, record)
                         return
                     }
-                    val keep = textToHold(result)
+                    val keep = textToHold(record, result)
                     if (keep != null) {
                         // The text is in History where the field allows it; the panel also holds it for Copy.
-                        holdText(keep, result.historySaved)
+                        holdText(record, keep, result.historySaved)
                     } else if (notInsertedText(result) != null) {
                         // Not this app's panel any more, or the screen went off: status only, History where eligible.
                         showPhase(PanelPhase.NOT_INSERTED)
@@ -606,7 +613,7 @@ class TakeController(
             feedback?.stop()
             feedback = currentFeedback
             setRingLive(true)
-            val takeTrace = diagnostics.forTake(rotationTake, lab.startup, lab.startupTake)
+            val takeTrace = diagnostics.forTake(record.number, lab.startup, lab.startupTake)
             val unexpectedEnd = AtomicBoolean(false)
             captureEnded = { unexpectedEnd.get() }
             val microphoneCapture = opening.capture(onStarted = {
@@ -673,12 +680,12 @@ class TakeController(
      * The only path that writes to a field. Commits on the main thread and only
      * while the session that started the take is still the live one.
      */
-    private fun commitForSession(token: Long?, text: String, allowed: () -> Boolean = { true }, onAttempt: () -> Unit): Boolean {
+    private fun commitForSession(record: Take, token: Long?, text: String, allowed: () -> Boolean = { true }, onAttempt: () -> Unit): Boolean {
         scheduler.checkThread("commit")
         rotationEvent(RotationEvent.COMMIT_ATTEMPT)
         val result = commitToInput(session, token, editor.live(), { editor.live() }, allowed,
-            { it.textBeforeCursor(1) }, { connection, content -> onAttempt(); writeAndVerify(connection, content, token) }, text,
-            requireLive = takeHeldForRotation, refused = {
+            { it.textBeforeCursor(1) }, { connection, content -> onAttempt(); writeAndVerify(record, connection, content, token) }, text,
+            requireLive = record.heldForRotation, refused = {
                 onAttempt()
                 log.warn("commit refused: connection inactive")
                 rotationEvent(RotationEvent.COMMIT_REFUSED_INACTIVE)
@@ -698,8 +705,8 @@ class TakeController(
      * in the field. Not seen yet: the write is reported rejected for now and looked at once more shortly
      * (see [confirmLater]), without blocking the main thread.
      */
-    private fun writeAndVerify(connection: EditorConnection, content: String, token: Long?): Boolean {
-        if (!takeHeldForRotation) return connection.write(content)
+    private fun writeAndVerify(record: Take, connection: EditorConnection, content: String, token: Long?): Boolean {
+        if (!record.heldForRotation) return connection.write(content)
         val extractedBefore = InsertReadBack.extractedLength(connection)
         if (!connection.write(content)) return false
         val check = InsertReadBack.look(connection, content, extractedBefore)
@@ -715,27 +722,27 @@ class TakeController(
      * The take ended with a write that was not confirmed yet. Look once more; seen now, it was inserted (hand
      * back, nothing held); otherwise hold the text with a status that admits the uncertainty.
      */
-    private fun confirmLater(pending: PendingConfirm, result: TakeResult, rotationTake: Long, generation: Long) {
-        outcomePending = generation
+    private fun confirmLater(pending: PendingConfirm, result: TakeResult, record: Take) {
+        outcomePending = record
         if (phase == PanelPhase.IDLE) showPhase(PanelPhase.IDLE_WAITING)
         val history = takeHistory
         scheduler.postDelayed(CONFIRM_DELAY_MS, Runnable {
             takeHistory = null
-            if (outcomePending == generation) { outcomePending = null; if (phase == PanelPhase.IDLE_WAITING) showPhase(PanelPhase.IDLE) }
-            if (destroyed) { diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, rotationTake); return@Runnable }
+            if (outcomePending === record) { outcomePending = null; if (phase == PanelPhase.IDLE_WAITING) showPhase(PanelPhase.IDLE) }
+            if (destroyed) { diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, record.number); return@Runnable }
             val live = editor.live() == pending.connection && session.matches(pending.token)
             val check = if (live) InsertReadBack.look(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
             traceVerified(check != InsertCheck.NONE, check)
             if (check != InsertCheck.NONE) {
                 // The write was seen after all: the receipt the rejected write left is corrected, and the take completed.
                 history?.receipt(HistoryDelivery.ACCEPTED)
-                diagnostics.takeEvent(RotationEvent.TERMINAL_COMPLETED, rotationTake)
+                diagnostics.takeEvent(RotationEvent.TERMINAL_COMPLETED, record.number)
                 if (held == null) host.returnToKeyboard()
                 return@Runnable
             }
-            diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, rotationTake)
-            val keep = textToHold(result)
-            if (keep != null) holdText(keep, result.historySaved, unconfirmed = true) else {
+            diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, record.number)
+            val keep = textToHold(record, result)
+            if (keep != null) holdText(record, keep, result.historySaved, unconfirmed = true) else {
                 showPhase(PanelPhase.NOT_INSERTED)
             }
         })
@@ -752,7 +759,7 @@ class TakeController(
         choice = null
         if (interruptedView) { render(); return }
         interruptedView = true
-        val generation = takeGeneration
+        val record = latest
         session.invalidate()
         finishing = true
         latestPreview = ""
@@ -762,7 +769,7 @@ class TakeController(
         // Truthful while the microphone is released; then "Unable to insert text" with its marker.
         showPhase(PanelPhase.STOPPING)
         old.interrupt {
-            if (generation == takeGeneration) {
+            if (record === latest) {
                 // Decode and History may continue, but capture ownership has ended.
                 releaseRetry = false
                 take = null
@@ -803,7 +810,7 @@ class TakeController(
         if (choice != null || !takeActive || finishing || interruptedView) return
         if (captureEnded()) { interruptTake(); return }
         if (take?.pause() != true) { interruptTake(); return }
-        diagnostics.takeEvent(RotationEvent.CAPTURE_PAUSED, rotationTake)
+        diagnostics.takeEvent(RotationEvent.CAPTURE_PAUSED, latest?.number ?: 0L)
         choice = PanelChoice.RECORDING
         setRingLive(false)
         showPhase(PanelPhase.PAUSED)
@@ -823,7 +830,7 @@ class TakeController(
             PanelChoice.RECORDING -> {
                 choice = null
                 if (take?.resume() != true) { render(); interruptTake(); return }
-                diagnostics.takeEvent(RotationEvent.CAPTURE_RESUMED, rotationTake)
+                diagnostics.takeEvent(RotationEvent.CAPTURE_RESUMED, latest?.number ?: 0L)
                 showPhase(PanelPhase.RECORDING)
                 if (!holding) setRingLive(true)
             }
@@ -933,12 +940,12 @@ class TakeController(
      * The text this panel may hold for the take: only for the app the take started in and still
      * shown in (never another app's panel), and never after the screen went off during the take.
      */
-    private fun textToHold(result: TakeResult): String? =
-        notInsertedText(result)?.takeIf { !takeLocked && editorPackage == takePackage }
+    private fun textToHold(record: Take, result: TakeResult): String? =
+        notInsertedText(result)?.takeIf { !record.locked && editorPackage == record.appPackage }
 
     /** Holds the text of a take that was not inserted: the preview shows it, Copy and Discard text are offered. */
-    private fun holdText(text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
-        held = HeldText(text, takePackage, HeldPanel(inHistory = historyKeepsIt, unconfirmed = unconfirmed))
+    private fun holdText(record: Take, text: String, historyKeepsIt: Boolean, unconfirmed: Boolean = false) {
+        held = HeldText(text, record.appPackage, HeldPanel(inHistory = historyKeepsIt, unconfirmed = unconfirmed))
         showPreview("")
         // Held text owns the status line; underneath, the take was not inserted and the microphone is free.
         showPhase(PanelPhase.NOT_INSERTED)
@@ -970,26 +977,32 @@ class TakeController(
         showIdle()
     }
 
+    /** The panel at rest: the take's live parts end, then the phase is picked from what is left. */
     private fun showIdle() {
+        endLiveParts()
+        render()
+        val rest = restPhase()
+        // Another capture still owns the microphone: the shared-microphone path says so.
+        if (rest == null) updateSharedMicrophone() else showPhase(rest)
+        render()
+    }
+
+    /** Changes take state only: nothing of the take is live on the panel any more (ring, Stop wait, preview). */
+    private fun endLiveParts() {
         feedback?.stop()
         feedback = null
         ringLive = false
         finishing = false
-        showPreview("")
+        previewText = PanelPreview.tail(held?.text ?: "")
         if (!takeActive) releaseRetry = false
-        when {
-            releaseRetry && takeActive -> {
-                showPhase(PanelPhase.RELEASE_FAILED)
-            }
-            takeActive || outcomePending != null -> {
-                showPhase(PanelPhase.STOPPING)
-            }
-            MicrophoneOwner.state().occupied -> updateSharedMicrophone()
-            else -> {
-                showPhase(PanelPhase.IDLE)
-            }
-        }
-        render()
+    }
+
+    /** Picks the phase of a panel at rest and changes nothing; null while another capture owns the microphone. */
+    private fun restPhase(): PanelPhase? = when {
+        releaseRetry && takeActive -> PanelPhase.RELEASE_FAILED
+        takeActive || outcomePending != null -> PanelPhase.STOPPING
+        MicrophoneOwner.state().occupied -> null
+        else -> PanelPhase.IDLE
     }
 
     private fun updateSharedMicrophone() {
@@ -1016,8 +1029,8 @@ class TakeController(
     }
 
     /** The end of the text so far; the view is a few lines high. */
-    private fun publishPreview(generation: Long, text: String) {
-        if (generation != takeGeneration || interruptedView) return
+    private fun publishPreview(record: Take, text: String) {
+        if (record !== latest || interruptedView) return
         latestPreview = text
         if (previewAllowed) showPreview(text)
     }

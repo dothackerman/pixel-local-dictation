@@ -184,22 +184,16 @@ class DictationProductionLifecycleTest {
         var inserted = mutableListOf<String>()
         /** A placeholder connection: the write answers true and changes nothing (Signal, 2026-11-13). */
         var swallow = false
-        /** A slow editor: what was written shows before the cursor only from this many reads after the write. */
-        var visibleAfterReads = 0
         private val content = StringBuilder()
-        private var readsSinceWrite = 0
         override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
             commits++
             inserted.add(text.toString())
             onCommit?.also { onCommit = null; it() }
             val accepted = writeResult()
-            if (accepted && !swallow) { content.append(text); readsSinceWrite = 0 }
+            if (accepted && !swallow) content.append(text)
             return accepted
         }
-        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence {
-            if (content.isNotEmpty()) readsSinceWrite++
-            return if (readsSinceWrite < visibleAfterReads) "" else content.takeLast(length).toString()
-        }
+        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence = content.takeLast(length).toString()
         override fun getExtractedText(request: android.view.inputmethod.ExtractedTextRequest?, flags: Int) = null
     }
     private val firstField = mutableMapOf<DictationImeService, Field>()
@@ -847,32 +841,6 @@ class DictationProductionLifecycleTest {
         assertEquals("old speech", rows().single().text)
     }
 
-    /** A failed start after an ordinary take must not leave the next starts refused. */
-    @Test fun aFailedStartAfterACompletedTakeDoesNotKillLaterStarts() {
-        val first = Input()
-        devices.add(first)
-        val (service, view) = service(editor())
-        feed(first, 1000, 1)
-        button(view).performClick()
-        await { first.releases.get() == 1 }
-        await { decode.drain(); settleHistory(); commits == 1 }
-        pump()
-        // The next start fails synchronously (the recorder cannot be created).
-        wiring.set { it.with(recorderFactory = { error("synthetic recorder failure") }) }
-        MicrophoneOwner.acceptExplicitStart()
-        service.onStartInputView(editor(), true)
-        button(view).performClick()
-        pump()
-        wiring.set { it.with(recorderFactory = { Recorder { devices.remove() } }) }
-        val third = Input()
-        devices.add(third)
-        await { button(view).isEnabled }
-        MicrophoneOwner.acceptExplicitStart()
-        button(view).performClick()
-        await { third.starts.get() == 1 }
-        assertEquals(1, third.starts.get())
-    }
-
     @Test fun aMicrophoneTapInTheGapStartsNothingAndTheOutcomeIsStillDelivered() {
         val gate = CountDownLatch(1)
         val input = Input(releaseGate = gate)
@@ -1027,19 +995,6 @@ class DictationProductionLifecycleTest {
     @Test fun aWriteThatThrowsHoldsTheText() {
         val (service, view, _) = stopWithWrites { error("synthetic editor failure") }
         assertHeldState(service, view)
-    }
-
-    @Test fun anInsertedTakeHoldsNothing() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); commits == 1 }
-        settleHistory()
-        assertFalse(status(view).startsWith(service.getString(R.string.status_unable_insert)))
-        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
     }
 
     /** No text, no held state: a decode failure is still "Recognition failed" with Retry. */
@@ -1348,42 +1303,6 @@ class DictationProductionLifecycleTest {
         return Triple(service, returned, next)
     }
 
-    /** The write answered true and nothing is visible: not inserted, held with a status that admits the doubt. */
-    @Test fun aWriteTheReadBackNeverSeesIsHeldAsUnconfirmed() {
-        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
-        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility) // Not decided before the second look.
-        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
-        settleHistory()
-        assertHeldState(service, returned, statusRes = R.string.status_unconfirmed)
-        assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
-        assertCopyPutsTakeTextOnClipboard(service, returned)
-    }
-
-    /** Shown at the second look only: counts as inserted, the keyboard is handed back, nothing is held. */
-    @Test fun aWriteSeenAtTheSecondLookCountsAsInserted() {
-        org.robolectric.shadows.ShadowLog.clear()
-        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { visibleAfterReads = 2 } }
-        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
-        settleHistory()
-        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
-        // The rejected-for-now receipt is corrected: History says inserted.
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-    }
-
-    /** A lock during the read-back wait locks the take like any other: nothing is held, after unlock too. */
-    @Test fun screenOffDuringTheReadBackWaitHoldsNothing() {
-        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
-        screenOff()
-        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
-        settleHistory()
-        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
-        assertEquals("", preview(returned))
-        assertTrue(status(returned).startsWith(service.getString(R.string.status_unable_insert)))
-        assertTrue(status(returned) != service.getString(R.string.status_unconfirmed))
-    }
-
     /** An unconfirmed write is "Insertion uncertain", not "not inserted" (One Mark Rule). */
     @Test fun anUnconfirmedHeldWriteShowsTheUncertainMark() {
         val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
@@ -1392,23 +1311,6 @@ class DictationProductionLifecycleTest {
         assertHeldState(service, returned, statusRes = R.string.status_unconfirmed)
         val marker = returned.findViewById<android.widget.ImageView>(R.id.status_marker)
         assertEquals(R.drawable.ic_marker_uncertain, shadowOf(marker.drawable).createdFromResId)
-    }
-
-    /** The read-back belongs to takes that went through a rotation hold: others are untouched. */
-    @Test fun aTakeWithoutARotationIsNotReadBack() {
-        org.robolectric.shadows.ShadowLog.clear()
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(composeField())
-        firstField.getValue(service).swallow = true
-        feed(input, 1000, 1)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); pump(); commits == 1 }
-        settleHistory()
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
-        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
     }
 
     /**

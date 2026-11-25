@@ -20,5 +20,13 @@
   "ch.og.dictation.EditorGeometryTest.collectManualKeyboardHandoffs": "ch.og.dictation.labrun.EditorGeometryTest.collectManualKeyboardHandoffs",
   "ch.og.dictation.EditorGeometryTest.collectManualKeyboardHandoffsWithAnimationCallback": "ch.og.dictation.labrun.EditorGeometryTest.collectManualKeyboardHandoffsWithAnimationCallback",
   "ch.og.dictation.RotationProbeTest.observeUntilOwnerFinishes": "ch.og.dictation.labrun.RotationProbeTest.observeUntilOwnerFinishes",
-  "ch.og.dictation.ReplayTest.spike": "retired: the ADR-003 replay spike, decided long ago; it wrote its results into the owner's recordings folder (#81)"
+  "ch.og.dictation.ReplayTest.spike": "retired: the ADR-003 replay spike, decided long ago; it wrote its results into the owner's recordings folder (#81)",
+  "ch.og.dictation.DictationProductionLifecycleTest.anInsertedTakeHoldsNothing": "ch.og.dictation.take.TakeControllerTest.stopWritesTheTextOnceIntoTheStartingFieldAndReturnsToTheKeyboard",
+  "ch.og.dictation.DictationProductionLifecycleTest.aTakeWithoutARotationIsNotReadBack": "ch.og.dictation.take.TakeControllerTest.aTakeWithoutARotationHoldIsNotReadBack",
+  "ch.og.dictation.DictationProductionLifecycleTest.aWriteTheReadBackNeverSeesIsHeldAsUnconfirmed": "ch.og.dictation.take.TakeControllerTest.aWriteTheReadBackNeverSeesIsHeldAsUnconfirmedAt100MsAndNotAt99",
+  "ch.og.dictation.DictationProductionLifecycleTest.aWriteSeenAtTheSecondLookCountsAsInserted": "ch.og.dictation.take.TakeControllerTest.aWriteSeenAtTheSecondLookCountsAsInsertedAt100MsAndNotAt99",
+  "ch.og.dictation.DictationProductionLifecycleTest.screenOffDuringTheReadBackWaitHoldsNothing": "ch.og.dictation.take.TakeControllerTest.screenOffDuringTheReadBackWaitHoldsNothing",
+  "ch.og.dictation.DictationProductionLifecycleTest.aFailedStartAfterACompletedTakeDoesNotKillLaterStarts": "ch.og.dictation.take.TakeControllerTest.aFailedStartAfterACompletedTakeDoesNotRefuseLaterStarts",
+  "ch.og.dictation.ReadBackSecondLookTest.aWriteThatNeverShowsIsHeldAsUnconfirmedAt100MsAndNotAt99": "ch.og.dictation.take.TakeControllerTest.aWriteTheReadBackNeverSeesIsHeldAsUnconfirmedAt100MsAndNotAt99",
+  "ch.og.dictation.ReadBackSecondLookTest.aWriteThatShowsMeanwhileCountsAsInsertedAt100MsAndNotAt99": "ch.og.dictation.take.TakeControllerTest.aWriteSeenAtTheSecondLookCountsAsInsertedAt100MsAndNotAt99"
 }

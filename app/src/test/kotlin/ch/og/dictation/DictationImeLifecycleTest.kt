@@ -66,9 +66,12 @@ class DictationImeLifecycleTest {
     }
     private fun publish(service: DictationImeService, text: String) {
         val controller = controller(service)
-        controller.javaClass.getDeclaredMethod("publishPreview", java.lang.Long.TYPE, String::class.java)
-            .apply { isAccessible = true }.invoke(controller, 1L, text)
+        controller.javaClass.getDeclaredMethod("publishPreview", TAKE_RECORD, String::class.java)
+            .apply { isAccessible = true }.invoke(controller, get(service, "latest"), text)
     }
+    /** The planted take becomes the newest one: the controller gets a per-take record for it (#86). */
+    private fun plantRecord(service: DictationImeService) =
+        set(service, "latest", TAKE_RECORD.getDeclaredConstructor(java.lang.Long.TYPE).apply { isAccessible = true }.newInstance(1L))
 
     @Test fun replacementServiceOffersRetryForOldUnconfirmedMicrophone() {
         val oldController = Robolectric.buildService(DictationImeService::class.java).create()
@@ -108,7 +111,7 @@ class DictationImeLifecycleTest {
         capture.setReleaseRetry { take.retryCaptureRelease() }
         set(old, "take", take)
         set(old, "recordingToken", session.token())
-        set(old, "takeGeneration", 1L)
+        plantRecord(old)
         oldController.destroy()
         assertTrue(failed.await(2, TimeUnit.SECONDS))
         assertTrue(take.active)
@@ -171,7 +174,7 @@ class DictationImeLifecycleTest {
         take.start()
         set(service, "take", take)
         set(service, "recordingToken", session.token())
-        set(service, "takeGeneration", 1L)
+        plantRecord(service)
         set(service, "previewAllowed", true)
         var panel = service.onCreateInputView()
         publish(service, "synthetic old preview")
@@ -205,5 +208,9 @@ class DictationImeLifecycleTest {
         service.onStartInputView(privateInfo, true)
         assertEquals(1, starts)
         controller.destroy()
+    }
+
+    private companion object {
+        val TAKE_RECORD: Class<*> = Class.forName("ch.og.dictation.take.TakeController\$Take")
     }
 }
