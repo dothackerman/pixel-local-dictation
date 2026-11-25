@@ -24,5 +24,19 @@ object InsertReadBack {
         return InsertCheck.NONE
     }
 
+    /** The extracted text's length, read before a write for a later [look]; an editor that fails the read gives none. */
+    fun extractedLength(connection: EditorConnection): Int? = runCatching { connection.extractedLength() }.getOrNull()
+
+    /**
+     * Reads the field back after [committed] was written to [connection]. The extracted text is only
+     * read when the text before the cursor did not show the write.
+     */
+    fun look(connection: EditorConnection, committed: String, extractedBefore: Int?): InsertCheck {
+        val before = runCatching { connection.textBeforeCursor(READ_CHARS) }.getOrNull()
+        val first = check(committed, before, extractedBefore, null)
+        if (first != InsertCheck.NONE) return first
+        return check(committed, before, extractedBefore, extractedLength(connection))
+    }
+
     private fun normalize(text: CharSequence): String = text.replace(Regex("\\s+"), " ").trimEnd()
 }

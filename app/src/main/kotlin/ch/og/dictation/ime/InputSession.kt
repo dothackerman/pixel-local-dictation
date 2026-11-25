@@ -45,7 +45,7 @@ fun <C : Any> commitToInput(
     if (!allowed() || !session.matches(token) || connection == null) return null
     val preceding = before(connection)
     val currentConnection = current()
-    if (!allowed() || !session.matches(token) || currentConnection !== connection) return null
+    if (!allowed() || !session.matches(token) || currentConnection != connection) return null
     if (requireLive && preceding == null) { refused(); return false }
     val lead = if (!preceding.isNullOrEmpty() && !preceding[0].isWhitespace()) " " else ""
     return write(connection, lead + text)

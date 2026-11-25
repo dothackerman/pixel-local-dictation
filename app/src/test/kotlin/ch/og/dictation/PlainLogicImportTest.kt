@@ -69,6 +69,14 @@ class PlainLogicImportTest {
         assertEquals(emptyList<String>(), offenders("take/Planted.kt", "import org.example.android.Thing\nimport org.androidx.Thing\n"))
     }
 
+    /** The editor port is the only main code that writes to or reads from an editor connection (#84). */
+    @Test fun onlyTheEditorPortAdapterTalksToTheEditor() {
+        val editorCall = Regex("""\.(commitText|getTextBeforeCursor|getTextAfterCursor|getExtractedText|setComposingText|deleteSurroundingText)\(""")
+        val users = root.walkTopDown().filter { it.isFile && it.extension == "kt" && editorCall.containsMatchIn(code(it.readText())) }
+            .map { it.relativeTo(root).path }.sorted().toList()
+        assertEquals(listOf("ime/InputConnectionEditor.kt"), users)
+    }
+
     /** Source with comments blanked (line structure kept); string contents stay, they are rare here. */
     private fun code(source: String): String =
         source.replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)) { m -> m.value.replace(Regex("[^\n]"), " ") }

@@ -17,6 +17,7 @@ import ch.og.dictation.history.historyNotices
 import ch.og.dictation.ime.InputSession
 import ch.og.dictation.ime.PermissionActivity
 import ch.og.dictation.ime.commitToInput
+import ch.og.dictation.ime.editorPort
 import ch.og.dictation.ime.fieldIdentityOf
 import ch.og.dictation.ime.retentionOf
 import ch.og.dictation.panel.PanelChoice
@@ -28,6 +29,7 @@ import ch.og.dictation.panel.panelFrame
 import ch.og.dictation.panel.PanelPreview
 import ch.og.dictation.panel.renderPanel
 import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.EditorConnection
 import ch.og.dictation.take.EditorDecision
 import ch.og.dictation.take.EditorEvent
 import ch.og.dictation.take.EditorEventPolicy
@@ -100,6 +102,8 @@ class DictationImeService : InputMethodService() {
     /** Only saving audio needs a banner; experiment receipts remain out of the normal panel. */
     private var saveTake = false
     private val session = InputSession()
+    /** The editor port: the only way take code writes to or reads from the editor. */
+    private val editor = editorPort { currentInputConnection }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { mainHandler.post(it) }
     /** Set while a hand-back to the keyboard is pending, so the panel does not start a new take. */
@@ -146,7 +150,7 @@ class DictationImeService : InputMethodService() {
     private var takeHeldForRotation = false
     /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
     private var takeField: FieldIdentity? = null
-    private var takeConnection: android.view.inputmethod.InputConnection? = null
+    private var takeConnection: EditorConnection? = null
     /** The editor that last started input, as identity values only. */
     private var editorIdentity: FieldIdentity? = null
     /**
@@ -571,7 +575,7 @@ class DictationImeService : InputMethodService() {
         val same = now?.isSameFieldAs(takeField) == true
         rotationEvent(RotationEvent.FIELD_JUDGED, same, detail = mapOf(
             "sameField" to same, "typeNull" to (now?.typeNull ?: true), "selValid" to (now?.selValid ?: false),
-            "connectionChanged" to (currentInputConnection !== takeConnection)))
+            "connectionChanged" to (editor.live() != takeConnection)))
         if (!same && !fieldMismatch) {
             fieldMismatch = true
             Log.i(tag, "authority withheld: input is not the take's field")
@@ -825,7 +829,7 @@ class DictationImeService : InputMethodService() {
             recordingToken = session.token()
             takeHeldForRotation = false
             takeField = fieldIdentityOf(currentInputEditorInfo)
-            takeConnection = currentInputConnection
+            takeConnection = editor.live()
             takePackage = editorPackage
             takeLocked = false
             authority = null
@@ -1055,8 +1059,8 @@ class DictationImeService : InputMethodService() {
     private fun commitForSession(token: Long?, text: String, allowed: () -> Boolean = { true }, onAttempt: () -> Unit): Boolean {
         check(Looper.myLooper() == Looper.getMainLooper()) { "commit off the main thread" }
         rotationEvent(RotationEvent.COMMIT_ATTEMPT)
-        val result = commitToInput(session, token, currentInputConnection, { currentInputConnection }, allowed,
-            { it.getTextBeforeCursor(1, 0) }, { ic, content -> onAttempt(); writeAndVerify(ic, content, token) }, text,
+        val result = commitToInput(session, token, editor.live(), { editor.live() }, allowed,
+            { it.textBeforeCursor(1) }, { connection, content -> onAttempt(); writeAndVerify(connection, content, token) }, text,
             requireLive = takeHeldForRotation, refused = {
                 onAttempt()
                 Log.w(tag, "commit refused: connection inactive")
@@ -1069,19 +1073,7 @@ class DictationImeService : InputMethodService() {
     }
 
     /** A write after a rotation hold whose read-back did not show the text at once; the second look is at [CONFIRM_DELAY_MS]. */
-    private class PendingConfirm(val connection: android.view.inputmethod.InputConnection, val content: String,
-                                 val extractedBefore: Int?, val token: Long?)
-
-    private fun extractedLength(ic: android.view.inputmethod.InputConnection): Int? =
-        runCatching { ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = 100_000 }, 0)?.text?.length }.getOrNull()
-
-    private fun readBack(ic: android.view.inputmethod.InputConnection, content: String, extractedBefore: Int?): InsertCheck {
-        val before = runCatching { ic.getTextBeforeCursor(InsertReadBack.READ_CHARS, 0) }.getOrNull()
-        // The extracted text is only read when the text before the cursor did not show the write.
-        val first = InsertReadBack.check(content, before, extractedBefore, null)
-        if (first != InsertCheck.NONE) return first
-        return InsertReadBack.check(content, before, extractedBefore, extractedLength(ic))
-    }
+    private class PendingConfirm(val connection: EditorConnection, val content: String, val extractedBefore: Int?, val token: Long?)
 
     /**
      * The one write. A take that went through a rotation hold is read back at once (ADR-010): a write's
@@ -1089,13 +1081,13 @@ class DictationImeService : InputMethodService() {
      * in the field. Not seen yet: the write is reported rejected for now and looked at once more shortly
      * (see [confirmLater]), without blocking the main thread.
      */
-    private fun writeAndVerify(ic: android.view.inputmethod.InputConnection, content: String, token: Long?): Boolean {
-        if (!takeHeldForRotation) return ic.commitText(content, 1)
-        val extractedBefore = extractedLength(ic)
-        if (!ic.commitText(content, 1)) return false
-        val check = readBack(ic, content, extractedBefore)
+    private fun writeAndVerify(connection: EditorConnection, content: String, token: Long?): Boolean {
+        if (!takeHeldForRotation) return connection.write(content)
+        val extractedBefore = InsertReadBack.extractedLength(connection)
+        if (!connection.write(content)) return false
+        val check = InsertReadBack.look(connection, content, extractedBefore)
         if (check != InsertCheck.NONE) { traceVerified(true, check); return true }
-        pendingConfirm = PendingConfirm(ic, content, extractedBefore, token)
+        pendingConfirm = PendingConfirm(connection, content, extractedBefore, token)
         return false
     }
 
@@ -1114,8 +1106,8 @@ class DictationImeService : InputMethodService() {
             takeHistory = null
             if (outcomePending == generation) { outcomePending = null; if (phase == PanelPhase.IDLE_WAITING) showPhase(PanelPhase.IDLE) }
             if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
-            val live = currentInputConnection === pending.connection && session.matches(pending.token)
-            val check = if (live) readBack(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
+            val live = editor.live() == pending.connection && session.matches(pending.token)
+            val check = if (live) InsertReadBack.look(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
             traceVerified(check != InsertCheck.NONE, check)
             if (check != InsertCheck.NONE) {
                 // The write was seen after all: the receipt the rejected write left is corrected, and the take completed.
