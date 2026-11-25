@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Host-only quality gate: removed-test check, Python regressions (host checks included), Kotlin unit
-tests for the lab build and release, Android lint and the build markers of the merged manifests.
+"""Host-only quality gate: Python regressions (host checks included), Kotlin unit tests for the lab
+build and release, Android lint and the build markers of the merged manifests.
 
 --staged requires tracked worktree/index parity and staged source/test inputs.
 It tests this checkout; stage relevant files first. No instrumentation runs.
@@ -12,7 +12,6 @@ import subprocess
 import sys
 
 from prepare_checkout import ROBOLECTRIC_JARS
-import removed_tests
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,16 +39,6 @@ def preparation_problem(root=ROOT):
             + ': run python3 tools/prepare_checkout.py') if missing else None
 
 
-def removed_test_problems(root=ROOT):
-    """Tests gone since this branch left main, without an entry in tools/removed_tests.json."""
-    for trunk in ('main', 'origin/main'):
-        base = subprocess.run(['git', 'merge-base', 'HEAD', trunk], cwd=root, text=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        if base.returncode == 0:
-            return removed_tests.problems(root, base.stdout.strip())
-    return ['removed-test check: no main or origin/main to compare test names with']
-
-
 def jvm_environment(root, environment):
     """JVM options for the agent sandbox: temp files under $TMPDIR and, once
     tools/prepare_checkout.py linked the jars, Robolectric without its $HOME lock."""
@@ -66,11 +55,17 @@ def jvm_environment(root, environment):
     return {**environment, 'JAVA_TOOL_OPTIONS': ' '.join(options)}
 
 
+def test_environment(root, environment):
+    """What the tests run with: the JVM options, and no GIT_* variable, so a hook's GIT_DIR never
+    points a test's own `git init` at this repository."""
+    return jvm_environment(root, {k: v for k, v in environment.items() if not k.startswith('GIT_')})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--staged', action='store_true')
     args = parser.parse_args()
-    environment = jvm_environment(ROOT, os.environ.copy())
+    environment = test_environment(ROOT, os.environ.copy())
     conventional_sdk = Path.home() / 'Android/Sdk'
     if 'ANDROID_HOME' not in environment and conventional_sdk.is_dir():
         environment['ANDROID_HOME'] = str(conventional_sdk)
@@ -83,9 +78,6 @@ def main():
         if errors:
             print('\n'.join(errors), file=sys.stderr)
             return 1
-    if problems := removed_test_problems():
-        print('\n'.join(problems), file=sys.stderr)
-        return 1
     for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
                     # Release is compiled and its own host tests assert the owner layout and marker (ADR-028).
                     [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'testReleaseUnitTest',

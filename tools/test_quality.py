@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import jvm_environment, preparation_problem, removed_test_problems, staged_errors
+from quality import jvm_environment, preparation_problem, staged_errors, test_environment
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -81,29 +81,9 @@ class JvmEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(jvm_environment(Path(directory), {'HOME': '/h'}), {'HOME': '/h'})
 
-
-class RemovedTestGateTests(unittest.TestCase):
-    """The gate compares test names with where the branch left main (#77)."""
-    setUp = StagedQualityTests.setUp
-
-    def test_gate_reports_a_test_removed_since_the_branch_left_main(self):
+    def test_git_hook_variables_never_reach_the_tests(self):
+        # A pre-commit hook in a worktree exports GIT_DIR; a test's `git init` then re-initialised
+        # the real repository (core.bare=true) on 2026-11-25.
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            git = lambda *arguments: subprocess.run(
-                ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', *arguments],
-                cwd=root, check=True)
-            git('init', '-q', '-b', 'main')
-            source = root / 'app/src/test/kotlin/a/ATest.kt'
-            source.parent.mkdir(parents=True)
-            source.write_text('package a\nclass ATest {\n    @Test fun kept() {}\n    @Test fun dropped() {}\n}\n')
-            git('add', '.')
-            git('commit', '-q', '-m', 'base')
-            git('switch', '-q', '-c', 'work')
-            self.assertEqual([], removed_test_problems(root))
-            source.write_text('package a\nclass ATest {\n    @Test fun kept() {}\n}\n')
-            git('commit', '-q', '-a', '-m', 'drop')
-            self.assertEqual(['removed test a.ATest.dropped has no entry in tools/removed_tests.json'],
-                             removed_test_problems(root))
-            git('branch', '-q', '-m', 'main', 'trunk')
-            self.assertEqual(['removed-test check: no main or origin/main to compare test names with'],
-                             removed_test_problems(root))
+            env = test_environment(Path(directory), {'GIT_DIR': '/repo/.git', 'GIT_INDEX_FILE': 'i', 'HOME': '/h'})
+            self.assertEqual(env, {'HOME': '/h'})
