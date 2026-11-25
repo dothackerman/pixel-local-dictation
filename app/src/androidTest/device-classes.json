@@ -6,7 +6,6 @@
     "ch.og.dictation.DictionarySettingsTest": "test",
     "ch.og.dictation.RotationContinuityDemoTest": "test",
     "ch.og.dictation.RotationFinishingDemoTest": "test",
-    "ch.og.dictation.SelfRotationProbeTest": "test",
     "ch.og.dictation.ColdSettingsTest": "test",
     "ch.og.dictation.HistoryProcessTest": "test",
     "ch.og.dictation.GuidedVisitTest": "guided_check",
@@ -25,7 +24,8 @@
     "ch.og.dictation.labrun.SelfRotationTrace": "lab_run"
   },
   "retired": {
-    "ch.og.dictation.ReplayTest": "the ADR-003 replay spike: decided long ago, and it wrote its results into the owner's recordings folder"
+    "ch.og.dictation.ReplayTest": "the ADR-003 replay spike: decided long ago, and it wrote its results into the owner's recordings folder",
+    "ch.og.dictation.SelfRotationProbeTest": "what a self-rotating editor does to a take is decided by the take controller and tested on the host (TakeControllerTest, #90); the Lab run labrun.SelfRotationTrace still measures the trace"
   },
   "phoneBatch": {
     "batch": [
@@ -33,8 +33,7 @@
       "ch.og.dictation.NormalBaselineTest",
       "ch.og.dictation.DictionarySettingsTest",
       "ch.og.dictation.RotationContinuityDemoTest",
-      "ch.og.dictation.RotationFinishingDemoTest",
-      "ch.og.dictation.SelfRotationProbeTest"
+      "ch.og.dictation.RotationFinishingDemoTest"
     ],
     "freshProcess": [
       "ch.og.dictation.ColdSettingsTest",

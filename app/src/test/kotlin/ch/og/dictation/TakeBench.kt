@@ -118,7 +118,7 @@ class TakeBench : AutoCloseable {
                 }
             })
         wiring = app.overrideWiring {
-            it.with(engine = Engine.prepared(runtime), recorderFactory = { Recorder { input } }, requestPanel = {})
+            it.with(engine = Engine.prepared(runtime), recorderFactory = { Recorder { input } })
         }
         val root = app.wiring.storage.historyRoot
         HistoryIo.executor.submit { val store = HistoryIo.store(root); store.clear(store.clearableIds()) }.get(2, TimeUnit.SECONDS)

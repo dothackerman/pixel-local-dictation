@@ -20,8 +20,8 @@ import org.json.JSONObject
  * trace rows (event names, booleans, rotation integers, monotonic ns) to files/lab/rotation-probe.jsonl.
  * Room audio is captured in memory only; the field is excluded from History.
  *
- * Shared by the test (SelfRotationProbeTest: the trace is whole and FUTO is the keyboard again) and
- * the Lab run (labrun.SelfRotationTrace: the summary of what the trace showed).
+ * Run by the Lab run labrun.SelfRotationTrace (the summary of what the trace showed). What a rotation
+ * does to a take is tested on the host (TakeControllerTest, #90).
  */
 class SelfRotationProbe(private val instrumentation: Instrumentation) {
     private val context = instrumentation.targetContext

@@ -10,8 +10,8 @@ import org.junit.runner.RunWith
 /**
  * #56, the trace capture: runs one self-rotation case and writes the sanitized summary of its trace
  * (event names, booleans, rotation integers and millisecond differences) to
- * files/lab/issue56/probe-CASE-RUN.json. No inputs. Whether the keyboard came back is the test
- * SelfRotationProbeTest; here an incomplete trace only makes the run incomplete.
+ * files/lab/issue56/probe-CASE-RUN.json. No inputs. What a rotation does to a take is tested on the
+ * host (TakeControllerTest); here an incomplete trace only makes the run incomplete.
  */
 @RunWith(AndroidJUnit4::class)
 class SelfRotationTrace {

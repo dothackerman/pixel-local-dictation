@@ -1,29 +1,21 @@
 package ch.og.dictation
 
-import ch.og.dictation.storage.testHistoryRoot
-import ch.og.dictation.storage.withTestHistory
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.diagnostics.RotationEvent
 import ch.og.dictation.diagnostics.RotationTrace
-import ch.og.dictation.history.HistoryEntry
-import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.probe.SelfRotationProbeActivity
 import ch.og.dictation.probe.SyntheticFixtureAudio
 import ch.og.dictation.recognition.SAMPLE_RATE
 import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
-import ch.og.dictation.take.ROTATION_SETTLE_MS
 import android.app.Instrumentation
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
@@ -34,14 +26,16 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * #53 automated Pixel demo: the app-owned editor rotates itself at each boundary of the Stop
- * wait and with each Cancel choice open. The panel is opened with FUTO's own voice key through
- * [KeyboardHandoff]; speech is the synthetic #54 fixture fed through the take's recorder seam (no
- * room audio, nothing saved as audio). Each case asserts one take, one capture start (no restarted
- * microphone), at most one insertion (exactly one where Stop or Keep finishing was chosen), the
- * panel or choice back, and FUTO restored. Cases that reach the History save acknowledgement use
- * an ordinary field whose takes go to their own test History root (like the History UI tests).
+ * #53 automated Pixel demo, the one rotation-finishing case the phone keeps (#90): the app-owned
+ * editor rotates itself right after Stop, while the final decode is still running, and is recreated
+ * with the keyboard hidden. The panel is opened with FUTO's own voice key through [KeyboardHandoff];
+ * speech is the synthetic #54 fixture fed through the take's recorder seam (no room audio, nothing
+ * saved: the field disables personalized learning). Asserts one take, one capture start (no
+ * restarted microphone), exactly one insertion, the panel back finishing, and FUTO restored.
  * Sanitized trace rows and a summary go to files/lab only.
+ *
+ * Every other boundary of the Stop wait and every Cancel choice through a rotation is decided by the
+ * take controller and tested on the host: TakeControllerTest.
  *
  * Owner preconditions: phone unlocked, screen on, FUTO the current keyboard, the fixture pushed
  * to files/lab/issue36-inputs (#54). Run: `phone run ch.og.dictation.RotationFinishingDemoTest`.
@@ -51,7 +45,6 @@ class RotationFinishingDemoTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val traceFile = File(context.wiring.storage.labFolder, "rotation-probe.jsonl")
-    private val testHistory = context.wiring.storage.testHistoryRoot("history-ui-test-demo53")
 
     /** Rotate right after Stop, while the final decode is still running. */
     @Test fun recreatedEditorRotationBeforeFinalDecodeInsertsOnce() = demo("demo53-hidden-before-decode") {
@@ -62,83 +55,12 @@ class RotationFinishingDemoTest {
         expectInsertion()
     }
 
-    @Test fun keptEditorRotationBeforeFinalDecodeInsertsOnce() = demo("demo53-keep-before-decode", keep = true) {
-        stop()
-        rotate()
-        bound("rotatedBeforeFinalReady", before("PROBE_ROTATE_REQUESTED", "FINAL_READY"))
-        expectInsertion()
-    }
-
-    /** Decoded, History save not yet acknowledged (its executor is held by the test). */
-    @Test fun rotationAfterDecodeBeforeTheHistorySaveInsertsOnce() = demo("demo53-hidden-before-save", eligible = true) {
-        val gate = holdHistory()
-        stop()
-        until(30_000, "final decode") { count("FINAL_READY") == 1 }
-        rotate()
-        awaitPanelBack(R.string.status_finishing)
-        bound("noCommitBeforeSave", count("COMMIT_ATTEMPT") == 0)
-        gate.countDown()
-        expectInsertion()
-    }
-
-    /** Saved and acknowledged, dispatched: a later rotation neither undoes nor repeats the insertion. */
-    @Test fun rotationAfterTheAcceptedInsertionChangesNothing() = demo("demo53-hidden-after-commit", eligible = true) {
-        stop()
-        expectInsertion()
-        rotate()
-        Thread.sleep(ROTATION_HOLD_GAP_MS + 1_000)
-        bound("stillOneCommit", count("COMMIT_ACCEPTED") == 1)
-    }
-
-    /**
-     * Back during recording pauses the take; rotate: the recreated panel renders the same inline
-     * choice, still paused; Continue resumes the same take (one recorder, two platform starts).
-     */
-    @Test fun recordingChoiceOpenThroughRotationContinues() = demo("demo53-hidden-recording-choice") {
-        keys.clickOurs(R.id.back)
-        until(5_000, "recording choice") { keys.ourButton(R.string.continue_recording) != null }
-        bound("paused", count("CAPTURE_PAUSED") == 1)
-        rotate()
-        awaitPanelBack(R.string.status_paused)
-        until(ROTATION_SETTLE_MS + 3_000, "recording choice rendered again") { keys.ourButton(R.string.continue_recording) != null }
-        Thread.sleep(ROTATION_SETTLE_MS)
-        bound("choiceNotMade", rows().none { it.getString("event") in setOf("STOP_REQUESTED", "CANCEL_REQUESTED", "CAPTURE_RESUMED") })
-        click(keys.ourButton(R.string.continue_recording))
-        until(5_000, "resumed") { count("CAPTURE_RESUMED") == 1 }
-        current!!.expectedStarts = 2
-        Thread.sleep(3_000)
-        stop()
-        expectInsertion()
-    }
-
-    /** Back after Stop before the result, rotate: Keep finishing comes back; nothing dispatched before it. */
-    @Test fun finishingChoiceOpenBeforeFinalDecodeHoldsTheResult() = demo("demo53-hidden-finishing-choice-before-decode") {
-        stop()
-        keys.clickOurs(R.id.back)
-        until(5_000, "finishing choice") { keys.ourButton(R.string.keep_finishing) != null }
-        rotate()
-        keepFinishingAfterRotation()
-    }
-
-    /** The result was decoded and its History save acknowledged under the open choice; then rotate. */
-    @Test fun finishingChoiceOpenAfterTheHistorySaveHoldsTheResult() = demo("demo53-hidden-finishing-choice-after-save", eligible = true) {
-        stop()
-        keys.clickOurs(R.id.back)
-        until(5_000, "finishing choice") { keys.ourButton(R.string.keep_finishing) != null }
-        until(30_000, "final decode") { count("FINAL_READY") == 1 }
-        HistoryIo.executor.submit {}.get(10, TimeUnit.SECONDS) // The save acknowledgement has run.
-        rotate()
-        keepFinishingAfterRotation()
-    }
-
     // ---- one run ----
 
     private inner class Run(val case: String, val run: String, val marks: RotationTrace) {
         val bounds = JSONObject()
         var inserted = ""
         var expectsInsertion = false
-        /** Platform microphone starts: one, plus one for each pause the take resumes from. */
-        var expectedStarts = 1
         var rotatedAt = 0L
         var panelBackMs = -1L
     }
@@ -153,8 +75,6 @@ class RotationFinishingDemoTest {
     }
     private fun currentIme(): String? = keys.currentIme()
     private fun statusText(): String = keys.ourNode(R.id.status)?.text?.toString().orEmpty()
-    private fun click(node: AccessibilityNodeInfo?) =
-        assertTrue("button not on screen", node?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
     private fun rows(): List<JSONObject> = LabReceipts.lines(traceFile)
         .map { JSONObject(it) }.filter { it.optString("run") == current!!.run }
     private fun count(event: String) = rows().count { it.getString("event") == event }
@@ -181,22 +101,6 @@ class RotationFinishingDemoTest {
         until(ROTATION_HOLD_GAP_MS + 2_000, "panel back after rotation") { statusText() == context.getString(statusLabel) }
         current!!.panelBackMs = SystemClock.uptimeMillis() - current!!.rotatedAt
     }
-    private fun keepFinishingAfterRotation() {
-        awaitPanelBack(R.string.status_finishing_choice)
-        until(ROTATION_SETTLE_MS + 3_000, "finishing choice rendered again") { keys.ourButton(R.string.keep_finishing) != null }
-        until(30_000, "final decode") { count("FINAL_READY") == 1 }
-        Thread.sleep(1_000)
-        bound("nothingDispatchedUnderChoice", count("COMMIT_ATTEMPT") == 0)
-        click(keys.ourButton(R.string.keep_finishing))
-        expectInsertion()
-    }
-    private fun holdHistory(): CountDownLatch {
-        val gate = CountDownLatch(1)
-        HistoryIo.executor.execute { gate.await(30, TimeUnit.SECONDS) }
-        heldHistory = gate
-        return gate
-    }
-    private var heldHistory: CountDownLatch? = null
     private fun expectInsertion() {
         current!!.expectsInsertion = true
         until(30_000, "take terminal") { rows().any { it.getString("event").startsWith("TERMINAL_") } }
@@ -230,15 +134,6 @@ class RotationFinishingDemoTest {
         override fun release() {}
     }
 
-    /** This test's own History root (synthetic speech). */
-    private fun testHistoryRows(): List<HistoryEntry> = HistoryIo.executor.submit<List<HistoryEntry>> {
-        HistoryIo.store(testHistory).list()
-    }.get(10, TimeUnit.SECONDS)
-    private fun clearTestHistory() = HistoryIo.executor.submit {
-        val store = HistoryIo.store(testHistory)
-        store.clear(store.clearableIds())
-    }.get(10, TimeUnit.SECONDS)
-
     /** Events after the (first) rotation request, as ms offsets; names and counts only. */
     private fun afterRotation(): Pair<JSONArray, Long?> {
         val all = rows()
@@ -256,7 +151,7 @@ class RotationFinishingDemoTest {
         return (if (last) hits.lastOrNull() else hits.firstOrNull())?.let { (it.getLong("ns") - at) / 1_000_000 }
     }
 
-    private fun demo(case: String, keep: Boolean = false, eligible: Boolean = false, steps: () -> Unit) {
+    private fun demo(case: String, steps: () -> Unit) {
         val power = context.getSystemService(android.os.PowerManager::class.java)
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         assertTrue("phone must be unlocked with the screen on (owner step); the demo never unlocks it",
@@ -277,18 +172,14 @@ class RotationFinishingDemoTest {
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         starts.set(0)
-        // Fixture audio and its own test History root.
-        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }, storage = it.storage.withTestHistory("history-ui-test-demo53")) }
-        clearTestHistory()
+        val wiring = context.overrideWiring { it.with(recorderFactory = { Recorder { FixtureInput(audio, starts) } }) }
         val run = UUID.randomUUID().toString()
         RotationTrace.beginProbe(case, run)
         val state = Run(case, run, RotationTrace(traceFile))
         current = state
-        val kind = if (keep) SelfRotationProbeActivity.Keep::class.java else SelfRotationProbeActivity::class.java
         var passed = false
         try {
-            instrumentation.startActivitySync(Intent(context, kind).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(SelfRotationProbeActivity.HISTORY_ELIGIBLE, eligible))
+            instrumentation.startActivitySync(Intent(context, SelfRotationProbeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             Thread.sleep(600)
             keys.openFuto({ activity().showKeyboard() })
             Thread.sleep(400)
@@ -303,7 +194,6 @@ class RotationFinishingDemoTest {
             val head = state.inserted.take(20)
             val insertedOnce = head.isNotEmpty() && state.inserted.indexOf(head, 1) < 0
             val (events, rotatedNs) = afterRotation()
-            val kept = if (eligible) testHistoryRows() else emptyList()
             state.marks.event(RotationEvent.PROBE_ROTATE_REQUESTED, flag = false)
             instrumentation.runOnMainSync { activity().rotate(landscape = false) }
             Thread.sleep(1_500)
@@ -325,8 +215,6 @@ class RotationFinishingDemoTest {
                 .put("lastShownAfterRotationMs", msAfter(rotatedNs, "WINDOW_SHOWN", last = true) ?: JSONObject.NULL)
                 .put("finalReadyAfterRotationMs", msAfter(rotatedNs, "FINAL_READY") ?: JSONObject.NULL)
                 .put("commitAfterRotationMs", msAfter(rotatedNs, "COMMIT_ACCEPTED") ?: JSONObject.NULL)
-                .put("testHistoryRows", kept.size)
-                .put("testHistoryDelivery", JSONArray(kept.map { it.delivery.name }))
                 .put("futoRestored", currentIme() == futo)
                 .put("serviceDestroyed", rows().any { it.getString("event") == "SERVICE_DESTROY" })
                 .put("boundaries", state.bounds)
@@ -335,7 +223,7 @@ class RotationFinishingDemoTest {
             File(context.wiring.storage.labFolder, "issue53/demo-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertEquals("one take", 1, count("CAPTURE_START"))
-            assertEquals("microphone starts", state.expectedStarts, starts.get())
+            assertEquals("microphone starts", 1, starts.get())
             assertTrue("more than one insertion", commits <= 1)
             if (state.expectsInsertion) {
                 assertEquals("TERMINAL_COMPLETED", terminal)
@@ -345,12 +233,9 @@ class RotationFinishingDemoTest {
             assertTrue("keyboard not restored to FUTO (${keys.selection()})", currentIme() == futo)
             passed = true
         } finally {
-            heldHistory?.countDown()
-            heldHistory = null
             RotationTrace.abortProbe()
             if (!passed && !keys.futoSelected() && !keys.handBackToFuto(showKeyboard)) status("$case: hand-back failed")
             instrumentation.runOnMainSync { SelfRotationProbeActivity.current?.finish() }
-            runCatching { Thread.sleep(1_000); clearTestHistory() } // Synthetic rows only.
             wiring.close()
             if (!passed && currentIme() != futo) status("WARNING: keyboard not restored (${keys.selection()})")
         }

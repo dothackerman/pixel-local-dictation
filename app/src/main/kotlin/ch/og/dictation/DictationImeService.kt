@@ -117,7 +117,7 @@ class DictationImeService : InputMethodService() {
             }
             return switched
         }
-        override fun requestPanel() { wiring.requestPanel(this@DictationImeService) }
+        override fun requestPanel() { requestShowSelf(0) }
         override fun copy(text: String) { copyTranscript(this@DictationImeService, text) }
         override fun askPermission() {
             startActivity(Intent(this@DictationImeService, PermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

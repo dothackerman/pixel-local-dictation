@@ -115,29 +115,8 @@ class TakeController(
     private var inputViewVisible = false
     /** Retention class of the editor that last started input. */
     private var editorRetention = EditorRetention.NO_EDITOR
-    /**
-     * The rotation count when the panel was last visible (settled, see ROTATION_SETTLE_MS); a higher
-     * count identifies a rotation since.
-     */
-    private var rotationsWhenVisible = 0L
-    /** Rotation hold: authority revoked, preview hidden, capture continues until the panel returns. */
-    private var holding = false
-    /** From the first hold of a rotation until the panel has settled; one gap for all of it. */
-    private var rotationEpisode = false
-    /** Stop granted authority and a rotation hold revoked it: it moves to the session the panel returns to. */
-    private var authorityMoves = false
     /** The editor that last started input, as identity values only. */
     private var editorIdentity: FieldIdentity? = null
-    /**
-     * A rotation hold's input start was not the take's field (same app): the take keeps recording but has no
-     * authority, and Stop writes nothing (the text is held). While the hold is open the take's own field starting
-     * input again (the automatic rotation sequence) returns it; once the hold settled on a mismatch it is final.
-     */
-    private var fieldMismatch = false
-    /** The rotation hold settled on a mismatch: it is final, the take's field never regains authority. */
-    private var mismatchFinal = false
-    /** The take's field is back inside the hold: the rotation stays identified until the panel has settled. */
-    private var retargetSettle = false
     /**
      * The take whose outcome is not in yet: from its start until finished() has decided what the panel
      * keeps of it ([outcomeIn]), or until the second look of its read-back wait. No new take starts meanwhile.
@@ -162,16 +141,19 @@ class TakeController(
      * rotation) renders it inline. RECORDING: the take is paused. FINISHING: delivery is held.
      */
     private var choice: PanelChoice? = null
-    private val gapExpired = Runnable {
-        if (!rotationEpisode) return@Runnable
-        if (holding) { log.info("rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
-        else rotationSettled()
-    }
-    private var gapExpiredPosted: TakeScheduler.Cancellable? = null
-    private val panelSettled = Runnable {
-        if (!holding && inputViewVisible && session.matches(recordingToken)) rotationSettled()
-    }
-    private var panelSettledPosted: TakeScheduler.Cancellable? = null
+    /**
+     * The rotation hold, the one owner of everything a rotation decided for the take: hold, gap, settle,
+     * field judgement and mismatch, retarget settle, authority move. Its timers come back here.
+     */
+    private val rotationHold: RotationHold = RotationHold(scheduler, rotations,
+        gapExpired = {
+            if (rotationHold.inEpisode) {
+                if (rotationHold.holding) { log.info("rotation hold: panel did not return"); rotationEvent(RotationEvent.HOLD_GAP_EXPIRED); interruptTake() }
+                else rotationSettled()
+            }
+        },
+        panelSettled = { if (!rotationHold.holding && inputViewVisible && session.matches(recordingToken)) rotationSettled() },
+        panelRequest = { if (rotationHold.holding && inputStarted && !inputViewVisible && !destroyed) host.requestPanel() })
     /** Newest preview of the current take, shown again when the panel returns from a hold. */
     private var latestPreview = ""
 
@@ -193,7 +175,7 @@ class TakeController(
 
     /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
     fun recordingConfigChanged(silenced: () -> Boolean) {
-        if (holding && !stopWait && silenced()) silencedDuringHold()
+        if (rotationHold.holding && !stopWait && silenced()) silencedDuringHold()
     }
 
     /** A locked phone must not keep listening. */
@@ -299,12 +281,12 @@ class TakeController(
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
             capturing = takeActive && !stopWait && !interrupted,
             finishing = takeActive && stopWait && !interrupted,
-            rotation = rotationIdentified(event), otherApp = anotherApp()))
+            rotation = rotationHold.identified(event), otherApp = anotherApp()))
         if (event == EditorEvent.INPUT_START && takeActive && decision == EditorDecision.REVOKE_AUTHORITY) judgeField()
         when (decision) {
             EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
             EditorDecision.REVOKE_AUTHORITY -> {
-                if (authority != null) authorityMoves = true
+                rotationHold.authorityRevoked(granted = authority != null)
                 revokeAuthority()
                 // A positively private rebound editor applies now, not only if the panel returns.
                 if (event == EditorEvent.INPUT_START && editorRetention.positivelyPrivate) excludeTakeFromHistory()
@@ -313,18 +295,6 @@ class TakeController(
             EditorDecision.INTERRUPT -> interruptTake()
         }
         return decision
-    }
-
-    /** A rotation since the panel was last visible, or the take is without authority for another field. */
-    private fun rotationIdentified(event: EditorEvent? = null): Boolean {
-        if (rotations.changes > rotationsWhenVisible || retargetSettle) return true
-        if (!fieldMismatch) return false
-        if (!mismatchFinal) return true // The hold is still open: the editor is still reacting to the rotation.
-        // Settled on a mismatch: a start is still judged, but a plain hide is not a rotation (ADR-010: no timer after it).
-        return when (event) {
-            EditorEvent.INPUT_VIEW_FINISH, EditorEvent.INPUT_FINISH, EditorEvent.WINDOW_HIDDEN -> holding
-            else -> true
-        }
     }
 
     /**
@@ -338,15 +308,10 @@ class TakeController(
         rotationEvent(RotationEvent.FIELD_JUDGED, same, detail = mapOf(
             "sameField" to same, "typeNull" to (now?.typeNull ?: true), "selValid" to (now?.selValid ?: false),
             "connectionChanged" to (editor.live() != latest?.connection)))
-        if (!same && !fieldMismatch) {
-            fieldMismatch = true
-            log.info("authority withheld: input is not the take's field")
-        } else if (same && fieldMismatch && !mismatchFinal) {
-            fieldMismatch = false
-            retargetSettle = true
-            // A Stop pressed meanwhile gets its authority back with the panel on this field's session.
-            if (stopWait) authorityMoves = true
-            log.info("authority returned: the take's field, inside the hold")
+        when (rotationHold.judge(same, stopWait)) {
+            RotationHold.Judgement.WITHHELD -> log.info("authority withheld: input is not the take's field")
+            RotationHold.Judgement.RETURNED -> log.info("authority returned: the take's field, inside the hold")
+            RotationHold.Judgement.UNCHANGED -> Unit
         }
     }
 
@@ -358,10 +323,9 @@ class TakeController(
 
     /** Enters (or stays in) the rotation hold. The gap starts once and is never extended. */
     private fun enterRotationHold(event: EditorEvent) {
-        panelSettledPosted?.cancel()
+        val entered = rotationHold.enter()
         latest?.heldForRotation = true
-        if (!holding) {
-            holding = true
+        if (entered) {
             rotationEvent(RotationEvent.HOLD_ENTERED)
             log.info("rotation hold")
             setRingLive(false)
@@ -369,10 +333,7 @@ class TakeController(
         // An open choice is take state: the returned panel renders it again; nothing to move.
         // Stop wait: hold the result before dispatch; an accepted commit is never undone.
         if (stopWait) take?.holdDelivery(DeliveryHold.ROTATION)
-        if (!rotationEpisode) {
-            rotationEpisode = true
-            gapExpiredPosted = scheduler.postDelayed(ROTATION_HOLD_GAP_MS, gapExpired)
-        }
+        rotationHold.startGapOnce()
         if (stopWait) { requestOwnPanelForNewEditor(event); return } // The microphone is already off.
         val silenced = host.captureSilenced()
         if (silenced) { silencedDuringHold(); return }
@@ -388,14 +349,8 @@ class TakeController(
      */
     private fun requestOwnPanelForNewEditor(event: EditorEvent) {
         if (event != EditorEvent.INPUT_START && event != EditorEvent.INPUT_VIEW_FINISH && event != EditorEvent.WINDOW_HIDDEN) return
-        panelRequestPosted?.cancel()
-        panelRequestPosted = scheduler.postDelayed(0, panelRequest)
+        rotationHold.askForPanel()
     }
-
-    private val panelRequest = Runnable {
-        if (holding && inputStarted && !inputViewVisible && !destroyed) host.requestPanel()
-    }
-    private var panelRequestPosted: TakeScheduler.Cancellable? = null
 
     /** The panel settled after a rotation: the rotation no longer holds the result (the finishing choice still may). */
     private fun restoreAfterRotation() {
@@ -409,22 +364,10 @@ class TakeController(
         interruptTake()
     }
 
-    /** Ends hold, gap and settling without deciding anything about the take. */
-    private fun endHold() {
-        holding = false
-        rotationEpisode = false
-        gapExpiredPosted?.cancel()
-        panelSettledPosted?.cancel()
-    }
-
     /** The panel stayed visible after the rotation: later editor events are judged without it. */
     private fun rotationSettled() {
-        if (rotationEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
-        endHold()
-        rotationsWhenVisible = rotations.changes
-        retargetSettle = false
-        if (fieldMismatch) mismatchFinal = true
-        authorityMoves = false
+        if (rotationHold.inEpisode) rotationEvent(RotationEvent.HOLD_SETTLED)
+        rotationHold.settle()
         if (takeActive && !interrupted && editorRetention.excludesSettledTake) excludeTakeFromHistory()
         restoreAfterRotation()
     }
@@ -435,12 +378,8 @@ class TakeController(
      * session owns what holds its result, and releases or drops it itself).
      */
     private fun endHoldAndForgetRotation() {
-        endHold()
-        fieldMismatch = false
-        mismatchFinal = false
-        retargetSettle = false
+        rotationHold.forget()
         render()
-        authorityMoves = false
     }
 
     /**
@@ -451,10 +390,9 @@ class TakeController(
     private fun panelVisible() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
-        if (authorityMoves && stopWait && !interrupted && !fieldMismatch) authority = recordingToken
+        if (rotationHold.authorityReturnsWithPanel && stopWait && !interrupted) authority = recordingToken
         if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
-        if (holding) {
-            holding = false
+        if (rotationHold.panelReturned()) {
             if (!interrupted) {
                 previewAllowed = true
                 showPreview(latestPreview)
@@ -480,9 +418,8 @@ class TakeController(
 
     /** Also from the service: after its own configuration change and a display change. */
     fun settleAfterRotation() {
-        if (!takeActive || holding || !inputViewVisible || !rotationIdentified()) return
-        panelSettledPosted?.cancel()
-        panelSettledPosted = scheduler.postDelayed(ROTATION_SETTLE_MS, panelSettled)
+        if (!takeActive || rotationHold.holding || !inputViewVisible || !rotationHold.identified()) return
+        rotationHold.awaitSettle()
     }
 
     /** No text may be written for this take until Stop grants authority again; capture is untouched. */
@@ -510,7 +447,7 @@ class TakeController(
     fun beginDestroy() {
         destroyed = true
         outcomePending = null
-        endHold()
+        rotationHold.end()
     }
 
     /** onDestroy, second part, after the service removed its listeners. */
@@ -638,8 +575,8 @@ class TakeController(
             latestPreview = ""
             // The panel is visible now; only rotations after this point count for this take.
             rotations.observe()
-            rotationsWhenVisible = rotations.changes
-            endHoldAndForgetRotation()
+            rotationHold.takeStarted()
+            render()
             val currentFeedback = RecordingFeedback()
             feedback?.stop()
             feedback = currentFeedback
@@ -698,8 +635,8 @@ class TakeController(
         // Stop settles the take on this editor.
         if (editorRetention.excludesSettledTake) excludeTakeFromHistory()
         // Stop grants authority to the input session the visible panel is attached to.
-        authority = recordingToken?.takeIf { session.matches(it) && !fieldMismatch }
-        authorityMoves = false
+        val granted = rotationHold.stopGrantsAuthority()
+        authority = recordingToken?.takeIf { granted && session.matches(it) }
         latest?.stopWait = true
         render()
         feedback?.stop()
@@ -893,7 +830,7 @@ class TakeController(
             PanelChoice.RECORDING -> {
                 if (!resumeFromChoice()) { render(); interruptTake(); return }
                 showPhase(continuedPhase(open))
-                if (!holding) setRingLive(true)
+                if (!rotationHold.holding) setRingLive(true)
             }
             PanelChoice.FINISHING -> {
                 choice = null

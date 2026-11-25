@@ -36,13 +36,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The take controller at its interface, without Android (#85, #86, #87, #88, #89): the service's events go in,
+ * The take controller at its interface, without Android (#85, #86, #87, #88, #89, #90): the service's events go in,
  * the panel frame and the effects come out through the ports. The scheduler is a fake with its own
  * clock; the microphone owner is the real one, observed as the service observes it, and is released
  * when each test ends.
  */
 class TakeControllerTest {
-    /** What the controller did at its ports, in order: `status:…` (a changed status line), `write:…`, `return`. */
+    /** What the controller did at its ports, in order: `status:…` (a changed status line), `write:…`, `return`, `request_panel`. */
     private val effects = mutableListOf<String>()
 
     private inner class Host : TakeHost {
@@ -60,12 +60,14 @@ class TakeControllerTest {
             frames += frame
         }
         override fun returnToKeyboard(): Boolean { returns++; effects += "return"; duringReturn(); return true }
-        override fun requestPanel() { panelRequests++ }
+        override fun requestPanel() { panelRequests++; effects += "request_panel" }
         override fun copy(text: String) { copied += text; effects += "copy:$text" }
         override fun askPermission() { asked++ }
         override fun historyNotice(notice: HistoryNotice) { notices += notice }
         override fun hasMicPermission() = permission
-        override fun captureSilenced() = false
+        /** Android silences this app's capture (a client whose window is hidden). */
+        var silenced = false
+        override fun captureSilenced() = silenced
         override fun currentField(): FieldIdentity? = FIELD
     }
 
@@ -213,6 +215,8 @@ class TakeControllerTest {
     private val scheduler = Scheduler()
     private val input = Input()
     private val field = Field()
+    /** The connection Android hands out now: the starting field's, until another editor starts input. */
+    private var live: EditorConnection? = field
     private val rotations = Rotations()
     private val diagnostics = TakeDiagnostics()
     private val flushes = AtomicInteger()
@@ -220,6 +224,10 @@ class TakeControllerTest {
     @Volatile private var holdDecode = false
     private val heldDecodes = LinkedBlockingQueue<Runnable>()
     private fun runHeldDecodes() { holdDecode = false; while (true) (heldDecodes.poll() ?: return).run() }
+    /** While set, History's own work (its saves and their acknowledgement) waits in [heldHistory]. */
+    @Volatile private var holdHistory = false
+    private val heldHistory = LinkedBlockingQueue<Runnable>()
+    private fun runHeldHistory() { holdHistory = false; while (true) (heldHistory.poll() ?: return).run() }
     /** Recognition fails: no text comes out of the take. */
     @Volatile private var decodeFails = false
     private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { if (holdDecode) heldDecodes.add(it) else it.run() },
@@ -248,7 +256,8 @@ class TakeControllerTest {
             ): TakeSession {
                 opened++
                 outputs += output
-                val history = HistoryTakeOutput(output, { HistoryStore(File(folder, "history")) }, Executor { it.run() },
+                val history = HistoryTakeOutput(output, { HistoryStore(File(folder, "history")) },
+                    Executor { if (holdHistory) heldHistory.add(it) else it.run() },
                     { notice(HistoryNotice.SAVE) }, delivery = executor)
                 attached(history) { null }
                 return runtime.open(capture, history, executor, observer, retentionEligible = retentionEligible).also { it.start() }
@@ -258,7 +267,7 @@ class TakeControllerTest {
     /** Every controller of this test and whether it was destroyed already; each is destroyed when the test ends. */
     private val controllers = mutableMapOf<TakeController, Boolean>()
     private fun controllerOn(host: Host) =
-        TakeController(host, scheduler, opener, EditorPort { field }, diagnostics, rotations, lab, log).also { controllers[it] = false }
+        TakeController(host, scheduler, opener, EditorPort { live }, diagnostics, rotations, lab, log).also { controllers[it] = false }
     private val controller = controllerOn(host)
 
     @Before fun freeMicrophone() {
@@ -279,6 +288,7 @@ class TakeControllerTest {
         scheduler.holdForeignPosts = false
         input.releaseGate?.countDown()
         runHeldDecodes()
+        runHeldHistory()
         controllers.keys.toList().forEach { destroy(it) }
         await {
             if (MicrophoneOwner.state().releaseFailed) MicrophoneOwner.retryRelease()
@@ -1956,10 +1966,1057 @@ class TakeControllerTest {
         }
     }
 
+    // --- Rotation hold, authority move, retention latch (#90): hold, gap, settle, field judgement, panel request. ---
+
+    /** The display turns: the service counts it, recreates the panel for the new layout and lets a visible panel settle. */
+    private fun turn() {
+        rotations.changes++
+        controller.panelCreated()
+        controller.render()
+        controller.settleAfterRotation()
+    }
+
+    /** The service's onFinishInputView, onWindowHidden and onFinishInput: the editor and the keyboard go away. */
+    private fun editorLeaves() {
+        hidePanel()
+        controller.windowHidden()
+        controller.inputFinish()
+    }
+
+    /** An editor starts input on the connection [next]; what the controller posted for it has run. */
+    private fun inputStartsOn(next: Field, retention: EditorRetention = EditorRetention.ELIGIBLE, app: String? = FIELD_PACKAGE,
+                              identity: FieldIdentity? = FIELD) {
+        live = next
+        controller.inputStart(retention, app, identity)
+        scheduler.drain()
+    }
+
+    /**
+     * A Signal-like editor: the display turns, its activity is recreated in the new orientation and does not
+     * show the keyboard again. The recreated field starts input on a new connection; the panel stays hidden.
+     */
+    private fun rotateHidden(retention: EditorRetention = EditorRetention.ELIGIBLE, identity: FieldIdentity? = FIELD): Field {
+        turn()
+        editorLeaves()
+        return Field().also { inputStartsOn(it, retention, identity = identity) }
+    }
+
+    /** Android shows our panel on the live input (after the app or we asked). */
+    private fun showPanel() {
+        controller.inputViewStart()
+        scheduler.drain()
+    }
+
+    /** Pixel order (#56 trace): inside the configuration change Android restarts input on the old editor and shows the recreated panel. */
+    private fun platformReset() {
+        turn()
+        controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, FIELD)
+        showPanel()
+    }
+
+    /** The rest of the Pixel order: 95 ms later the old editor hides the panel and a recreated one starts input. */
+    private fun recreatedEditorTakesInput(): Field {
+        scheduler.advance(95)
+        editorLeaves()
+        return Field().also { inputStartsOn(it) }
+    }
+
+    private fun assertHeldForTheRotation() {
+        assertTrue("the take is kept", controller.takeActive)
+        assertTrue(MicrophoneOwner.state().occupied)
+        assertEquals("the microphone was not stopped", 0, input.stops.get())
+        assertEquals("no text shows while the panel is away", "", frame().preview)
+        assertFalse(frame().ringLive)
+    }
+
+    private fun stopAndAwaitTheHandBack() {
+        controller.microphonePressed()
+        await { host.returns == 1 }
+        awaitTakeEnded()
+    }
+
+    /** The microphone is being released after an interruption, at once: no clock has to move for it. */
+    private fun assertInterruptedAtOnce() {
+        assertTrue("interrupted at once", status() == "stopping" || frame().unableToInsert)
+        assertFalse(frame().stopGlyph)
+    }
+
+    @Test fun aRotationThatHidesThePanelKeepsTheTakeAndStopInsertsOnceIntoTheReturnedField() {
+        recordingWithSpeech()
+        val next = rotateHidden()
+        assertHeldForTheRotation()
+        assertEquals("the controller asks for its own panel, once", 1, host.panelRequests)
+        input.say()
+        await { historyRows().single().text == "word word" }
+        scheduler.drain()
+        assertEquals("speech in the hold is kept and not shown", "", frame().preview)
+        assertEquals(emptyList<String>(), field.written + next.written)
+
+        showPanel()
+        assertEquals("recording", status())
+        assertEquals("word word", frame().preview)
+        assertTrue(frame().microphoneEnabled && frame().stopGlyph && frame().ringLive)
+        scheduler.advance(ROTATION_HOLD_GAP_MS * 2)
+        assertTrue("the hold ended with the panel: no timer stops this take now", controller.takeActive)
+        input.say()
+        await { frame().preview == "word word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word word"), next.written)
+        assertEquals("never into the connection the take started on", emptyList<String>(), field.written)
+        assertEquals(1, input.starts.get())
+        assertEquals(1, opened)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        assertEquals(1, host.panelRequests)
+    }
+
+    @Test fun aHoldWhosePanelNeverReturnsEndsTheTakeIntoHistoryAt3000MsAndNotAt2999() {
+        recordingWithSpeech()
+        val next = rotateHidden()
+        scheduler.advance(2999)
+        assertHeldForTheRotation()
+        assertEquals("recording", status())
+        scheduler.advance(1)
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+        // A late panel cannot revive the take or start another microphone.
+        showPanel()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(1, opened)
+        assertEquals(1, input.starts.get())
+        assertFalse(controller.takeActive)
+    }
+
+    /** The gap is one for the whole rotation: a panel that came back and was hidden again before it settled does not extend it. */
+    @Test fun aHideAt999MsAfterThePanelReturnedIsStillTheRotationAndTheOneGapEndsIt() {
+        recordingWithSpeech()
+        rotateHidden()
+        showPanel()
+        scheduler.advance(999)
+        hidePanel()
+        assertHeldForTheRotation()
+        scheduler.advance(2000)
+        assertTrue("2999 ms after the first hold", controller.takeActive)
+        assertEquals("recording", status())
+        scheduler.advance(1)
+        assertEquals("3000 ms after the first hold, not after the second", "stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    @Test fun aHideOnceTheReturnedPanelSettledAt1000MsIsARealHideAndInterruptsAtOnce() {
+        recordingWithSpeech()
+        rotateHidden()
+        showPanel()
+        scheduler.advance(1000)
+        val requests = host.panelRequests
+        hidePanel()
+        assertEquals("no clock moved: no hold after a plain hide", "stopping", status())
+        scheduler.drain()
+        assertEquals("and no panel is asked for", requests, host.panelRequests)
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    /** An editor that keeps focus sends no event: the visible panel settles the rotation by itself. */
+    @Test fun aKeptEditorsRotationSettlesAt1000MsAndNotAt999() {
+        recordingWithSpeech()
+        turn()
+        scheduler.advance(999)
+        hidePanel()
+        assertHeldForTheRotation()
+        showPanel()
+        assertEquals("recording", status())
+        scheduler.advance(999)
+        hidePanel()
+        assertHeldForTheRotation()
+        showPanel()
+        scheduler.advance(1000)
+        hidePanel()
+        assertEquals("settled 1000 ms after the panel came back: a real hide", "stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    /** A hide right after a rotation cannot be told apart from the editor reacting to it: held, and only until the gap ends. */
+    @Test fun aHideRightAfterARotationIsHeldOnlyUntilTheGapEnds() {
+        recordingWithSpeech()
+        turn()
+        scheduler.advance(500)
+        hidePanel()
+        assertHeldForTheRotation()
+        scheduler.advance(2999)
+        assertTrue("the gap counts from the hide, the first hold", controller.takeActive)
+        assertEquals("recording", status())
+        scheduler.advance(1)
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    @Test fun pixelOrderAKeptEditorKeepsTheTakeThroughThePlatformResetAndStopInsertsOnce() {
+        recordingWithSpeech()
+        platformReset()
+        assertEquals("recording", status())
+        scheduler.advance(ROTATION_HOLD_GAP_MS * 2)
+        assertTrue("the panel stayed visible: no gap applies", controller.takeActive)
+        assertEquals("recording", status())
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word"), field.written)
+        assertEquals(1, input.starts.get())
+        assertEquals(0, host.panelRequests)
+        assertEquals("idle", status())
+    }
+
+    @Test fun pixelOrderARecreatedEditorsLateHideIsHeldAndOnePanelRequestBringsTheTakeBack() {
+        recordingWithSpeech()
+        platformReset()
+        val next = recreatedEditorTakesInput()
+        assertHeldForTheRotation()
+        assertEquals(1, host.panelRequests)
+        showPanel()
+        assertEquals("recording", status())
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertTrue(controller.takeActive)
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(1, input.starts.get())
+    }
+
+    /**
+     * Signal order (owner log 2026-11-13): platform reset, the old editor finishes, the recreated one starts
+     * input with the panel shown, then Signal hides the keyboard and starts no further input; our own panel
+     * request shows it again on that input. [pumped]: the first request ran between the view start and the
+     * hide, when the hold had briefly ended (4 in 12 device runs did not get the panel back).
+     */
+    private fun signalOrderHideAfterTheRecreatedEditorStarted(pumped: Boolean) {
+        recordingWithSpeech()
+        platformReset()
+        scheduler.advance(200)
+        hidePanel()
+        controller.inputFinish()
+        val next = Field()
+        live = next
+        controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart() // The window is still shown: the view starts with the input.
+        if (pumped) {
+            scheduler.drain()
+            assertEquals("the first request finds the panel visible and asks for nothing", 0, host.panelRequests)
+        }
+        hidePanel() // Signal hides the keyboard; the input stays started.
+        controller.windowHidden()
+        scheduler.drain()
+        assertHeldForTheRotation()
+        assertEquals(1, host.panelRequests)
+        showPanel()
+        assertEquals("recording", status())
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertTrue(controller.takeActive)
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(1, host.panelRequests)
+    }
+
+    @Test fun signalOrderAHideAfterTheRecreatedEditorStartedGetsThePanelBackAndStopInsertsOnceThere() =
+        signalOrderHideAfterTheRecreatedEditorStarted(pumped = false)
+
+    @Test fun signalOrderAHideAfterAViewStartWhoseRequestAlreadyRanAsksForThePanelAgain() =
+        signalOrderHideAfterTheRecreatedEditorStarted(pumped = true)
+
+    /** Once the panel is back and settled, nothing is asked for again. */
+    @Test fun noPanelIsAskedForOnceTheHoldEnded() {
+        recordingWithSpeech()
+        platformReset()
+        scheduler.advance(ROTATION_HOLD_GAP_MS + 100)
+        hidePanel()
+        controller.windowHidden()
+        scheduler.drain()
+        assertEquals(0, host.panelRequests)
+        assertInterruptedAtOnce()
+    }
+
+    /** Home inside the rotation window: no input is started, so no panel is asked for; the take ends at the gap. */
+    @Test fun homeInsideTheRotationWindowAsksForNoPanelAndTheTakeEndsAtTheGap() {
+        recordingWithSpeech()
+        platformReset()
+        editorLeaves()
+        scheduler.drain()
+        assertEquals(0, host.panelRequests)
+        scheduler.advance(2999)
+        assertTrue(controller.takeActive)
+        assertEquals(0, host.panelRequests)
+        scheduler.advance(1)
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertEquals(0, host.panelRequests)
+    }
+
+    /** A rotation never moves a take to another app: its input start ends the take at once, not at the gap. */
+    @Test fun anotherAppsInputStartInsideTheRotationWindowEndsTheTakeAtOnceAndGetsNothing() {
+        recordingWithSpeech()
+        platformReset()
+        editorLeaves()
+        val other = Field()
+        inputStartsOn(other, app = OTHER_APP, identity = OTHER_APP_FIELD)
+        assertInterruptedAtOnce()
+        assertEquals("no panel is asked for in the other app", 0, host.panelRequests)
+        controller.inputViewStart()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertNothingHeldOrShownInTheOtherApp()
+        assertEquals(emptyList<String>(), other.written)
+        assertEquals(1, opened)
+        assertEquals(0, host.panelRequests)
+    }
+
+    @Test fun repeatedRotationsKeepOneTakeWithAllItsSpeech() {
+        recordingWithSpeech()
+        rotateHidden()
+        showPanel()
+        input.say()
+        await { frame().preview == "word word" }
+        // Three more turns before the editor reacts.
+        turn(); turn(); turn()
+        editorLeaves()
+        val last = Field()
+        inputStartsOn(last)
+        assertHeldForTheRotation()
+        showPanel()
+        input.say()
+        await { frame().preview == "word word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word word"), last.written)
+        assertEquals(1, input.starts.get())
+        assertEquals(1, opened)
+        assertEquals(1, historyRows().size)
+    }
+
+    @Test fun aLockDuringARotationHoldStopsAtOnceAndHoldsNothing() {
+        recordingWithSpeech()
+        rotateHidden()
+        controller.screenOff()
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertFalse("a lock never keeps the text", frame().held)
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(1, opened)
+    }
+
+    @Test fun losingTheMicrophoneDuringARotationHoldEndsTheTakeIntoHistory() {
+        recordingWithSpeech()
+        val next = rotateHidden()
+        input.endUnexpectedly()
+        awaitInterruptedInHistory()
+        showPanel()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+        assertEquals(1, opened)
+        assertEquals(1, input.starts.get())
+    }
+
+    /** Android may silence a client whose window is hidden: a silenced hold cannot keep listening. */
+    @Test fun aCaptureSilencedDuringARotationHoldEndsTheTakeAtOnce() {
+        recordingWithSpeech()
+        controller.recordingConfigChanged { true }
+        assertTrue("without a hold a silencing report changes nothing", controller.takeActive)
+        assertEquals("recording", status())
+        rotateHidden()
+        assertHeldForTheRotation()
+        controller.recordingConfigChanged { false }
+        assertTrue(controller.takeActive)
+        controller.recordingConfigChanged { true }
+        assertEquals("no clock moved: at once, not at the gap", "stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    @Test fun aCaptureAlreadySilencedWhenTheHoldBeginsEndsTheTakeAtOnceAndAsksForNoPanel() {
+        recordingWithSpeech()
+        host.silenced = true
+        turn()
+        hidePanel()
+        assertEquals("stopping", status())
+        scheduler.drain()
+        assertEquals(0, host.panelRequests)
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    // Field judgement: only the take's own field keeps the take's insert authority (ADR-010).
+
+    /**
+     * Signal order into another input of the same app: reset, the old editor finishes, the recreated activity
+     * starts [identity] on a new connection and hides the keyboard; our panel returns there and settles.
+     */
+    private fun retargetedTo(identity: FieldIdentity, retention: EditorRetention): Field {
+        recordingWithSpeech()
+        platformReset()
+        scheduler.advance(150)
+        hidePanel()
+        controller.inputFinish()
+        val next = Field()
+        live = next
+        controller.inputStart(retention, FIELD_PACKAGE, identity)
+        controller.inputViewStart()
+        hidePanel()
+        controller.windowHidden()
+        scheduler.drain()
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        return next
+    }
+
+    /** A view that is no text editor: TYPE_NULL, no selection (Signal after rotation, diagnostics 2026-11-13). */
+    private fun retargetedToNoEditor() = retargetedTo(NO_EDITOR_INPUT, EditorRetention.NO_EDITOR)
+
+    /** The user taps the take's own field: its input starts again, on a new connection, and the panel shows there. */
+    private fun tapTheTakesField(): Field {
+        hidePanel()
+        controller.inputFinish()
+        val back = Field()
+        inputStartsOn(back)
+        controller.inputViewStart()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        return back
+    }
+
+    private fun stopAndAwaitHeld() {
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { frame().held }
+    }
+
+    @Test fun anInputThatIsNoEditorAfterARotationIsNeverWrittenAndTheTextIsHeld() {
+        val next = retargetedToNoEditor()
+        stopAndAwaitHeld()
+        assertEquals("nothing is written into a view that is no editor", emptyList<String>(), next.written)
+        assertNothingWritten()
+        assertTrue(historyRows().single().delivery != HistoryDelivery.ACCEPTED)
+        assertHeld("unable_history")
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    @Test fun anotherFieldOfTheSameAppAfterARotationIsNeverWrittenAndTheTextIsHeld() {
+        val other = retargetedTo(OTHER_FIELD, EditorRetention.UNCLASSIFIABLE)
+        stopAndAwaitHeld()
+        assertEquals("never into a different field", emptyList<String>(), other.written)
+        assertNothingWritten()
+        // The take settled on an unclassifiable field: History does not keep it and the status says so.
+        assertTrue(historyRows().isEmpty())
+        assertHeld("unable_unsaved")
+        assertEquals(R.string.retention_field_off, frame().notice)
+    }
+
+    @Test fun aTakeWithoutAuthorityKeepsRecordingAndStopHoldsAllItsText() {
+        retargetedToNoEditor()
+        assertEquals("recording", status())
+        assertEquals("no helper line: only the private-field line ever shows", null, frame().notice)
+        assertEquals("not an interruption", 0, input.stops.get())
+        input.say() // Speech after the rotation is not lost.
+        await { frame().preview == "word word" }
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertTrue(controller.takeActive)
+        stopAndAwaitHeld()
+        assertEquals(null, frame().notice)
+        assertHeld("unable_history", "word word")
+    }
+
+    /** Authority never comes back once the hold settled (owner 2026-11-13): the tap on the take's own field ends the take, its text is held. */
+    @Test fun aTapOnTheTakesFieldAfterTheHoldSettledEndsTheTakeAndItsTextIsHeld() {
+        retargetedToNoEditor()
+        input.say()
+        await { frame().preview == "word word" }
+        val back = tapTheTakesField()
+        awaitTakeEnded()
+        await { frame().held }
+        assertEquals(emptyList<String>(), back.written)
+        assertNothingWritten()
+        assertEquals("word word", frame().preview)
+    }
+
+    @Test fun theTakesFieldReturningDuringTheStopWaitAfterTheHoldSettledInsertsNothingAndTheTextIsHeld() {
+        retargetedToNoEditor()
+        holdDecode = true
+        controller.microphonePressed() // Stopped without authority; the text is not prepared yet.
+        await { !MicrophoneOwner.state().occupied }
+        val back = tapTheTakesField()
+        runHeldDecodes()
+        awaitTakeEnded()
+        await { frame().held }
+        assertEquals(emptyList<String>(), back.written)
+        assertNothingWritten()
+        assertEquals("word", frame().preview)
+    }
+
+    @Test fun theTakesFieldStartingInputAfterTheTextWasHeldInsertsNothing() {
+        retargetedToNoEditor()
+        stopAndAwaitHeld()
+        val back = tapTheTakesField()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(emptyList<String>(), back.written)
+        assertNothingWritten()
+        assertHeld("unable_history")
+        assertEquals(1, opened)
+    }
+
+    /**
+     * The hold settled on a mismatch: final. The take's field restarting input afterwards (no finish first) is
+     * held like a rotation and judged, and gets no authority: Stop holds the text.
+     */
+    @Test fun aRestartOnTheTakesFieldAfterTheHoldSettledOnAMismatchGetsNoAuthorityAndStopHolds() {
+        retargetedToNoEditor()
+        val back = Field()
+        inputStartsOn(back)
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertTrue("not an interruption", controller.takeActive)
+        assertEquals("recording", status())
+        stopAndAwaitHeld()
+        assertEquals(emptyList<String>(), back.written)
+        assertNothingWritten()
+        assertHeld("unable_history")
+    }
+
+    /** Android finishes the old input before the take's field starts again: a plain leave once the hold settled, at once. */
+    @Test fun theTakesFieldStartingOnceItsInputFinishedAfterASettledMismatchEndsTheTakeAndTheTextIsHeld() {
+        retargetedToNoEditor()
+        controller.inputFinish()
+        assertEquals("stopping", status())
+        val back = Field()
+        inputStartsOn(back)
+        controller.inputViewStart()
+        scheduler.advance(1000)
+        awaitTakeEnded()
+        await { frame().held }
+        assertEquals(emptyList<String>(), back.written)
+        assertNothingWritten()
+        assertEquals(1, opened)
+    }
+
+    /** Stop's authority moves only to the take's own field: the panel returning on another field of the app gets none. */
+    @Test fun stopThenARotationIntoAnotherFieldOfTheAppInsertsNothingAndTheTextIsHeld() {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        turn()
+        editorLeaves()
+        val other = Field()
+        inputStartsOn(other, identity = OTHER_FIELD)
+        showPanel()
+        assertEquals("finishing", status())
+        scheduler.advance(1000)
+        runHeldDecodes()
+        awaitTakeEnded()
+        await { frame().held }
+        assertEquals("never into a different field", emptyList<String>(), other.written)
+        assertNothingWritten()
+        assertHeld("unable_history")
+    }
+
+    /** What a rotation decided belongs to its take: the next take has its own authority. */
+    @Test fun theTakeAfterOneThatLostItsAuthorityInsertsAgain() {
+        val next = retargetedToNoEditor()
+        stopAndAwaitHeld()
+        controller.onDiscardAction()
+        controller.microphonePressed()
+        assertEquals(2, opened)
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+    }
+
+    /** No timer after a plain hide: the take without authority ends at once, as ADR-010 says, and asks for no panel. */
+    @Test fun aPlainHideWhileWithoutAuthorityInterruptsAtOnceAndAnotherAppGetsNothing() {
+        retargetedToNoEditor()
+        val requests = host.panelRequests
+        hidePanel()
+        assertEquals("stopping", status())
+        controller.windowHidden()
+        controller.inputFinish()
+        val other = Field()
+        inputStartsOn(other, app = OTHER_APP, identity = OTHER_APP_FIELD)
+        assertEquals(requests, host.panelRequests)
+        awaitTakeEnded()
+        assertEquals(emptyList<String>(), other.written)
+        assertNothingWritten()
+    }
+
+    /** Inside the hold the automatic rotation sequence can pass through a view that is no editor: the take's field starting again returns the authority. */
+    @Test fun signalOrderATransientInputWithoutAnEditorInsideTheHoldKeepsAuthorityAndTheTakeEligible() {
+        recordingWithSpeech()
+        assertEquals(1, historyRows().size)
+        val none = Field()
+        var last = Field()
+        repeat(2) { // There, and back the same way.
+            platformReset()
+            scheduler.advance(130)
+            hidePanel()
+            controller.inputFinish()
+            live = none
+            controller.inputStart(EditorRetention.NO_EDITOR, null, NO_EDITOR_INPUT)
+            controller.inputViewStart()
+            hidePanel()
+            controller.windowHidden()
+            controller.inputFinish()
+            last = Field()
+            inputStartsOn(last)
+            showPanel()
+            assertEquals("the checkpoint is kept through the editor-less start", 1, historyRows().size)
+            assertEquals("no editor is not a private editor", null, frame().notice)
+            assertEquals("recording", status())
+            scheduler.advance(ROTATION_SETTLE_MS)
+            assertEquals(null, frame().notice)
+        }
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word"), last.written)
+        assertEquals(emptyList<String>(), none.written + field.written)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        assertEquals("word word", historyRows().single().text)
+    }
+
+    // Retention latch: latched from the starting editor, and it only tightens.
+
+    @Test fun aPrivateEditorTheTakeReboundToExcludesItFromHistoryAtOnceAndForGood() {
+        recordingWithSpeech()
+        assertEquals("checkpointed while the starting editor allowed it", 1, historyRows().size)
+        val next = rotateHidden(EditorRetention.PASSWORD, OTHER_FIELD)
+        assertTrue("excluded as soon as the private editor starts input", historyRows().isEmpty())
+        showPanel()
+        // A different (private) field: the take has no authority there, but the "not kept" line is never hidden.
+        assertEquals(R.string.retention_field_off, frame().notice)
+        input.say()
+        await { frame().preview == "word word" }
+        assertTrue(historyRows().isEmpty())
+        stopAndAwaitHeld()
+        assertEquals("never into a different field", emptyList<String>(), next.written)
+        assertNothingWritten()
+        assertTrue(historyRows().isEmpty())
+        assertHeld("unable_unsaved", "word word")
+    }
+
+    /** How a rotation hold whose rebound editor is private ends. */
+    private enum class HoldExit { GAP, SCREEN_OFF, MICROPHONE_LOSS, SILENCED, HIDE_IN_HOLD, HIDE_AFTER_PANEL }
+
+    /**
+     * A rotation rebinds the take to a private editor and the hold ends without the take continuing: the take
+     * is excluded from the moment the private editor starts input, so neither the saved checkpoint nor the
+     * interrupted result is kept, whatever ends the hold.
+     */
+    private fun aPrivateEditorInTheHoldKeepsNothing(exit: HoldExit, stopFirst: Boolean = false) {
+        recordingWithSpeech()
+        assertEquals(1, historyRows().size)
+        if (stopFirst) {
+            holdDecode = true
+            controller.microphonePressed()
+            await { !MicrophoneOwner.state().occupied }
+        }
+        val next = rotateHidden(EditorRetention.PASSWORD, OTHER_FIELD)
+        assertTrue("excluded as soon as the private editor starts input", historyRows().isEmpty())
+        when (exit) {
+            HoldExit.GAP -> scheduler.advance(ROTATION_HOLD_GAP_MS)
+            HoldExit.SCREEN_OFF -> controller.screenOff()
+            HoldExit.MICROPHONE_LOSS -> input.endUnexpectedly()
+            HoldExit.SILENCED -> controller.recordingConfigChanged { true }
+            HoldExit.HIDE_IN_HOLD -> { hidePanel(); scheduler.advance(ROTATION_HOLD_GAP_MS) }
+            HoldExit.HIDE_AFTER_PANEL -> {
+                showPanel()
+                scheduler.advance(ROTATION_SETTLE_MS)
+                hidePanel()
+                controller.windowHidden()
+            }
+        }
+        runHeldDecodes()
+        awaitTakeEnded()
+        await { flushes.get() == 1 }
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertTrue(historyRows().isEmpty())
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+        assertFalse(controller.takeActive)
+    }
+
+    @Test fun aPrivateEditorInTheHoldThenTheGapKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.GAP)
+    @Test fun aPrivateEditorInTheHoldThenALockKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.SCREEN_OFF)
+    @Test fun aPrivateEditorInTheHoldThenTheMicrophoneLostKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.MICROPHONE_LOSS)
+    @Test fun aPrivateEditorInTheHoldThenSilencingKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.SILENCED)
+    @Test fun aPrivateEditorInTheHoldThenAHideInTheHoldKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.HIDE_IN_HOLD)
+    @Test fun aPrivateEditorInTheHoldThenARealHideKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.HIDE_AFTER_PANEL)
+    @Test fun aPrivateEditorInTheStopWaitsHoldThenTheGapKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.GAP, stopFirst = true)
+    @Test fun aPrivateEditorInTheStopWaitsHoldThenALockKeepsNothing() = aPrivateEditorInTheHoldKeepsNothing(HoldExit.SCREEN_OFF, stopFirst = true)
+    @Test fun aPrivateEditorInTheStopWaitsHoldThenAHideInTheHoldKeepsNothing() =
+        aPrivateEditorInTheHoldKeepsNothing(HoldExit.HIDE_IN_HOLD, stopFirst = true)
+    @Test fun aPrivateEditorInTheStopWaitsHoldThenARealHideKeepsNothing() =
+        aPrivateEditorInTheHoldKeepsNothing(HoldExit.HIDE_AFTER_PANEL, stopFirst = true)
+
+    /** A no-learning editor during the hold is positively private: excluded at once, like a password, also without the panel. */
+    @Test fun aNoLearningEditorInTheHoldExcludesTheTakeAlsoWithoutTheReturningPanel() {
+        recordingWithSpeech()
+        assertEquals(1, historyRows().size)
+        rotateHidden(EditorRetention.NO_LEARNING, OTHER_FIELD)
+        assertTrue(historyRows().isEmpty())
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        awaitTakeEnded()
+        await { flushes.get() == 1 }
+        scheduler.drain()
+        assertTrue(historyRows().isEmpty())
+    }
+
+    /** An unclassifiable editor excludes the take only once the panel settled on it; an input start alone does not. */
+    @Test fun anUnclassifiableEditorExcludesTheTakeWhenThePanelSettledOnItAt1000MsAndNotAt999() {
+        recordingWithSpeech()
+        rotateHidden(EditorRetention.UNCLASSIFIABLE, OTHER_FIELD)
+        assertEquals("not private by itself during the hold", 1, historyRows().size)
+        showPanel()
+        scheduler.advance(999)
+        assertEquals(1, historyRows().size)
+        assertEquals(null, frame().notice)
+        scheduler.advance(1)
+        assertTrue(historyRows().isEmpty())
+        assertEquals(R.string.retention_field_off, frame().notice)
+        assertTrue("the take goes on", controller.takeActive)
+    }
+
+    /** The latch never loosens: a take that started in a private field stays excluded on an ordinary one. */
+    @Test fun aTakeStartedInAPrivateFieldStaysExcludedAfterARotationToAnOrdinaryField() {
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        val next = rotateHidden(EditorRetention.ELIGIBLE, OTHER_FIELD)
+        showPanel()
+        assertEquals(R.string.retention_field_off, frame().notice)
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertEquals(R.string.retention_field_off, frame().notice)
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitHeld()
+        assertEquals("a different field: held, never written", emptyList<String>(), next.written)
+        assertTrue(historyRows().isEmpty())
+        assertHeld("unable_unsaved", "word word")
+    }
+
+    // Authority move: Stop's authority moves with the identified rotation to the session the panel returns to (#53).
+
+    /** Where the Stop wait is when the phone rotates. */
+    private enum class StopWait { BEFORE_FINAL_DECODE, BEFORE_SAVE_ACK }
+
+    /** Stop was pressed and the microphone is released; the text is not out yet: [boundary] holds it. */
+    private fun stoppedWaitingAt(boundary: StopWait) {
+        recordingWithSpeech()
+        if (boundary == StopWait.BEFORE_FINAL_DECODE) holdDecode = true else holdHistory = true
+        controller.microphonePressed()
+        await { !MicrophoneOwner.state().occupied }
+        if (boundary == StopWait.BEFORE_SAVE_ACK) await { flushes.get() == 1 }
+        assertEquals("finishing", status())
+        assertEquals(emptyList<String>(), field.written)
+    }
+
+    /** What [stoppedWaitingAt] held is let go: the text is prepared and saved; it is written only if nothing else holds it. */
+    private fun textPrepared() {
+        runHeldDecodes()
+        runHeldHistory()
+        awaitTextPrepared()
+    }
+
+    /**
+     * Stop, then a Pixel-order rotation into a recreated editor that does not show the keyboard: the panel comes
+     * back finishing the same take, and once it settled the result is inserted there, once.
+     */
+    private fun aRotationInTheStopWaitInsertsOnceIntoTheReturnedField(boundary: StopWait) {
+        stoppedWaitingAt(boundary)
+        platformReset()
+        val next = recreatedEditorTakesInput()
+        assertEquals(1, host.panelRequests)
+        textPrepared()
+        assertEquals("the result waits for the panel", emptyList<String>(), field.written + next.written)
+        showPanel()
+        assertEquals("finishing", status())
+        assertFalse(frame().microphoneEnabled)
+        scheduler.advance(999)
+        scheduler.drain()
+        assertEquals("and for the panel to settle: not at 999 ms", emptyList<String>(), field.written + next.written)
+        scheduler.advance(1)
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(1, input.starts.get())
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        scheduler.advance(ROTATION_HOLD_GAP_MS * 2)
+        assertEquals("no timer repeats it", listOf("word"), next.written)
+        assertEquals(1, host.returns)
+    }
+
+    @Test fun aRotationBeforeTheFinalDecodeInsertsOnceIntoTheReturnedFieldAt1000MsAndNotAt999() =
+        aRotationInTheStopWaitInsertsOnceIntoTheReturnedField(StopWait.BEFORE_FINAL_DECODE)
+
+    @Test fun aRotationBeforeTheHistorySaveIsAcknowledgedInsertsOnceIntoTheReturnedField() =
+        aRotationInTheStopWaitInsertsOnceIntoTheReturnedField(StopWait.BEFORE_SAVE_ACK)
+
+    /** An editor that keeps focus: the result waits until the visible panel settled, then goes into the same field once. */
+    @Test fun aKeptEditorsRotationInTheStopWaitInsertsOnceWhenThePanelSettled() {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        platformReset()
+        assertEquals("finishing", status())
+        textPrepared()
+        scheduler.advance(999)
+        scheduler.drain()
+        assertEquals(emptyList<String>(), field.written)
+        scheduler.advance(1)
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word"), field.written)
+        assertEquals(0, host.panelRequests)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+    }
+
+    /** Stop on the panel Android showed inside the configuration change, before the old editor's late hide. */
+    @Test fun stopOnThePlatformResetPanelInsertsOnceIntoTheRecreatedEditor() {
+        recordingWithSpeech()
+        platformReset()
+        holdDecode = true
+        controller.microphonePressed()
+        await { !MicrophoneOwner.state().occupied }
+        val next = recreatedEditorTakesInput()
+        textPrepared()
+        assertEquals(emptyList<String>(), field.written + next.written)
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+    }
+
+    /** The take ended with its text inserted and the keyboard handed back: a rotation afterwards finds no take. */
+    @Test fun aRotationAfterTheAcceptedInsertionNeitherUndoesNorRepeatsIt() {
+        recordingWithSpeech()
+        stopAndAwaitTheHandBack()
+        editorLeaves() // The hand-back took the keyboard away.
+        turn()
+        controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, FIELD)
+        scheduler.advance(ROTATION_HOLD_GAP_MS * 2)
+        assertEquals(listOf("word"), field.written)
+        assertEquals(1, host.returns)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        assertEquals(1, opened)
+        assertEquals(0, host.panelRequests)
+    }
+
+    @Test fun aRotationInTheStopWaitWhosePanelNeverReturnsSavesToHistoryOnlyAt3000MsAndNotAt2999() {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        val next = rotateHidden()
+        textPrepared()
+        scheduler.advance(2999)
+        assertTrue("the result is held for the panel", controller.takeActive)
+        assertEquals("finishing", status())
+        scheduler.advance(1)
+        await { !controller.takeActive && historyRows().single().delivery == HistoryDelivery.NOT_ATTEMPTED }
+        assertEquals("word", historyRows().single().text)
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+        assertEquals(1, opened)
+    }
+
+    @Test fun aRealHideInTheStopWaitAfterTheReturnedPanelSettledSendsTheResultToHistoryOnly() {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        val next = rotateHidden()
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        hidePanel() // A real hide: no rotation since the panel settled.
+        runHeldDecodes()
+        awaitInterruptedInHistory()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+    }
+
+    // The Cancel choice is take state: the panel that returns after a rotation shows it again; a rotation never chooses.
+
+    /** Pixel-order rotation into a recreated editor with the panel back on it. */
+    private fun rotateToARecreatedEditor(): Field {
+        platformReset()
+        return recreatedEditorTakesInput().also { showPanel() }
+    }
+
+    @Test fun aRecordingChoiceOpenThroughARotationIsShownAgainAndContinueKeepsTheTake() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.RECORDING, frame().choice)
+        val next = rotateToARecreatedEditor()
+        assertEquals("the returned panel shows the same choice", PanelChoice.RECORDING, frame().choice)
+        assertEquals("paused", status())
+        assertFalse(frame().ringLive)
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertEquals("a rotation never chooses", PanelChoice.RECORDING, frame().choice)
+        assertTrue(controller.takeActive)
+        assertEquals("still paused: no second platform start", 1, input.starts.get())
+        controller.onSafeAction()
+        assertEquals(2, input.starts.get())
+        assertEquals("recording", status())
+        input.say()
+        await { frame().preview == "word word" }
+        stopAndAwaitTheHandBack()
+        assertEquals(listOf("word word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(1, opened)
+    }
+
+    @Test fun stopAndInsertOnARecordingChoiceShownAgainAfterARotationInsertsOnceThere() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        val next = rotateToARecreatedEditor()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        controller.chooseStop()
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertEquals(listOf("word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+    }
+
+    @Test fun discardOnARecordingChoiceShownAgainAfterARotationRemovesTheSavedText() {
+        recordingWithSpeech()
+        assertEquals(1, historyRows().size)
+        controller.cancelAndReturn()
+        val next = rotateToARecreatedEditor()
+        assertEquals("a rotation never selects Discard", 1, historyRows().size)
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertEquals(1, historyRows().size)
+        controller.onDiscardAction()
+        awaitDiscardFinal()
+        assertEquals(emptyList<String>(), next.written)
+    }
+
+    /**
+     * Stop, Cancel (the finishing choice opens), rotate into a recreated editor; the panel is back and settled
+     * with the choice open. [preparedFirst]: the text was prepared and saved before the rotation, else under it.
+     */
+    private fun finishingChoiceThroughARotation(preparedFirst: Boolean): Field {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        if (preparedFirst) textPrepared()
+        val next = rotateToARecreatedEditor()
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        assertEquals("finishing_choice", status())
+        if (!preparedFirst) textPrepared()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        scheduler.drain()
+        assertEquals("a rotation never chooses", PanelChoice.FINISHING, frame().choice)
+        assertEquals("the prepared text waits for the choice", emptyList<String>(), field.written + next.written)
+        return next
+    }
+
+    private fun keepFinishingInsertsOnceInto(next: Field) {
+        controller.onSafeAction()
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word"), next.written)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+    }
+
+    @Test fun aFinishingChoiceOpenThroughARotationHoldsTheTextPreparedUnderItUntilKept() =
+        keepFinishingInsertsOnceInto(finishingChoiceThroughARotation(preparedFirst = false))
+
+    @Test fun aFinishingChoiceOpenThroughARotationHoldsTheTextPreparedBeforeItUntilKept() =
+        keepFinishingInsertsOnceInto(finishingChoiceThroughARotation(preparedFirst = true))
+
+    @Test fun discardOnAFinishingChoiceShownAgainAfterARotationRemovesTheSavedText() {
+        val next = finishingChoiceThroughARotation(preparedFirst = false)
+        controller.onDiscardAction()
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        awaitDiscardFinal()
+        assertEquals(emptyList<String>(), next.written)
+    }
+
+    @Test fun aLockDuringARotationOverridesAnOpenChoiceAndTheTakeGoesToHistory() {
+        stoppedWaitingAt(StopWait.BEFORE_FINAL_DECODE)
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        val next = rotateHidden()
+        controller.screenOff()
+        runHeldDecodes()
+        awaitInterruptedInHistory()
+        showPanel()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        assertEquals("no choice comes back after a lock", null, frame().choice)
+        assertNothingWritten()
+        assertEquals(emptyList<String>(), next.written)
+    }
+
+    /** Rotation is read where it always was: once at each editor event and once at a take's start; no timer and no panel input reads it. */
+    @Test fun theRotationIsReadAtEachEditorEventAndAtTheTakesStartAndNowhereElse() {
+        openPanel() // Two editor events (input start, view start) and the take's start.
+        assertEquals(3, rotations.observed)
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        turn()
+        controller.recordingConfigChanged { false }
+        scheduler.advance(ROTATION_SETTLE_MS)
+        controller.cancelAndReturn()
+        controller.onSafeAction()
+        assertEquals("the settle timer, the panel and the choice read nothing", 3, rotations.observed)
+        turn()
+        hidePanel()
+        assertEquals(4, rotations.observed)
+        scheduler.advance(ROTATION_HOLD_GAP_MS)
+        assertEquals("the gap timer and the interruption read nothing", 4, rotations.observed)
+        awaitTakeEnded()
+    }
+
+    @Test fun aRotationHoldCallsItsPortsInTableOrder() {
+        var next = Field()
+        val table = listOf<Triple<String, () -> Unit, List<String>>>(
+            Triple("open and speak", { recordingWithSpeech() },
+                listOf("status:opening", "status:idle", "status:opening", "status:recording")),
+            Triple("the display turns, the editor leaves, a recreated one starts input", { next = rotateHidden() },
+                listOf("request_panel")),
+            Triple("one millisecond before the gap ends", { scheduler.advance(2999) },
+                emptyList()),
+            Triple("the panel returns", { showPanel() },
+                emptyList()),
+            Triple("it settles", { scheduler.advance(ROTATION_SETTLE_MS) },
+                emptyList()),
+            Triple("Stop", { controller.microphonePressed() },
+                listOf("status:finishing")),
+            Triple("text prepared", { await { host.returns == 1 }; awaitTakeEnded() },
+                listOf("write:word", "return", "status:idle")),
+        )
+        table.forEach { (step, input, expected) ->
+            effects.clear()
+            input()
+            assertEquals(step, expected, effects.toList())
+        }
+        assertEquals(listOf("word"), next.written)
+    }
+
     private companion object {
         const val FIELD_PACKAGE = "org.example.editor"
         val FIELD = FieldIdentity(FIELD_PACKAGE, 7, 1, 0, null, 0)
         val OTHER_FIELD = FieldIdentity(FIELD_PACKAGE, 8, 1, 0, null, 0)
+        /** An input start on a view that is no text editor: no type, no selection. */
+        val NO_EDITOR_INPUT = FieldIdentity(FIELD_PACKAGE, 0, 0, 0, null, -1)
         const val OTHER_APP = "org.example.other"
         val OTHER_APP_FIELD = FieldIdentity(OTHER_APP, 3, 1, 0, null, 0)
         val STATUS = mapOf(

@@ -121,3 +121,7 @@ run code that reads app storage other than the lab folder, and a Lab run that by
 manifests with `../benchmark/…` inputs no longer resolve. Report files keep their own fields
 (`result.json` `outcome`, the panel report's `passed`); only the Lab run as a whole is completed or
 incomplete. The self-rotation probe is split: its assertions stay a test, its trace summary is a Lab run.
+
+#90 (2026-11-25): the self-rotation probe's assertions are host controller tests now; its device test class is
+retired and its trace summary stays a Lab run. The named phone batch keeps one rotation-continuity and one
+rotation-finishing case.
