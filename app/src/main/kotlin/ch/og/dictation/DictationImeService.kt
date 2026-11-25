@@ -29,6 +29,7 @@ import ch.og.dictation.panel.panelFrame
 import ch.og.dictation.panel.PanelPreview
 import ch.og.dictation.panel.renderPanel
 import ch.og.dictation.recognition.SAMPLE_RATE
+import ch.og.dictation.take.DeliveryHold
 import ch.og.dictation.take.EditorConnection
 import ch.og.dictation.take.EditorDecision
 import ch.og.dictation.take.EditorEvent
@@ -144,8 +145,6 @@ class DictationImeService : InputMethodService() {
     private var rotationEpisode = false
     /** Stop granted authority and a rotation hold revoked it: it moves to the session the panel returns to. */
     private var authorityMoves = false
-    /** A Stop-wait rotation hold holds the result before dispatch until the panel has settled. */
-    private var deliveryHeldForRotation = false
     /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
     private var takeHeldForRotation = false
     /** The field the take started in; after a rotation hold only this field may regain insert authority (ADR-010). */
@@ -606,7 +605,7 @@ class DictationImeService : InputMethodService() {
         }
         // An open choice is take state: the returned panel renders it again; nothing to move.
         // Stop wait: hold the result before dispatch; an accepted commit is never undone.
-        if (finishing && !deliveryHeldForRotation && take?.holdDelivery() == true) deliveryHeldForRotation = true
+        if (finishing) take?.holdDelivery(DeliveryHold.ROTATION)
         if (!rotationEpisode) {
             rotationEpisode = true
             mainHandler.postDelayed(gapExpired, ROTATION_HOLD_GAP_MS)
@@ -636,12 +635,10 @@ class DictationImeService : InputMethodService() {
         if (holding && inputStarted && !inputViewVisible && !destroyed) wiring.requestPanel(this)
     }
 
-    /** The panel settled after a rotation: release a result held for it, unless the finishing choice holds it. */
+    /** The panel settled after a rotation: the rotation no longer holds the result (the finishing choice still may). */
     private fun restoreAfterRotation() {
-        val heldForRotation = deliveryHeldForRotation
-        deliveryHeldForRotation = false
         if (!takeActive || interruptedView) return
-        if (heldForRotation && choice != PanelChoice.FINISHING) take?.resumeDelivery()
+        take?.releaseDelivery(DeliveryHold.ROTATION)
     }
 
     private fun silencedDuringHold() {
@@ -672,17 +669,16 @@ class DictationImeService : InputMethodService() {
 
     /**
      * Take start, end or interruption: ends hold, gap and settling, and forgets everything a
-     * rotation decided for the take: moving authority and the rotation's delivery hold flag (the
-     * take itself releases or drops its held result).
+     * rotation decided for the take here: moving authority and the field judgement (the take
+     * session owns what holds its result, and releases or drops it itself).
      */
-    private fun endHoldAndClearDeliveryHold() {
+    private fun endHoldAndForgetRotation() {
         endHold()
         fieldMismatch = false
         mismatchFinal = false
         retargetSettle = false
         renderNotice()
         authorityMoves = false
-        deliveryHeldForRotation = false
     }
 
     /**
@@ -879,7 +875,7 @@ class DictationImeService : InputMethodService() {
                     authority = null
                     startupTake = null
                     latestPreview = ""
-                    endHoldAndClearDeliveryHold()
+                    endHoldAndForgetRotation()
                     if (result.interrupted) {
                         pendingConfirm = null
                         take = null
@@ -922,7 +918,7 @@ class DictationImeService : InputMethodService() {
             // The panel is visible now; only rotations after this point count for this take.
             observeRotation()
             rotationsWhenVisible = rotationChanges
-            endHoldAndClearDeliveryHold()
+            endHoldAndForgetRotation()
             finishing = false
             val currentFeedback = RecordingFeedback()
             feedback?.stop()
@@ -1154,7 +1150,7 @@ class DictationImeService : InputMethodService() {
     private fun interruptTake() {
         val old = take ?: return
         // A system interruption overrides any open or moved choice; the take goes to History.
-        endHoldAndClearDeliveryHold()
+        endHoldAndForgetRotation()
         MicrophoneOwner.requireExplicitStart()
         revokeAuthority()
         // A system interruption overrides an open choice (paused audio already captured goes to History).
@@ -1234,7 +1230,7 @@ class DictationImeService : InputMethodService() {
     /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
     private fun openFinishingChoice() {
         if (choice != null || !takeActive || !finishing || interruptedView) return
-        if (take?.holdDelivery() != true) return
+        if (take?.holdDelivery(DeliveryHold.FINISHING_CHOICE) != true) return
         choice = PanelChoice.FINISHING
         showPhase(PanelPhase.FINISHING_CHOICE)
     }
@@ -1253,7 +1249,7 @@ class DictationImeService : InputMethodService() {
                 choice = null
                 showPhase(PanelPhase.FINISHING)
                 // A rotation that still holds the result releases it once the panel has settled.
-                if (!deliveryHeldForRotation) take?.resumeDelivery()
+                take?.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
             }
             null -> Unit
         }

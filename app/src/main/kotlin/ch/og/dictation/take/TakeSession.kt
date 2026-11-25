@@ -43,6 +43,14 @@ interface TakeOutput {
     fun finished(result: TakeResult, pcm: ByteArray)
 }
 
+/** Why a finished result is not dispatched yet. Delivery is released when no reason is left. */
+enum class DeliveryHold {
+    /** A rotation hold during the Stop wait: until the panel has settled. */
+    ROTATION,
+    /** The Cancel choice is open during the Stop wait: until the take is kept. */
+    FINISHING_CHOICE,
+}
+
 enum class TakeOutcome { COMPLETED, CANCELLED, INPUT_CHANGED, FAILED, COMMIT_REJECTED }
 
 /** Monotonic timestamps describe receipts, not observed editor text or keyboard readiness. */
@@ -84,7 +92,8 @@ class TakeSession internal constructor(
     private var captureReleased = true
     private var cleaned = false
     private var terminal: TakeResult? = null
-    private var deliveryHeld = false
+    private val deliveryHolds = java.util.EnumSet.noneOf(DeliveryHold::class.java)
+    private val deliveryHeld: Boolean get() = deliveryHolds.isNotEmpty()
     private var pendingDelivery: String? = null
     private var dispatching = false
     private var invalidatedDuringDispatch = false
@@ -227,15 +236,24 @@ class TakeSession internal constructor(
         return true
     }
 
-    /** Hold only before dispatch; once a commit starts it cannot be retracted. */
-    fun holdDelivery(): Boolean {
+    /**
+     * Holds the result before dispatch for [reason]. Only before dispatch: once a commit starts it
+     * cannot be retracted. False: refused, and nothing is held for [reason].
+     */
+    fun holdDelivery(reason: DeliveryHold): Boolean {
         if ((dispatching && output.commitAttempted()) || interrupted || state !in setOf(State.DRAINING, State.FINISHING, State.COMPLETING)) return false
-        deliveryHeld = true
+        deliveryHolds += reason
         return true
     }
 
-    fun resumeDelivery() {
-        deliveryHeld = false
+    /** [reason] no longer holds the result; it is dispatched once no reason is left. */
+    fun releaseDelivery(reason: DeliveryHold) {
+        if (!deliveryHolds.remove(reason) || deliveryHeld) return
+        pendingDelivery?.also { pendingDelivery = null; complete(it) }
+    }
+
+    private fun releaseAllDelivery() {
+        deliveryHolds.clear()
         pendingDelivery?.also { pendingDelivery = null; complete(it) }
     }
 
@@ -245,7 +263,7 @@ class TakeSession internal constructor(
         synchronized(audioLock) { interrupted = true }
         if (captureReleased) onCaptureReleased() else releaseNotice = onCaptureReleased
         if (dispatching) { invalidatedDuringDispatch = true; return }
-        resumeDelivery()
+        releaseAllDelivery()
         if (state == State.RECORDING) stop()
     }
 
