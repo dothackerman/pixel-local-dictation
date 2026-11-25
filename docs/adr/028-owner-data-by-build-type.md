@@ -124,3 +124,20 @@ The one kind of receipt release may write. Numbers only: no audio, no text, no e
 default, behind one switch. Owner data. Folder `files/timing-receipts`, reserved in the owner layout
 so the wrapper can pull it read-only without a later change. Until #63 builds it, release writes no
 receipt of any kind.
+
+## Amendment (2026-11-25, #98): the lab build is its own app
+
+Supersedes "One applicationId, signer and versionCode" and the rejection of a separate applicationId.
+The lab build is `ch.og.dictation.lab` (Gradle `applicationIdSuffix`; test package
+`ch.og.dictation.lab.test`), installed beside release and kept there; Android gives it its own storage,
+so nothing done to it reaches owner data. Release keeps `ch.og.dictation`, its signer and versionCode,
+and updates in place. The code namespace stays `ch.og.dictation`. The lab keyboard is "Local dictation
+lab" with its one voice subtype; the owner enables it and grants its microphone once, and switches
+FUTO's voice input to it around keyboard-handoff tests (the FUTO cost named under Considered options).
+The lab app gets its own model copy, pushed from the kept model copy.
+
+Wrapper: every data verb acts on the lab app; a Visit starts when the lab app is installed and ends
+when it is removed; a release install no longer ends a Visit. The one-time switch is release
+installed with `--promote` over the unmarked build, given a current switch copy; afterwards no verb
+reads or writes release data (`restore --switch`, the switch's undo, puts the unmarked build back
+first). Guards that only the shared package needed are walked back by #99 (wrapper) and #100 (app).

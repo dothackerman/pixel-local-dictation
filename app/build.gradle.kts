@@ -57,9 +57,11 @@ android {
             signingConfig = signingConfigs.getByName("release")
             manifestPlaceholders["buildMarker"] = "layout=owner;$buildIdentity"
         }
-        // The lab build: debuggable so the phone wrapper can reach its data; installed only during a Visit.
+        // The lab build: its own app beside release (#98), so Android gives it its own storage; debuggable
+        // so the phone wrapper can reach its data. The code namespace stays ch.og.dictation.
         create("benchmark") {
             initWith(getByName("release"))
+            applicationIdSuffix = ".lab"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("release")
             matchingFallbacks += "release"

@@ -150,13 +150,13 @@ class PanelPerformanceTest {
             view = panel(width)
             image = Bitmap.createBitmap(width, view.height, Bitmap.Config.ARGB_8888)
             fun find(node: View) {
-                if (node.javaClass.name == "${context.packageName}.panel.RecordingRingView") ring = node
+                if (node.javaClass.name == "ch.og.dictation.panel.RecordingRingView") ring = node
                 if (node is ViewGroup) repeat(node.childCount) { find(node.getChildAt(it)) }
             }
             find(view)
             preview = view.findViewById(context.resources.getIdentifier("preview", "id", context.packageName))
             ring?.let {
-                val type = Class.forName("${context.packageName}.audio.RecordingFeedback")
+                val type = Class.forName("ch.og.dictation.audio.RecordingFeedback")
                 feedback = type.getConstructor().newInstance()
                 type.getMethod("start").invoke(feedback)
                 it.javaClass.getMethod("follow", type).invoke(it, feedback)

@@ -50,4 +50,13 @@ class ReleaseManifestGuardTest {
         val ime = elements("service").single()
         assertEquals("android.permission.BIND_INPUT_METHOD", ime.getAttributeNS(android, "permission"))
     }
+
+    /** FUTO and Android read subtypes by enabled count, so a later voice subtype can be skipped (#98). */
+    @Test fun theKeyboardDeclaresOneSubtypeAndItIsVoice() {
+        val method = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(File("src/main/res/xml/method.xml")).documentElement
+        val subtypes = method.getElementsByTagName("subtype").let { list -> (0 until list.length).map { list.item(it) as Element } }
+        assertEquals(listOf("voice"), subtypes.map { it.getAttributeNS(android, "imeSubtypeMode") })
+    }
 }
+

@@ -1,6 +1,7 @@
 package ch.og.dictation.storage
 
 import ch.og.dictation.DictationApplication
+import ch.og.dictation.R
 import ch.og.dictation.Wiring
 import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.dictionary.DictionaryStore
@@ -143,5 +144,11 @@ class ReleaseStorageTest {
         val marker = app.packageManager.getApplicationInfo(app.packageName, PackageManager.GET_META_DATA)
             .metaData.getString("ch.og.dictation.build")!!
         assertTrue(marker, Regex("layout=owner;commit=[0-9a-f]{40};hash=[0-9a-f]{64}").matches(marker))
+    }
+
+    /** Release keeps its package, so the owner's app updates in place; the lab app is another (#98). */
+    @Test fun releaseKeepsItsPackageAndKeyboardLabel() {
+        assertEquals("ch.og.dictation", app.packageName)
+        assertEquals("Local dictation", app.getString(R.string.ime_label))
     }
 }
