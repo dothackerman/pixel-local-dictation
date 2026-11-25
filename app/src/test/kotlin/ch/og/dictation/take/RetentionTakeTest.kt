@@ -1,6 +1,7 @@
 package ch.og.dictation.take
 
 import ch.og.dictation.diagnostics.BenchmarkStore
+import ch.og.dictation.ime.retentionOf
 import ch.og.dictation.recognition.Chunk
 import ch.og.dictation.recognition.DictationRuntime
 import ch.og.dictation.recognition.Recognizer
@@ -63,11 +64,11 @@ class RetentionTakeTest {
                             "{\"text\":\"${result.text}\"}")
                     }
                 }
-                val eligible = EditorRetentionPolicy.isEligible(original)
+                val eligible = retentionOf(original).eligible
                 val take = runtime.open(capture, output, direct, retentionEligible = eligible)
                 take.start()
                 // A newly focused editor must not change the already opened take.
-                assertEquals(!eligible, EditorRetentionPolicy.isEligible(if (eligible) null else editor(text)))
+                assertEquals(!eligible, retentionOf(if (eligible) null else editor(text)).eligible)
                 feed!!(floatArrayOf(0.25f))
                 take.stop()
                 drain!!(Result.success(byteArrayOf(1, 2)))

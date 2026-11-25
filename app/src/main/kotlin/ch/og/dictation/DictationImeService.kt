@@ -17,6 +17,8 @@ import ch.og.dictation.history.historyNotices
 import ch.og.dictation.ime.InputSession
 import ch.og.dictation.ime.PermissionActivity
 import ch.og.dictation.ime.commitToInput
+import ch.og.dictation.ime.fieldIdentityOf
+import ch.og.dictation.ime.retentionOf
 import ch.og.dictation.panel.PanelChoice
 import ch.og.dictation.panel.HeldPanel
 import ch.og.dictation.panel.PanelFrame
@@ -30,7 +32,6 @@ import ch.og.dictation.take.EditorDecision
 import ch.og.dictation.take.EditorEvent
 import ch.og.dictation.take.EditorEventPolicy
 import ch.og.dictation.take.EditorRetention
-import ch.og.dictation.take.EditorRetentionPolicy
 import ch.og.dictation.take.FieldIdentity
 import ch.og.dictation.take.InsertCheck
 import ch.og.dictation.take.InsertReadBack
@@ -325,10 +326,10 @@ class DictationImeService : InputMethodService() {
         super.onStartInput(attribute, restarting)
         observeGeometry()
         Log.i(tag, "input start: restarting=$restarting take=$takeActive")
-        editorRetention = EditorRetentionPolicy.classify(attribute)
+        editorRetention = retentionOf(attribute)
         editorRetentionEligible = editorRetention.eligible
         editorPackage = attribute?.packageName
-        editorIdentity = FieldIdentity.of(attribute)
+        editorIdentity = fieldIdentityOf(attribute)
         inputStarted = true
         held?.warned = false
         if (held != null && editorPackage != held?.from) { clearHeld(); showIdle() } // A different app's editor.
@@ -823,7 +824,7 @@ class DictationImeService : InputMethodService() {
             val currentRotationTake = rotationTake
             recordingToken = session.token()
             takeHeldForRotation = false
-            takeField = FieldIdentity.of(currentInputEditorInfo)
+            takeField = fieldIdentityOf(currentInputEditorInfo)
             takeConnection = currentInputConnection
             takePackage = editorPackage
             takeLocked = false
