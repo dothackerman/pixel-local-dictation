@@ -5,6 +5,7 @@ After applying the gate, run this in a fresh agent session without escalation.
 Successful sandbox launch and the host checks are separate from these file checks.
 """
 import json
+import os
 from pathlib import Path
 import sys
 import tomllib
@@ -20,27 +21,32 @@ def codex_config(root):
     return template.replace(table, '[permissions.dictation.filesystem.' + json.dumps(str(root)) + ']')
 
 
+def wrapper():
+    return Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'pixel-phone/phone'
+
+
 def errors(root):
     root = Path(root)
     gate = root / 'tools/gate'
     problems = []
-    for source, installed in (('AGENTS.md', 'AGENTS.md'), ('AGENTS.md', 'CLAUDE.md'),
-                              ('settings.json', '.claude/settings.json')):
+    # (source, installed copy): apply.sh installs each one
+    copies = [(gate / 'AGENTS.md', 'AGENTS.md'), (gate / 'AGENTS.md', 'CLAUDE.md'),
+              (gate / 'settings.json', '.claude/settings.json'), (gate / 'hooks.json', '.codex/hooks.json'),
+              (gate / 'phone', '.claude/hooks/phone'), (gate / 'phone-guard.sh', '.claude/hooks/phone-guard.sh'),
+              (gate / 'phone_guard.py', '.claude/hooks/phone_guard.py'), (root / 'tools/phone', wrapper())]
+    for source, installed in copies:
         path = root / installed
         if path.is_symlink() or not path.is_file():
-            problems.append(installed + ' must be an installed regular file, not a symlink')
-        elif path.read_bytes() != (gate / source).read_bytes():
-            problems.append(installed + ' differs from tools/gate/' + source)
+            problems.append(str(installed) + ' must be an installed regular file, not a symlink')
+        elif path.read_bytes() != source.read_bytes():
+            problems.append(str(installed) + ' differs from ' + str(source.relative_to(root)))
     installed_config = root / '.codex/config.toml'
     if installed_config.is_symlink() or not installed_config.is_file():
         problems.append('.codex/config.toml must be an installed regular file, not a symlink')
     elif installed_config.read_text() != codex_config(root):
         problems.append('.codex/config.toml is not rendered for this checkout; owner must apply the gate here')
     config = tomllib.loads((gate / 'config.toml').read_text())
-    protected = set(config['permissions']['dictation']['filesystem'][':workspace_roots'])
-    settings = json.loads((gate / 'settings.json').read_text())
-    protected.update(settings['sandbox']['filesystem']['denyWrite'])
-    for name in sorted(protected):
+    for name in sorted(config['permissions']['dictation']['filesystem'][':workspace_roots']):
         path = root
         for part in Path(name).parts:
             path /= part

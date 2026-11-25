@@ -2,17 +2,22 @@ default_permissions = "dictation"
 
 [features]
 hooks = true
+# Without the proxy, commands reach every host, the local adb server included.
+network_proxy = true
 
 [permissions.dictation]
 extends = ":workspace"
 
 [permissions.dictation.filesystem]
 "~/.gradle" = "write"
+"~/.android" = "deny"
+"~/Android/Sdk/platform-tools" = "deny"
 
 [permissions.dictation.filesystem.":workspace_roots"]
 # apply.sh renders this table under the absolute checkout path, not auxiliary roots.
 ".claude/hooks" = "read"
 ".claude/settings.json" = "read"
+".claude/launch.json" = "read"
 ".codex" = "read"
 "tools/git-hooks" = "read"
 "AGENTS.md" = "read"
@@ -20,3 +25,6 @@ extends = ":workspace"
 
 [permissions.dictation.network]
 enabled = true
+
+[permissions.dictation.network.domains]
+"**.github.com" = "allow"

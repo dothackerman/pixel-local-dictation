@@ -12,13 +12,13 @@ store="${XDG_DATA_HOME:-$HOME/.local/share}/pixel-phone"
 python3 -I -m py_compile tools/phone
 (cd tools && python3 -m unittest -q test_phone test_agent_guard)
 
-mkdir -p "$store" .claude/hooks .codex/hooks
+# Both tools' hooks run the one guard under .claude/hooks by absolute path.
+rm -f .codex/hooks
+mkdir -p "$store" .claude/hooks .codex
 install -m 0755 tools/phone            "$store/phone"
 install -m 0755 "$gate/phone_guard.py"  .claude/hooks/phone_guard.py
 install -m 0755 "$gate/phone-guard.sh"  .claude/hooks/phone-guard.sh
 install -m 0755 "$gate/phone"           .claude/hooks/phone
-install -m 0755 "$gate/phone_guard.py"  .codex/hooks/phone_guard.py
-install -m 0755 "$gate/phone-guard.sh"  .codex/hooks/phone-guard.sh
 install -m 0644 "$gate/hooks.json"      .codex/hooks.json
 install -m 0644 "$gate/settings.json"   .claude/settings.json
 config=$(mktemp)
@@ -30,8 +30,6 @@ for instructions in AGENTS.md CLAUDE.md; do
   rm -f "$instructions"
   install -m 0644 "$gate/AGENTS.md" "$instructions"
 done
-rm -f .codex/rules/phone.rules
-rmdir .codex/rules 2>/dev/null || true
 chmod 0755 tools/phone
 python3 "$gate/check_installation.py"
 git add -A .claude/hooks .claude/settings.json .codex AGENTS.md CLAUDE.md tools/phone

@@ -11,9 +11,24 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GATE = ROOT / 'tools/gate'
+# Paths outside the checkout: Gradle caches writable, the adb key and binaries unreadable.
+OUTSIDE = {'~/.gradle': 'write', '~/.android': 'deny', '~/Android/Sdk/platform-tools': 'deny'}
+
+
+def hook_commands(config):
+    return [hook['command'] for groups in config['hooks'].values() for group in groups for hook in group['hooks']]
 
 
 class GateInstallationTests(unittest.TestCase):
+    def test_every_hook_runs_the_main_checkouts_installed_guard(self):
+        claude = json.loads((GATE / 'settings.json').read_text())
+        shim = claude['sandbox']['excludedCommands'][0].removesuffix(' *')
+        guard = 'bash ' + str(Path(shim).parent / 'phone-guard.sh') + ' || exit 2'
+        self.assertTrue(guard.startswith('bash /'), guard)
+        for config in (claude, json.loads((GATE / 'hooks.json').read_text())):
+            self.assertEqual(hook_commands(config), [guard])
+
     def test_install_migrates_instruction_symlink_without_writing_through_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'checkout "quoted"'
@@ -27,6 +42,8 @@ class GateInstallationTests(unittest.TestCase):
             target = root / 'former-target.md'
             target.write_text('must not be overwritten')
             (root / 'CLAUDE.md').symlink_to(target.name)
+            (root / '.codex').mkdir()
+            (root / '.codex/hooks').symlink_to('../.claude/hooks')  # the former second guard copy
             source = (root / 'tools/gate/AGENTS.md').read_bytes()
             for _ in range(2):
                 result = subprocess.run(['bash', 'tools/gate/apply.sh'], cwd=root,
@@ -39,17 +56,32 @@ class GateInstallationTests(unittest.TestCase):
                 codex = tomllib.loads((root / '.codex/config.toml').read_text())
                 filesystem = codex['permissions']['dictation']['filesystem']
                 self.assertNotIn(':workspace_roots', filesystem)
-                self.assertEqual(set(filesystem), {str(root.resolve()), "~/.gradle"})
-                self.assertEqual(filesystem["~/.gradle"], "write")
+                self.assertEqual(set(filesystem), {str(root.resolve()), *OUTSIDE})
+                for name, access in OUTSIDE.items():
+                    self.assertEqual(filesystem[name], access, name)
+                self.assertIs(codex['features']['network_proxy'], True)
+                self.assertNotIn('localhost', codex['permissions']['dictation']['network']['domains'])
+                self.assertFalse((root / '.codex/hooks').exists() or (root / '.codex/hooks').is_symlink())
                 self.assertEqual(codex['permissions']['dictation']['extends'], ':workspace')
                 paths = filesystem[str(root.resolve())]
-                for name in ('.claude/hooks', '.claude/settings.json', '.codex',
+                for name in ('.claude/hooks', '.claude/settings.json', '.claude/launch.json', '.codex',
                              'tools/git-hooks', 'AGENTS.md', 'CLAUDE.md'):
                     self.assertEqual(paths[name], 'read', name)
                 claude = json.loads((root / '.claude/settings.json').read_text())
                 self.assertEqual(claude['sandbox']['filesystem']['allowWrite'], ['~/.gradle'])
-                for name in ('./AGENTS.md', './CLAUDE.md'):
-                    self.assertIn(name, claude['sandbox']['filesystem']['denyWrite'])
+                for name in ('/.claude/launch.json', '/.codex/**', '/AGENTS.md', '/CLAUDE.md'):
+                    self.assertIn('Edit(' + name + ')', claude['permissions']['deny'])
+            # Every installed copy, the wrapper included, fails the check once it drifts.
+            for name in ('.codex/hooks.json', '.claude/hooks/phone', '.claude/hooks/phone-guard.sh',
+                         '.claude/hooks/phone_guard.py', '../installed/pixel-phone/phone'):
+                path = root / name
+                original = path.read_bytes()
+                path.write_bytes(original + b'\n')
+                check = subprocess.run([sys.executable, 'tools/gate/check_installation.py'],
+                                       cwd=root, env=environment, text=True, capture_output=True)
+                path.write_bytes(original)
+                self.assertEqual(check.returncode, 1, name + check.stdout + check.stderr)
+                self.assertIn(path.name, check.stderr)
             # Copied absolute configuration must fail readiness in another checkout.
             other = Path(directory) / 'other-checkout'
             shutil.copytree(root, other, ignore=shutil.ignore_patterns('.git', '__pycache__'))
@@ -60,8 +92,7 @@ class GateInstallationTests(unittest.TestCase):
             rendered = subprocess.check_output([sys.executable, 'tools/gate/check_installation.py', '--render-codex'],
                                                cwd=other, env=environment, text=True)
             other_config = tomllib.loads(rendered)['permissions']['dictation']['filesystem']
-            self.assertEqual(set(other_config), {str(other.resolve()), "~/.gradle"})
-            self.assertEqual(other_config["~/.gradle"], "write")
+            self.assertEqual(set(other_config), {str(other.resolve()), *OUTSIDE})
             self.assertEqual(other_config[str(other.resolve())], paths)
             # A source/installation mismatch and the old symlink both fail the check.
             for broken in ('different instructions', None):
