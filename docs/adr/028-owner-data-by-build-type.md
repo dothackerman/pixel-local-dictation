@@ -88,3 +88,15 @@ not accepted.
   the folder by absolute path.
 - No test disappears unnoticed: `tools/removed_tests.py` in the gate; a removed name needs an entry in
   `tools/removed_tests.json`.
+
+## As built (#79, History notices, settings, clipboard)
+
+- Storage has one accessor each for the History notices, the settings and the clipboard. Preferences
+  names: owner `history_notices` and `settings` (unchanged), test `test_history_notices` and
+  `test_settings`. The owner layout's clipboard is the system clipboard; the test layout's keeps the
+  last copied text in the process, so nothing copied in the lab build can be pasted.
+- A temporary root (host tests) keeps preferences as files in `shared_prefs` below it and a file
+  `clipboard` as its stand-in for the system clipboard.
+- The History and Settings screen suites run on the host, on the test layout; their captures are
+  gallery images in `app/build/panel-gallery/after/screens` (portrait, light, font 1× and 2×; fixed
+  dates, so no Today or Yesterday header), compared like the panel images.

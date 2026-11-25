@@ -82,6 +82,9 @@ class GuardTests(unittest.TestCase):
                          - set(storage_guard.RULES))
         self.assertFalse(any('no-backup folder' in rules for rules in storage_guard.EXCEPTIONS.values()),
                          'History is behind Storage: nothing else names the no-backup folder')
+        for rule, store in (('preferences', 'History notices and settings'), ('clipboard service', 'the clipboard')):
+            self.assertFalse(any(rule in rules for rules in storage_guard.EXCEPTIONS.values()),
+                             f'{store}: behind Storage: no exception for the {rule}')
 
     def test_a_manifest_without_the_build_marker_fails(self):
         entry = '<meta-data android:name="ch.og.dictation.build" android:value="${buildMarker}" />'

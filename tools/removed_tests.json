@@ -3,5 +3,13 @@
   "ch.og.dictation.probe.TestHistoryTest.testScreensRefuseTheOwnersHistoryRoot": "ch.og.dictation.storage.LabBuildStorageTest.thereIsNoOwnerPath",
   "ch.og.dictation.RecordingPanelTest.captureEveryPanelStateAtBothFontScales": "ch.og.dictation.RecordingPanelTest.everyPanelStateKeepsItsTargetsStatusAndHeightAtBothFontScales",
   "ch.og.dictation.RecordingPanelTest.captureLandscapePanel": "ch.og.dictation.panel.PanelGalleryTest.everyPanelStateInEveryLookIsRenderedToTheGallery",
-  "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem": "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesAndLeavesTheConfirmationToTheSystem"
+  "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem": "ch.og.dictation.history.HistoryScreenTest.detailCopyIconCopiesAndLeavesTheConfirmationToTheSystem",
+  "ch.og.dictation.HistoryActivityTest.rowsNameAStatusOnlyWhenTheTakeIsNotCompleteAndInserted": "ch.og.dictation.history.HistoryScreenTest.listMarksOnlyTakesThatAreNotCompleteAndInsertedWithOneGlyph",
+  "ch.og.dictation.HistoryActivityTest.longPressOnARowCopiesTheFullTextWithAConfirmationAndStaysOnTheList": "ch.og.dictation.history.HistoryScreenTest.longPressCopiesTheFullSavedTextNotTheTruncatedPreview",
+  "ch.og.dictation.HistoryUndoDeleteTest.undoBringsTheRowBackAndNeverDeletesIt": "ch.og.dictation.history.HistoryScreenTest.deleteNeedsNoDialogHidesTheRowAtOnceAndUndoRestoresIt",
+  "ch.og.dictation.HistoryUndoDeleteTest.relaunchInsideTheWindowAfterProcessDeathWouldFindTheRowInPlace": "ch.og.dictation.history.HistoryScreenTest.deleteNeedsNoDialogHidesTheRowAtOnceAndUndoRestoresIt",
+  "ch.og.dictation.HistoryUndoDeleteTest.deleteFromDetailReturnsToTheListWithUndo": "ch.og.dictation.history.HistoryScreenTest.detailDeleteIconReturnsToTheListWithUndo",
+  "ch.og.dictation.HistoryUndoDeleteTest.leavingThePageRemovesTheTranscriptWithoutWaitingForTheWindow": "ch.og.dictation.history.HistoryScreenTest.leavingThePageRemovesAPendingDelete",
+  "ch.og.dictation.HistoryStartupTest.applicationStartupSurvivesCleanupFailureAndCanRetry": "ch.og.dictation.history.HistoryStoreTest.failedStartupCleanupDoesNotPreventRetryOrChangeStoredData",
+  "ch.og.dictation.HistoryStartupTest.applicationStartupRemovesAbandonedTempWithoutOpeningHistory": "ch.og.dictation.WiringTest.historyStartsOnlyInTheOwningProcess"
 }

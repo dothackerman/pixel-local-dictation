@@ -30,8 +30,6 @@
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".probe.HistoryTestActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
-        <activity android:name=".probe.SettingsLargeTextPreviewActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@style/Theme.Dictation" />
         <activity android:name=".probe.DictionaryLargeTextPreviewActivity" android:exported="false"
             android:excludeFromRecents="true" android:theme="@style/Theme.Dictation"
             android:windowSoftInputMode="adjustResize" />

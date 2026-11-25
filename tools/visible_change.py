@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""BEFORE/AFTER images of the recording panel, in one checkout (#73, #77, ADR-028).
+"""BEFORE/AFTER images of the recording panel, Settings and History, in one checkout (#73, #77, #79, ADR-028).
 
-  before   render the panel gallery and store it as BEFORE; at a ticket's start
+  before   render the gallery and store it as BEFORE; at a ticket's start
   compare  render it again and compare with BEFORE byte for byte
 
-The render is the host tests PanelGalleryTest (every panel state in every look, to GALLERY/after/states)
-and PanelFrameSequenceTest (golden frame sequences; a scenario that differs leaves every frame of its
+The render is the host tests PanelGalleryTest (every panel state in every look, to GALLERY/after/states),
+SettingsHistoryScreenshotTest (Settings and History screens, to GALLERY/after/screens) and
+PanelFrameSequenceTest (golden frame sequences; a scenario that differs leaves every frame of its
 golden and of its new sequence in GALLERY/before|after/sequences). compare fails on any changed, added
 or removed image and on any differing sequence, puts the pairs into GALLERY/pairs as
 <image>.BEFORE.png and <image>.AFTER.png with list.txt, and prints the rule. --no-render compares
@@ -24,11 +25,12 @@ ROOT = Path(__file__).resolve().parents[1]
 GALLERY = ROOT / 'app/build/panel-gallery'
 RULE = ('A differing frame or image stops the work: the owner decides from the BEFORE/AFTER pairs; '
         'text alone is not accepted.')
-RENDERERS = ('ch.og.dictation.panel.PanelGalleryTest', 'ch.og.dictation.PanelFrameSequenceTest')
+RENDERERS = ('ch.og.dictation.panel.PanelGalleryTest', 'ch.og.dictation.SettingsHistoryScreenshotTest',
+             'ch.og.dictation.PanelFrameSequenceTest')
 
 
 def gradle_render(gallery):
-    """Runs the two host tests again. A differing golden sequence fails the run; its images are the result."""
+    """Runs the rendering host tests again. A differing golden sequence fails the run; its images are the result."""
     from quality import jvm_environment
     shutil.rmtree(gallery / 'after', ignore_errors=True)
     environment = jvm_environment(ROOT, os.environ.copy())

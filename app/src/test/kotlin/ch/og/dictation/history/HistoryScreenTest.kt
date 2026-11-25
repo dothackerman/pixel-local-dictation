@@ -80,6 +80,8 @@ class HistoryScreenTest {
         assertFalse(shown(page, app.getString(R.string.history_delivery_rejected)))
         assertEquals(app.getString(R.string.history_row_description, HistoryRows.time(100), "Second synthetic transcript") + ", " +
             app.getString(R.string.marker_not_inserted_line), rowAt(page, 1).findViewById<View>(R.id.history_row_body).contentDescription.toString())
+        assertEquals("a complete, inserted take names no status", app.getString(R.string.history_row_description, HistoryRows.time(200), "First synthetic transcript"),
+            rowAt(page, 0).findViewById<View>(R.id.history_row_body).contentDescription.toString())
         assertEquals(HistoryRows.time(200), rowAt(page, 0).findViewById<TextView>(R.id.history_row_time).text.toString())
         // One day header above both rows.
         val days = texts(page.window.decorView).filter { it.id == R.id.history_day }.map { it.text.toString() }
@@ -97,11 +99,19 @@ class HistoryScreenTest {
         assertTrue(shown(page, "Second synthetic transcript"))
         assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
         assertTrue("transcript stays stored while Undo is open", File(root, "$a.history").exists())
+        // Nothing is written inside the window: after a process death a fresh page lists the row again.
+        assertFalse(File(root, "$a.deleted").exists())
         val undo = texts(page.window.decorView).first { it.text.toString() == app.getString(R.string.dictionary_undo) }
         undo.performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(shown(page, "First synthetic transcript"))
         assertTrue(File(root, "$a.history").exists())
+        // Undone is never deleted, also once the window would have ended.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(120))
+        HistoryIo.executor.submit {}.get()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(File(root, "$a.history").exists())
+        assertTrue(shown(page, "First synthetic transcript"))
     }
 
     @Test fun leavingThePageRemovesAPendingDelete() {
@@ -279,6 +289,11 @@ class HistoryScreenTest {
         assertFalse(shown(page, "First synthetic transcript"))
         assertTrue(shown(page, app.getString(R.string.dictionary_undo)))
         assertTrue(File(root, "$a.history").exists())
+        // The window ends: the transcript is removed, the other one stays.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(60))
+        settle { !File(root, "$a.history").exists() }
+        assertTrue(File(root, "$b.history").exists())
+        assertTrue(shown(page, "Second synthetic transcript"))
     }
 
     @Test fun longPressOnARowCopiesThatTranscriptWithoutOurSnackbarOnAndroid13Plus() {
@@ -304,6 +319,8 @@ class HistoryScreenTest {
         assertTrue(firstRow(page).findViewById<TextView>(R.id.history_row_preview).text.length <= 200)
         assertTrue(firstRow(page).findViewById<View>(R.id.history_row_body).performLongClick())
         settle { clipText() == long }
+        // Still the list: the copy does not open the detail.
+        assertNull(page.findViewById<View>(R.id.history_detail_text))
     }
 
     @Test fun rowExposesCopyAndDeleteAsAccessibilityActionsThatWork() {

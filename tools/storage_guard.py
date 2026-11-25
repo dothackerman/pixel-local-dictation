@@ -44,7 +44,8 @@ RULES = {name: re.compile(pattern) for name, pattern in {
 }.items()}
 
 # path -> {banned kind: the store it still reaches directly}. Stores not yet behind Storage (#73);
-# History and the Dictionary are, so nothing here names the no-backup folder or the Dictionary.
+# History, the Dictionary, History notices, settings and the clipboard are, so nothing here names the
+# no-backup folder, preferences or the clipboard service.
 _MAIN = 'app/src/main/kotlin/ch/og/dictation/'
 _LAB = 'app/src/benchmark/kotlin/ch/og/dictation/probe/'
 _DEVICE = 'app/src/androidTest/kotlin/ch/og/dictation/'
@@ -59,8 +60,6 @@ EXCEPTIONS = {
     _DEVICE + 'DictionarySettingsTest.kt': {'files folder': 'lab folder', 'cache folder': 'scratch files'},
     _DEVICE + 'EditorGeometryTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'GuidedVisitTest.kt': {'files folder': 'lab folder, recordings'},
-    _DEVICE + 'HistoryActivityTest.kt': {'clipboard service': 'clipboard'},
-    _DEVICE + 'HistoryClearTest.kt': {'clipboard service': 'clipboard'},
     _DEVICE + 'LabTest.kt': {'files folder': 'lab folder, recordings'},
     _DEVICE + 'MeasurementRun.kt': {'files folder': 'lab folder, recordings', 'cache folder': 'scratch files'},
     _DEVICE + 'NormalBaselineTest.kt': {'files folder': 'lab folder'},
@@ -73,7 +72,6 @@ EXCEPTIONS = {
     _DEVICE + 'RotationContinuityDemoTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'RotationFinishingDemoTest.kt': {'files folder': 'lab folder'},
     _DEVICE + 'SelfRotationProbeTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'SettingsHistoryScreenshotTest.kt': {'files folder': 'lab folder', 'clipboard service': 'clipboard'},
     _DEVICE + 'StartupTraceTest.kt': {'files folder': 'lab folder', 'cache folder': 'scratch files'},
 }
 
