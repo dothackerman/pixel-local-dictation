@@ -163,3 +163,25 @@ Open:
   retained APK pair plus `files/`, `shared_prefs/`, `databases/`".
 - Not built: later Visit copies skipping the legacy recordings while their fingerprint is unchanged;
   every Visit copy holds them.
+
+## Amendment (2026-11-25, ADR-028): `measure`, Lab runs (#81)
+
+- `measure CLASS[#method][,...] [inputs=PATH[,PATH...]] [k=v]` runs only classes under
+  `ch.og.dictation.labrun`; `run` refuses those. The wrapper holds the package name, never a class list,
+  so a new measurement needs no wrapper change.
+- Refusals as for `run`: an open Visit on its lab build, owner data equal to the Visit copy, keyboard
+  not in use, main checkout.
+- Inputs are paths under `files/benchmark` or `files/timing-receipts`. They are copied on the phone,
+  inside app data, into `files/lab/labrun-inputs/` (`files/benchmark/a.wav` → `benchmark/a.wav`); nothing
+  leaves the phone. A missing path, a symlink inside one, a path named twice or inside another is
+  refused. The folder is emptied before the copy and removed after the run, also when the run breaks
+  off. Refused when a file of the kept model copy lies in that folder.
+- Owner data is fingerprinted before the copy and after the removal; a difference fails the call and
+  names the Visit copy.
+- Outcome: `completed` when the instrumentation ended in order and every Lab run's harness line says
+  completed (at least one); otherwise `incomplete`. Never passed or failed. The result lists the
+  lab-folder files the run wrote or changed, speech-model files left out; they are pulled like any test
+  output.
+- Allow list: `measure` is in it, like `run`. `install`, `restore`, `stop`, `forget` still ask.
+- Not built: a way to pass a timeout (two hours fixed); when the call times out the copies are removed
+  while the instrumentation may still run on the phone.

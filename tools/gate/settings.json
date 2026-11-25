@@ -25,6 +25,7 @@
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone pull:*)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone push:*)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone run:*)",
+      "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone measure:*)",
       "Bash(/home/oriol/Projects/private/pixel-local-dictation/.claude/hooks/phone snapshot:*)"
     ]
   },

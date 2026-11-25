@@ -99,7 +99,8 @@ class InstallGuardTests(unittest.TestCase):
         allowed = {rule[len('Bash(' + shim):].rstrip(')').split(':')[0]
                    for rule in settings['permissions']['allow'] if rule.startswith('Bash(' + shim)}
         self.assertEqual(allowed, {'help', 'check', 'status', 'device', 'app', 'crash', 'logs', 'pull', 'push', 'run',
-                                   'snapshot'})
+                                   'measure', 'snapshot'})
+        self.assertIn('Bash(' + shim + 'measure:*)', settings['permissions']['allow'], 'like run: any class, any extras')
         self.assertEqual(allowed & {'install', 'restore', 'stop', 'forget', 'uninstall'}, set())
         self.assertEqual([rule for rule in settings['permissions']['allow'] if '.claude/hooks/phone' not in rule], [],
                          'nothing but named shim verbs is allowed')

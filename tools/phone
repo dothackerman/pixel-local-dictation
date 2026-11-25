@@ -6,7 +6,8 @@ user installed with `tools/gate/apply.sh`. Every device command is built from fi
 package constant; caller strings reach the device only as validated names.
 
 Owner data (ADR-028): APKs are told apart by their build marker; `run`, `push` and `stop` work only in
-an open Visit whose fingerprint equals its copy; device verbs only from the main checkout. A Visit starts
+an open Visit whose fingerprint equals its copy, and so does `measure`, which runs Lab runs on copies it
+places in the lab folder; device verbs only from the main checkout. A Visit starts
 by installing the lab build (release pulled, owner data copied at once) and ends by installing the
 pulled release back; `phone help` holds the steps.
 
@@ -63,7 +64,14 @@ PULL_ROOTS = (LAB_FOLDER, 'files/benchmark', 'files/timing-receipts', 'files/tes
 SWITCH_HOLDS = {'History': 'no_backup/history/', 'Dictionary': 'files/dictionary/',
                 'History notices': 'shared_prefs/history_notices.xml', 'settings': 'shared_prefs/settings.xml'}
 MICROPHONE = 'android.permission.RECORD_AUDIO'
-LAB_RUN = PKG + '.labrun'  # Lab run classes live here; `run` refuses them
+LAB_RUN = PKG + '.labrun'  # Lab run classes live here; `run` refuses them, `measure` runs nothing else
+# Owner data a Lab run may get a copy of, and where `measure` puts the copies: inside the lab folder,
+# `files/X` at LAB_RUN_INPUTS/X. tools/device_classes.py fails when the Lab run harness reads another folder.
+INPUT_ROOTS = ('files/benchmark', 'files/timing-receipts')
+LAB_RUN_INPUTS = LAB_FOLDER + '/labrun-inputs'
+# One line per Lab run in the instrumentation output, written by the harness (labrun/LabRun.kt).
+LAB_RUN_COMPLETED, LAB_RUN_INCOMPLETE = 'LAB RUN completed', 'LAB RUN incomplete'
+CLASSES = re.compile(r'[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?(?:,[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?)*')
 VISIT_FIELDS = {'name', 'started', 'ended', 'release', 'copy', 'fingerprint', 'model', 'lab_builds'}
 
 
@@ -418,6 +426,28 @@ class Device:
 
     def empty_test_folders(self):
         self.private('rm -rf -- ' + ' '.join(shlex.quote(rel) for rel in TEST_FOLDERS), timeout=300)
+
+    def place_inputs(self, sources):
+        """Copies for one Lab run, made on the phone inside app data: each `files/X` of `sources` lands at
+        LAB_RUN_INPUTS/X. What an earlier measure left there goes first. Returns the number of files copied."""
+        quoted = shlex.quote(LAB_RUN_INPUTS)
+        checks = ' '.join('[ -e %(s)s ] || echo missing %(s)s; [ -z "$(find %(s)s -type l -print -quit 2>/dev/null)" ] '
+                          '|| echo link %(s)s;' % {'s': shlex.quote(name(source, INPUT_ROOTS))} for source in sources)
+        found = self.private(checks, timeout=300).strip() if sources else ''
+        if found:
+            raise Refused('no such file or folder on the phone, or a symlink inside it: ' + found.replace('\n', ', ')[:300])
+        steps = ['rm -rf -- ' + quoted, 'mkdir -p ' + quoted]
+        for source in sources:
+            target = LAB_RUN_INPUTS + source[len('files'):]
+            steps += ['mkdir -p ' + shlex.quote(target.rsplit('/', 1)[0]),
+                      'cp -R %s %s' % (shlex.quote(source), shlex.quote(target))]
+        count = self.private(' && '.join(steps + ['find %s -type f | wc -l' % quoted]), timeout=900).strip()
+        if not count.isdigit():
+            raise Failed('unreadable answer from the phone after copying the Lab run inputs')
+        return int(count)
+
+    def remove_inputs(self):
+        self.private('rm -rf -- ' + shlex.quote(LAB_RUN_INPUTS), timeout=300)
 
     def instrument(self, classes, extras, timeout):
         args = ' '.join('-e %s %s' % (shlex.quote(k), shlex.quote(v)) for k, v in extras)
@@ -901,31 +931,82 @@ class Phone:
             count += 1
         return {'outcome': 'pulled', 'files': count, 'path': str(dest)}
 
-    def run(self, classes, extras, timeout=1800):
-        if not re.fullmatch(r'[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?(?:,[A-Za-z0-9_.]+(?:#[A-Za-z0-9_]+)?)*', classes):
-            raise Refused('unsupported test class list')
+    @staticmethod
+    def extras(items):
         pairs = []
-        for item in extras:
+        for item in items:
             key, eq, value = item.partition('=')
             if not eq or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', key) or len(value) > 256:
                 raise Refused('extras are key=value with a short value')
             pairs.append((key, value))
-        if any(item.startswith(LAB_RUN + '.') for item in classes.split(',')):
-            raise Refused('run refused: %s holds Lab run classes; they measure and never run as tests' % LAB_RUN)
-        visit = self.in_visit('run')
-        self.not_live('run')
-        folder = self.meta('run', classes=classes, extras=pairs)
+        return pairs
+
+    def instrumented(self, verb, classes, pairs, timeout, **record):
+        """One instrumentation with its output and our app's logcat kept: (folder, output, whether it ended in order)."""
+        folder = self.meta(verb, classes=classes, extras=pairs, **record)
         since = self.device.device_time()
         uid = self.app()['uid']
         output = self.device.instrument(classes, pairs, timeout)
         (folder / 'instrumentation.txt').write_text(output)
         (folder / 'logcat.txt').write_text(self.device.logcat(uid, since=since))
+        return folder, output, bool(re.search(r'^OK \(\d+ tests?\)', output, re.M)) and 'INSTRUMENTATION_CODE: -1' in output
+
+    def unchanged(self, verb, visit, folder):
         if self.device.fingerprint() != visit['fingerprint']:
-            raise Failed('owner data changed during this run; Visit copy: %s; run output: %s'
-                         % (self.visit_copy(visit), folder))
-        ok = bool(re.search(r'^OK \(\d+ tests?\)', output, re.M)) and 'INSTRUMENTATION_CODE: -1' in output
+            raise Failed('owner data changed during this %s; Visit copy: %s; run output: %s'
+                         % (verb, self.visit_copy(visit), folder))
+
+    def run(self, classes, extras, timeout=1800):
+        if not CLASSES.fullmatch(classes):
+            raise Refused('unsupported test class list')
+        pairs = self.extras(extras)
+        if any(item.startswith(LAB_RUN + '.') for item in classes.split(',')):
+            raise Refused('run refused: %s holds Lab run classes; they measure and never run as tests; use measure'
+                          % LAB_RUN)
+        visit = self.in_visit('run')
+        self.not_live('run')
+        folder, _, ok = self.instrumented('run', classes, pairs, timeout)
+        self.unchanged('run', visit, folder)
         return {'outcome': 'passed' if ok else 'failed', 'path': str(folder),
                 'lab': self.device.inventory(LAB_FOLDER)}
+
+    def measure(self, classes, arguments, timeout=7200):
+        """A Lab run: only classes of the Lab run package, on copies of the named owner recordings or
+        receipts placed in the lab folder for the run and removed after it. Completed or incomplete."""
+        if not CLASSES.fullmatch(classes):
+            raise Refused('unsupported class list')
+        if not all(item.startswith(LAB_RUN + '.') for item in classes.split(',')):
+            raise Refused('measure refused: it runs only Lab run classes, those under %s; tests go through run' % LAB_RUN)
+        inputs = [name(path, INPUT_ROOTS) for item in arguments if item.startswith('inputs=')
+                  for path in item[len('inputs='):].split(',')]
+        if any(a == b or under(a, (b,)) for i, a in enumerate(inputs) for j, b in enumerate(inputs) if i != j):
+            raise Refused('measure refused: an input is named twice or lies inside another')
+        pairs = self.extras(item for item in arguments if not item.startswith('inputs='))
+        visit = self.in_visit('measure')
+        self.not_live('measure')
+        folder_name = LAB_RUN_INPUTS[len(LAB_FOLDER) + 1:]
+        model = set(self.kept_model())
+        if any(under(path, (folder_name,)) for path in model | set(visit['model'])):
+            raise Refused('measure refused: a speech-model file lies in %s, which measure empties' % LAB_RUN_INPUTS)
+        before = self.device.inventory(LAB_FOLDER) or {}
+        folder = None
+        try:
+            copied = self.device.place_inputs(inputs)
+            folder, output, ok = self.instrumented('measure', classes, pairs, timeout, inputs=inputs)
+        finally:
+            self.device.remove_inputs()
+            if folder is not None:
+                self.unchanged('measure', visit, folder)
+        after = self.device.inventory(LAB_FOLDER) or {}
+        if any(under(path, (folder_name,)) for path in after):
+            raise Failed('copies of owner data are still in %s; run output: %s' % (LAB_RUN_INPUTS, folder))
+        completed, incomplete = output.count(LAB_RUN_COMPLETED), output.count(LAB_RUN_INCOMPLETE)
+        return {'outcome': 'completed' if ok and completed and not incomplete else 'incomplete',
+                'lab_runs_completed': completed, 'lab_runs_incomplete': incomplete, 'inputs': copied,
+                'outputs': sorted(path for path, digest in after.items() if before.get(path) != digest and path not in model),
+                'model_differs_from_visit_start': sorted(path for path, digest in visit['model'].items()
+                                                         if after.get(path) != digest),
+                'path': str(folder)}
 
     def logs(self, since=None):
         app = self.app()
@@ -1101,6 +1182,13 @@ USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON objec
                                   files/test into corpus/lab/pull/<ts>/; not while release is installed
   run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat;
                                   owner data is fingerprinted before and after
+  measure CLASS[#method][,...] [inputs=PATH[,PATH...]] [k=v]
+                                  a Lab run: only classes under ch.og.dictation.labrun. Each PATH (under
+                                  files/benchmark or files/timing-receipts) is copied on the phone into
+                                  files/lab/labrun-inputs/ (files/benchmark/a.wav -> benchmark/a.wav), the
+                                  classes run, the copies are deleted. Owner data is fingerprinted before
+                                  and after. Reports completed or incomplete, never passed or failed, and
+                                  the files/lab files the run wrote or changed
   logs [--since 'MM-DD HH:MM:SS.mmm'] | crash
   stop                            force-stop our app
   snapshot NAME                   a further copy of owner data, on the lab build
@@ -1112,11 +1200,12 @@ USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON objec
   restore --switch NAME           puts that back, the unmarked APKs too; speech-model files stay
   uninstall                       needs corpus/lab/.allow-uninstall created by the user
 Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
-install, run, restore, stop, uninstall refuse while the keyboard is in use.
+install, run, measure, restore, stop, uninstall refuse while the keyboard is in use.
 Build marker: a debuggable APK must carry the test layout, a release APK the owner layout, the test
 APK the app's marker; an APK without a marker is refused by check, install and run.
-run, push, stop need an open Visit on that lab build with owner data equal to the Visit copy; run
-refuses classes under ch.og.dictation.labrun (Lab runs).
+run, measure, push, stop need an open Visit on that lab build with owner data equal to the Visit
+copy; run refuses classes under ch.og.dictation.labrun (Lab runs), measure runs nothing else. A Lab
+run only when the owner asked for the measurement; its output is pulled like any test output.
 Every verb but help and check works only from the main checkout, never from a worktree.
 Speech model: the files of the kept model copy corpus/lab/model, laid out as in files/lab, are the
 speech-model files; everything else in files/lab is test output. No Visit starts without that folder.
@@ -1180,6 +1269,8 @@ def dispatch(argv, phone):
         return phone.pull(args, to)
     if verb == 'run' and args:
         return phone.run(args[0], args[1:])
+    if verb == 'measure' and args:
+        return phone.measure(args[0], args[1:])
     if verb == 'logs' and len(args) in (0, 2):
         return phone.logs(args[1] if args else None)
     if verb in ('snapshot', 'restore'):
