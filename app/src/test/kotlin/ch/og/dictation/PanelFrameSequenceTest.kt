@@ -150,10 +150,12 @@ class PanelFrameSequenceTest {
         step("Stop") { press(R.id.microphone) }
         step("microphone released") { releaseMicrophone() }
         step("text prepared") { finish() }
+        copy("copied earlier")
         step("rotate to landscape") { rotate(Surface.ROTATION_90) }
         step("Back arrow") { press(R.id.back) }
         step("Back arrow") { press(R.id.back) }
         assertEquals(1, commits())
+        assertEquals("Back never copies", "copied earlier", copied())
     }
 
     @Test fun heldTextCopy() = scenario("held-text-copy") {
@@ -163,8 +165,10 @@ class PanelFrameSequenceTest {
         step("Stop") { press(R.id.microphone) }
         step("microphone released") { releaseMicrophone() }
         step("text prepared") { finish() }
+        copy("copied earlier")
         step("Copy text") { press(R.id.choice_safe) }
         assertEquals(1, commits())
+        assertEquals("Copy puts exactly the take's text on the build's clipboard", "first words", copied())
     }
 
     @Test fun privateField() = scenario("private-field") {
@@ -185,7 +189,9 @@ class PanelFrameSequenceTest {
         step("Stop") { press(R.id.microphone) }
         step("microphone released") { releaseMicrophone() }
         step("text prepared") { finish() }
+        copy("copied earlier")
         step("Discard text") { press(R.id.choice_discard) }
         assertEquals(1, commits())
+        assertEquals("Discard text never copies", "copied earlier", copied())
     }
 }

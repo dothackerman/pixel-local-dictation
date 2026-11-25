@@ -7,7 +7,8 @@ enum class PanelChoice { RECORDING, FINISHING }
 
 /**
  * What the panel says and what its microphone disk does, stored by the take's code at each
- * change (never derived from flags). Each phase is one status line and one microphone state.
+ * change. Each phase is one status line and one microphone state; only a pending outcome
+ * ([PanelState.awaitingOutcome]) takes the microphone from a phase that offers it.
  */
 enum class PanelPhase(val status: Int, val microphoneEnabled: Boolean, val microphoneLabel: Int) {
     OPENING(R.string.status_opening, false, R.string.status_opening),
@@ -20,14 +21,11 @@ enum class PanelPhase(val status: Int, val microphoneEnabled: Boolean, val micro
     IDLE(R.string.status_idle, true, R.string.start_recording),
     NO_PERMISSION(R.string.status_no_permission, false, R.string.status_no_permission),
     FAILED(R.string.status_failed, true, R.string.retry_recording),
-    NOT_INSERTED(R.string.status_unable_insert, true, R.string.start_recording),
-    /** Not inserted, and the take's outcome is still pending: the microphone stays off until it is in. */
-    NOT_INSERTED_WAITING(R.string.status_unable_insert, false, R.string.status_stopping_recording),
-    /** Idle while a write is looked at once more (ADR-010): the microphone stays off until that look. */
-    IDLE_WAITING(R.string.status_idle, false, R.string.status_stopping_recording);
-
     /** The take ended without insertion; without held text the status carries the "not inserted" marker. */
-    val notInserted: Boolean get() = this == NOT_INSERTED || this == NOT_INSERTED_WAITING
+    NOT_INSERTED(R.string.status_unable_insert, true, R.string.start_recording);
+
+    /** The microphone offers a new take; it does so only once the last take's outcome is in ([PanelState.awaitingOutcome]). */
+    val offersNewTake: Boolean get() = this == IDLE || this == NOT_INSERTED
 }
 
 /** Text a take could not insert, held in the panel for Copy (plan B). */
@@ -56,6 +54,11 @@ data class PanelState(
     /** The take is in the Stop wait: Stop was pressed and its text is awaited. Read only while [running]. */
     val finishing: Boolean = false,
     val held: HeldPanel? = null,
+    /**
+     * The take ended on this panel and its outcome is not in yet (an interrupted take still finishing into
+     * History, a write that is looked at once more): the microphone stays off until it is.
+     */
+    val awaitingOutcome: Boolean = false,
     /** The end of the text so far, or the held text. */
     val preview: String = "",
     /** The take is excluded from History (a private field): the private-field line shows. */
@@ -107,11 +110,12 @@ fun panelFrame(state: PanelState): PanelFrame {
     val open = state.choice
     val running = state.running
     val held = state.held
+    val waits = state.awaitingOutcome && state.phase.offersNewTake
     return PanelFrame(
         choice = open,
         preparing = running && state.finishing && open == null,
         stopGlyph = running && !state.finishing,
-        unableToInsert = state.phase.notInserted,
+        unableToInsert = state.phase == PanelPhase.NOT_INSERTED,
         held = held != null,
         uncertain = held?.unconfirmed == true,
         backLabel = when {
@@ -124,8 +128,8 @@ fun panelFrame(state: PanelState): PanelFrame {
         },
         // Held text owns the status line (what to do, and whether History keeps it); otherwise the phase's.
         status = held?.status ?: state.phase.status,
-        microphoneEnabled = state.phase.microphoneEnabled,
-        microphoneLabel = state.phase.microphoneLabel,
+        microphoneEnabled = state.phase.microphoneEnabled && !waits,
+        microphoneLabel = if (waits) R.string.status_stopping_recording else state.phase.microphoneLabel,
         preview = state.preview,
         notice = if (state.privateField) R.string.retention_field_off else null,
         banner = state.banner,

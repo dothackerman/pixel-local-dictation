@@ -36,7 +36,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The take controller at its interface, without Android (#85, #86, #87, #88): the service's events go in,
+ * The take controller at its interface, without Android (#85, #86, #87, #88, #89): the service's events go in,
  * the panel frame and the effects come out through the ports. The scheduler is a fake with its own
  * clock; the microphone owner is the real one, observed as the service observes it, and is released
  * when each test ends.
@@ -48,6 +48,7 @@ class TakeControllerTest {
     private inner class Host : TakeHost {
         val frames = mutableListOf<PanelFrame>()
         val copied = mutableListOf<String>()
+        val notices = mutableListOf<HistoryNotice>()
         var returns = 0
         var panelRequests = 0
         var asked = 0
@@ -60,9 +61,9 @@ class TakeControllerTest {
         }
         override fun returnToKeyboard(): Boolean { returns++; effects += "return"; duringReturn(); return true }
         override fun requestPanel() { panelRequests++ }
-        override fun copy(text: String) { copied += text }
+        override fun copy(text: String) { copied += text; effects += "copy:$text" }
         override fun askPermission() { asked++ }
-        override fun historyNotice(notice: HistoryNotice) {}
+        override fun historyNotice(notice: HistoryNotice) { notices += notice }
         override fun hasMicPermission() = permission
         override fun captureSilenced() = false
         override fun currentField(): FieldIdentity? = FIELD
@@ -159,9 +160,25 @@ class TakeControllerTest {
         var duringRead: () -> Unit = {}
         /** What happens inside a write, after the editor took the text and before it answers. */
         var duringWrite: () -> Unit = {}
+        /** The editor answers the write with false and takes nothing. */
+        var accepts = true
+        /** The editor fails inside the write. */
+        var writeThrows = false
+        /** The editor deactivated this connection: reads answer null, a write would be dropped and answered true (Pixel probe, 2026-11-13). */
+        var dead = false
         private val content = StringBuilder()
-        override fun write(text: String): Boolean { written += text; effects += "write:$text"; content.append(text); duringWrite(); return true }
-        override fun textBeforeCursor(chars: Int): CharSequence { reads++; duringRead(); return if (shows) content.takeLast(chars) else "" }
+        override fun write(text: String): Boolean {
+            written += text; effects += "write:$text"
+            if (writeThrows) error("synthetic editor failure")
+            if (!accepts) return false
+            if (!dead) content.append(text)
+            duringWrite()
+            return true
+        }
+        override fun textBeforeCursor(chars: Int): CharSequence? {
+            reads++; duringRead()
+            return if (dead) null else if (shows) content.takeLast(chars) else ""
+        }
         override fun extractedLength(): Int? = null
     }
 
@@ -203,7 +220,10 @@ class TakeControllerTest {
     @Volatile private var holdDecode = false
     private val heldDecodes = LinkedBlockingQueue<Runnable>()
     private fun runHeldDecodes() { holdDecode = false; while (true) (heldDecodes.poll() ?: return).run() }
-    private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { if (holdDecode) heldDecodes.add(it) else it.run() }, { Recognizer { "word" } }, {
+    /** Recognition fails: no text comes out of the take. */
+    @Volatile private var decodeFails = false
+    private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { if (holdDecode) heldDecodes.add(it) else it.run() },
+        { Recognizer { if (decodeFails) error("synthetic decode failure") else "word" } }, {
         object : Segmenter {
             override fun accept(samples: FloatArray) = listOf(Chunk(samples, true))
             override fun flush(): List<Chunk> { flushes.incrementAndGet(); return emptyList() }
@@ -1427,10 +1447,521 @@ class TakeControllerTest {
         assertEquals(1, host.returns)
     }
 
+    // --- Held text (#89): text that could not be inserted, its Copy, Discard text and Back, and the pending outcome. ---
+
+    /** Stop wrote into an editor that refused the text: the take ended and the panel holds its text. */
+    private fun heldAfterARefusedWrite(retention: EditorRetention = EditorRetention.ELIGIBLE) {
+        field.accepts = false
+        controller.inputStart(retention, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { frame().held }
+        assertEquals(listOf("word"), field.written)
+        assertEquals(0, host.returns)
+    }
+
+    /**
+     * Held text on the panel: its own status, the text in the preview, Copy and Discard text instead of the
+     * microphone's take. (A held frame always draws the status mark: RenderPanelTest.)
+     */
+    private fun assertHeld(status: String, text: String = "word") {
+        val frame = frame()
+        assertTrue(frame.held)
+        assertEquals(status, status())
+        assertEquals(text, frame.preview)
+        assertEquals("no Cancel choice: the two actions are Copy text and Discard text", null, frame.choice)
+        assertFalse(frame.stopGlyph || frame.preparing || frame.ringLive)
+        assertFalse(controller.takeActive)
+    }
+
+    /** Copy text hands exactly the take's text to the host's clipboard, drops it from the panel and hands the keyboard back. */
+    private fun assertCopyHandsOverTheTextAndLeaves(text: String = "word") {
+        val returns = host.returns
+        controller.onSafeAction()
+        assertEquals(listOf(text), host.copied)
+        assertEquals(returns + 1, host.returns)
+        assertIdlePanel()
+        assertFalse("the next panel records by itself", MicrophoneOwner.state().explicitStartRequired)
+        // The text is gone: a second Copy has nothing to copy.
+        controller.onSafeAction()
+        assertEquals(listOf(text), host.copied)
+    }
+
+    /** A write the editor answers with false: not inserted, held for Copy, and the status says History keeps it. */
+    @Test fun aWriteTheEditorRefusesHoldsTheTextAndSaysHistoryKeepsIt() {
+        heldAfterARefusedWrite()
+        assertHeld("unable_history")
+        assertFalse(frame().uncertain)
+        assertEquals(R.string.back_to_keyboard, frame().backLabel)
+        assertEquals("word", historyRows().single().text)
+        assertEquals(HistoryDelivery.REJECTED, historyRows().single().delivery)
+        assertEquals(emptyList<HistoryNotice>(), host.notices)
+        assertCopyHandsOverTheTextAndLeaves()
+        assertEquals("Copy writes nothing into the field", listOf("word"), field.written)
+        assertEquals(1, opened)
+    }
+
+    @Test fun aWriteThatThrowsHoldsTheText() {
+        field.writeThrows = true
+        recordingWithSpeech()
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { frame().held }
+        assertHeld("unable_history")
+        assertEquals(0, host.returns)
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** No text, no held state: a failed recognition says so and offers Retry. */
+    @Test fun aDecodeFailureWithoutTextSaysRecognitionFailedAndHoldsNothing() {
+        decodeFails = true
+        openPanel()
+        scheduler.drain()
+        input.say()
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { status() == "failed" }
+        assertFalse(frame().held || frame().unableToInsert)
+        assertEquals("", frame().preview)
+        assertTrue(frame().microphoneEnabled)
+        assertEquals(R.string.retry_recording, frame().microphoneLabel)
+        assertNothingWritten()
+        controller.onSafeAction()
+        assertEquals(emptyList<String>(), host.copied)
+    }
+
+    /** A private field: History has nothing, the status says the text is not saved, and Copy still hands it over. */
+    @Test fun heldTextOfAPrivateFieldIsNotSavedAndCopyStillHandsItOver() {
+        heldAfterARefusedWrite(EditorRetention.PASSWORD)
+        assertHeld("unable_unsaved")
+        assertEquals(R.string.retention_field_off, frame().notice)
+        assertTrue(historyRows().isEmpty())
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** An eligible field whose History save failed must not promise History; the History page gets the notice. */
+    @Test fun heldTextWhoseHistorySaveFailedIsNotPromisedToHistory() {
+        File(folder, "history").writeText("not a folder")
+        heldAfterARefusedWrite()
+        assertHeld("unable_unsaved")
+        assertEquals(null, frame().notice)
+        assertEquals(listOf(HistoryNotice.SAVE), host.notices.distinct())
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /**
+     * After a rotation hold the editor deactivated the connection (reads answer null; a write would be
+     * dropped and answered true): nothing is written, no insert is reported, the text is held.
+     */
+    @Test fun aConnectionDeactivatedAfterARotationIsNeverWrittenAndTheTextIsHeld() {
+        recordingWithSpeech()
+        rotateAndSettle()
+        field.dead = true
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { frame().held }
+        assertNothingWritten()
+        assertHeld("unable_history")
+        assertFalse("nothing was written: not an uncertain insert", frame().uncertain)
+        assertTrue(historyRows().single().delivery != HistoryDelivery.ACCEPTED)
+        assertEquals("word", historyRows().single().text)
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** Discard text: gone at once without a copy or a hand-back; the idle panel stays and starts nothing by itself. */
+    @Test fun discardTextDropsTheHeldTextCopiesNothingAndLeavesTheIdlePanel() {
+        heldAfterARefusedWrite()
+        controller.onDiscardAction()
+        assertIdlePanel()
+        assertEquals(emptyList<String>(), host.copied)
+        assertEquals(0, host.returns)
+        assertFalse(MicrophoneOwner.state().explicitStartRequired)
+        assertEquals(1, opened)
+        // Nothing is left to copy or to discard.
+        controller.onSafeAction()
+        controller.onDiscardAction()
+        assertEquals(emptyList<String>(), host.copied)
+        assertIdlePanel()
+        assertEquals("History keeps the take; only the panel's copy is gone", "word", historyRows().single().text)
+    }
+
+    /** Back never copies: on uncopied text the first Back only warns and says what the next does; the second discards and leaves. */
+    @Test fun theFirstBackOnHeldTextOnlyWarnsAndTheSecondDiscardsAndLeaves() {
+        heldAfterARefusedWrite()
+        controller.cancelAndReturn()
+        assertHeld("back_warning")
+        assertEquals("the arrow says what the next press does", R.string.back_discard_text, frame().backLabel)
+        assertEquals(0, host.returns)
+        controller.cancelAndReturn()
+        assertIdlePanel()
+        assertEquals(1, host.returns)
+        assertEquals("Back never copies", emptyList<String>(), host.copied)
+        assertFalse(MicrophoneOwner.state().explicitStartRequired)
+        assertEquals(1, opened)
+    }
+
+    @Test fun theSystemBackKeyOnHeldTextWarnsThenDiscardsLikeTheArrow() {
+        heldAfterARefusedWrite()
+        assertTrue(controller.backKey())
+        assertHeld("back_warning")
+        assertEquals(0, host.returns)
+        assertTrue(controller.backKey())
+        assertIdlePanel()
+        assertEquals(1, host.returns)
+        assertEquals(emptyList<String>(), host.copied)
+        assertFalse("without held text or a take the key is Android's again", controller.backKey())
+    }
+
+    @Test fun copyAfterTheBackWarningStillCopiesAndHandsBack() {
+        heldAfterARefusedWrite()
+        controller.cancelAndReturn()
+        assertHeld("back_warning")
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** However the held text left the panel, no explicit start is required: the next panel records by itself. */
+    private fun theNextPanelRecordsAfter(leave: () -> Unit) {
+        heldAfterARefusedWrite()
+        leave()
+        assertFalse(MicrophoneOwner.state().explicitStartRequired)
+        assertEquals(1, opened)
+        hidePanel()
+        controller.inputFinish()
+        openPanel()
+        assertEquals("the next open records", 2, opened)
+        assertTrue(controller.takeActive)
+    }
+
+    @Test fun afterCopyTheNextPanelRecordsByItself() = theNextPanelRecordsAfter { controller.onSafeAction() }
+
+    @Test fun afterTheSecondBackTheNextPanelRecordsByItself() = theNextPanelRecordsAfter { controller.cancelAndReturn(); controller.cancelAndReturn() }
+
+    @Test fun afterDiscardTextTheNextPanelRecordsByItself() = theNextPanelRecordsAfter { controller.onDiscardAction() }
+
+    /**
+     * Held text is never dropped by starting a take: not by the panel shown again, on the same input or a
+     * restarted one, and (guard) not by a microphone press the panel does not offer.
+     */
+    @Test fun aPanelShownAgainOverHeldTextStartsNoTakeAndKeepsTheText() {
+        heldAfterARefusedWrite(EditorRetention.PASSWORD) // The text exists nowhere else.
+        controller.inputViewStart() // A tap on the field.
+        assertHeld("unable_unsaved")
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD) // The same editor restarts input.
+        controller.inputViewStart()
+        assertHeld("unable_unsaved")
+        hidePanel()
+        controller.inputFinish()
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, OTHER_FIELD) // Another field of the same app.
+        controller.inputViewStart()
+        assertHeld("unable_unsaved")
+        controller.microphonePressed()
+        scheduler.drain()
+        assertHeld("unable_unsaved")
+        assertEquals(1, opened)
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** A rotation recreates the panel and restarts input: the new panel shows the same held text, turned back too. */
+    @Test fun heldTextSurvivesARotationAndRotatingBack() {
+        heldAfterARefusedWrite()
+        repeat(2) {
+            rotations.changes++
+            controller.panelCreated()
+            controller.render()
+            controller.settleAfterRotation()
+            controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, FIELD)
+            controller.inputViewStart()
+            scheduler.advance(ROTATION_HOLD_GAP_MS * 2)
+            assertHeld("unable_history")
+        }
+        assertEquals(1, opened)
+        assertEquals(0, host.panelRequests)
+        assertCopyHandsOverTheTextAndLeaves()
+    }
+
+    /** The warning belongs to the panel it was given on: a panel created again, or a new input start, takes it back. */
+    @Test fun aPanelCreatedAgainOrANewInputStartTakesTheBackWarningBack() {
+        heldAfterARefusedWrite()
+        controller.cancelAndReturn()
+        assertHeld("back_warning")
+        controller.panelCreated()
+        controller.render()
+        assertHeld("unable_history")
+        assertEquals(R.string.back_to_keyboard, frame().backLabel)
+        controller.cancelAndReturn()
+        assertHeld("back_warning") // Starts over: this Back only warns again.
+        assertEquals(0, host.returns)
+        restartInput()
+        assertHeld("unable_history")
+        controller.inputViewStart()
+        controller.cancelAndReturn()
+        assertHeld("back_warning")
+        assertEquals(0, host.returns)
+    }
+
+    /** A lock never keeps a take's text on the panel. */
+    @Test fun screenOffDropsTheHeldText() {
+        heldAfterARefusedWrite()
+        controller.screenOff()
+        scheduler.drain()
+        assertIdlePanel()
+        controller.onSafeAction()
+        assertEquals(emptyList<String>(), host.copied)
+        assertEquals(0, host.returns)
+        assertEquals("word", historyRows().single().text)
+    }
+
+    /** Held text is only ever shown for the app the take started in. */
+    @Test fun anotherAppsEditorDropsTheHeldText() {
+        heldAfterARefusedWrite()
+        hidePanel()
+        controller.inputFinish()
+        assertTrue("hiding the panel keeps it", frame().held)
+        controller.inputStart(EditorRetention.ELIGIBLE, OTHER_APP, OTHER_APP_FIELD)
+        assertFalse(frame().held || frame().unableToInsert)
+        assertEquals("idle", status())
+        assertEquals("", frame().preview)
+        controller.onSafeAction()
+        assertEquals(emptyList<String>(), host.copied)
+    }
+
+    /** The other app's panel after a take of the first app ended there: "Unable to insert text" and nothing of the text. */
+    private fun assertNothingHeldOrShownInTheOtherApp() {
+        awaitInterruptedInHistory() // History keeps it where eligible.
+        await { frame().unableToInsert && frame().microphoneEnabled }
+        assertFalse(frame().held)
+        assertEquals("", frame().preview)
+        assertEquals("unable_insert", status())
+        assertEquals(null, frame().choice)
+        assertNothingWritten()
+        controller.onSafeAction()
+        assertEquals(emptyList<String>(), host.copied)
+    }
+
+    private fun anotherAppStartsInput() {
+        hidePanel()
+        controller.inputFinish()
+        controller.inputStart(EditorRetention.ELIGIBLE, OTHER_APP, OTHER_APP_FIELD)
+        controller.inputViewStart()
+    }
+
+    @Test fun anInterruptionByAnotherAppsInputHoldsAndShowsNothingThere() {
+        recordingWithSpeech()
+        anotherAppStartsInput()
+        assertNothingHeldOrShownInTheOtherApp()
+        assertEquals(1, opened)
+    }
+
+    @Test fun stopThenAnotherAppsInputWhileTheTextIsPreparedHoldsAndShowsNothingThere() {
+        recordingWithSpeech()
+        holdDecode = true
+        controller.microphonePressed() // Stop: the text is still being decoded.
+        anotherAppStartsInput()
+        runHeldDecodes()
+        assertNothingHeldOrShownInTheOtherApp()
+    }
+
+    /** The text is decoded and its write is queued on the take's thread when the other app's input arrives. */
+    @Test fun anotherAppsInputBetweenTheDecodeEndAndTheWriteHoldsAndShowsNothingThere() {
+        recordingWithSpeech()
+        holdDecode = true
+        controller.microphonePressed()
+        await { flushes.get() == 1 && heldDecodes.isNotEmpty() }
+        runHeldDecodes() // On the take's thread: what the decoded text brings is queued there and has not run.
+        assertEquals("nothing is written yet", emptyList<String>(), field.written)
+        anotherAppStartsInput()
+        assertNothingHeldOrShownInTheOtherApp()
+    }
+
+    /**
+     * The gap: an interrupted take's microphone is released, and its outcome (the late decode and the
+     * History save) is not in yet. The panel says "Unable to insert text" and offers no new take.
+     */
+    private fun interruptedIntoTheGap(retention: EditorRetention = EditorRetention.ELIGIBLE) {
+        controller.inputStart(retention, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        holdDecode = true
+        hidePanel()
+        controller.windowHidden()
+        await { !MicrophoneOwner.state().occupied && frame().unableToInsert }
+        assertFalse(controller.takeActive)
+        assertEquals("unable_insert", status())
+        assertFalse("the microphone is not offered until the outcome is in", frame().microphoneEnabled)
+        assertEquals(R.string.status_stopping_recording, frame().microphoneLabel)
+        assertFalse(frame().held)
+    }
+
+    /** Any path that shows the panel again in the gap must not offer a start that does nothing. */
+    @Test fun aPanelShownAgainInTheGapOffersNoStart() {
+        interruptedIntoTheGap()
+        restartInput()
+        controller.inputViewStart()
+        assertFalse(frame().microphoneEnabled)
+        hidePanel()
+        controller.windowHidden()
+        assertFalse(frame().microphoneEnabled)
+        controller.cancelAndReturn() // The Back arrow only leaves.
+        assertFalse(frame().microphoneEnabled)
+        assertEquals(1, opened)
+        runHeldDecodes()
+        awaitInterruptedInHistory()
+        await { frame().microphoneEnabled }
+        assertNothingWritten()
+    }
+
+    /** Guard: a microphone press the gap's panel does not offer starts nothing, and the take's text still arrives as held text. */
+    @Test fun aMicrophonePressInTheGapStartsNothingAndTheOutcomeStillArrives() {
+        interruptedIntoTheGap()
+        controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        controller.microphonePressed()
+        scheduler.drain()
+        assertEquals(1, opened)
+        assertFalse(controller.takeActive)
+        runHeldDecodes()
+        awaitInterruptedInHistory()
+        await { frame().held }
+        assertHeld("unable_history")
+        assertEquals(1, opened)
+        assertNothingWritten()
+    }
+
+    @Test fun onceTheOutcomeIsInTheMicrophoneStartsATakeAgain() {
+        interruptedIntoTheGap()
+        controller.inputStart(EditorRetention.ELIGIBLE, OTHER_APP, OTHER_APP_FIELD)
+        controller.inputViewStart()
+        assertFalse(frame().microphoneEnabled)
+        runHeldDecodes()
+        assertNothingHeldOrShownInTheOtherApp()
+        assertEquals(R.string.start_recording, frame().microphoneLabel)
+        controller.microphonePressed()
+        assertEquals(2, opened)
+        assertTrue(controller.takeActive)
+    }
+
+    /** A lock in the gap still refuses the text: nothing is held or shown after unlock, and History keeps it. */
+    @Test fun aLockInTheGapHoldsNothingAfterUnlock() {
+        interruptedIntoTheGap()
+        controller.screenOff()
+        runHeldDecodes()
+        awaitInterruptedInHistory()
+        restartInput() // Unlock: the same app restarts input.
+        controller.inputViewStart()
+        scheduler.drain()
+        assertFalse(frame().held)
+        assertEquals("", frame().preview)
+        assertNothingWritten()
+        assertEquals(1, opened)
+    }
+
+    /** The Stop path: the write would be refused and the text held, but the screen went off while the microphone was still being released. */
+    @Test fun aLockAfterStopWhileTheMicrophoneIsStillReleasedHoldsNothingAfterUnlock() {
+        field.accepts = false
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        controller.microphonePressed()
+        controller.screenOff()
+        gate.countDown()
+        awaitTakeEnded()
+        await { frame().microphoneEnabled }
+        restartInput(EditorRetention.PASSWORD) // Unlock: the same app restarts input.
+        controller.inputViewStart()
+        scheduler.drain()
+        assertFalse(frame().held)
+        assertEquals("", frame().preview)
+        assertTrue(historyRows().isEmpty())
+        controller.onSafeAction()
+        assertEquals(emptyList<String>(), host.copied)
+    }
+
+    /**
+     * An interrupted take must not leave a silent idle panel (#36, #61): it says "Unable to insert text",
+     * holds the text for Copy, and Back warns first, then discards and leaves without starting a take.
+     */
+    @Test fun anInterruptedTakeHoldsItsTextAndBackWarnsThenLeaves() {
+        recordingWithSpeech()
+        restartInput() // The same field restarts input: an interruption.
+        controller.inputViewStart()
+        awaitInterruptedInHistory()
+        await { frame().held }
+        assertHeld("unable_history")
+        assertEquals(R.string.back_to_keyboard, frame().backLabel)
+        controller.cancelAndReturn()
+        assertHeld("back_warning")
+        assertEquals(0, host.returns)
+        controller.cancelAndReturn()
+        assertEquals(1, host.returns)
+        assertIdlePanel()
+        assertEquals(1, opened)
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(emptyList<String>(), host.copied)
+    }
+
+    /**
+     * Pinned as it is: a panel shown again inside the read-back wait is at rest under a pending outcome and
+     * says "Stopping"; the second look brings the outcome in and changes nothing else on it. The write was
+     * seen, so the keyboard is handed back, and the next panel records.
+     */
+    @Test fun aPanelShownAgainInsideTheReadBackWaitSaysStoppingAndStartsNoTake() {
+        stoppedWithAWriteNotSeenAtOnce()
+        controller.inputViewStart() // A tap on the field: the same input session.
+        assertEquals("stopping", status())
+        assertFalse(frame().microphoneEnabled)
+        assertEquals(1, opened)
+        controller.microphonePressed()
+        assertEquals("no take starts before the second look", 1, opened)
+        field.shows = true
+        scheduler.advance(100)
+        assertEquals(1, host.returns)
+        assertFalse(frame().held)
+        assertEquals("stopping", status())
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        hidePanel()
+        controller.inputFinish()
+        openPanel()
+        assertEquals(2, opened)
+    }
+
+    /** Guard: held text, the Back warning and the pending outcome call the ports in table order. */
+    @Test fun heldTextCallsItsPortsInTableOrder() {
+        field.accepts = false
+        val table = listOf<Triple<String, () -> Unit, List<String>>>(
+            Triple("open and speak", { recordingWithSpeech() },
+                listOf("status:opening", "status:idle", "status:opening", "status:recording")),
+            Triple("Stop", { controller.microphonePressed() },
+                listOf("status:finishing")),
+            Triple("text prepared and refused", { awaitTakeEnded(); await { frame().held } },
+                listOf("write:word", "status:idle", "status:unable_history")),
+            Triple("Back arrow", { controller.cancelAndReturn() },
+                listOf("status:back_warning")),
+            Triple("Copy text", { controller.onSafeAction() },
+                listOf("copy:word", "status:unable_insert", "status:idle", "return")),
+        )
+        table.forEach { (step, input, expected) ->
+            effects.clear()
+            input()
+            assertEquals(step, expected, effects.toList())
+        }
+    }
+
     private companion object {
         const val FIELD_PACKAGE = "org.example.editor"
         val FIELD = FieldIdentity(FIELD_PACKAGE, 7, 1, 0, null, 0)
         val OTHER_FIELD = FieldIdentity(FIELD_PACKAGE, 8, 1, 0, null, 0)
+        const val OTHER_APP = "org.example.other"
+        val OTHER_APP_FIELD = FieldIdentity(OTHER_APP, 3, 1, 0, null, 0)
         val STATUS = mapOf(
             R.string.status_opening to "opening", R.string.status_idle to "idle", R.string.status_recording to "recording",
             R.string.status_finishing to "finishing", R.string.status_failed to "failed",
@@ -1438,7 +1969,7 @@ class TakeControllerTest {
             R.string.status_no_permission to "no_permission", R.string.status_stopping_recording to "stopping",
             R.string.status_unable_history to "unable_history", R.string.status_unable_unsaved to "unable_unsaved",
             R.string.status_release_failed to "release_failed", R.string.status_paused to "paused",
-            R.string.status_finishing_choice to "finishing_choice",
+            R.string.status_finishing_choice to "finishing_choice", R.string.status_back_warning to "back_warning",
         ).withDefault { "status $it" }
     }
 }

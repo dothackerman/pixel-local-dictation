@@ -99,6 +99,36 @@ class RenderPanelTest {
         } finally { onPanelFrame = null }
     }
 
+    /**
+     * One mark per state (One Mark Rule): text that was not inserted carries the "not inserted" mark, an
+     * unconfirmed write the "Insertion uncertain" one. The mark reads with the words, directly after them;
+     * at the far edge it would read as a button.
+     */
+    @Test fun theStatusMarkIsNotInsertedOrUncertainAndFollowsTheWords() {
+        val notInserted = PanelFrame(unableToInsert = true, status = R.string.status_unable_insert, microphoneEnabled = true,
+            microphoneLabel = R.string.start_recording)
+        val uncertain = heldText.copy(uncertain = true, status = R.string.status_unconfirmed)
+        val panel = inflate()
+        var shown: PanelFrame? = null
+        for ((frame, drawable) in listOf(notInserted to R.drawable.ic_marker_not_inserted, uncertain to R.drawable.ic_marker_uncertain,
+            heldText to R.drawable.ic_marker_not_inserted)) {
+            for (view in listOf(inflate().also { renderPanel(it, frame, null, null) }, panel.also { shown = renderPanel(it, frame, shown, null) })) {
+                val marker = view.findViewById<android.widget.ImageView>(R.id.status_marker)
+                assertEquals(View.VISIBLE, marker.visibility)
+                assertEquals(drawable, org.robolectric.Shadows.shadowOf(marker.drawable).createdFromResId)
+                layOut(view, 411)
+                val status = view.findViewById<TextView>(R.id.status)
+                val statusBounds = android.graphics.Rect(0, 0, status.width, status.height)
+                val markerBounds = android.graphics.Rect(0, 0, marker.width, marker.height)
+                (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(status, statusBounds)
+                view.offsetDescendantRectToMyCoords(marker, markerBounds)
+                val textEnd = statusBounds.left + status.totalPaddingLeft + status.layout.getLineWidth(0)
+                assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
+                assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
+            }
+        }
+    }
+
     @Test fun theMicrophoneBannerAndNoticeComeFromTheFrame() {
         val panel = inflate()
         renderPanel(panel, recording.copy(banner = true, notice = R.string.retention_field_off), null, null)

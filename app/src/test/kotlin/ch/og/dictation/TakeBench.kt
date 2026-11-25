@@ -13,6 +13,7 @@ import ch.og.dictation.recognition.Engine
 import ch.og.dictation.recognition.Recognizer
 import ch.og.dictation.recognition.Segmenter
 import ch.og.dictation.recognition.Variant
+import ch.og.dictation.storage.lastCopy
 import android.Manifest
 import android.content.Intent
 import android.os.Binder
@@ -124,6 +125,12 @@ class TakeBench : AutoCloseable {
         HistoryNotice.entries.forEach { historyNotices(app).dismiss(it) }
         onPanelFrame = { frame, fresh -> lines += FrameText.line(frame, fresh, app.resources) }
     }
+
+    /** Puts [text] on the build's clipboard, as an earlier Copy did. */
+    fun copy(text: String) = app.wiring.storage.clipboard.copy(text)
+
+    /** What the build's clipboard holds: the service's Copy goes through Storage (ADR-028). */
+    fun copied(): String? = lastCopy(app)
 
     /** Runs [action] as the named step. */
     fun step(name: String, action: TakeBench.() -> Unit) {

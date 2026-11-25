@@ -1,6 +1,5 @@
 package ch.og.dictation
 
-import ch.og.dictation.storage.lastCopy
 import ch.og.dictation.audio.MicrophoneOwner
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.diagnostics.BenchmarkStore
@@ -112,8 +111,6 @@ class DictationProductionLifecycleTest {
     private lateinit var root: File
     private var commits = 0
     private var onCommit: (() -> Unit)? = null
-    /** What an editor's commitText answers (or throws) for the next writes. */
-    private var writeResult: () -> Boolean = { true }
 
     @Before fun setUp() {
         assertFalse(MicrophoneOwner.state().occupied)
@@ -187,9 +184,8 @@ class DictationProductionLifecycleTest {
             commits++
             inserted.add(text.toString())
             onCommit?.also { onCommit = null; it() }
-            val accepted = writeResult()
-            if (accepted && !swallow) content.append(text)
-            return accepted
+            if (!swallow) content.append(text)
+            return true
         }
         override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence = content.takeLast(length).toString()
         override fun getExtractedText(request: android.view.inputmethod.ExtractedTextRequest?, flags: Int) = null
@@ -478,185 +474,6 @@ class DictationProductionLifecycleTest {
         assertTrue(first.inserted.isEmpty())
     }
 
-    /**
-     * The client deactivated this connection (its view was detached) without a new input start:
-     * Android answers reads with null and drops writes while reporting success (Pixel probe
-     * demo52-signal-detach, 2026-11-13: "commitText on inactive InputConnection").
-     */
-    private inner class InactiveField(service: DictationImeService) : BaseInputConnection(View(service), false) {
-        var dropped = 0
-        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence? = null
-        override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean { dropped++; return true }
-    }
-
-    /**
-     * Signal order with the recreated editor's connection deactivated by Signal before Stop: no
-     * text can reach the field, so Stop must not report an insert; the take stays in History.
-     */
-    @Test fun signalOrderInactiveConnectionAtStopIsNotReportedInsertedAndStaysInHistory() {
-        val (service, returned, next) = deadConnectionAtStop(privateField = false)
-        assertEquals(0, next.dropped) // Before the fix: 1, the text was written into the dead connection.
-        assertTrue(rows().single().delivery != HistoryDelivery.ACCEPTED)
-        assertEquals("old speech", rows().single().text)
-        assertHeldState(service, returned)
-        assertCopyPutsTakeTextOnClipboard(service, returned)
-    }
-
-    /** A retention-ineligible editor: nothing in History, but the panel holds the text for Copy. */
-    @Test fun signalOrderInactiveConnectionInPrivateFieldKeepsTextForCopyOnly() {
-        val (service, returned, next) = deadConnectionAtStop(privateField = true)
-        assertEquals(0, next.dropped)
-        assertTrue(rows().isEmpty())
-        assertHeldState(service, returned, privateField = true)
-        assertCopyPutsTakeTextOnClipboard(service, returned)
-    }
-
-    /** Discard text: the text is gone, the panel is idle and the open panel does not start a take. */
-    @Test fun discardTextEndsTheHeldStateAndStaysIdle() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        service.wiring.storage.clipboard.copy("copied earlier")
-        assertEquals(service.getString(R.string.discard_text), discardAction(returned).contentDescription.toString())
-        discardAction(returned).performClick()
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-        assertEquals("", preview(returned))
-        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
-        assertEquals(View.VISIBLE, button(returned).visibility)
-        assertEquals("copied earlier", lastCopy(service)) // Discard never copies.
-        assertFalse(MicrophoneOwner.state().explicitStartRequired) // The next opening records.
-    }
-
-    /** Back never writes to the clipboard: uncopied text gets a warning first, the second Back discards. */
-    @Test fun firstBackOnUncopiedTextOnlyWarnsAndTheSecondDiscards() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        service.wiring.storage.clipboard.copy("copied earlier")
-        assertEquals(service.getString(R.string.back_to_keyboard), back(returned).contentDescription.toString())
-        back(returned).performClick()
-        assertEquals(service.getString(R.string.status_back_warning), status(returned))
-        // The arrow says what the next press does.
-        assertEquals(service.getString(R.string.back_discard_text), back(returned).contentDescription.toString())
-        assertEquals("old speech", preview(returned))
-        assertEquals("Back never copies", "copied earlier", lastCopy(service))
-        assertEquals(View.VISIBLE, returned.findViewById<View>(R.id.status_marker).visibility)
-        back(returned).performClick()
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-        assertEquals("", preview(returned))
-        assertEquals("copied earlier", lastCopy(service))
-    }
-
-    @Test fun hardwareBackFollowsTheArrowWarnThenDiscard() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        assertTrue(systemBack(service))
-        assertEquals(service.getString(R.string.status_back_warning), status(returned))
-        assertTrue(systemBack(service))
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-    }
-
-    @Test fun copyAfterTheBackWarningStillHandsBack() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        back(returned).performClick()
-        assertEquals(service.getString(R.string.status_back_warning), status(returned))
-        assertCopyPutsTakeTextOnClipboard(service, returned)
-    }
-
-    /** Copy leaves no explicit-start requirement: the next time the panel opens it records by itself. */
-    @Test fun nextOpenAfterCopyStartsATake() = nextOpenStartsATake { service, panel -> panel.findViewById<View>(R.id.choice_safe).performClick() }
-
-    @Test fun nextOpenAfterBackDiscardStartsATake() = nextOpenStartsATake { _, panel ->
-        back(panel).performClick(); back(panel).performClick()
-    }
-
-    @Test fun nextOpenAfterDiscardTextStartsATake() = nextOpenStartsATake { _, panel -> discardAction(panel).performClick() }
-
-    private fun nextOpenStartsATake(leave: (DictationImeService, View) -> Unit) {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        leave(service, returned)
-        assertFalse(MicrophoneOwner.state().explicitStartRequired)
-        val next = Input()
-        devices.add(next)
-        val again = editor()
-        service.onStartInput(again, true)
-        service.onStartInputView(again, true)
-        pump()
-        assertEquals("the next open records", 1, next.starts.get())
-    }
-
-    /** A panel shown again while text is held never starts a take. */
-    @Test fun aPanelShownAgainOverHeldTextStartsNoTake() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        val next = Input()
-        devices.add(next)
-        val again = editor()
-        service.onStartInput(again, true)
-        service.onStartInputView(again, true)
-        pump()
-        assertEquals(0, next.starts.get())
-        assertHeldState(service, service.window.findViewById<View>(R.id.panel) ?: returned)
-    }
-
-    @Test fun aRotationCancelsTheBackWarning() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        back(returned).performClick()
-        val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
-        assertHeldState(service, rebuilt)
-        assertEquals(service.getString(R.string.back_to_keyboard), back(rebuilt).contentDescription.toString())
-        back(rebuilt).performClick()
-        assertEquals(service.getString(R.string.status_back_warning), status(rebuilt)) // Starts over.
-    }
-
-    /** The status says what to do, and whether History keeps the text, by the take's editor. */
-    @Test fun statusLineTellsWhereTheTextIsSaved() {
-        val (service, eligible, _) = deadConnectionAtStop(privateField = false)
-        assertEquals("Unable to insert text. Copy it, or find it in History.", status(eligible))
-        assertEquals(service.getString(R.string.status_unable_history), status(eligible))
-    }
-
-    /** An eligible field whose History save fails must not promise History. */
-    @Test fun statusLineSaysTheTextIsNotSavedWhenTheEligibleSaveFailed() {
-        val unwritable = java.nio.file.Files.createTempFile("history-unwritable", ".file").toFile()
-        try {
-            wiring.set { it.with(storage = Storage.under(unwritable)) }
-            val (service, view, _) = deadConnectionAtStop(privateField = false)
-            assertEquals(service.getString(R.string.status_unable_unsaved), status(view))
-            assertTrue(rows().isEmpty())
-        } finally { unwritable.delete() }
-    }
-
-    @Test fun statusLineSaysAPrivateFieldTextIsNotSaved() {
-        val (_, view, _) = deadConnectionAtStop(privateField = true)
-        assertEquals("Unable to insert text. Copy it now. It is not saved.", status(view))
-    }
-
-    /** A rotation keeps the state and the text, copied or not, on the new panel view. */
-    @Test fun rotationKeepsTheHeldState() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        val rebuilt = platformResetOnRotation(service, android.view.Surface.ROTATION_0)!!
-        assertHeldState(service, rebuilt)
-        val again = platformResetOnRotation(service, android.view.Surface.ROTATION_90)!!
-        assertHeldState(service, again)
-        assertEquals("old speech", preview(again))
-        assertEquals(View.VISIBLE, again.findViewById<View>(R.id.choice).visibility)
-        assertEquals(View.VISIBLE, again.findViewById<View>(R.id.status_marker).visibility)
-    }
-
-    @Test fun screenOffClearsTheHeldText() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        screenOff()
-        pump()
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-        assertEquals("", preview(returned))
-    }
-
-    @Test fun anotherAppsEditorClearsTheHeldText() {
-        val (service, returned, _) = deadConnectionAtStop(privateField = false)
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        service.onCreateInputMethodInterface().startInput(Field(service), editor().apply { packageName = "other.app" })
-        pump()
-        assertEquals(service.getString(R.string.status_idle), status(returned))
-        assertEquals("", preview(returned))
-        assertEquals(View.GONE, returned.findViewById<View>(R.id.choice).visibility)
-    }
-
     /** Held text: the status keeps its mark, the stage has Copy and Discard text and no microphone or ring. */
     private fun assertHeldState(service: DictationImeService, panel: View, privateField: Boolean = false, text: String = "old speech",
                                 statusRes: Int? = null) {
@@ -727,182 +544,6 @@ class DictationProductionLifecycleTest {
         assertEquals(before, panelRequests.get())
     }
 
-    // --- Held text is for the app the take started in, and never survives a lock (round 2, A and B). ---
-
-    private fun assertNothingHeldOrShown(service: DictationImeService, view: View) {
-        assertEquals("", preview(view))
-        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
-        assertEquals(View.VISIBLE, button(view).visibility)
-        assertFalse(status(view).contains("Copy"))
-    }
-
-    @Test fun stopThenSwitchingAppsDuringDecodeHoldsAndShowsNothingInTheOtherApp() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor(pkg = "app.a"))
-        feed(input, 1000, 1)
-        button(view).performClick() // Stop: the text is still being decoded.
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
-        service.onStartInputView(editor(pkg = "app.b"), false)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        assertNothingHeldOrShown(service, view)
-        assertEquals("old speech", rows().single().text) // History keeps it where eligible.
-        assertEquals(0, commits)
-    }
-
-    @Test fun interruptedByAnotherAppsInputHoldsAndShowsNothingThere() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor(pkg = "app.a"))
-        feed(input, 1000, 1)
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
-        service.onStartInputView(editor(pkg = "app.b"), false)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        assertNothingHeldOrShown(service, view)
-        assertEquals("old speech", rows().single().text)
-        assertEquals(0, commits)
-    }
-
-    /**
-     * The take lost its capture (hide) and the release is acknowledged, but the late decode and History
-     * save have not delivered the outcome yet: `take` is already null. A lock here still refuses the text.
-     */
-    private fun interruptedIntoTheGap(editorInfo: EditorInfo, input: Input, gate: CountDownLatch): Pair<DictationImeService, View> {
-        val (service, view) = service(editorInfo)
-        feed(input, 1000, 1)
-        service.onFinishInputView(true)
-        service.onWindowHidden()
-        gate.countDown()
-        await { input.releases.get() == 1 }
-        pump() // The release callback ran: capture ownership has ended, decoding has not finished.
-        return service to view
-    }
-
-    @Test fun aLockBetweenTheTakeEndingAndItsFinishHoldsNothingAfterUnlock() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        devices.add(input)
-        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
-        screenOff()
-        decode.drain(); settleHistory(); pump()
-        service.onStartInput(editor(), true) // Unlock: the same app restarts input.
-        service.onStartInputView(editor(), true)
-        pump()
-        assertNothingHeldOrShown(service, view)
-        assertEquals("old speech", rows().single().text) // History keeps it.
-        assertEquals(0, commits)
-    }
-
-    /** The Stop path: the result is decoded and the commit would fail, the release is held, then the screen goes off. */
-    @Test fun aLockAfterStopWithTheReleaseHeldHoldsNothingAfterUnlock() {
-        writeResult = { false } // The commit fails, so the take would otherwise hold its text.
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        devices.add(input)
-        val (service, view) = service(editor(privateField = true))
-        feed(input, 1000, 1)
-        button(view).performClick()
-        decode.drain()
-        screenOff() // The release is held: finished() has not run yet.
-        gate.countDown()
-        await { input.releases.get() == 1 }
-        decode.drain(); settleHistory(); pump()
-        service.onStartInput(editor(privateField = true), true) // Unlock: the same app restarts input.
-        service.onStartInputView(editor(privateField = true), true)
-        pump()
-        assertNothingHeldOrShown(service, view)
-    }
-
-    /** Any path that redraws the idle panel in the gap must not offer a Start that does nothing. */
-    @Test fun redrawingThePanelInTheGapDoesNotOfferADeadStart() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        devices.add(input)
-        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
-        assertFalse(button(view).isEnabled)
-        service.onStartInput(editor(), true)
-        service.onStartInputView(editor(), true)
-        pump()
-        service.onFinishInputView(true)
-        service.onWindowHidden()
-        pump()
-        assertFalse(button(view).isEnabled)
-        decode.drain(); settleHistory(); pump()
-        assertEquals("old speech", rows().single().text)
-    }
-
-    @Test fun aMicrophoneTapInTheGapStartsNothingAndTheOutcomeIsStillDelivered() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        val second = Input()
-        devices.add(input)
-        devices.add(second)
-        val (service, view) = interruptedIntoTheGap(editor(), input, gate)
-        assertFalse(button(view).isEnabled) // The microphone is not offered until the outcome is in.
-        button(view).performClick()
-        pump()
-        assertEquals(0, second.starts.get())
-        decode.drain(); settleHistory(); pump()
-        assertEquals(0, second.starts.get())
-        assertEquals("old speech", rows().single().text)
-        assertEquals(0, commits)
-        // The old take's text is held for Copy as before, not silently dropped.
-        assertEquals("old speech", preview(view))
-        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.choice).visibility)
-    }
-
-    @Test fun afterTheOutcomeArrivesTheMicrophoneStartsATakeAgain() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        val second = Input()
-        devices.add(input)
-        devices.add(second)
-        val (service, view) = service(editor(pkg = "app.a"))
-        feed(input, 1000, 1)
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        service.onCreateInputMethodInterface().startInput(Field(service), editor(pkg = "app.b"))
-        service.onStartInputView(editor(pkg = "app.b"), false)
-        gate.countDown()
-        await { input.releases.get() == 1 }
-        pump()
-        assertFalse(button(view).isEnabled)
-        awaitInterruptedInHistory()
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        assertTrue(button(view).isEnabled)
-        button(view).performClick()
-        await { second.starts.get() == 1 }
-        assertEquals(1, second.starts.get())
-    }
-
-    /** Stop, then another app's input arrives while the result is on its way to the commit: nothing held or shown there. */
-    @Test fun anotherAppsInputBetweenDecodeEndAndCommitHoldsAndShowsNothingThere() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor(pkg = "app.a"))
-        feed(input, 1000, 1)
-        button(view).performClick()
-        decode.drain() // The text is decoded; the commit is still queued on the main thread.
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        val other = Field(service)
-        service.onCreateInputMethodInterface().startInput(other, editor(pkg = "app.b"))
-        service.onStartInputView(editor(pkg = "app.b"), false)
-        await { input.releases.get() == 1 }
-        decode.drain(); settleHistory(); pump()
-        assertNothingHeldOrShown(service, view)
-        assertEquals(0, commits)
-        assertTrue(other.inserted.isEmpty())
-    }
-
     // --- A rotation never moves a take to another app (round 2, C). ---
 
     /**
@@ -952,95 +593,6 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
         assertTrue(other.inserted.isEmpty())
         if (shown != null) assertNotEquals(service.getString(R.string.status_recording), status(shown))
-    }
-
-    // --- Commit outcomes with text that was not inserted: one held-text state for all (finding 3). ---
-
-    private fun stopWithWrites(write: () -> Boolean): Triple<DictationImeService, View, Field> {
-        writeResult = write
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        settleHistory()
-        return Triple(service, view, firstField.getValue(service))
-    }
-
-    @Test fun aWriteThatReturnsFalseHoldsTheText() {
-        val (service, view, _) = stopWithWrites { false }
-        assertHeldState(service, view)
-        assertCopyPutsTakeTextOnClipboard(service, view)
-    }
-
-    @Test fun aWriteThatThrowsHoldsTheText() {
-        val (service, view, _) = stopWithWrites { error("synthetic editor failure") }
-        assertHeldState(service, view)
-    }
-
-    /** No text, no held state: a decode failure is still "Recognition failed" with Retry. */
-    @Test fun aDecodeFailureWithoutTextStaysRecognitionFailed() {
-        failLoudDecode = true
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 20000, 1)
-        button(view).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); status(view) == service.getString(R.string.status_failed) }
-        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
-    }
-
-    // --- The held state survives what a rotation or a tap does to the input (finding 2). ---
-
-    private fun assertHeldSurvives(trigger: (DictationImeService) -> Unit) {
-        val (service, returned, _) = deadConnectionAtStop(privateField = true) // The text exists nowhere else.
-        trigger(service)
-        pump()
-        val view = service.window.findViewById<View>(R.id.panel) ?: returned
-        assertHeldState(service, view, privateField = true)
-        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.choice).visibility)
-        assertCopyPutsTakeTextOnClipboard(service, view)
-    }
-
-    @Test fun heldTextSurvivesRotatingBack() = assertHeldSurvives {
-        platformResetOnRotation(it, android.view.Surface.ROTATION_0)
-    }
-
-    @Test fun heldTextSurvivesTheSameEditorRestartingInput() = assertHeldSurvives {
-        it.onStartInput(editor(true), true)
-        it.onStartInputView(editor(true), true)
-    }
-
-    @Test fun heldTextSurvivesATapOnTheField() = assertHeldSurvives {
-        it.onStartInputView(editor(true), false)
-    }
-
-    private fun deadConnectionAtStop(privateField: Boolean): Triple<DictationImeService, View, InactiveField> {
-        wiring.set { it.with(requestPanel = {}) }
-        val input = Input()
-        devices.add(input)
-        val (service, _) = service(editor(privateField))
-        feed(input, 1000, 1)
-        platformResetOnRotation(service, android.view.Surface.ROTATION_90)
-        advance(200)
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        val next = InactiveField(service)
-        service.onCreateInputMethodInterface().startInput(next, editor(privateField))
-        service.onStartInputView(editor(privateField), false)
-        service.onFinishInputView(false)
-        service.onWindowHidden()
-        pump()
-        val returned = showPanel(service)!!
-        advance(ROTATION_SETTLE_MS)
-        button(returned).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); status(returned).startsWith(service.getString(R.string.status_unable_insert)) }
-        settleHistory()
-        return Triple(service, returned, next)
     }
 
     /** The take's field: a chat compose box with an id, in the editor's app. */
@@ -1269,47 +821,6 @@ class DictationProductionLifecycleTest {
         pump()
         await { input.releases.get() == 1 }
         assertTrue(other.inserted.isEmpty())
-    }
-
-    /** A rotation into [connection] with the take's own field attributes, then Stop and the write. */
-    private fun stopAfterRotationInto(connection: (DictationImeService) -> Field): Triple<DictationImeService, View, Field> {
-        wiring.set { it.with(requestPanel = {}) }
-        val input = Input()
-        devices.add(input)
-        val (service, _) = service(composeField())
-        feed(input, 1000, 1)
-        val next = connection(service)
-        val returned = recreatedActivityStartsInput(service, next, composeField())
-        button(returned).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); pump(); commits == 1 }
-        return Triple(service, returned, next)
-    }
-
-    /** An unconfirmed write is "Insertion uncertain", not "not inserted" (One Mark Rule). */
-    @Test fun anUnconfirmedHeldWriteShowsTheUncertainMark() {
-        val (service, returned, _) = stopAfterRotationInto { Field(it).apply { swallow = true } }
-        advance(DictationImeService.CONFIRM_DELAY_MS + 10)
-        settleHistory()
-        assertHeldState(service, returned, statusRes = R.string.status_unconfirmed)
-        val marker = returned.findViewById<android.widget.ImageView>(R.id.status_marker)
-        assertEquals(R.drawable.ic_marker_uncertain, shadowOf(marker.drawable).createdFromResId)
-    }
-
-    /**
-     * Copy puts exactly the take text on the build's clipboard, drops the held text and hands the keyboard
-     * back. Plain text without the sensitive flag on the system clipboard: ReleaseStorageTest.
-     */
-    private fun assertCopyPutsTakeTextOnClipboard(service: DictationImeService, panel: View) {
-        service.wiring.storage.clipboard.copy("copied earlier")
-        org.robolectric.shadows.ShadowLog.clear()
-        panel.findViewById<View>(R.id.choice_safe).performClick()
-        assertEquals("old speech", lastCopy(service))
-        assertEquals(service.getString(R.string.status_idle), status(panel))
-        assertEquals("", preview(panel))
-        assertEquals(View.GONE, panel.findViewById<View>(R.id.choice).visibility)
-        assertFalse(MicrophoneOwner.state().explicitStartRequired)
-        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
     }
 
     @Test fun pixelOrderKeptEditorKeepsTheTakeAfterThePlatformReset() {
@@ -1845,8 +1356,6 @@ class DictationProductionLifecycleTest {
     private fun stopAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_stop)
     private fun discardAction(panel: View) = panel.findViewById<ImageButton>(R.id.choice_discard)
     private fun back(panel: View) = panel.findViewById<ImageButton>(R.id.back)
-    private fun systemBack(service: DictationImeService) =
-        service.onKeyDown(android.view.KeyEvent.KEYCODE_BACK, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
     /** The choice is part of the panel: no dialog or other window is ever shown for it. */
     private fun assertNoWindow() = assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
 
@@ -2113,48 +1622,6 @@ class DictationProductionLifecycleTest {
             assertTrue(rows.filter { it.has("retention") }.all { it.getString("event") == RotationEvent.INPUT_START_DONE.name &&
                 it.getString("retention") in EditorRetention.entries.map { e -> e.name } })
         } finally { RotationTrace.abortProbe() }
-    }
-
-    /**
-     * P1 (#61 visit), #36: an interrupted take must not leave a silent idle panel with old text. The
-     * panel says "Unable to insert text" with its marker, shows the held text and offers Copy and
-     * Discard text; the first Back warns and the second discards and leaves; Discard text returns to the microphone.
-     */
-    @Test fun historyOnlyEndSaysUnableToInsertWithItsMarkerAndBackLeaves() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        decode.drain(); pump()
-        assertEquals("old speech", preview(view))
-        service.onStartInput(editor(), true) // Same-field restart: interruption.
-        service.onStartInputView(editor(), true)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        assertEquals("old speech", preview(view))
-        val marker = view.findViewById<View>(R.id.status_marker)
-        assertEquals(View.VISIBLE, marker.visibility)
-        // The mark reads with the words, directly after them; at the far edge it reads as a button.
-        layOut(view, 411)
-        val statusView = view.findViewById<TextView>(R.id.status)
-        val statusBounds = android.graphics.Rect(0, 0, statusView.width, statusView.height)
-        val markerBounds = android.graphics.Rect(0, 0, marker.width, marker.height)
-        (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(statusView, statusBounds)
-        view.offsetDescendantRectToMyCoords(marker, markerBounds)
-        val textEnd = statusBounds.left + statusView.totalPaddingLeft + statusView.layout.getLineWidth(0)
-        assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
-        assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
-        assertNotEquals("no microphone while the text is held", View.VISIBLE, button(view).visibility)
-        assertEquals(service.getString(R.string.back_to_keyboard), back(view).contentDescription.toString())
-        back(view).performClick() // Uncopied text: the first Back only warns.
-        assertEquals(service.getString(R.string.status_back_warning), status(view))
-        org.robolectric.shadows.ShadowLog.clear()
-        back(view).performClick() // The second Back discards the text and leaves.
-        pump()
-        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("DictationIme").any { it.msg.contains("no previous IME") })
-        assertEquals(1, input.starts.get())
-        assertEquals(0, commits)
     }
 
     @Test fun oldHistoryFinishesAfterReplacementStartsWithoutChangingNewPanel() {
