@@ -8,8 +8,8 @@ Three rules only:
    docs and heredoc bodies never count.
 2. Shell: `git` runs outside the sandbox (excludedCommands; the sandbox pins
    .git read-only), so deny git invocations that could carry a program along:
-   `-c`/`--config-env`/`--exec-path`/`--git-dir`/`--work-tree` options and
-   `GIT_*` environment assignments in front of git.
+   `-c`/`--config-env`/`--exec-path`/`--git-dir`/`--work-tree` global options
+   (before the subcommand) and `GIT_*` environment assignments in front of git.
 3. Edits: deny writes to the hook and harness configuration and AGENTS/CLAUDE.md.
 """
 import json
@@ -27,6 +27,7 @@ SKIP = {'env', 'command', 'exec', 'nohup', 'time', 'builtin', 'sudo', 'doas'}
 SKIP_ONE = {'timeout', 'stdbuf', 'nice', 'ionice', 'chrt'}  # wrapper plus one argument (or -flag value)
 SEPARATORS = {';', '&&', '||', '|', '|&', '&', '(', ')', ';;', '\n'}
 GRADLE_TASK = re.compile(r'(?i)(install|connected|uninstall|device)')
+GIT_VALUE = ('--attr-source', '--super-prefix')  # harmless global options whose value is the next word
 GIT_SMUGGLE = re.compile(r'^(?:-c|-C|--config-env(?:=.*)?|--exec-path(?:=.*)?|--git-dir(?:=.*)?|--work-tree(?:=.*)?|--namespace(?:=.*)?)$')
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?\n)?\2[ \t]*(?=\n|$)", re.S)
 
@@ -89,6 +90,15 @@ def head(words):
     return words
 
 
+def git_globals(words):
+    """Git's global options: the words before the subcommand (`git switch -c` is not `git -c`)."""
+    options = []
+    while words and words[0].startswith('-'):
+        options.append(words[0])
+        words = words[2:] if words[0] in GIT_VALUE else words[1:]
+    return options
+
+
 def invokes_tool(command):
     for raw in simple_commands(command):
         words = head(raw)
@@ -97,7 +107,7 @@ def invokes_tool(command):
         base = words[0].rsplit('/', 1)[-1]
         if base == 'git':
             env = [w for w in raw[:len(raw) - len(words)] if re.match(r'GIT_\w*=', w)]
-            if env or any(GIT_SMUGGLE.match(w) for w in words[1:]):
+            if env or any(GIT_SMUGGLE.match(w) for w in git_globals(words[1:])):
                 return 'git with -c/-C/--exec-path/--git-dir or GIT_* environment is not allowed; plain git only'
         if base in TOOLS:
             return 'direct adb/fastboot is not allowed; use .claude/hooks/phone'

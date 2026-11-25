@@ -56,7 +56,6 @@
         "~/.gradle"
       ],
       "denyWrite": [
-        "./.claude",
         "./.codex",
         "./tools/git-hooks",
         "./AGENTS.md",
