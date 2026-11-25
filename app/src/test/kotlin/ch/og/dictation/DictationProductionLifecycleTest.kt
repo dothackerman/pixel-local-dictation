@@ -30,7 +30,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Binder
-import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.view.View
@@ -143,7 +142,6 @@ class DictationProductionLifecycleTest {
     }
 
     @After fun tearDown() {
-        wiring.set { it.with(postCaptureEnd = { handler, callback -> handler.post(callback) }) }
         wiring.set { it.with(requestPanel = { it.requestShowSelf(0) }) }
         try {
             opened.asReversed().forEach { runCatching { it.destroy() } }
@@ -905,21 +903,6 @@ class DictationProductionLifecycleTest {
         assertTrue(other.inserted.isEmpty())
     }
 
-    @Test fun aTakeActiveAtLockHoldsNothingAfterUnlock() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor(privateField = true))
-        feed(input, 1000, 1)
-        screenOff()
-        await { input.releases.get() == 1 }
-        decode.drain(); settleHistory(); pump()
-        service.onStartInput(editor(privateField = true), true) // Unlock: the same app restarts input.
-        service.onStartInputView(editor(privateField = true), true)
-        pump()
-        assertNothingHeldOrShown(service, view)
-        assertEquals(0, commits)
-    }
-
     // --- A rotation never moves a take to another app (round 2, C). ---
 
     /**
@@ -1646,33 +1629,6 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
-    @Test fun focusChangeToAnotherFieldWithoutRotationStopsAtOnce() {
-        val input = Input()
-        devices.add(input)
-        val (service, _) = service(editor())
-        feed(input, 1000, 1)
-        service.onFinishInputView(false)
-        val other = Field(service)
-        service.onCreateInputMethodInterface().startInput(other, editor())
-        showPanel(service)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        assertTrue(other.inserted.isEmpty())
-        assertEquals(0, commits)
-        assertEquals(1, input.starts.get())
-    }
-
-    @Test fun sameFieldRestartWithoutRotationStopsAtOnce() {
-        val input = Input()
-        devices.add(input)
-        val (service, _) = service(editor())
-        feed(input, 1000, 1)
-        service.onStartInput(editor(), true)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        assertEquals(0, commits)
-    }
-
     @Test fun inputMethodDeclaresRotationAndResizeAsHandled() {
         val handled = declaredConfigChanges()
         for (change in listOf(android.content.pm.ActivityInfo.CONFIG_ORIENTATION, android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE,
@@ -2288,27 +2244,6 @@ class DictationProductionLifecycleTest {
         assertEquals(listOf("old speech"), firstField.getValue(service).inserted)
     }
 
-    /**
-     * An editor that restarts input by itself right after Stop, without a rotation, is a session
-     * change like any other: the result goes to History only, never inserted (spec #36).
-     */
-    @Test fun editorRestartingInputByItselfRightAfterStopGoesToHistoryOnly() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        back(view).performClick()
-        stopAction(view).performClick()
-        service.onFinishInputView(true)
-        service.onFinishInput()
-        service.onStartInput(editor(), true)
-        service.onStartInputView(editor(), true)
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        assertEquals(0, commits)
-        assertTrue(status(view).startsWith(service.getString(R.string.status_unable_insert)))
-    }
-
     // --- Discard take (#36, owner 2026-11-11): final at once, from either choice; no Undo window. ---
 
     /** Records one checkpoint, opens the paused choice and discards. */
@@ -2415,38 +2350,6 @@ class DictationProductionLifecycleTest {
         assertFalse(choiceShown(view))
     }
 
-    /** A system interruption overrides an open choice; audio captured before the pause goes to History. */
-    @Test fun hideOverridesAnOpenRecordingChoiceAndKeepsPausedAudioInHistory() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        back(view).performClick()
-        service.onFinishInputView(true)
-        assertFalse(choiceShown(view))
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        assertEquals("old speech", rows().single().text)
-        assertEquals(0, commits)
-    }
-
-    @Test fun lockWhilePausedStopsAndDoesNotResumeOnUnlock() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        back(view).performClick()
-        screenOff()
-        await { input.releases.get() == 1 }
-        awaitInterruptedInHistory()
-        service.onStartInput(editor(), true)
-        service.onStartInputView(editor(), true)
-        pump()
-        assertEquals(1, input.starts.get())
-        assertFalse(choiceShown(view))
-        assertEquals(0, commits)
-    }
-
     /**
      * P1 (#61 visit), #36: an interrupted take must not leave a silent idle panel with old text. The
      * panel says "Unable to insert text" with its marker, shows the held text and offers Copy and
@@ -2539,39 +2442,6 @@ class DictationProductionLifecycleTest {
         assertTrue(rows().isEmpty())
     }
 
-    @Test fun destroyedServiceReleaseFailureCanBeRetriedBeforePrivateNewTake() {
-        val gate = CountDownLatch(1)
-        val original = Input(failedReleases = 1, releaseGate = gate)
-        val next = Input()
-        devices.add(original); devices.add(next)
-        val (old, oldView) = service(editor())
-        feed(original, 1000, 1)
-        decode.drain(); settleHistory()
-        assertEquals("old speech", preview(oldView))
-        val saved = rows().single()
-        old.onFinishInputView(true)
-        assertEquals("", preview(oldView))
-        opened.removeAt(0).destroy()
-        gate.countDown()
-        await { MicrophoneOwner.state().releaseFailed }
-        assertEquals(1, original.starts.get())
-        assertThrows(IllegalStateException::class.java) { runtime.close() }
-        val (replacement, view) = service(editor(privateField = true))
-        await { status(view) == replacement.getString(R.string.status_release_failed) }
-        assertEquals(0, next.starts.get())
-        button(view).performClick()
-        await { !MicrophoneOwner.state().occupied }
-        assertEquals(0, next.starts.get())
-        assertEquals(0, commits)
-        button(view).performClick()
-        await { next.starts.get() == 1 }
-        feed(next, 20000, 2)
-        decode.drain(); settleHistory()
-        assertEquals("private speech", preview(view))
-        assertEquals(listOf(saved.id), rows().map { it.id })
-        assertEquals(0, commits)
-    }
-
     @Test fun oldHistoryFinishesAfterReplacementStartsWithoutChangingNewPanel() {
         val original = Input()
         val next = Input()
@@ -2623,162 +2493,6 @@ class DictationProductionLifecycleTest {
         assertEquals(0, commits)
     }
 
-    @Test fun screenOffInterruptsToHistoryAndUnlockDoesNotResumeCapture() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        val next = Input()
-        devices.add(input); devices.add(next)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-
-        RuntimeEnvironment.getApplication().sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
-        await { status(view) == service.getString(R.string.status_stopping_recording) }
-        assertEquals(1, input.starts.get())
-        assertEquals(0, commits)
-        assertTrue(rows().isEmpty())
-
-        gate.countDown()
-        await { !MicrophoneOwner.state().occupied }
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        decode.drain()
-        settleHistory()
-        val saved = rows().single()
-        assertEquals("old speech", saved.text)
-        assertEquals(HistoryCompletion.INTERRUPTED, saved.completion)
-        assertEquals(0, commits)
-
-        RuntimeEnvironment.getApplication().sendBroadcast(Intent(Intent.ACTION_USER_PRESENT))
-        val unlockedEditor = editor()
-        service.onStartInput(unlockedEditor, true)
-        service.onStartInputView(unlockedEditor, true)
-        pump()
-        assertEquals(1, input.starts.get())
-        assertEquals(0, next.starts.get())
-        decode.drain()
-        settleHistory()
-        assertEquals(0, next.starts.get())
-        assertEquals(listOf(saved.id), rows().map { it.id })
-        assertEquals(0, commits)
-    }
-
-    @Test fun screenOffDuringStopWaitChangesPendingCommitToOneHistoryFlush() {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-
-        button(view).performClick()
-        await { status(view) == service.getString(R.string.status_finishing) }
-        RuntimeEnvironment.getApplication().sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
-        await { status(view) == service.getString(R.string.status_stopping_recording) }
-        assertEquals(0, commits)
-        assertTrue(rows().isEmpty())
-
-        gate.countDown()
-        await { !MicrophoneOwner.state().occupied }
-        await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-        decode.drain()
-        settleHistory()
-        val saved = rows().single()
-        assertEquals("old speech", saved.text)
-        assertEquals(HistoryCompletion.INTERRUPTED, saved.completion)
-        assertEquals(1, flushes.get())
-        assertEquals(0, commits)
-    }
-
-    @Test fun screenOffAfterEditorAcceptsStopCommitCannotUndoOrRepeatIt() {
-        val input = Input()
-        devices.add(input)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        button(view).performClick()
-        await { !MicrophoneOwner.state().occupied }
-        onCommit = {
-            val app = RuntimeEnvironment.getApplication()
-            val intent = Intent(Intent.ACTION_SCREEN_OFF)
-            val receivers = shadowOf(app).getReceiversForIntent(intent)
-            assertEquals(1, receivers.size)
-            receivers.single().onReceive(app, intent)
-        }
-        await { flushes.get() == 1 }
-        decode.drain()
-        await { commits == 1 }
-        settleHistory()
-
-        assertEquals(1, commits)
-        assertEquals(1, flushes.get())
-        assertEquals("old speech", rows().single().text)
-        assertEquals(HistoryDelivery.ACCEPTED, rows().single().delivery)
-        RuntimeEnvironment.getApplication().sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
-        pump()
-        assertEquals(1, commits)
-    }
-
-    @Test fun unexpectedCaptureEndFinishesAcceptedSpeechOnlyToHistory() {
-        val releaseGate = CountDownLatch(1)
-        val input = Input(releaseGate = releaseGate)
-        val unused = Input()
-        devices.add(input); devices.add(unused)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        input.endUnexpectedly()
-        try {
-            await { status(view) == service.getString(R.string.status_stopping_recording) }
-            assertTrue(MicrophoneOwner.state().occupied)
-            assertEquals(0, commits)
-            releaseGate.countDown()
-            await { !MicrophoneOwner.state().occupied }
-            await { flushes.get() == 1 }
-            decode.drain(); settleHistory()
-            await { status(view).startsWith(service.getString(R.string.status_unable_insert)) }
-            assertEquals("old speech", rows().single().text)
-            assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-            assertEquals(0, commits)
-            assertEquals(0, unused.starts.get())
-        } finally {
-            releaseGate.countDown()
-        }
-    }
-
-    @Test fun queuedUnexpectedEndBeforeStopStillRecoversWithBenchmarkOff() = queuedUnexpectedEndBeforeStop(false)
-    @Test fun queuedUnexpectedEndBeforeStopStillRecoversWithBenchmarkOn() = queuedUnexpectedEndBeforeStop(true)
-
-    private fun queuedUnexpectedEndBeforeStop(benchmark: Boolean) {
-        val gate = CountDownLatch(1)
-        val input = Input(releaseGate = gate)
-        devices.add(input)
-        val app = RuntimeEnvironment.getApplication()
-        BenchmarkStore.setEnabled(app, benchmark)
-        val benchmarkDir = app.wiring.storage.recordingsRoot
-        benchmarkDir.deleteRecursively()
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        input.endUnexpectedly()
-        // The recorder invokes onEnded before this thread exits. The paused main
-        // looper therefore holds the real callback while the user presses Stop.
-        input.readerThread!!.join(2000)
-        assertFalse(input.readerThread!!.isAlive)
-        try {
-            button(view).performClick()
-            assertEquals(service.getString(R.string.status_finishing), status(view))
-            pump()
-            assertEquals(service.getString(R.string.status_stopping_recording), status(view))
-            gate.countDown()
-            await { !MicrophoneOwner.state().occupied }
-            await { flushes.get() == 1 }
-            decode.drain(); settleHistory()
-            assertEquals("old speech", rows().single().text)
-            assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-            assertEquals(0, commits)
-            assertFalse(benchmarkDir.exists())
-        } finally {
-            gate.countDown()
-            BenchmarkStore.setEnabled(app, false)
-            benchmarkDir.deleteRecursively()
-        }
-    }
-
     @Test fun regressionPermissionReadFailureInPrivateFieldDoesNotRetainOrInsert() {
         val input = Input(readFails = true)
         devices.add(input)
@@ -2801,26 +2515,6 @@ class DictationProductionLifecycleTest {
             BenchmarkStore.setEnabled(app, false)
             benchmarkDir.deleteRecursively()
         }
-    }
-
-    @Test fun regressionUnexpectedEndOverridesPromptAndAllowsNewTake() {
-        val original = Input()
-        val next = Input()
-        devices.add(original); devices.add(next)
-        val (_, view) = service(editor())
-        feed(original, 1000, 1)
-        original.endUnexpectedly()
-        original.readerThread!!.join(2000)
-        assertFalse(original.readerThread!!.isAlive)
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        awaitOutcomeThenDiscardHeld(view)
-        button(view).performClick()
-        await { next.starts.get() == 1 }
-        feed(next, 20000, 2)
-        decode.drain(); settleHistory()
-        assertEquals("private speech", preview(view))
-        assertEquals(0, commits)
-        assertTrue(rows().any { it.text.contains("old speech") && it.completion == HistoryCompletion.INTERRUPTED })
     }
 
     @Test fun lateInterruptedTimingKeepsOriginalTakeAfterExplicitRestart() {
@@ -2879,41 +2573,6 @@ class DictationProductionLifecycleTest {
             await { next.starts.get() == 1 }
             assertEquals(View.GONE, view.findViewById<View>(R.id.benchmark_banner).visibility)
         } finally { BenchmarkStore.setEnabled(app, false) }
-    }
-
-    @Test fun regressionOldEndDeliveredAfterExplicitNewTakeDoesNotInterruptIt() {
-        val original = Input()
-        val next = Input()
-        val heldEnd = LinkedBlockingQueue<Runnable>()
-        wiring.set { it.with(postCaptureEnd = { _, callback -> heldEnd.add(callback) }) }
-        devices.add(original); devices.add(next)
-        val (service, view) = service(editor())
-        feed(original, 1000, 1)
-        original.endUnexpectedly()
-        original.readerThread!!.join(2000)
-        assertFalse(original.readerThread!!.isAlive)
-        val oldEnd = heldEnd.poll(2, TimeUnit.SECONDS)
-        assertNotNull("real capture-end delivery must be held", oldEnd)
-        // Cancel after the capture already ended is a system interruption, not a choice.
-        view.findViewById<ImageButton>(R.id.back).performClick()
-        assertEquals(View.GONE, view.findViewById<View>(R.id.choice).visibility)
-        // Process interruption and the separate release acknowledgement, keeping only
-        // the old capture-end event out of the main queue.
-        awaitOutcomeThenDiscardHeld(view)
-        MicrophoneOwner.requireExplicitStart()
-        val newEditor = editor(privateField = true)
-        service.onStartInput(newEditor, true)
-        service.onStartInputView(newEditor, true)
-        assertEquals(0, next.starts.get())
-        button(view).performClick()
-        assertEquals(1, next.starts.get())
-        Handler(Looper.getMainLooper()).post(oldEnd!!)
-        pump() // Delivers the old end after the explicit new start.
-        feed(next, 20000, 2)
-        decode.drain(); settleHistory()
-        assertEquals(service.getString(R.string.status_recording), status(view))
-        assertEquals("private speech", preview(view))
-        assertEquals(0, commits)
     }
 
     @Test fun regressionLockDecodeFailureKeepsPrefixAndWarnsWithoutBenchmarkFallback() {
@@ -2978,31 +2637,6 @@ class DictationProductionLifecycleTest {
             assertFalse(benchmarkDir.exists())
             assertEquals(0, commits)
         } finally { blocked?.deleteRecursively(); BenchmarkStore.setEnabled(app, false); benchmarkDir.deleteRecursively() }
-    }
-
-    @Test fun regressionUnexpectedEndUnconfirmedReleaseRequiresRetryBeforeNewCapture() {
-        val input = Input(failedReleases = 1)
-        val next = Input()
-        devices.add(input); devices.add(next)
-        val (service, view) = service(editor())
-        feed(input, 1000, 1)
-        decode.drain(); settleHistory()
-        val prefix = rows().single()
-        input.endUnexpectedly()
-        await { MicrophoneOwner.state().releaseFailed && status(view) == service.getString(R.string.status_release_failed) }
-        assertTrue(MicrophoneOwner.state().occupied)
-        assertEquals(service.getString(R.string.retry_release), button(view).contentDescription.toString())
-        assertEquals(0, next.starts.get())
-        button(view).performClick()
-        await { !MicrophoneOwner.state().occupied }
-        decode.drain(); settleHistory()
-        assertEquals(prefix.id, rows().single().id)
-        assertEquals("old speech", rows().single().text)
-        assertEquals(HistoryCompletion.INTERRUPTED, rows().single().completion)
-        assertEquals(0, next.starts.get())
-        assertEquals(0, commits)
-        button(view).performClick()
-        await { next.starts.get() == 1 }
     }
 
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)

@@ -149,7 +149,6 @@ class DictationImeService : InputMethodService() {
             override fun liveCheck() = wiring.engine.liveReceipt() != null
             override fun capture(onStarted: () -> Unit, feedback: RecordingFeedback, onInterrupted: () -> Unit) =
                 MicrophoneCapture(onStarted = onStarted, feedback = feedback, onInterrupted = onInterrupted, recorder = wiring.recorderFactory())
-            override fun postCaptureEnd(action: Runnable) { wiring.postCaptureEnd(mainHandler, action) }
             override fun open(
                 output: TakeOutput, capture: TakeCapture, executor: Executor, observer: TimelineObserver?, retentionEligible: Boolean,
                 notice: (HistoryNotice) -> Unit, attached: (history: HistoryTakeOutput, receipt: () -> JSONObject?) -> Unit,

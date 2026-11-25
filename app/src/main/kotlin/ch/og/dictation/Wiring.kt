@@ -5,7 +5,6 @@ import ch.og.dictation.recognition.Engine
 import ch.og.dictation.storage.Storage
 import android.content.Context
 import android.inputmethodservice.InputMethodService
-import android.os.Handler
 
 /**
  * Wiring: what this process's parts are built from, one immutable value per process, held by
@@ -21,8 +20,6 @@ class Wiring private constructor(
     private val engineSource: Lazy<Engine>,
     /** Asks Android to show the input method's own panel (leaves Wiring with the take controller). */
     val requestPanel: (InputMethodService) -> Unit,
-    /** Delivers an unexpected capture end to the main thread (leaves Wiring with the take controller). */
-    val postCaptureEnd: (Handler, Runnable) -> Unit,
 ) {
     /** Created once, on first use: editing Settings or the Dictionary never loads speech recognition. */
     val engine: Engine get() = engineSource.value
@@ -33,15 +30,13 @@ class Wiring private constructor(
         storage: Storage = this.storage,
         engine: Engine? = null,
         requestPanel: (InputMethodService) -> Unit = this.requestPanel,
-        postCaptureEnd: (Handler, Runnable) -> Unit = this.postCaptureEnd,
-    ) = Wiring(recorderFactory, storage, engine?.let { lazyOf(it) } ?: engineSource, requestPanel, postCaptureEnd)
+    ) = Wiring(recorderFactory, storage, engine?.let { lazyOf(it) } ?: engineSource, requestPanel)
 
     companion object {
         fun forApp(context: Context): Wiring {
             val app = context.applicationContext
             val storage = Storage.forApp(app)
-            return Wiring(::Recorder, storage, lazy { Engine.forApp(app, storage) },
-                { it.requestShowSelf(0) }, { handler, callback -> handler.post(callback) })
+            return Wiring(::Recorder, storage, lazy { Engine.forApp(app, storage) }, { it.requestShowSelf(0) })
         }
     }
 }

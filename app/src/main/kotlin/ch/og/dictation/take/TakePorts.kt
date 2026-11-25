@@ -61,8 +61,6 @@ fun interface TakeOpener {
         fun liveCheck(): Boolean
         /** The take's microphone capture on a fresh recorder. The callbacks arrive on the capture's threads. */
         fun capture(onStarted: () -> Unit, feedback: RecordingFeedback, onInterrupted: () -> Unit): MicrophoneCapture
-        /** Delivers an unexpected capture end to the take's thread. */
-        fun postCaptureEnd(action: Runnable)
         /**
          * Opens and starts the session with History between it and [output]. [attached] gets the
          * History side and the take's receipt source before the session starts.

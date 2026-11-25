@@ -8,6 +8,7 @@ import ch.og.dictation.audio.RecordingFeedback
 import ch.og.dictation.diagnostics.RotationEvent
 import ch.og.dictation.diagnostics.RotationTrace
 import ch.og.dictation.diagnostics.StartupTrace
+import ch.og.dictation.history.HistoryCompletion
 import ch.og.dictation.history.HistoryDelivery
 import ch.og.dictation.history.HistoryNotice
 import ch.og.dictation.history.HistoryStore
@@ -20,10 +21,11 @@ import ch.og.dictation.recognition.Segmenter
 import ch.og.dictation.recognition.Variant
 import java.io.File
 import java.nio.file.Files
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -33,9 +35,10 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The take controller at its interface, without Android (#85, #86): the service's events go in, the
- * panel frame and the effects come out through the ports. The scheduler is a fake with its own
- * clock; the microphone owner is the real one and is released when each test ends.
+ * The take controller at its interface, without Android (#85, #86, #87): the service's events go in,
+ * the panel frame and the effects come out through the ports. The scheduler is a fake with its own
+ * clock; the microphone owner is the real one, observed as the service observes it, and is released
+ * when each test ends.
  */
 class TakeControllerTest {
     /** What the controller did at its ports, in order: `status:…` (a changed status line), `write:…`, `return`. */
@@ -76,7 +79,13 @@ class TakeControllerTest {
         private var posted = 0L
         /** The next thread check fails, as on any thread but the take's. */
         var wrongThread = false
-        private fun add(delayMs: Long, action: Runnable) = synchronized(queue) { queue += Entry(now + delayMs, posted++, action); Unit }
+        /** While set, what another thread posts is kept in [heldPosts] and runs only when the test runs it. */
+        @Volatile var holdForeignPosts = false
+        val heldPosts = LinkedBlockingQueue<Runnable>()
+        private fun add(delayMs: Long, action: Runnable) {
+            if (holdForeignPosts && Thread.currentThread() !== thread) { heldPosts.add(action); return }
+            synchronized(queue) { queue += Entry(now + delayMs, posted++, action) }
+        }
         private fun next(until: Long): Entry? = synchronized(queue) {
             queue.filter { it.at <= until }.minWithOrNull(compareBy({ it.at }, { it.order }))?.also { queue.remove(it); now = maxOf(now, it.at) }
         }
@@ -95,19 +104,35 @@ class TakeControllerTest {
         }
     }
 
-    /** The microphone: it reads what [say] feeds; its end is the recorder's own stop. */
+    /** The microphone: it reads what [say] feeds; its end is the recorder's own stop, or [endUnexpectedly]. */
     private class Input : Recorder.AudioInput {
         override val bufferSize = 8
         private val frames = LinkedBlockingQueue<ShortArray>()
+        val releases = AtomicInteger()
+        /** The release waits for it: the microphone stays owned meanwhile. */
+        @Volatile var releaseGate: CountDownLatch? = null
+        /** So many releases fail first: the platform does not confirm them. */
+        @Volatile var failedReleases = 0
+        @Volatile var reader: Thread? = null
         override fun start() { frames.clear() }
         override fun read(buffer: ShortArray): Int {
+            reader = Thread.currentThread()
             val frame = frames.take()
             frame.copyInto(buffer)
             return if (frame.isEmpty()) -1 else frame.size
         }
         override fun stop() { frames.offer(shortArrayOf()) }
-        override fun release() {}
+        override fun release() {
+            releaseGate?.await(5, TimeUnit.SECONDS)
+            if (releases.incrementAndGet() <= failedReleases) error("synthetic release failure")
+        }
         fun say() { frames.add(shortArrayOf(1000)) }
+        /** The platform ends the recording by itself; the recorder's read thread has ended when this returns. */
+        fun endUnexpectedly() {
+            frames.add(shortArrayOf())
+            reader!!.join(2000)
+            assertFalse(reader!!.isAlive)
+        }
     }
 
     /** The editor's field. [shows]: what was written can be read back; false is an editor that answers the write and shows nothing (yet). */
@@ -117,8 +142,10 @@ class TakeControllerTest {
         var reads = 0
         /** What the editor does inside a read, before it answers. */
         var duringRead: () -> Unit = {}
+        /** What happens inside a write, after the editor took the text and before it answers. */
+        var duringWrite: () -> Unit = {}
         private val content = StringBuilder()
-        override fun write(text: String): Boolean { written += text; effects += "write:$text"; content.append(text); return true }
+        override fun write(text: String): Boolean { written += text; effects += "write:$text"; content.append(text); duringWrite(); return true }
         override fun textBeforeCursor(chars: Int): CharSequence { reads++; duringRead(); return if (shows) content.takeLast(chars) else "" }
         override fun extractedLength(): Int? = null
     }
@@ -130,13 +157,17 @@ class TakeControllerTest {
         override val view: Long? = null
     }
 
+    /** The owner's recording switch (lab build). */
+    private var recordings = false
+    /** How often a take's audio was offered for saving. */
+    private var recordingSaves = 0
     private val lab = object : TakeLab {
         override val startup: StartupTrace? = null
         override var startupTake: String? = null
         override fun beginStartupTake(): String? = null
         override fun observeGeometry(take: String?) {}
-        override fun recordingEnabled(liveCheck: Boolean) = false
-        override fun saveRecording(enabled: Boolean, pcm: ByteArray, result: TakeResult) {}
+        override fun recordingEnabled(liveCheck: Boolean) = recordings
+        override fun saveRecording(enabled: Boolean, pcm: ByteArray, result: TakeResult) { recordingSaves++ }
     }
 
     private val log = object : TakeLog {
@@ -152,10 +183,11 @@ class TakeControllerTest {
     private val field = Field()
     private val rotations = Rotations()
     private val diagnostics = TakeDiagnostics()
+    private val flushes = AtomicInteger()
     private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { it.run() }, { Recognizer { "word" } }, {
         object : Segmenter {
             override fun accept(samples: FloatArray) = listOf(Chunk(samples, true))
-            override fun flush() = emptyList<Chunk>()
+            override fun flush(): List<Chunk> { flushes.incrementAndGet(); return emptyList() }
             override fun reset() {}
         }
     })
@@ -171,7 +203,6 @@ class TakeControllerTest {
                 if (recorderFails) error("synthetic recorder failure")
                 return MicrophoneCapture(onStarted, feedback, onInterrupted, Recorder { input })
             }
-            override fun postCaptureEnd(action: Runnable) = scheduler.post(action)
             override fun open(
                 output: TakeOutput, capture: TakeCapture, executor: Executor, observer: TimelineObserver?, retentionEligible: Boolean,
                 notice: (HistoryNotice) -> Unit, attached: (history: HistoryTakeOutput, receipt: () -> JSONObject?) -> Unit,
@@ -185,17 +216,34 @@ class TakeControllerTest {
             }
         }
     }
-    private val controller = TakeController(host, scheduler, opener, EditorPort { field }, diagnostics, rotations, lab, log)
+    /** Every controller of this test and whether it was destroyed already; each is destroyed when the test ends. */
+    private val controllers = mutableMapOf<TakeController, Boolean>()
+    private fun controllerOn(host: Host) =
+        TakeController(host, scheduler, opener, EditorPort { field }, diagnostics, rotations, lab, log).also { controllers[it] = false }
+    private val controller = controllerOn(host)
 
     @Before fun freeMicrophone() {
         assertFalse(MicrophoneOwner.state().occupied)
         MicrophoneOwner.acceptExplicitStart()
+        MicrophoneOwner.observe(controller.microphoneOwnerListener)
+    }
+
+    /** The service's onDestroy, in its order. */
+    private fun destroy(controller: TakeController) {
+        if (controllers.put(controller, true) == true) return
+        controller.beginDestroy()
+        MicrophoneOwner.remove(controller.microphoneOwnerListener)
+        controller.finishDestroy()
     }
 
     @After fun releaseMicrophone() {
-        controller.beginDestroy()
-        controller.finishDestroy()
-        await { !MicrophoneOwner.state().occupied }
+        scheduler.holdForeignPosts = false
+        input.releaseGate?.countDown()
+        controllers.keys.toList().forEach { destroy(it) }
+        await {
+            if (MicrophoneOwner.state().releaseFailed) MicrophoneOwner.retryRelease()
+            !MicrophoneOwner.state().occupied
+        }
         runtime.close().join()
         MicrophoneOwner.acceptExplicitStart()
         folder.deleteRecursively()
@@ -538,9 +586,395 @@ class TakeControllerTest {
         assertTrue(host.frames.last().held)
     }
 
+    // --- Interruptions (#87): an input restart, a hide, a lock and the loss of the microphone. ---
+
+    private fun status(on: Host = host) = STATUS.getValue(on.frames.last().status)
+
+    /** The service's onFinishInputView. */
+    private fun hidePanel() {
+        controller.inputViewHidden()
+        controller.editorEvent(EditorEvent.INPUT_VIEW_FINISH)
+    }
+
+    private fun restartInput(retention: EditorRetention = EditorRetention.ELIGIBLE, field: FieldIdentity = FIELD) =
+        controller.inputStart(retention, FIELD_PACKAGE, field)
+
+    /** The interrupted take ended: its microphone is free and its text is in History, marked interrupted. */
+    private fun awaitInterruptedInHistory() {
+        awaitTakeEnded()
+        await { historyRows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
+        assertEquals("word", historyRows().single().text)
+    }
+
+    private fun assertNothingWritten() {
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(0, host.returns)
+    }
+
+    /** The interrupted take's outcome is in; text the panel holds is discarded, so the next take may start. */
+    private fun awaitOutcomeThenDiscardHeld() {
+        await { !MicrophoneOwner.state().occupied && host.frames.last().microphoneEnabled }
+        if (host.frames.last().held) controller.onDiscardAction()
+    }
+
+    /** The same field restarting input without a rotation is a session change: the take ends at once, into History only. */
+    @Test fun anInputRestartWithoutARotationInterruptsAtOnceIntoHistoryOnly() {
+        recordingWithSpeech()
+        restartInput()
+        assertEquals("at once, while the microphone is released", "stopping", status())
+        assertFalse(host.frames.last().stopGlyph)
+        assertFalse(host.frames.last().microphoneEnabled)
+        assertEquals("", host.frames.last().preview)
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertTrue("the text is not lost: the panel holds it", host.frames.last().held)
+        assertEquals("unable_history", status())
+        assertEquals("word", host.frames.last().preview)
+        assertEquals(1, opened)
+        // Guard: the interruption itself latches the automatic start, also once no explicit start is required any more.
+        controller.onDiscardAction()
+        assertFalse(MicrophoneOwner.state().explicitStartRequired)
+        hidePanel()
+        controller.inputViewStart()
+        assertEquals("the panel shown again starts nothing until the microphone is pressed", 1, opened)
+        controller.microphonePressed()
+        assertEquals(2, opened)
+    }
+
+    @Test fun aHideAndAnotherFieldWithoutARotationInterruptAtOnceAndThePanelThereStartsNoTake() {
+        recordingWithSpeech()
+        hidePanel()
+        assertEquals("stopping", status())
+        restartInput(field = OTHER_FIELD)
+        controller.inputViewStart()
+        awaitInterruptedInHistory()
+        scheduler.drain()
+        assertNothingWritten()
+        assertEquals("an interruption latches the automatic start", 1, opened)
+        assertFalse(controller.takeActive)
+    }
+
+    /** An editor that restarts input by itself right after Stop, without a rotation: the result goes to History only (spec #36). */
+    @Test fun anEditorRestartingInputRightAfterStopSendsTheResultToHistoryOnly() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        controller.chooseStop()
+        assertEquals("finishing", status())
+        hidePanel()
+        controller.inputFinish()
+        restartInput()
+        controller.inputViewStart()
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertTrue(host.frames.last().held || host.frames.last().unableToInsert)
+    }
+
+    /** A system interruption overrides an open choice; audio captured before the pause goes to History. */
+    @Test fun aHideOverridesAnOpenRecordingChoiceAndKeepsThePausedAudioInHistory() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        assertEquals(ch.og.dictation.panel.PanelChoice.RECORDING, host.frames.last().choice)
+        hidePanel()
+        assertEquals(null, host.frames.last().choice)
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    @Test fun aLockWhilePausedStopsAndUnlockResumesNothing() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        controller.screenOff()
+        awaitInterruptedInHistory()
+        restartInput() // Unlock: the same app restarts input.
+        controller.inputViewStart()
+        scheduler.drain()
+        assertEquals(1, opened)
+        assertFalse(controller.takeActive)
+        assertEquals(null, host.frames.last().choice)
+        assertNothingWritten()
+    }
+
+    @Test fun aLockInterruptsIntoHistoryAndUnlockDoesNotResumeCapture() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        controller.screenOff()
+        assertEquals("stopping", status())
+        assertTrue("until the platform released it", MicrophoneOwner.state().occupied)
+        assertNothingWritten()
+        gate.countDown()
+        awaitInterruptedInHistory()
+        await { host.frames.last().unableToInsert }
+        assertFalse("a lock never keeps the text in the panel", host.frames.last().held)
+        assertEquals("", host.frames.last().preview)
+        val saved = historyRows().single()
+        restartInput() // Unlock: the same app restarts input.
+        controller.inputViewStart()
+        scheduler.drain()
+        assertEquals(1, opened)
+        assertFalse(MicrophoneOwner.state().occupied)
+        assertEquals(listOf(saved.id), historyRows().map { it.id })
+        assertNothingWritten()
+    }
+
+    /** A take in a private field, active at the lock: nothing is held or shown after unlock, and History has nothing. */
+    @Test fun aTakeActiveAtTheLockHoldsAndShowsNothingAfterUnlock() {
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { host.frames.last().preview == "word" }
+        controller.screenOff()
+        awaitTakeEnded()
+        await { host.frames.last().microphoneEnabled }
+        restartInput(EditorRetention.PASSWORD) // Unlock: the same app restarts input.
+        controller.inputViewStart()
+        scheduler.drain()
+        val frame = host.frames.last()
+        assertFalse(frame.held)
+        assertEquals("", frame.preview)
+        assertEquals(null, frame.choice)
+        assertTrue(historyRows().isEmpty())
+        assertEquals(1, opened)
+        assertNothingWritten()
+    }
+
+    @Test fun aLockDuringTheStopWaitTurnsThePendingInsertIntoOneHistorySave() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        controller.microphonePressed()
+        assertEquals("finishing", status())
+        controller.screenOff()
+        assertEquals("stopping", status())
+        assertNothingWritten()
+        gate.countDown()
+        awaitInterruptedInHistory()
+        await { host.frames.last().unableToInsert }
+        assertEquals(1, flushes.get())
+        assertNothingWritten()
+    }
+
+    /** The screen goes off inside the editor's write: the accepted insert is neither undone nor repeated. */
+    @Test fun aLockAfterTheEditorAcceptedTheWriteNeitherUndoesNorRepeatsIt() {
+        recordingWithSpeech()
+        field.duringWrite = { field.duringWrite = {}; controller.screenOff() }
+        controller.microphonePressed()
+        awaitTakeEnded()
+        await { historyRows().singleOrNull()?.delivery == HistoryDelivery.ACCEPTED }
+        assertEquals(listOf("word"), field.written)
+        assertEquals(1, flushes.get())
+        assertEquals("word", historyRows().single().text)
+        assertFalse(host.frames.last().held)
+        controller.screenOff()
+        scheduler.drain()
+        assertEquals(listOf("word"), field.written)
+    }
+
+    /** The platform ends the recording by itself: what was accepted is finished into History only. */
+    @Test fun anUnexpectedCaptureEndFinishesTheAcceptedSpeechIntoHistoryOnly() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        input.endUnexpectedly()
+        assertEquals("the end is delivered on the take's thread, not on the recorder's", "recording", status())
+        scheduler.drain()
+        assertEquals("stopping", status())
+        assertTrue(MicrophoneOwner.state().occupied)
+        assertNothingWritten()
+        gate.countDown()
+        awaitInterruptedInHistory()
+        assertEquals(1, flushes.get())
+        assertTrue(host.frames.last().held)
+        assertEquals(1, opened)
+        assertNothingWritten()
+    }
+
+    /** The end is queued behind Stop: Stop shows first, then the interruption wins; no recording is saved for the lab. */
+    @Test fun anUnexpectedEndQueuedBehindStopStillInterruptsIntoHistory() {
+        recordings = true
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        assertTrue("this take's audio would be saved", host.frames.last().banner)
+        input.endUnexpectedly()
+        controller.microphonePressed()
+        assertEquals("finishing", status())
+        scheduler.drain()
+        assertEquals("stopping", status())
+        gate.countDown()
+        awaitInterruptedInHistory()
+        assertEquals(1, flushes.get())
+        assertNothingWritten()
+        assertEquals("an interrupted take's audio is never offered for saving", 0, recordingSaves)
+    }
+
+    /** Cancel after the capture already ended is a system interruption, not a choice; the microphone then starts a new take. */
+    @Test fun anUnexpectedEndOverridesTheCancelChoiceAndTheMicrophoneStartsANewTake() {
+        recordingWithSpeech()
+        input.endUnexpectedly()
+        controller.cancelAndReturn()
+        assertEquals(null, host.frames.last().choice)
+        assertEquals("stopping", status())
+        awaitOutcomeThenDiscardHeld()
+        assertEquals(HistoryCompletion.INTERRUPTED, historyRows().single().completion)
+        controller.microphonePressed()
+        assertEquals(2, opened)
+        scheduler.drain()
+        assertEquals("recording", status())
+        input.say()
+        await { host.frames.last().preview == "word" }
+        assertTrue(controller.takeActive)
+        assertNothingWritten()
+    }
+
+    /**
+     * Guard: a capture end belongs to the take whose record it holds. Delivered after the next take
+     * was started by the microphone, it does not interrupt that take.
+     */
+    @Test fun anEarlierTakesCaptureEndDeliveredAfterANewTakeStartedDoesNotInterruptIt() {
+        recordingWithSpeech()
+        scheduler.holdForeignPosts = true
+        input.endUnexpectedly()
+        val earlierEnd = scheduler.heldPosts.poll(2, TimeUnit.SECONDS)
+        assertTrue("the capture end is delivered through the take scheduler", earlierEnd != null)
+        scheduler.holdForeignPosts = false
+        assertTrue(scheduler.heldPosts.isEmpty())
+        controller.cancelAndReturn() // The capture already ended: a system interruption.
+        assertEquals(null, host.frames.last().choice)
+        awaitOutcomeThenDiscardHeld()
+        MicrophoneOwner.requireExplicitStart()
+        restartInput(EditorRetention.PASSWORD)
+        controller.inputViewStart()
+        assertEquals("an explicit start is required: the panel shown again starts nothing", 1, opened)
+        controller.microphonePressed()
+        assertEquals(2, opened)
+        earlierEnd!!.run()
+        scheduler.drain()
+        input.say()
+        await { host.frames.last().preview == "word" }
+        assertEquals("recording", status())
+        assertTrue(controller.takeActive)
+        assertNothingWritten()
+    }
+
+    /** The platform does not confirm the release: the microphone stays owned and only a retry frees it, before any new take. */
+    @Test fun anUnexpectedEndWithAnUnconfirmedReleaseNeedsTheRetryBeforeANewTake() {
+        input.failedReleases = 1
+        recordingWithSpeech()
+        input.endUnexpectedly()
+        await { MicrophoneOwner.state().releaseFailed && status() == "release_failed" }
+        assertTrue(MicrophoneOwner.state().occupied)
+        assertEquals(R.string.retry_release, host.frames.last().microphoneLabel)
+        assertTrue(host.frames.last().microphoneEnabled)
+        controller.microphonePressed() // Retry the release.
+        assertEquals(1, opened)
+        await { !MicrophoneOwner.state().occupied }
+        await { historyRows().singleOrNull()?.completion == HistoryCompletion.INTERRUPTED }
+        assertEquals("word", historyRows().single().text)
+        assertEquals(1, opened)
+        assertNothingWritten()
+        await { host.frames.last().microphoneEnabled }
+        controller.microphonePressed()
+        assertEquals(2, opened)
+        assertTrue(controller.takeActive)
+    }
+
+    /**
+     * The service is replaced while its take's microphone is not released yet (ADR-010: ownership survives
+     * the service). The new controller finds the microphone busy: it shows that, offers the retry, returns
+     * to idle once the microphone is free, and starts a take only on the next press.
+     */
+    @Test fun aBusyMicrophoneLeftByADestroyedControllerIsShownRetriedAndNeverStartsATakeByItself() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        input.failedReleases = 1
+        recordingWithSpeech()
+        val saved = historyRows().single()
+        hidePanel()
+        assertEquals("", host.frames.last().preview)
+        destroy(controller)
+        gate.countDown()
+        await { MicrophoneOwner.state().releaseFailed }
+        assertEquals(1, opened)
+
+        val replacementHost = Host()
+        val replacement = controllerOn(replacementHost)
+        MicrophoneOwner.observe(replacement.microphoneOwnerListener)
+        replacement.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD)
+        replacement.inputViewStart()
+        scheduler.drain()
+        assertEquals("release_failed", status(replacementHost))
+        assertEquals(R.string.retry_release, replacementHost.frames.last().microphoneLabel)
+        assertEquals(1, opened)
+        replacement.microphonePressed() // Retry the earlier take's release.
+        assertEquals("stopping", status(replacementHost))
+        await { !MicrophoneOwner.state().occupied && status(replacementHost) == "idle" }
+        assertEquals("the freed microphone starts nothing by itself", 1, opened)
+        replacement.inputViewStart()
+        assertEquals("nor does the panel shown again", 1, opened)
+        assertEquals(emptyList<String>(), field.written)
+        replacement.microphonePressed()
+        assertEquals(2, opened)
+        scheduler.drain()
+        assertEquals("recording", status(replacementHost))
+        input.say()
+        await { replacementHost.frames.last().preview == "word" }
+        assertEquals("a private field's take is not kept", listOf(saved.id), historyRows().map { it.id })
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(0, host.returns + replacementHost.returns)
+    }
+
+    /**
+     * Guard: a required explicit start (left by an interruption or a discard, also in an earlier service)
+     * latches the automatic start: the panel shows idle and records only on the press.
+     */
+    @Test fun aRequiredExplicitStartLatchesTheAutomaticStartUntilTheMicrophoneIsPressed() {
+        MicrophoneOwner.requireExplicitStart()
+        openPanel()
+        assertEquals(0, opened)
+        assertEquals("idle", status())
+        assertTrue(host.frames.last().microphoneEnabled)
+        hidePanel()
+        MicrophoneOwner.acceptExplicitStart()
+        controller.inputViewStart()
+        assertEquals("latched for this controller until the press", 0, opened)
+        controller.microphonePressed()
+        assertEquals(1, opened)
+        assertFalse("the press accepted the explicit start", MicrophoneOwner.state().explicitStartRequired)
+    }
+
+    /** Guard: the callback order of an interruption, as a table: what each input makes the controller do at its ports, in order. */
+    @Test fun anInterruptionCallsItsPortsInTableOrder() {
+        val table = listOf<Triple<String, () -> Unit, List<String>>>(
+            Triple("open and speak", { recordingWithSpeech() },
+                listOf("status:opening", "status:idle", "status:opening", "status:recording")),
+            Triple("the panel is hidden", { hidePanel() },
+                listOf("status:stopping")),
+            Triple("the window is hidden and the input ends", { controller.windowHidden(); controller.inputFinish() },
+                emptyList()),
+            Triple("the microphone is released and the text saved", { awaitInterruptedInHistory(); scheduler.drain() },
+                listOf("status:unable_insert", "status:unable_history")),
+            Triple("the panel is shown again", { restartInput(); controller.inputViewStart(); scheduler.drain() },
+                emptyList()),
+            Triple("Discard text", { controller.onDiscardAction() },
+                listOf("status:idle")),
+            Triple("the microphone", { controller.microphonePressed(); scheduler.drain() },
+                listOf("status:opening", "status:recording")),
+        )
+        table.forEach { (step, input, expected) ->
+            effects.clear()
+            input()
+            assertEquals(step, expected, effects.toList())
+        }
+        assertNothingWritten()
+        assertEquals(2, opened)
+    }
+
     private companion object {
         const val FIELD_PACKAGE = "org.example.editor"
         val FIELD = FieldIdentity(FIELD_PACKAGE, 7, 1, 0, null, 0)
+        val OTHER_FIELD = FieldIdentity(FIELD_PACKAGE, 8, 1, 0, null, 0)
         val STATUS = mapOf(
             R.string.status_opening to "opening", R.string.status_idle to "idle", R.string.status_recording to "recording",
             R.string.status_finishing to "finishing", R.string.status_failed to "failed",

@@ -81,10 +81,23 @@ class TakeController(
         var locked = false
         /** This take went through a rotation hold (also a self-requested panel) since its capture began. */
         var heldForRotation = false
+        /** A system interruption ended this take: no authority, no choice, no preview; its audio so far goes to History. */
+        var interrupted = false
+        /** The panel went to rest under this take ([endLiveParts]): its capture's late callbacks change nothing. */
+        var atRest = false
     }
     /** The newest take's record, also after it ended; null before the first take. */
     private var latest: Take? = null
-    private var interruptedView = false
+    /**
+     * Another capture was seen owning the microphone since the last start: the panel says so, and
+     * returns to rest when the microphone is free ([updateSharedMicrophone]).
+     */
+    private var microphoneBusy = false
+    /**
+     * The auto-start latch: after an interruption, a busy microphone or a required explicit start, a
+     * panel shown again starts no take by itself; only the microphone press does ([startRecording]).
+     */
+    private var autoStartLatched = false
     private var releaseRetry = false
     private var previewAllowed = false
     private var destroyed = false
@@ -155,6 +168,9 @@ class TakeController(
     /** A take exists from the start of recording until its text is committed or dropped. */
     val takeActive: Boolean get() = take?.active == true
 
+    /** The current take was ended by a system interruption (it can still be active while it finishes into History). */
+    private val interrupted: Boolean get() = latest?.interrupted == true
+
     /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
     fun recordingConfigChanged(silenced: () -> Boolean) {
         if (holding && !finishing && silenced()) silencedDuringHold()
@@ -207,7 +223,7 @@ class TakeController(
         editorEvent(EditorEvent.INPUT_VIEW_START)
         if (returning || takeActive) return
         if (MicrophoneOwner.state().occupied) {
-            interruptedView = true
+            noteMicrophoneBusy()
             updateSharedMicrophone()
             return
         }
@@ -216,11 +232,11 @@ class TakeController(
             return
         }
         if (MicrophoneOwner.state().explicitStartRequired) {
-            interruptedView = true
+            autoStartLatched = true
             showIdle()
             return
         }
-        if (interruptedView) return
+        if (autoStartLatched) return
         takeRetentionEligible = null
         lab.startupTake = lab.beginStartupTake()
         lab.observeGeometry(lab.startupTake)
@@ -261,8 +277,8 @@ class TakeController(
         rotations.observe()
         val decided = EditorEventPolicy.decide(event, TakeFacts(
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
-            capturing = takeActive && !finishing && !interruptedView,
-            finishing = takeActive && finishing && !interruptedView,
+            capturing = takeActive && !finishing && !interrupted,
+            finishing = takeActive && finishing && !interrupted,
             rotation = rotationIdentified(event)))
         // A rotation never moves a take to another app: an input start from a different package
         // ends the hold, whatever the rotation window says (no authority, no panel there).
@@ -367,7 +383,7 @@ class TakeController(
 
     /** The panel settled after a rotation: the rotation no longer holds the result (the finishing choice still may). */
     private fun restoreAfterRotation() {
-        if (!takeActive || interruptedView) return
+        if (!takeActive || interrupted) return
         take?.releaseDelivery(DeliveryHold.ROTATION)
     }
 
@@ -393,7 +409,7 @@ class TakeController(
         retargetSettle = false
         if (fieldMismatch) mismatchFinal = true
         authorityMoves = false
-        if (takeActive && !interruptedView && editorRetention.excludesSettledTake) excludeTakeFromHistory()
+        if (takeActive && !interrupted && editorRetention.excludesSettledTake) excludeTakeFromHistory()
         restoreAfterRotation()
     }
 
@@ -419,11 +435,11 @@ class TakeController(
     private fun panelVisible() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
-        if (authorityMoves && finishing && !interruptedView && !fieldMismatch) authority = recordingToken
+        if (authorityMoves && finishing && !interrupted && !fieldMismatch) authority = recordingToken
         if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
         if (holding) {
             holding = false
-            if (!interruptedView) {
+            if (!interrupted) {
                 previewAllowed = true
                 showPreview(latestPreview)
                 if (!finishing && choice == null) setRingLive(true)
@@ -492,12 +508,13 @@ class TakeController(
     private fun startRecording() {
         if (takeActive || held != null || outcomePending != null) return // Held text is never dropped by starting a take.
         if (MicrophoneOwner.state().occupied) {
-            interruptedView = true
+            noteMicrophoneBusy()
             updateSharedMicrophone()
             return
         }
         MicrophoneOwner.acceptExplicitStart()
-        interruptedView = false
+        microphoneBusy = false
+        autoStartLatched = false
         choice = null
         render()
         previewAllowed = true
@@ -619,20 +636,21 @@ class TakeController(
             val microphoneCapture = opening.capture(onStarted = {
                 takeTrace.captureStarted()
                 scheduler.post {
-                    if (feedback === currentFeedback && takeActive && !finishing) {
+                    if (liveOnPanel(record) && takeActive && !finishing) {
                         showPhase(PanelPhase.RECORDING)
                     }
                 }
             }, feedback = currentFeedback, onInterrupted = {
                 unexpectedEnd.set(true)
                 takeTrace.event(RotationEvent.CAPTURE_INTERRUPTED)
-                opening.postCaptureEnd(Runnable {
-                    if (feedback === currentFeedback && takeActive) {
+                // The capture's own thread: the end is decided on the take's.
+                scheduler.post {
+                    if (liveOnPanel(record) && takeActive) {
                         // Unexpected capture end is a system interruption: revoke insertion,
                         // release capture, then finish only the audio already accepted.
                         interruptTake()
                     }
-                })
+                }
             })
             val capture = takeTrace.traced(microphoneCapture)
             val observer = takeTrace.observer
@@ -757,9 +775,11 @@ class TakeController(
         revokeAuthority()
         // A system interruption overrides an open choice (paused audio already captured goes to History).
         choice = null
-        if (interruptedView) { render(); return }
-        interruptedView = true
         val record = latest
+        if (record == null || record.interrupted) { render(); return }
+        record.interrupted = true
+        // A panel shown again never resumes or restarts an interrupted take by itself.
+        autoStartLatched = true
         session.invalidate()
         finishing = true
         latestPreview = ""
@@ -770,17 +790,24 @@ class TakeController(
         showPhase(PanelPhase.STOPPING)
         old.interrupt {
             if (record === latest) {
-                // Decode and History may continue, but capture ownership has ended.
-                releaseRetry = false
-                take = null
-                recordingToken = null
-                authority = null
-                lab.startupTake = null
-                // The microphone stays off until the outcome is in; finished() then offers it.
-                showPhase(if (outcomePending == null) PanelPhase.NOT_INSERTED else PanelPhase.NOT_INSERTED_WAITING)
+                captureReleasedAfterInterruption()
+                showPhase(interruptedPhase())
             }
         }
     }
+
+    /** Changes take state only: the interrupted take's capture ownership has ended; decode and History may continue. */
+    private fun captureReleasedAfterInterruption() {
+        releaseRetry = false
+        take = null
+        recordingToken = null
+        authority = null
+        lab.startupTake = null
+    }
+
+    /** Picks the phase of an interrupted take whose microphone is released, and changes nothing: the microphone stays off until the outcome is in; finished() then offers it. */
+    private fun interruptedPhase(): PanelPhase =
+        if (outcomePending == null) PanelPhase.NOT_INSERTED else PanelPhase.NOT_INSERTED_WAITING
 
     private fun discardTake(reason: String) {
         if (!takeActive) return
@@ -807,7 +834,7 @@ class TakeController(
      * this is a system interruption (History).
      */
     private fun openRecordingChoice() {
-        if (choice != null || !takeActive || finishing || interruptedView) return
+        if (choice != null || !takeActive || finishing || interrupted) return
         if (captureEnded()) { interruptTake(); return }
         if (take?.pause() != true) { interruptTake(); return }
         diagnostics.takeEvent(RotationEvent.CAPTURE_PAUSED, latest?.number ?: 0L)
@@ -818,7 +845,7 @@ class TakeController(
 
     /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
     private fun openFinishingChoice() {
-        if (choice != null || !takeActive || !finishing || interruptedView) return
+        if (choice != null || !takeActive || !finishing || interrupted) return
         if (take?.holdDelivery(DeliveryHold.FINISHING_CHOICE) != true) return
         choice = PanelChoice.FINISHING
         showPhase(PanelPhase.FINISHING_CHOICE)
@@ -873,7 +900,7 @@ class TakeController(
     private fun panelState() = PanelState(
         phase = phase,
         choice = choice,
-        running = takeActive && !interruptedView,
+        running = takeActive && !interrupted,
         finishing = finishing,
         held = held?.panel,
         preview = previewText,
@@ -906,7 +933,7 @@ class TakeController(
             return
         }
         if (choice != null) { chooseSafe(); return }
-        if (takeActive && !interruptedView) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
+        if (takeActive && !interrupted) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
         render()
         // An interrupted take keeps finishing into History; Back only leaves.
         if (takeActive) { host.returnToKeyboard(); return }
@@ -989,6 +1016,7 @@ class TakeController(
 
     /** Changes take state only: nothing of the take is live on the panel any more (ring, Stop wait, preview). */
     private fun endLiveParts() {
+        latest?.atRest = true
         feedback?.stop()
         feedback = null
         ringLive = false
@@ -1005,18 +1033,28 @@ class TakeController(
         else -> PanelPhase.IDLE
     }
 
+    /** Another capture owns the microphone while no take of this controller is active. */
     private fun updateSharedMicrophone() {
         val owner = MicrophoneOwner.state()
         if (takeActive) return
         if (owner.occupied) {
-            interruptedView = true
-            if (owner.releaseFailed) {
-                showPhase(PanelPhase.RELEASE_FAILED)
-            } else {
-                showPhase(PanelPhase.STOPPING)
-            }
-        } else if (interruptedView) showIdle()
+            noteMicrophoneBusy()
+            showPhase(busyPhase(owner))
+        } else if (microphoneBusy) showIdle()
     }
+
+    /** Changes take state only: the microphone was seen busy, which also latches the automatic start. */
+    private fun noteMicrophoneBusy() {
+        microphoneBusy = true
+        autoStartLatched = true
+    }
+
+    /** Picks the phase while another capture owns the microphone, and changes nothing. */
+    private fun busyPhase(owner: MicrophoneOwner.State): PanelPhase =
+        if (owner.releaseFailed) PanelPhase.RELEASE_FAILED else PanelPhase.STOPPING
+
+    /** [record] is the newest take and the panel has not gone to rest under it: its capture's callbacks still count. */
+    private fun liveOnPanel(record: Take) = record === latest && !record.atRest
 
     /** History warnings are shown on the History page only, never on the recording panel. */
     private fun recordHistoryNotice(notice: HistoryNotice) {
@@ -1030,7 +1068,7 @@ class TakeController(
 
     /** The end of the text so far; the view is a few lines high. */
     private fun publishPreview(record: Take, text: String) {
-        if (record !== latest || interruptedView) return
+        if (record !== latest || record.interrupted) return
         latestPreview = text
         if (previewAllowed) showPreview(text)
     }
