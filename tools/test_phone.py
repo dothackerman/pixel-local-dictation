@@ -254,11 +254,10 @@ class PhoneCase(unittest.TestCase):
         return self.apk(tag + '.apk', PKG, OWNER, False)
 
     def with_release_installed(self, tag='release'):
-        """The phone between Visits: release, no test package, test data left over from an earlier Visit."""
+        """The phone between Visits: release, the test package and test data left over from an earlier Visit."""
         path = self.release_apk(tag)
         self.device.place(Path(path).read_bytes())
         self.phone.remember([self.device.builds[sha(Path(path).read_bytes())]])  # as its own install recorded it
-        self.device.uninstall(TEST)
         self.device.calls.clear()
         return path
 
@@ -1102,17 +1101,26 @@ class VisitEndTests(PhoneCase):
         release = self.start_visit()
         self.device.data.update({'files/lab/receipts.jsonl': b'{}', 'files/test/dictionary.json': b'["t"]'})
         result = self.call('install', release)
-        self.assertEqual(self.did('uninstall', 'install'), [('uninstall', TEST), ('install', PKG)])
+        self.assertEqual(self.did('uninstall', 'install'), [('install', PKG)])
         self.assertEqual(self.device.packages[PKG]['sha256'], sha(b'release.apk'))
         [record] = self.records()
-        self.assertEqual((result['visit_ended'], result['promoted'], result['test_sha256']), (record['name'], False, None))
+        self.assertEqual((result['visit_ended'], result['promoted']), (record['name'], False))
         self.assertIsNotNone(record['ended'])
         facts = {'uid': 10123, 'first_install': '2026-10-01 08:00:00', 'microphone_granted': True,
                  'keyboard_enabled': True, 'keyboard_selected': False}
         self.assertEqual((result['facts'], result['facts_before'], result['facts_changed']), (facts, facts, []))
         self.assertIsNone(result['lab_sha256'], 'nothing reads app data once release is installed')
         self.assertEqual(self.call('app')['visit'], None)
-        self.refused('run refused', 'run', PKG + '.LabTest')
+        self.refused('release build', 'run', PKG + '.LabTest')
+
+    def test_visit_end_leaves_the_test_package_installed_and_nothing_runs_on_release(self):
+        release = self.start_visit()
+        result = self.call('install', release)
+        self.assertEqual(self.did('uninstall'), [], 'uninstalling is the owner\'s, by token')
+        self.assertTrue(self.device.packages[TEST]['installed'])
+        self.assertEqual((result['test_sha256'], self.call('app')['test']['sha256']), (sha(b'lab-test.apk'),) * 2)
+        self.refused('release build', 'run', PKG + '.LabTest')
+        self.assertEqual(self.did('instrument'), [])
 
     def test_package_facts_that_changed_are_named(self):
         release = self.start_visit()
@@ -1195,7 +1203,7 @@ class ReleaseInstalledTests(PhoneCase):
 
     def test_app_and_logs_answer_without_reading_app_data(self):
         info = self.call('app')
-        self.assertEqual((info['app']['layout'], info['lab'], info['test']['installed']), ('owner', None, False))
+        self.assertEqual((info['app']['layout'], info['lab'], info['test']['installed']), ('owner', None, True))
         self.assertEqual(self.call('logs')['logs'], 'log for uid 10123')
 
     def test_the_same_release_installs_again_and_another_one_only_as_a_promotion(self):

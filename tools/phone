@@ -845,8 +845,6 @@ class Phone:
             raise Refused('install refused: a release other than the installed one is a promotion and needs --promote')
         before = self.facts() if app['installed'] else None
         folder = self.meta('install', apks=[info['sha256']], visit=visit and visit['name'])
-        if self.device.package(TEST)['installed']:
-            self.device.uninstall(TEST)  # test code never stays beside the release build
         after = self.put([app_apk], [info])
         if visit is not None:
             visit['ended'] = time.strftime('%Y-%m-%dT%H:%M:%S')
@@ -1131,8 +1129,9 @@ Visit:
      while owner data equals the copy; no new pull or copy; the test folders are emptied again.
   3. install corpus/lab/visits/NAME/release.apk ends the Visit: refused until owner data equals the
      copy (else restore NAME) and the speech model equals Visit start (else push corpus/lab/model
-     --model). It removes the test package and reports uid, first-install time, microphone grant,
-     keyboard enabled and selected, before and after. Another release needs --promote.
+     --model). It reports uid, first-install time, microphone grant, keyboard enabled and selected,
+     before and after. Another release needs --promote. The test package stays installed beside
+     release (uninstalling needs the owner's token); run is refused on the release build.
   Any failure: restore NAME if owner data differs, release back in the same session, debug afterwards.
   A Visit whose copy could not be taken runs nothing: install the lab build again, or its release back.
 One-time switch (unmarked debuggable build installed): snapshot --switch NAME; pull files/benchmark

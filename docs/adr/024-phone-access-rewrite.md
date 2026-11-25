@@ -124,8 +124,9 @@ Open:
   copies stay per record until `forget`.
 - Visit end is `install` of a release over the lab build: refused until the fingerprint equals the copy
   and every inventoried speech-model file is as at Visit start. The pulled release needs no flag; any
-  other release, and any release when none was pulled, needs `--promote`. The test package is removed
-  first, so test code never sits beside release. Output: uid, first-install time, microphone grant,
+  other release, and any release when none was pulled, needs `--promote`. The test package stays
+  installed beside release (#73: uninstalling needs the owner's token; the wrapper refuses `run` on an
+  owner marker). Output: uid, first-install time, microphone grant,
   keyboard enabled and selected, before and after, and which changed. Release over release is a
   promotion unless it is the installed one. Release never goes straight over an unmarked build.
 - Speech-model files are the lab-folder paths that exist in the kept model copy `corpus/lab/model`
