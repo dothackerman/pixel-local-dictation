@@ -143,7 +143,7 @@ class TakeController(
     private var choice: PanelChoice? = null
     /**
      * The rotation hold, the one owner of everything a rotation decided for the take: hold, gap, settle,
-     * field judgement and mismatch, retarget settle, authority move. Its timers come back here.
+     * field judgement and mismatch, authority move. Its timers come back here.
      */
     private val rotationHold: RotationHold = RotationHold(scheduler, rotations,
         gapExpired = {
@@ -159,6 +159,10 @@ class TakeController(
 
     /** A take exists from the start of recording until its text is committed or dropped. */
     val takeActive: Boolean get() = take?.active == true
+
+    /** Lab build: the current take's id in the startup trace; the service reads it for the panel's draw and geometry. */
+    var startupTake: String? = null
+        private set
 
     /** The current take was ended by a system interruption (it can still be active while it finishes into History). */
     private val interrupted: Boolean get() = latest?.interrupted == true
@@ -240,8 +244,8 @@ class TakeController(
         }
         if (autoStartLatched) return
         takeRetentionEligible = null
-        lab.startupTake = lab.beginStartupTake()
-        lab.observeGeometry(lab.startupTake)
+        startupTake = lab.beginStartupTake()
+        lab.observeGeometry(startupTake)
         showIdle()
         if (host.hasMicPermission()) startRecording() else requestMicPermission()
     }
@@ -481,13 +485,13 @@ class TakeController(
         val liveCheck = opening.liveCheck()
         saveTake = !RotationTrace.probeActive() && lab.recordingEnabled(liveCheck) && editorRetentionEligible
         render()
-        if (lab.startupTake == null) lab.startupTake = lab.beginStartupTake()
+        if (startupTake == null) startupTake = lab.beginStartupTake()
         val record = Take((latest?.number ?: 0L) + 1)
         latest = record
         rotationEvent(RotationEvent.CAPTURE_START)
         var started = false // This start produced a take that will deliver finished().
         try {
-            val liveTakeId = lab.startupTake
+            val liveTakeId = startupTake
             outcomePending = record
             recordingToken = session.token()
             record.field = host.currentField()
@@ -531,7 +535,7 @@ class TakeController(
                     if (pendingConfirm == null || result.interrupted || result.outcome != TakeOutcome.COMMIT_REJECTED) takeHistory = null
                     recordingToken = null
                     authority = null
-                    lab.startupTake = null
+                    startupTake = null
                     latestPreview = ""
                     endHoldAndForgetRotation()
                     if (result.interrupted) {
@@ -581,7 +585,7 @@ class TakeController(
             feedback?.stop()
             feedback = currentFeedback
             setRingLive(true)
-            val takeTrace = diagnostics.forTake(record.number, lab.startup, lab.startupTake)
+            val takeTrace = diagnostics.forTake(record.number, lab.startup, startupTake)
             val unexpectedEnd = AtomicBoolean(false)
             captureEnded = { unexpectedEnd.get() }
             val microphoneCapture = opening.capture(onStarted = {
@@ -619,9 +623,9 @@ class TakeController(
             rotationEvent(RotationEvent.CAPTURE_FAILED)
             rotationEvent(RotationEvent.CAPTURE_NOT_ACQUIRED)
             rotationEvent(RotationEvent.TERMINAL_FAILED)
-            lab.startup?.event("recordingFailed", lab.startupTake)
+            lab.startup?.event("recordingFailed", startupTake)
             if (!started) outcomePending = null
-            lab.startupTake = null
+            startupTake = null
             feedback?.stop()
             showIdle()
             log.error("start failed")
@@ -755,7 +759,7 @@ class TakeController(
         take = null
         recordingToken = null
         authority = null
-        lab.startupTake = null
+        startupTake = null
     }
 
     /** Changes take state only: [record]'s outcome is in, so the panel may offer a new take again. */

@@ -56,7 +56,12 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.annotation.GraphicsMode
 
-/** Real service, output and History wiring; only audio/model system boundaries are substituted. */
+/**
+ * The service as an adapter, through Robolectric (#91): real service, output and History wiring; only
+ * audio/model system boundaries are substituted. What decides a take is TakeControllerTest's; here only
+ * what the service itself does: build the take from its Wiring, count rotations and recreate the panel,
+ * attach the rotation trace, catch the lock, and carry the platform's capture and History failures.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 @LooperMode(LooperMode.Mode.PAUSED)
@@ -315,25 +320,8 @@ class DictationProductionLifecycleTest {
     }
 
     // What a rotation does to a take is the take controller's (TakeControllerTest, #90). Here: what only the service
-    // does with a rotation: it counts it, recreates the panel from the take's state, and forwards nothing else.
-
-    /** A take that kept authority through a rotation: a cursor move in the same field changes nothing, Stop inserts. */
-    @Test fun aCursorMoveInTheTakesFieldAfterARotationStillInsertsOnStop() {
-        val input = Input()
-        devices.add(input)
-        val (service, _) = service(editor())
-        val first = firstField.getValue(service)
-        feed(input, 1000, 1)
-        val panel = platformResetOnRotation(service, android.view.Surface.ROTATION_90)!!
-        advance(ROTATION_SETTLE_MS * 2)
-        service.onUpdateSelection(0, 0, 5, 5, -1, -1)
-        pump()
-        assertEquals(0, input.releases.get())
-        button(panel).performClick()
-        await { input.releases.get() == 1 }
-        await { decode.drain(); commits == 1 }
-        assertEquals(listOf("old speech"), first.inserted)
-    }
+    // does with a rotation: it counts it and recreates the panel from the take's state. That it forwards nothing
+    // else (no cursor move, for one) is TakeControllerLiftTest.theServiceOverridesOnlyTheCallbacksItForwards (#91).
 
     /** The service counts every display change: turning there and back is still a rotation, though the display ends where it started. */
     @Test fun repeatedRotationsAndRotatingBackKeepOneTakeWithAllSpeech() {
@@ -689,25 +677,6 @@ class DictationProductionLifecycleTest {
             assertTrue(late.any { it.optString("phase") == "checkpointFailed" })
             assertTrue(late.all { !it.isNull("takeId") && it.getString("takeId") == oldId })
         } finally { blocked.deleteRecursively() }
-    }
-
-    @Test fun explicitRestartLatchesCurrentBenchmarkOptIn() {
-        val original = Input()
-        val next = Input()
-        devices.add(original); devices.add(next)
-        val app = RuntimeEnvironment.getApplication()
-        BenchmarkStore.setEnabled(app, true)
-        try {
-            val (service, view) = service(editor())
-            assertEquals(View.VISIBLE, view.findViewById<View>(R.id.benchmark_banner).visibility)
-            original.endUnexpectedly()
-            awaitOutcomeThenDiscardHeld(view)
-            BenchmarkStore.setEnabled(app, false)
-            service.onStartInputView(editor(), true)
-            button(view).performClick()
-            await { next.starts.get() == 1 }
-            assertEquals(View.GONE, view.findViewById<View>(R.id.benchmark_banner).visibility)
-        } finally { BenchmarkStore.setEnabled(app, false) }
     }
 
     @Test fun regressionLockDecodeFailureKeepsPrefixAndWarnsWithoutBenchmarkFallback() {

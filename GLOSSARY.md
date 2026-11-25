@@ -130,8 +130,8 @@ A reason, kept in the take session, why a finished result is not dispatched yet:
 _Avoid_: hold flag, delivery lock, paused delivery
 
 **Take controller**:
-Holds all take state and makes every take decision, on the IME main thread, without Android. The keyboard service forwards its events to it and carries out the effects it asks for.
-_Avoid_: take manager, take state machine, service logic
+Holds all take state and makes every take decision, on the IME main thread, without Android. The keyboard service is its adapter and holds no take state: it forwards Android's callbacks to it in their order, counts rotations, builds the panel and carries out the effects it asks for.
+_Avoid_: take manager, take state machine, service logic, take control
 
 **Take host**:
 What the take controller asks of the keyboard service: show the panel frame, return to the previous keyboard, request the panel, copy, ask for the microphone permission, record a History notice.

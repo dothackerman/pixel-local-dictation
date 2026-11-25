@@ -38,7 +38,6 @@ import android.Manifest
 import android.view.KeyEvent
 import android.view.Display
 import android.hardware.display.DisplayManager
-import android.view.WindowManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.res.Configuration
@@ -90,7 +89,6 @@ class DictationImeService : InputMethodService() {
         }
     }
     private var startup: StartupTrace? = null
-    private var startupTake: String? = null
     private var panel: View? = null
     /** Layout configuration the current panel was inflated for. */
     private var panelConfiguration: Configuration? = null
@@ -180,9 +178,6 @@ class DictationImeService : InputMethodService() {
     /** The lab build's side of a take: the startup trace and the recording save. */
     private val lab = object : TakeLab {
         override val startup: StartupTrace? get() = this@DictationImeService.startup
-        override var startupTake: String?
-            get() = this@DictationImeService.startupTake
-            set(value) { this@DictationImeService.startupTake = value }
         override fun beginStartupTake() = this@DictationImeService.startup?.beginTake(wiring.engine.modelReadyNs != null)
         override fun observeGeometry(take: String?) { this@DictationImeService.observeGeometry(take) }
         override fun recordingEnabled(liveCheck: Boolean) =
@@ -252,7 +247,7 @@ class DictationImeService : InputMethodService() {
         startup?.event("inputViewInflated")
         panel = v
         panelConfiguration = Configuration(resources.configuration)
-        observeGeometry(startupTake)
+        observeGeometry(controller.startupTake)
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
             var drawn = false
             v.viewTreeObserver.addOnDrawListener {
@@ -270,7 +265,7 @@ class DictationImeService : InputMethodService() {
             }
             var drawnTake: String? = null
             v.viewTreeObserver.addOnDrawListener {
-                val id = startupTake
+                val id = controller.startupTake
                 if (id != null && id != drawnTake) {
                     drawnTake = id
                     // Render submission, NOT proof of the physical display time or microphone-key time.
@@ -492,25 +487,9 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun saveBenchmarkTake(enabled: Boolean, pcm: ByteArray, result: TakeResult) {
-        fun ms(from: String, to: String): Long {
-            val start = result.eventsNs[from]
-            val end = result.eventsNs[to]
-            return if (start != null && end != null) (end - start) / 1_000_000 else 0
-        }
         try {
-            val json = JSONObject()
-                .put("app", packageManager.getPackageInfo(packageName, 0).versionName)
-                .put("recognizer", "parakeet-v3-matmul8 sherpa-onnx-1.13.8")
-                .put("text", result.text ?: JSONObject.NULL)
-                .put("audioSeconds", pcm.size / 2.0 / SAMPLE_RATE)
-                .put("recordingMs", ms("captureStart", "stopRequested"))
-                .put("stopToFinalMs", ms("stopRequested", "finalReady"))
-                .put("timingProtocol", "dictation-session-v1")
-                .put("eventsNs", JSONObject(result.eventsNs))
-                .put("outcome", result.outcome.name)
-                .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
-                .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
-            val name = BenchmarkStore.of(this).saveIfEligible(enabled, result, pcm, SAMPLE_RATE, json.toString(2))
+            val json = BenchmarkStore.receipt(packageManager.getPackageInfo(packageName, 0).versionName, pcm, result)
+            val name = BenchmarkStore.of(this).saveIfEligible(enabled, result, pcm, SAMPLE_RATE, json)
             if (name != null) Log.i(tag, "benchmark take saved: $name")
         } catch (e: Exception) {
             Log.e(tag, "benchmark save failed", e)

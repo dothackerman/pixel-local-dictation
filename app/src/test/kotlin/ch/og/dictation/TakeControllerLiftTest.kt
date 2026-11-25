@@ -16,12 +16,26 @@ class TakeControllerLiftTest {
     private fun code(name: String): String = File(root, name).readText()
         .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), "").replace(Regex("""//[^\n]*"""), "")
 
-    /** The service's mutable fields are its own business only: the panel, rotation counting, geometry and startup. */
+    /**
+     * The service's mutable fields are its own business only: the panel, rotation counting, geometry and the
+     * startup trace. The startup trace's take id is the take's, so the controller's (#91).
+     */
     @Test fun theServiceKeepsNoTakeState() {
         val fields = Regex("""^\s*private var (\w+)""", RegexOption.MULTILINE).findAll(code("DictationImeService.kt")).map { it.groupValues[1] }.toSet()
         assertEquals(setOf("shownFrame", "panel", "panelConfiguration", "rotationView", "displayRotation", "rotationChanges",
-            "configurationOrientation", "rotationsAtConfiguration", "lastConfiguration", "displayListening", "startup", "startupTake",
+            "configurationOrientation", "rotationsAtConfiguration", "lastConfiguration", "displayListening", "startup",
             "geometryTake", "geometryUntilNs", "geometryRows", "contentTopInsets", "visibleTopInsets", "touchableInsets"), fields)
+    }
+
+    /**
+     * The service forwards these Android callbacks and no other (#91): nothing else of Android reaches a take,
+     * a cursor move in the take's field (onUpdateSelection) least of all; Back is the only key it reads.
+     */
+    @Test fun theServiceOverridesOnlyTheCallbacksItForwards() {
+        val overridden = Regex("""^    override fun (\w+)""", RegexOption.MULTILINE).findAll(code("DictationImeService.kt")).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("onCreate", "onCreateInputView", "onStartInput", "onStartInputView", "onComputeInsets", "onFinishInputView",
+            "onFinishInput", "onConfigurationChanged", "onEvaluateFullscreenMode", "onWindowShown", "onWindowHidden", "onDestroy",
+            "onKeyDown"), overridden)
     }
 
     /** What decides a take is not reachable from the service except through the controller. */

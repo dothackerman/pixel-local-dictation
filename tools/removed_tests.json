@@ -159,5 +159,12 @@
   "ch.og.dictation.SelfRotationProbeTest.keepFocusDuringCapture": "ch.og.dictation.take.TakeControllerTest.pixelOrderAKeptEditorKeepsTheTakeThroughThePlatformResetAndStopInsertsOnce",
   "ch.og.dictation.SelfRotationProbeTest.keepFocusDuringStopWait": "ch.og.dictation.take.TakeControllerTest.aKeptEditorsRotationInTheStopWaitInsertsOnceWhenThePanelSettled",
   "ch.og.dictation.SelfRotationProbeTest.recreatedHiddenDuringCapture": "ch.og.dictation.take.TakeControllerTest.aRotationThatHidesThePanelKeepsTheTakeAndStopInsertsOnceIntoTheReturnedField",
-  "ch.og.dictation.SelfRotationProbeTest.recreatedHiddenDuringStopWait": "ch.og.dictation.take.TakeControllerTest.aRotationBeforeTheFinalDecodeInsertsOnceIntoTheReturnedFieldAt1000MsAndNotAt999"
+  "ch.og.dictation.SelfRotationProbeTest.recreatedHiddenDuringStopWait": "ch.og.dictation.take.TakeControllerTest.aRotationBeforeTheFinalDecodeInsertsOnceIntoTheReturnedFieldAt1000MsAndNotAt999",
+  "ch.og.dictation.DictationImeLifecycleTest.replacementServiceOffersRetryForOldUnconfirmedMicrophone": "ch.og.dictation.take.TakeControllerTest.aBusyMicrophoneLeftByADestroyedControllerIsShownRetriedAndNeverStartsATakeByItself",
+  "ch.og.dictation.DictationImeLifecycleTest.sameEditorRestartClearsPreviewAndReattachDoesNotStartCapture": "ch.og.dictation.take.TakeControllerTest.anInputRestartClearsThePreviewAndTheNextPanelStartsNoCapture",
+  "ch.og.dictation.DictationImeLifecycleTest.hidingInputViewClearsPreviewAndReattachDoesNotStartCapture": "ch.og.dictation.take.TakeControllerTest.aHideClearsThePreviewAndTheNextPanelStartsNoCapture",
+  "ch.og.dictation.DictationImeLifecycleTest.finishingInputClearsPreviewAndReattachDoesNotStartCapture": "ch.og.dictation.take.TakeControllerTest.theInputsEndClearsThePreviewAndTheNextPanelStartsNoCapture",
+  "ch.og.dictation.DictationImeLifecycleTest.destructionInterruptsAndKeepsCaptureUntilAcknowledged": "ch.og.dictation.take.TakeControllerTest.destructionClearsThePreviewAndKeepsTheCaptureUntilItsReleaseIsAcknowledged",
+  "ch.og.dictation.DictationProductionLifecycleTest.aCursorMoveInTheTakesFieldAfterARotationStillInsertsOnStop": "ch.og.dictation.TakeControllerLiftTest.theServiceOverridesOnlyTheCallbacksItForwards",
+  "ch.og.dictation.DictationProductionLifecycleTest.explicitRestartLatchesCurrentBenchmarkOptIn": "ch.og.dictation.take.TakeControllerTest.eachTakeReadsTheRecordingSwitchAtItsStart"
 }

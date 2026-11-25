@@ -124,3 +124,25 @@ The one kind of receipt release may write. Numbers only: no audio, no text, no e
 default, behind one switch. Owner data. Folder `files/timing-receipts`, reserved in the owner layout
 so the wrapper can pull it read-only without a later change. Until #63 builds it, release writes no
 receipt of any kind.
+
+## Status (#91, 2026-11-25): what still needs the phone
+
+Of the 58 phone tests of #73's start, 11 test cases in 7 classes still need the phone; each class names
+its reason in `app/src/androidTest/device-classes.json` (`phoneBatch`), and `tools/device_classes.py` fails
+an entry without one. They need what the laptop does not have:
+
+- The real phone's state: phone readiness (`PhoneReadyTest`, 1).
+- The real speech model on the Pixel's CPU and native runtime: Candidate A baseline parity
+  (`NormalBaselineTest`, 3).
+- The real keyboard's insets: the Dictionary add sheet above it in landscape at large text
+  (`DictionarySettingsTest`, 1).
+- Real Android honouring our panel request around a recreated editor, through FUTO's key: one
+  rotation-continuity case and one rotation-finishing case (`RotationContinuityDemoTest`,
+  `RotationFinishingDemoTest`, 1 each).
+- A real fresh process: cold Settings next to the real model (`ColdSettingsTest`, 1) and History
+  across the death of the checkpoint producer's process (`HistoryProcessTest`, 3).
+
+Everything else is decided or rendered on the laptop: take rules in `TakeControllerTest`, the panel in
+`RenderPanelTest`, the gallery and the golden frame sequences, the History and Settings screens on the
+test layout. Not tests: the Guided check (the owner, on the lab build) and the Lab runs (measurements,
+through `phone measure`). Whether an emulator can run some of the 11 is #93's spike.

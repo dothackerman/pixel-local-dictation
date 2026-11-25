@@ -82,12 +82,10 @@ interface RotationCounter {
     val view: Long?
 }
 
-/** The lab build's side of a take: the startup trace's fields and the recording save stay with the service. */
+/** The lab build's side of a take: the startup trace, the panel's geometry and the recording save stay with the service. */
 interface TakeLab {
     val startup: StartupTrace?
-    /** The current take's id in the startup trace. */
-    var startupTake: String?
-    /** Begins a take in the startup trace; null without one. */
+    /** Begins a take in the startup trace and returns its id ([TakeController.startupTake]); null without one. */
     fun beginStartupTake(): String?
     fun observeGeometry(take: String?)
     /** Recordings are saved: the owner's switch is on and no live receipt is collected ([liveCheck]). */

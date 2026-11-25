@@ -195,11 +195,15 @@ class TakeControllerTest {
     private var recordings = false
     /** How often a take's audio was offered for saving. */
     private var recordingSaves = 0
+    /** The lab build traces startup: each take begun in the startup trace gets the next id. */
+    private var startupTrace = false
+    private var startupTakes = 0
+    /** The take ids the panel's geometry was observed for. */
+    private val geometryTakes = mutableListOf<String?>()
     private val lab = object : TakeLab {
         override val startup: StartupTrace? = null
-        override var startupTake: String? = null
-        override fun beginStartupTake(): String? = null
-        override fun observeGeometry(take: String?) {}
+        override fun beginStartupTake(): String? = if (startupTrace) "startup-${++startupTakes}" else null
+        override fun observeGeometry(take: String?) { geometryTakes += take }
         override fun recordingEnabled(liveCheck: Boolean) = recordings
         override fun saveRecording(enabled: Boolean, pcm: ByteArray, result: TakeResult) { recordingSaves++ }
     }
@@ -343,6 +347,24 @@ class TakeControllerTest {
         assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
         assertEquals(1, host.returns)
         assertEquals(0, host.panelRequests)
+    }
+
+    /** The startup trace's take id is the controller's (#91): one per take, from the take's start to its end. */
+    @Test fun eachTakeHasItsOwnStartupTraceIdFromItsStartToItsEnd() {
+        startupTrace = true
+        assertEquals(null, controller.startupTake)
+        openPanel()
+        assertEquals("startup-1", controller.startupTake)
+        assertEquals("the panel's geometry is observed for the take it opened", listOf<String?>("startup-1"), geometryTakes)
+        scheduler.drain()
+        input.say()
+        await { host.frames.last().preview == "word" }
+        controller.microphonePressed()
+        await { !controller.takeActive && !MicrophoneOwner.state().occupied }
+        assertEquals("an ended take leaves no id behind", null, controller.startupTake)
+        controller.microphonePressed()
+        assertTrue(controller.takeActive)
+        assertEquals("startup-2", controller.startupTake)
     }
 
     @Test fun withoutTheMicrophonePermissionNoTakeStartsAndThePromptOpensOnce() {
@@ -3009,6 +3031,81 @@ class TakeControllerTest {
             assertEquals(step, expected, effects.toList())
         }
         assertEquals(listOf("word"), next.written)
+    }
+
+    // --- The service as a pure adapter (#91): what the service's reflective lifecycle test and three of its
+    // Robolectric cases checked through the service, at the controller's interface. ---
+
+    /**
+     * A loss of the input clears the preview at once; what is decoded afterwards is not shown, and the
+     * panel shown again, also on a private field, starts no capture, also once the take's outcome is in.
+     */
+    private fun aLossClearsThePreviewAndTheNextPanelStartsNoCapture(loss: () -> Unit) {
+        recordingWithSpeech()
+        assertEquals("word", frame().preview)
+        loss()
+        assertEquals("the preview is cleared at once", "", frame().preview)
+        outputs.single().preview("late words")
+        assertEquals("a preview decoded after the loss is not shown", "", frame().preview)
+        restartInput(EditorRetention.PASSWORD)
+        controller.inputViewStart()
+        assertEquals(1, input.starts.get())
+        awaitTakeEnded()
+        outputs.single().preview("later words")
+        restartInput(EditorRetention.PASSWORD)
+        controller.inputViewStart()
+        scheduler.drain()
+        assertFalse(frame().preview.contains("late"))
+        assertEquals("the panel shown again started no capture", 1, input.starts.get())
+        assertEquals(1, opened)
+        assertNothingWritten()
+    }
+
+    @Test fun anInputRestartClearsThePreviewAndTheNextPanelStartsNoCapture() =
+        aLossClearsThePreviewAndTheNextPanelStartsNoCapture { restartInput() }
+
+    @Test fun aHideClearsThePreviewAndTheNextPanelStartsNoCapture() =
+        aLossClearsThePreviewAndTheNextPanelStartsNoCapture { hidePanel() }
+
+    @Test fun theInputsEndClearsThePreviewAndTheNextPanelStartsNoCapture() =
+        aLossClearsThePreviewAndTheNextPanelStartsNoCapture { controller.inputFinish() }
+
+    /** The service's destruction interrupts the take; its capture stays owned until the platform acknowledges the release. */
+    @Test fun destructionClearsThePreviewAndKeepsTheCaptureUntilItsReleaseIsAcknowledged() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        destroy(controller)
+        assertEquals("", frame().preview)
+        outputs.single().preview("late words")
+        assertEquals("", frame().preview)
+        assertTrue("the capture is kept until its release is acknowledged", MicrophoneOwner.state().occupied)
+        assertEquals(1, input.starts.get())
+        gate.countDown()
+        await { !MicrophoneOwner.state().occupied }
+        assertFalse(controller.takeActive)
+        assertEquals(1, input.starts.get())
+        assertNothingWritten()
+    }
+
+    /** The owner's recording switch is read once per take, at its start: the banner follows the take, not the switch. */
+    @Test fun eachTakeReadsTheRecordingSwitchAtItsStart() {
+        recordings = true
+        recordingWithSpeech()
+        assertTrue(frame().banner)
+        recordings = false
+        controller.render()
+        assertTrue("a take keeps the switch it started with", frame().banner)
+        input.endUnexpectedly()
+        awaitInterruptedInHistory()
+        awaitOutcomeThenDiscardHeld()
+        restartInput()
+        controller.inputViewStart()
+        controller.microphonePressed()
+        assertTrue(controller.takeActive)
+        assertEquals(2, opened)
+        assertFalse("the next take started with the switch off", frame().banner)
+        assertEquals(0, recordingSaves)
     }
 
     private companion object {

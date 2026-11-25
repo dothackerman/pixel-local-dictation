@@ -1,5 +1,6 @@
 package ch.og.dictation.diagnostics
 
+import ch.og.dictation.recognition.SAMPLE_RATE
 import ch.og.dictation.take.TakeOutcome
 import ch.og.dictation.wiring
 import ch.og.dictation.take.TakeResult
@@ -10,6 +11,7 @@ import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 /**
  * Benchmark mode (plan D4): the only code that writes audio to storage, and only in the lab
@@ -36,6 +38,28 @@ class BenchmarkStore(private val dir: File) {
 
         fun timestamp(now: Date = Date()): String =
             SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(now)
+
+        /** The .json beside a saved take: [app] version, recognizer, the take's timing, outcome and acknowledgements. */
+        fun receipt(app: String?, pcm: ByteArray, result: TakeResult): String {
+            fun ms(from: String, to: String): Long {
+                val start = result.eventsNs[from]
+                val end = result.eventsNs[to]
+                return if (start != null && end != null) (end - start) / 1_000_000 else 0
+            }
+            return JSONObject()
+                .put("app", app)
+                .put("recognizer", "parakeet-v3-matmul8 sherpa-onnx-1.13.8")
+                .put("text", result.text ?: JSONObject.NULL)
+                .put("audioSeconds", pcm.size / 2.0 / SAMPLE_RATE)
+                .put("recordingMs", ms("captureStart", "stopRequested"))
+                .put("stopToFinalMs", ms("stopRequested", "finalReady"))
+                .put("timingProtocol", "dictation-session-v1")
+                .put("eventsNs", JSONObject(result.eventsNs))
+                .put("outcome", result.outcome.name)
+                .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
+                .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
+                .toString(2)
+        }
 
         /** 16-bit mono PCM wrapped in a canonical 44-byte WAV header. */
         fun wav(pcm: ByteArray, sampleRate: Int): ByteArray {
