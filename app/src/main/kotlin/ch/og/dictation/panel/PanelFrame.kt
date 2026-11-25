@@ -53,7 +53,7 @@ data class PanelState(
     val choice: PanelChoice? = null,
     /** A take is open and not interrupted. */
     val running: Boolean = false,
-    /** Stop was pressed (or the take is ending). */
+    /** The take is in the Stop wait: Stop was pressed and its text is awaited. Read only while [running]. */
     val finishing: Boolean = false,
     val held: HeldPanel? = null,
     /** The end of the text so far, or the held text. */

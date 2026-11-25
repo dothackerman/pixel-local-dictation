@@ -13,6 +13,7 @@ import ch.og.dictation.history.HistoryDelivery
 import ch.og.dictation.history.HistoryNotice
 import ch.og.dictation.history.HistoryStore
 import ch.og.dictation.history.HistoryTakeOutput
+import ch.og.dictation.panel.PanelChoice
 import ch.og.dictation.panel.PanelFrame
 import ch.og.dictation.recognition.Chunk
 import ch.og.dictation.recognition.DictationRuntime
@@ -35,7 +36,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The take controller at its interface, without Android (#85, #86, #87): the service's events go in,
+ * The take controller at its interface, without Android (#85, #86, #87, #88): the service's events go in,
  * the panel frame and the effects come out through the ports. The scheduler is a fake with its own
  * clock; the microphone owner is the real one, observed as the service observes it, and is released
  * when each test ends.
@@ -108,20 +109,34 @@ class TakeControllerTest {
     private class Input : Recorder.AudioInput {
         override val bufferSize = 8
         private val frames = LinkedBlockingQueue<ShortArray>()
+        /** The platform recording was started (by the take's start and by each resume) and stopped (by each pause and by Stop). */
+        val starts = AtomicInteger()
+        val stops = AtomicInteger()
         val releases = AtomicInteger()
+        /** The platform cannot stop the recording: a pause fails. */
+        @Volatile var stopFails = false
+        /** The platform cannot start the recording again: a resume fails. */
+        @Volatile var restartFails = false
         /** The release waits for it: the microphone stays owned meanwhile. */
         @Volatile var releaseGate: CountDownLatch? = null
         /** So many releases fail first: the platform does not confirm them. */
         @Volatile var failedReleases = 0
         @Volatile var reader: Thread? = null
-        override fun start() { frames.clear() }
+        override fun start() {
+            if (starts.incrementAndGet() > 1 && restartFails) error("synthetic restart failure")
+            frames.clear()
+        }
         override fun read(buffer: ShortArray): Int {
             reader = Thread.currentThread()
             val frame = frames.take()
             frame.copyInto(buffer)
             return if (frame.isEmpty()) -1 else frame.size
         }
-        override fun stop() { frames.offer(shortArrayOf()) }
+        override fun stop() {
+            stops.incrementAndGet()
+            frames.offer(shortArrayOf())
+            if (stopFails) error("synthetic stop failure")
+        }
         override fun release() {
             releaseGate?.await(5, TimeUnit.SECONDS)
             if (releases.incrementAndGet() <= failedReleases) error("synthetic release failure")
@@ -184,7 +199,11 @@ class TakeControllerTest {
     private val rotations = Rotations()
     private val diagnostics = TakeDiagnostics()
     private val flushes = AtomicInteger()
-    private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { it.run() }, { Recognizer { "word" } }, {
+    /** While set, decoding waits in [heldDecodes]: its output is late, whatever happened to the take meanwhile. */
+    @Volatile private var holdDecode = false
+    private val heldDecodes = LinkedBlockingQueue<Runnable>()
+    private fun runHeldDecodes() { holdDecode = false; while (true) (heldDecodes.poll() ?: return).run() }
+    private val runtime = DictationRuntime(Variant.HISTORICAL_INT8, Executor { if (holdDecode) heldDecodes.add(it) else it.run() }, { Recognizer { "word" } }, {
         object : Segmenter {
             override fun accept(samples: FloatArray) = listOf(Chunk(samples, true))
             override fun flush(): List<Chunk> { flushes.incrementAndGet(); return emptyList() }
@@ -239,6 +258,7 @@ class TakeControllerTest {
     @After fun releaseMicrophone() {
         scheduler.holdForeignPosts = false
         input.releaseGate?.countDown()
+        runHeldDecodes()
         controllers.keys.toList().forEach { destroy(it) }
         await {
             if (MicrophoneOwner.state().releaseFailed) MicrophoneOwner.retryRelease()
@@ -673,7 +693,7 @@ class TakeControllerTest {
     @Test fun aHideOverridesAnOpenRecordingChoiceAndKeepsThePausedAudioInHistory() {
         recordingWithSpeech()
         controller.cancelAndReturn()
-        assertEquals(ch.og.dictation.panel.PanelChoice.RECORDING, host.frames.last().choice)
+        assertEquals(PanelChoice.RECORDING, host.frames.last().choice)
         hidePanel()
         assertEquals(null, host.frames.last().choice)
         awaitInterruptedInHistory()
@@ -971,6 +991,442 @@ class TakeControllerTest {
         assertEquals(2, opened)
     }
 
+    // --- Cancel choice and Back (#88): pause, Continue, Stop and insert, Discard; Keep and Discard in the Stop wait. ---
+
+    private fun frame() = host.frames.last()
+
+    /** The idle panel, microphone ready, on the panel itself: nothing of the discarded take is left on it. */
+    private fun assertIdlePanel() {
+        val frame = frame()
+        assertEquals("no choice after Discard", null, frame.choice)
+        assertEquals("idle", status())
+        assertEquals("", frame.preview)
+        assertTrue("the microphone is ready for a new take", frame.microphoneEnabled)
+        assertEquals(R.string.start_recording, frame.microphoneLabel)
+        assertEquals(R.string.back_to_keyboard, frame.backLabel)
+        assertFalse(frame.stopGlyph || frame.preparing || frame.held || frame.unableToInsert || frame.ringLive)
+    }
+
+    /** The discard is final: the microphone released, the saved text gone, nothing inserted, no hand-back. */
+    private fun awaitDiscardFinal() {
+        awaitTakeEnded()
+        runHeldDecodes()
+        await { historyRows().isEmpty() }
+        scheduler.drain()
+        assertTrue("a discard leaves nothing in History", historyRows().isEmpty())
+        assertNothingWritten()
+        assertEquals("no new take by itself", 1, opened)
+    }
+
+    /** Stop was pressed and the text is prepared; with a choice open it waits there. */
+    private fun awaitTextPrepared() {
+        await { historyRows().singleOrNull()?.completion == HistoryCompletion.COMPLETE }
+        scheduler.drain()
+    }
+
+    /**
+     * Cancel while recording pauses the take (#61): the platform recording stops, the microphone stays
+     * owned by this take, and Continue resumes the same take: one take, speech before and after.
+     */
+    @Test fun cancelWhileRecordingPausesTheTakeAndContinueResumesTheSameTake() {
+        recordingWithSpeech()
+        await { historyRows().size == 1 }
+        val saved = historyRows().single().id
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.RECORDING, frame().choice)
+        assertEquals("paused", status())
+        assertEquals("Back is the safe action", R.string.continue_recording, frame().backLabel)
+        assertFalse(frame().microphoneEnabled)
+        assertFalse(frame().ringLive)
+        assertEquals(1, input.stops.get())
+        assertEquals(0, input.releases.get())
+        assertTrue("paused, the microphone stays this take's", MicrophoneOwner.state().occupied)
+        input.say() // Speech while paused is not captured.
+        scheduler.drain()
+        assertEquals("word", frame().preview)
+        controller.onSafeAction()
+        assertEquals(null, frame().choice)
+        assertEquals(2, input.starts.get())
+        assertEquals("recording", status())
+        assertTrue(frame().microphoneEnabled && frame().stopGlyph && frame().ringLive)
+        input.say()
+        await { frame().preview == "word word" }
+        assertEquals(saved, historyRows().single().id)
+        controller.microphonePressed()
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word word"), field.written)
+        assertEquals(saved, historyRows().single().id)
+        assertEquals(1, input.releases.get())
+        assertEquals(1, opened)
+        assertEquals("the choice is the panel's own: nothing else is asked for", 0, host.panelRequests)
+    }
+
+    @Test fun systemBackAndTheBackArrowOnAnOpenChoiceContinueRecording() {
+        recordingWithSpeech()
+        assertTrue(controller.backKey())
+        assertEquals(PanelChoice.RECORDING, frame().choice)
+        assertEquals(R.string.continue_recording, frame().backLabel)
+        assertTrue(controller.backKey())
+        assertEquals("Back is the safe default", null, frame().choice)
+        assertEquals(2, input.starts.get())
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.RECORDING, frame().choice)
+        controller.cancelAndReturn()
+        assertEquals(null, frame().choice)
+        assertEquals(3, input.starts.get())
+        assertEquals(0, input.releases.get())
+        input.say()
+        await { frame().preview == "word word" }
+        assertTrue(controller.takeActive)
+        assertEquals("recording", status())
+        assertNothingWritten()
+        assertEquals(1, historyRows().size)
+    }
+
+    /** The choice is the take's state: a panel created again (a rotation) shows it, and the pause stays. */
+    @Test fun aPanelCreatedAgainShowsTheOpenChoiceAndThePauseStays() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        val shown = frame()
+        controller.panelCreated()
+        controller.render()
+        assertEquals(shown, frame())
+        assertEquals(PanelChoice.RECORDING, frame().choice)
+        assertEquals("paused", status())
+        assertEquals(1, input.starts.get())
+        controller.onSafeAction()
+        assertEquals(2, input.starts.get())
+        assertEquals(0, input.releases.get())
+        assertEquals("recording", status())
+    }
+
+    /**
+     * Stop and insert on the choice is exactly Stop (#61): one insertion, then the keyboard. The choice is
+     * inline, so no window opens and the editor restarts nothing (Signal order, #61 visit A7): until the
+     * hand-back the take asks the input method for nothing.
+     */
+    @Test fun stopAndInsertOnTheChoiceInsertsOnceLikeStop() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        effects.clear()
+        controller.chooseStop()
+        assertEquals(null, frame().choice)
+        assertEquals("finishing", status())
+        assertTrue(frame().preparing)
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("status:finishing", "write:word", "return", "status:idle"), effects.toList())
+        assertEquals(listOf("word"), field.written)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        assertEquals(1, input.releases.get())
+        assertEquals(0, host.panelRequests)
+    }
+
+    /**
+     * Discard take is final at once (#36): insertion revoked, the saved text removed, the capture released;
+     * what is decoded late changes nothing. The panel stays, idle, and records again only on the press.
+     */
+    @Test fun discardOnThePausedChoiceIsFinalAtOnceAndLeavesTheIdlePanel() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        await { historyRows().size == 1 }
+        holdDecode = true
+        input.say() // Still being decoded when the take is discarded.
+        await { heldDecodes.isNotEmpty() }
+        controller.cancelAndReturn()
+        controller.onDiscardAction()
+        assertEquals("at once", null, frame().choice)
+        assertEquals("", frame().preview)
+        assertEquals("until the platform released the microphone", "stopping", status())
+        assertFalse(frame().microphoneEnabled)
+        assertTrue(controller.takeActive)
+        gate.countDown()
+        awaitDiscardFinal()
+        assertIdlePanel()
+        assertEquals(1, input.releases.get())
+        assertEquals("the panel stays", 0, host.returns)
+        // The panel shown again starts nothing; the microphone does.
+        hidePanel()
+        controller.inputViewStart()
+        assertEquals(1, opened)
+        controller.microphonePressed()
+        assertEquals(2, opened)
+    }
+
+    /** Discard during the Stop wait, before the text is prepared: the late result is neither inserted nor kept. */
+    @Test fun discardOnTheFinishingChoiceIsFinalAtOnceAndLeavesTheIdlePanel() {
+        recordingWithSpeech()
+        holdDecode = true
+        controller.microphonePressed()
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        assertEquals("finishing_choice", status())
+        controller.onDiscardAction()
+        assertEquals(null, frame().choice)
+        awaitDiscardFinal()
+        assertIdlePanel()
+        scheduler.advance(10_000)
+        assertIdlePanel()
+        assertNothingWritten()
+        assertTrue(historyRows().isEmpty())
+    }
+
+    /** Discard during the Stop wait, with the prepared text waiting on the choice: it is dropped, never inserted. */
+    @Test fun discardOnTheFinishingChoiceDropsTheTextThatWaitedForIt() {
+        recordingWithSpeech()
+        controller.microphonePressed()
+        controller.cancelAndReturn()
+        awaitTextPrepared()
+        assertNothingWritten()
+        controller.onDiscardAction()
+        awaitDiscardFinal()
+        assertIdlePanel()
+    }
+
+    /** A rotation right after a discard recreates the panel on a recreated editor: it is idle and starts nothing. */
+    @Test fun aPanelShownOnARecreatedEditorRightAfterADiscardIsIdleAndStartsNoTake() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        controller.onDiscardAction()
+        rotations.changes++
+        controller.panelCreated()
+        controller.render()
+        controller.inputStart(EditorRetention.ELIGIBLE, FIELD_PACKAGE, OTHER_FIELD)
+        controller.inputViewStart()
+        scheduler.advance(ROTATION_SETTLE_MS)
+        awaitDiscardFinal()
+        assertIdlePanel()
+        assertEquals(0, host.panelRequests)
+    }
+
+    @Test fun discardInAPrivateFieldIsFinalAtOnceAndKeepsThePrivateLine() {
+        controller.inputStart(EditorRetention.PASSWORD, FIELD_PACKAGE, FIELD)
+        controller.inputViewStart()
+        scheduler.drain()
+        input.say()
+        await { frame().preview == "word" }
+        controller.cancelAndReturn()
+        controller.onDiscardAction()
+        awaitDiscardFinal()
+        assertIdlePanel()
+        assertEquals(R.string.retention_field_off, frame().notice)
+    }
+
+    /** Cancel during the Stop wait holds the result before it is written; Keep finishing releases it: one insertion. */
+    @Test fun cancelDuringTheStopWaitHoldsThePreparedTextUntilKept() {
+        recordingWithSpeech()
+        controller.microphonePressed()
+        controller.cancelAndReturn()
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        assertEquals("finishing_choice", status())
+        assertEquals("Back is the safe action", R.string.keep_finishing, frame().backLabel)
+        assertFalse("the choice replaces the Preparing arc", frame().preparing)
+        awaitTextPrepared()
+        assertNothingWritten()
+        controller.onSafeAction()
+        assertEquals(null, frame().choice)
+        await { host.returns == 1 }
+        awaitTakeEnded()
+        assertEquals(listOf("word"), field.written)
+        assertEquals(HistoryDelivery.ACCEPTED, historyRows().single().delivery)
+        assertEquals("idle", status())
+        assertEquals("the Stop wait is not paused: only Stop stopped the recording", 1, input.stops.get())
+    }
+
+    @Test fun systemBackOnTheFinishingChoiceKeepsFinishing() {
+        recordingWithSpeech()
+        controller.microphonePressed()
+        assertTrue(controller.backKey())
+        assertEquals(PanelChoice.FINISHING, frame().choice)
+        awaitTextPrepared()
+        assertNothingWritten()
+        assertTrue(controller.backKey())
+        assertEquals(null, frame().choice)
+        await { host.returns == 1 }
+        assertEquals(listOf("word"), field.written)
+    }
+
+    /**
+     * Without a take the Back arrow hands back to the previous keyboard (device trace 2026-11-11: it left
+     * this input method selected); the system Back key is not the take's then, and Android hides the panel.
+     */
+    @Test fun withoutATakeTheBackArrowHandsBackAndSystemBackIsLeftToAndroid() {
+        host.permission = false
+        openPanel()
+        assertEquals(0, opened)
+        assertFalse(controller.backKey())
+        assertEquals(0, host.returns)
+        controller.cancelAndReturn()
+        assertEquals(1, host.returns)
+        // Also once a take ended on the panel (a discard): Back belongs to the live editor session.
+        host.permission = true
+        controller.microphonePressed()
+        scheduler.drain()
+        controller.cancelAndReturn()
+        controller.onDiscardAction()
+        awaitTakeEnded()
+        assertFalse(controller.backKey())
+        controller.cancelAndReturn()
+        assertEquals(2, host.returns)
+        assertEquals(1, opened)
+    }
+
+    /**
+     * An interrupted take keeps finishing into History and has no choice: the system Back key is taken
+     * and does nothing, the Back arrow only leaves.
+     */
+    @Test fun onAnInterruptedTakeSystemBackDoesNothingAndTheBackArrowOnlyLeaves() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        hidePanel()
+        assertTrue(controller.takeActive)
+        val shown = frame()
+        assertTrue(controller.backKey())
+        assertEquals(shown, frame())
+        assertEquals(0, host.returns)
+        controller.cancelAndReturn()
+        assertEquals(1, host.returns)
+        assertEquals(shown, frame())
+        assertEquals(null, frame().choice)
+        gate.countDown()
+        awaitInterruptedInHistory()
+        assertEquals(emptyList<String>(), field.written)
+        assertEquals(1, input.stops.get())
+    }
+
+    /** Guard: Continue, Stop and insert, Keep and Discard act only on the choice that offers them. */
+    @Test fun theChoiceActionsDoNothingWithoutTheChoiceThatOffersThem() {
+        recordingWithSpeech()
+        val recording = frame()
+        controller.onSafeAction()
+        controller.chooseStop()
+        controller.onDiscardAction()
+        assertEquals(recording, frame())
+        assertTrue(controller.takeActive)
+        assertEquals(0, input.stops.get())
+        // The Stop wait offers Keep and Discard only: Stop and insert does nothing there.
+        controller.microphonePressed()
+        controller.cancelAndReturn()
+        val choice = frame()
+        controller.chooseStop()
+        assertEquals(choice, frame())
+        awaitTextPrepared()
+        assertNothingWritten()
+        controller.onSafeAction()
+        await { host.returns == 1 }
+        assertEquals(listOf("word"), field.written)
+    }
+
+    /** Guard: one choice at a time, and Stop is pressed once: the microphone disk does nothing while the take is paused or finishing. */
+    @Test fun aSecondStopDuringTheStopWaitOrItsChoiceChangesNothing() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        controller.microphonePressed()
+        val finishing = frame()
+        controller.microphonePressed()
+        assertEquals(finishing, frame())
+        controller.cancelAndReturn()
+        val choice = frame()
+        controller.microphonePressed()
+        assertEquals(choice, frame())
+        gate.countDown()
+        awaitTextPrepared()
+        assertNothingWritten()
+        controller.cancelAndReturn()
+        await { host.returns == 1 }
+        assertEquals(listOf("word"), field.written)
+        assertEquals(1, input.stops.get())
+    }
+
+    /** A recording the platform cannot stop cannot pause: Cancel is then a system interruption, and the audio so far goes to History. */
+    @Test fun aTakeThatCannotPauseIsInterruptedInsteadOfPaused() {
+        recordingWithSpeech()
+        input.stopFails = true
+        controller.cancelAndReturn()
+        assertEquals(null, frame().choice)
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+    }
+
+    /** A paused recording the platform cannot start again cannot continue: Continue is then a system interruption. */
+    @Test fun aPausedTakeThatCannotResumeIsInterruptedIntoHistory() {
+        recordingWithSpeech()
+        controller.cancelAndReturn()
+        input.restartFails = true
+        controller.onSafeAction()
+        assertEquals(null, frame().choice)
+        assertEquals("stopping", status())
+        awaitInterruptedInHistory()
+        assertNothingWritten()
+        assertEquals(1, opened)
+    }
+
+    /**
+     * Back while a discarded take's microphone is still being released: the take is not in the Stop wait
+     * any more and cannot pause, so Back opens no choice and the discard stays final. (As before the
+     * controller, Back counts as an interruption here and ends the input session: the Back arrow hands
+     * back again only after the next input start.)
+     */
+    @Test fun backWhileADiscardedTakesMicrophoneIsStillReleasedOpensNoChoice() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        recordingWithSpeech()
+        controller.microphonePressed()
+        controller.cancelAndReturn()
+        controller.onDiscardAction()
+        assertTrue(controller.takeActive)
+        assertEquals("stopping", status())
+        assertTrue(controller.backKey())
+        assertEquals(null, frame().choice)
+        assertEquals("stopping", status())
+        assertFalse(frame().preparing)
+        gate.countDown()
+        awaitDiscardFinal()
+        assertIdlePanel()
+        controller.cancelAndReturn()
+        assertEquals(0, host.returns)
+        restartInput()
+        controller.inputViewStart()
+        controller.cancelAndReturn()
+        assertEquals(1, host.returns)
+        assertEquals(1, opened)
+    }
+
+    /** Guard: the callback order of the Cancel choices, as a table: what each input makes the controller do at its ports, in order. */
+    @Test fun theCancelChoicesCallTheirPortsInTableOrder() {
+        val gate = CountDownLatch(1)
+        input.releaseGate = gate
+        val table = listOf<Triple<String, () -> Unit, List<String>>>(
+            Triple("open and speak", { recordingWithSpeech() },
+                listOf("status:opening", "status:idle", "status:opening", "status:recording")),
+            Triple("Back arrow", { controller.cancelAndReturn() },
+                listOf("status:paused")),
+            Triple("Continue recording", { controller.onSafeAction() },
+                listOf("status:recording")),
+            Triple("system Back", { controller.backKey() },
+                listOf("status:paused")),
+            Triple("Stop and insert", { controller.chooseStop() },
+                listOf("status:finishing")),
+            Triple("system Back in the Stop wait", { controller.backKey() },
+                listOf("status:finishing_choice")),
+            Triple("text prepared", { gate.countDown(); awaitTextPrepared() },
+                emptyList()),
+            Triple("Keep finishing", { controller.onSafeAction(); awaitTakeEnded() },
+                listOf("status:finishing", "write:word", "return", "status:idle")),
+        )
+        table.forEach { (step, input, expected) ->
+            effects.clear()
+            input()
+            assertEquals(step, expected, effects.toList())
+        }
+        assertEquals(1, host.returns)
+    }
+
     private companion object {
         const val FIELD_PACKAGE = "org.example.editor"
         val FIELD = FieldIdentity(FIELD_PACKAGE, 7, 1, 0, null, 0)
@@ -981,7 +1437,8 @@ class TakeControllerTest {
             R.string.status_unable_insert to "unable_insert", R.string.status_unconfirmed to "unconfirmed",
             R.string.status_no_permission to "no_permission", R.string.status_stopping_recording to "stopping",
             R.string.status_unable_history to "unable_history", R.string.status_unable_unsaved to "unable_unsaved",
-            R.string.status_release_failed to "release_failed",
+            R.string.status_release_failed to "release_failed", R.string.status_paused to "paused",
+            R.string.status_finishing_choice to "finishing_choice",
         ).withDefault { "status $it" }
     }
 }

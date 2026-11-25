@@ -46,7 +46,6 @@ class TakeController(
     /** The ring follows [feedback]'s live loudness; otherwise it rests. */
     private var ringLive = false
     private var captureEnded: () -> Boolean = { false }
-    private var finishing = false
     /** What the panel says and what its microphone does; stored at each change, never derived. */
     private var phase = PanelPhase.OPENING
     private var previewText = ""
@@ -85,6 +84,12 @@ class TakeController(
         var interrupted = false
         /** The panel went to rest under this take ([endLiveParts]): its capture's late callbacks change nothing. */
         var atRest = false
+        /**
+         * The Stop wait: Stop was pressed and the take waits for its text. A system interruption is not a
+         * Stop ([interrupted] says that). Discard take ends the wait at once, also while the microphone is
+         * still being released ([chooseDiscard]).
+         */
+        var stopWait = false
     }
     /** The newest take's record, also after it ended; null before the first take. */
     private var latest: Take? = null
@@ -171,9 +176,12 @@ class TakeController(
     /** The current take was ended by a system interruption (it can still be active while it finishes into History). */
     private val interrupted: Boolean get() = latest?.interrupted == true
 
+    /** The current take is in the Stop wait (it may be interrupted there, and then finishes into History). */
+    private val stopWait: Boolean get() = latest?.stopWait == true
+
     /** Android may silence a client whose window is hidden; a silenced hold cannot keep listening. */
     fun recordingConfigChanged(silenced: () -> Boolean) {
-        if (holding && !finishing && silenced()) silencedDuringHold()
+        if (holding && !stopWait && silenced()) silencedDuringHold()
     }
 
     /** A locked phone must not keep listening. */
@@ -277,8 +285,8 @@ class TakeController(
         rotations.observe()
         val decided = EditorEventPolicy.decide(event, TakeFacts(
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
-            capturing = takeActive && !finishing && !interrupted,
-            finishing = takeActive && finishing && !interrupted,
+            capturing = takeActive && !stopWait && !interrupted,
+            finishing = takeActive && stopWait && !interrupted,
             rotation = rotationIdentified(event)))
         // A rotation never moves a take to another app: an input start from a different package
         // ends the hold, whatever the rotation window says (no authority, no panel there).
@@ -329,7 +337,7 @@ class TakeController(
             fieldMismatch = false
             retargetSettle = true
             // A Stop pressed meanwhile gets its authority back with the panel on this field's session.
-            if (finishing) authorityMoves = true
+            if (stopWait) authorityMoves = true
             log.info("authority returned: the take's field, inside the hold")
         }
     }
@@ -352,12 +360,12 @@ class TakeController(
         }
         // An open choice is take state: the returned panel renders it again; nothing to move.
         // Stop wait: hold the result before dispatch; an accepted commit is never undone.
-        if (finishing) take?.holdDelivery(DeliveryHold.ROTATION)
+        if (stopWait) take?.holdDelivery(DeliveryHold.ROTATION)
         if (!rotationEpisode) {
             rotationEpisode = true
             gapExpiredPosted = scheduler.postDelayed(ROTATION_HOLD_GAP_MS, gapExpired)
         }
-        if (finishing) { requestOwnPanelForNewEditor(event); return } // The microphone is already off.
+        if (stopWait) { requestOwnPanelForNewEditor(event); return } // The microphone is already off.
         val silenced = host.captureSilenced()
         if (silenced) { silencedDuringHold(); return }
         requestOwnPanelForNewEditor(event)
@@ -435,14 +443,14 @@ class TakeController(
     private fun panelVisible() {
         recordingToken = session.token()
         // Stop's authority moves with the identified rotation to the session the panel returned to.
-        if (authorityMoves && finishing && !interrupted && !fieldMismatch) authority = recordingToken
+        if (authorityMoves && stopWait && !interrupted && !fieldMismatch) authority = recordingToken
         if (editorRetention.positivelyPrivate) excludeTakeFromHistory()
         if (holding) {
             holding = false
             if (!interrupted) {
                 previewAllowed = true
                 showPreview(latestPreview)
-                if (!finishing && choice == null) setRingLive(true)
+                if (!stopWait && choice == null) setRingLive(true)
             }
         }
         settleAfterRotation()
@@ -585,7 +593,6 @@ class TakeController(
                     if (result.interrupted) {
                         pendingConfirm = null
                         take = null
-                        finishing = false
                         choice = null
                         showPreview("")
                         // Whether History kept it shows on the History page; the private-field line says when it cannot.
@@ -625,7 +632,6 @@ class TakeController(
             rotations.observe()
             rotationsWhenVisible = rotations.changes
             endHoldAndForgetRotation()
-            finishing = false
             val currentFeedback = RecordingFeedback()
             feedback?.stop()
             feedback = currentFeedback
@@ -636,7 +642,7 @@ class TakeController(
             val microphoneCapture = opening.capture(onStarted = {
                 takeTrace.captureStarted()
                 scheduler.post {
-                    if (liveOnPanel(record) && takeActive && !finishing) {
+                    if (liveOnPanel(record) && takeActive && !record.stopWait && !record.interrupted) {
                         showPhase(PanelPhase.RECORDING)
                     }
                 }
@@ -680,13 +686,13 @@ class TakeController(
     }
 
     private fun stopAndInsert() {
-        if (!takeActive || finishing) return
+        if (!takeActive || stopWait || interrupted) return
         // Stop settles the take on this editor.
         if (editorRetention.excludesSettledTake) excludeTakeFromHistory()
         // Stop grants authority to the input session the visible panel is attached to.
         authority = recordingToken?.takeIf { session.matches(it) && !fieldMismatch }
         authorityMoves = false
-        finishing = true
+        latest?.stopWait = true
         render()
         feedback?.stop()
         setRingLive(false)
@@ -781,7 +787,6 @@ class TakeController(
         // A panel shown again never resumes or restarts an interrupted take by itself.
         autoStartLatched = true
         session.invalidate()
-        finishing = true
         latestPreview = ""
         showPreview("")
         feedback?.stop()
@@ -809,22 +814,18 @@ class TakeController(
     private fun interruptedPhase(): PanelPhase =
         if (outcomePending == null) PanelPhase.NOT_INSERTED else PanelPhase.NOT_INSERTED_WAITING
 
-    private fun discardTake(reason: String) {
-        if (!takeActive) return
-        rotationEvent(RotationEvent.CANCEL_REQUESTED)
-        take?.cancel(inputChanged = reason != "by user")
-        log.info("cancelled: $reason")
-    }
-
     /** The system Back key: true when the take handled it. */
     fun backKey(): Boolean {
         if (held != null) { cancelAndReturn(); return true }
-        if (takeActive) {
-            // Back on an open choice is its safe default; otherwise it opens the choice.
-            if (choice != null) chooseSafe() else if (finishing) openFinishingChoice() else openRecordingChoice()
-            return true
-        }
-        return false
+        if (!takeActive) return false
+        // Back on an open choice is its safe default; otherwise it opens the choice (an interrupted take has none).
+        if (choice != null) chooseSafe() else openChoice()
+        return true
+    }
+
+    /** Cancel on a take without an open choice: the Stop wait gets the finishing choice, a recording take is paused for its own. */
+    private fun openChoice() {
+        if (stopWait) openFinishingChoice() else openRecordingChoice()
     }
 
     /**
@@ -834,41 +835,70 @@ class TakeController(
      * this is a system interruption (History).
      */
     private fun openRecordingChoice() {
-        if (choice != null || !takeActive || finishing || interrupted) return
-        if (captureEnded()) { interruptTake(); return }
-        if (take?.pause() != true) { interruptTake(); return }
+        if (choice != null || !takeActive || stopWait || interrupted) return
+        if (!pauseForChoice()) { interruptTake(); return }
+        setRingLive(false)
+        showPhase(choicePhase(PanelChoice.RECORDING))
+    }
+
+    /** Changes take state only: pauses the capture and opens the recording choice; false when the capture already ended or cannot pause. */
+    private fun pauseForChoice(): Boolean {
+        if (captureEnded() || take?.pause() != true) return false
         diagnostics.takeEvent(RotationEvent.CAPTURE_PAUSED, latest?.number ?: 0L)
         choice = PanelChoice.RECORDING
-        setRingLive(false)
-        showPhase(PanelPhase.PAUSED)
+        return true
     }
 
     /** Cancel during the Stop wait holds the result before dispatch while the choice is open. */
     private fun openFinishingChoice() {
-        if (choice != null || !takeActive || !finishing || interrupted) return
-        if (take?.holdDelivery(DeliveryHold.FINISHING_CHOICE) != true) return
+        if (choice != null || !takeActive || !stopWait || interrupted) return
+        if (!holdForChoice()) return
+        showPhase(choicePhase(PanelChoice.FINISHING))
+    }
+
+    /** Changes take state only: holds the result for the finishing choice and opens it; false when the result can no longer be held. */
+    private fun holdForChoice(): Boolean {
+        if (take?.holdDelivery(DeliveryHold.FINISHING_CHOICE) != true) return false
         choice = PanelChoice.FINISHING
-        showPhase(PanelPhase.FINISHING_CHOICE)
+        return true
+    }
+
+    /** Picks the phase of an open choice, and changes nothing. */
+    private fun choicePhase(open: PanelChoice): PanelPhase = when (open) {
+        PanelChoice.RECORDING -> PanelPhase.PAUSED
+        PanelChoice.FINISHING -> PanelPhase.FINISHING_CHOICE
+    }
+
+    /** Picks the phase of the take a choice returned to by its safe action, and changes nothing. */
+    private fun continuedPhase(closed: PanelChoice): PanelPhase = when (closed) {
+        PanelChoice.RECORDING -> PanelPhase.RECORDING
+        PanelChoice.FINISHING -> PanelPhase.FINISHING
     }
 
     /** Continue recording (resumes the same take) or Keep finishing. Also system Back and the Back arrow. */
     private fun chooseSafe() {
-        when (choice) {
+        when (val open = choice) {
             PanelChoice.RECORDING -> {
-                choice = null
-                if (take?.resume() != true) { render(); interruptTake(); return }
-                diagnostics.takeEvent(RotationEvent.CAPTURE_RESUMED, latest?.number ?: 0L)
-                showPhase(PanelPhase.RECORDING)
+                if (!resumeFromChoice()) { render(); interruptTake(); return }
+                showPhase(continuedPhase(open))
                 if (!holding) setRingLive(true)
             }
             PanelChoice.FINISHING -> {
                 choice = null
-                showPhase(PanelPhase.FINISHING)
+                showPhase(continuedPhase(open))
                 // A rotation that still holds the result releases it once the panel has settled.
                 take?.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
             }
             null -> Unit
         }
+    }
+
+    /** Changes take state only: closes the recording choice and resumes the same capture; false when it cannot resume. */
+    private fun resumeFromChoice(): Boolean {
+        choice = null
+        if (take?.resume() != true) return false
+        diagnostics.takeEvent(RotationEvent.CAPTURE_RESUMED, latest?.number ?: 0L)
+        return true
     }
 
     /** Stop and insert: exactly Stop, from the paused take. */
@@ -893,6 +923,8 @@ class TakeController(
         MicrophoneOwner.requireExplicitStart()
         current.cancel()
         log.info("cancelled: by user")
+        // The take stays active until its microphone is released, and is not in the Stop wait meanwhile.
+        latest?.stopWait = false
         showIdle()
     }
 
@@ -901,7 +933,7 @@ class TakeController(
         phase = phase,
         choice = choice,
         running = takeActive && !interrupted,
-        finishing = finishing,
+        finishing = stopWait,
         held = held?.panel,
         preview = previewText,
         privateField = takeRetentionEligible == false,
@@ -933,13 +965,14 @@ class TakeController(
             return
         }
         if (choice != null) { chooseSafe(); return }
-        if (takeActive && !interrupted) { if (finishing) openFinishingChoice() else openRecordingChoice(); return }
+        if (takeActive && !interrupted) { openChoice(); return }
         render()
         // An interrupted take keeps finishing into History; Back only leaves.
         if (takeActive) { host.returnToKeyboard(); return }
         // Idle (no take, or it already ended): Back belongs to the live editor session.
         val token = recordingToken ?: session.token()
-        discardTake("by user"); showIdle(); if (session.matches(token)) host.returnToKeyboard()
+        showIdle()
+        if (session.matches(token)) host.returnToKeyboard()
     }
 
     /**
@@ -1014,13 +1047,12 @@ class TakeController(
         render()
     }
 
-    /** Changes take state only: nothing of the take is live on the panel any more (ring, Stop wait, preview). */
+    /** Changes take state only: nothing of the take is live on the panel any more (ring, preview). */
     private fun endLiveParts() {
         latest?.atRest = true
         feedback?.stop()
         feedback = null
         ringLive = false
-        finishing = false
         previewText = PanelPreview.tail(held?.text ?: "")
         if (!takeActive) releaseRetry = false
     }
