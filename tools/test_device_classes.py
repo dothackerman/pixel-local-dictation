@@ -33,7 +33,8 @@ class DeviceClassTests(unittest.TestCase):
                         'ch.og.dictation.ReplayKt': 'helper', 'ch.og.dictation.labrun.PipelineRun': 'lab_run',
                         'ch.og.dictation.labrun.LabRun': 'helper'},
             'retired': {'ch.og.dictation.SpikeTest': 'wrote into owner recordings'},
-            'phoneBatch': {'batch': ['ch.og.dictation.ReadyTest'], 'freshProcess': ['ch.og.dictation.ColdTest']}}
+            'phoneBatch': {'batch': {'ch.og.dictation.ReadyTest': 'the real phone'},
+                           'freshProcess': {'ch.og.dictation.ColdTest': 'a fresh process'}}}
         self.write('ReadyTest.kt', TEST % 'ReadyTest')
         self.write('ColdTest.kt', TEST % 'ColdTest')
         self.write('OwnerScript.kt', TEST % 'OwnerScript')
@@ -70,10 +71,10 @@ class DeviceClassTests(unittest.TestCase):
 
     def test_a_classified_class_that_is_gone_and_an_unknown_kind_fail(self):
         self.listing['classes']['ch.og.dictation.GoneTest'] = 'test'
-        self.listing['phoneBatch']['batch'].append('ch.og.dictation.GoneTest')
+        self.listing['phoneBatch']['batch']['ch.og.dictation.GoneTest'] = 'gone'
         self.assert_one_problem('ch.og.dictation.GoneTest', 'no such class')
         del self.listing['classes']['ch.og.dictation.GoneTest']
-        self.listing['phoneBatch']['batch'].pop()
+        del self.listing['phoneBatch']['batch']['ch.og.dictation.GoneTest']
         self.listing['classes']['ch.og.dictation.Keys'] = 'probe'
         self.assert_one_problem('ch.og.dictation.Keys', 'unknown kind')
 
@@ -88,25 +89,38 @@ class DeviceClassTests(unittest.TestCase):
             with self.subTest(kind):
                 self.write('labrun/Misplaced.kt', (TEST % 'Misplaced').replace('package ch.og.dictation', 'package ch.og.dictation.labrun'))
                 self.listing['classes']['ch.og.dictation.labrun.Misplaced'] = kind
-                self.listing['phoneBatch']['batch'] = ['ch.og.dictation.ReadyTest'] + (
-                    ['ch.og.dictation.labrun.Misplaced'] if kind == 'test' else [])
+                self.listing['phoneBatch']['batch'] = {'ch.og.dictation.ReadyTest': 'the real phone', **(
+                    {'ch.og.dictation.labrun.Misplaced': 'misplaced'} if kind == 'test' else {})}
                 self.assert_one_problem('ch.og.dictation.labrun.Misplaced', 'sits in the Lab run package')
 
     def test_a_lab_run_in_the_phone_batch_fails(self):
         for part in ('batch', 'freshProcess'):
             with self.subTest(part):
-                self.listing['phoneBatch'][part].append('ch.og.dictation.labrun.PipelineRun')
+                self.listing['phoneBatch'][part]['ch.og.dictation.labrun.PipelineRun'] = 'measures'
                 self.assert_one_problem('ch.og.dictation.labrun.PipelineRun', 'phone batch', 'lab_run')
-                self.listing['phoneBatch'][part].pop()
+                del self.listing['phoneBatch'][part]['ch.og.dictation.labrun.PipelineRun']
 
     def test_guided_checks_and_helpers_stay_out_of_the_batch_and_every_test_is_in_it_once(self):
-        self.listing['phoneBatch']['batch'].append('ch.og.dictation.OwnerScript')
+        self.listing['phoneBatch']['batch']['ch.og.dictation.OwnerScript'] = 'the owner'
         self.assert_one_problem('ch.og.dictation.OwnerScript', 'guided_check')
-        self.listing['phoneBatch']['batch'] = []
+        self.listing['phoneBatch']['batch'] = {}
         self.assert_one_problem('ch.og.dictation.ReadyTest', 'not in the phone batch')
-        self.listing['phoneBatch'] = {'batch': ['ch.og.dictation.ReadyTest', 'ch.og.dictation.ColdTest'],
-                                      'freshProcess': ['ch.og.dictation.ColdTest']}
+        self.listing['phoneBatch'] = {'batch': {'ch.og.dictation.ReadyTest': 'the real phone', 'ch.og.dictation.ColdTest': 'twice'},
+                                      'freshProcess': {'ch.og.dictation.ColdTest': 'a fresh process'}}
         self.assert_one_problem('ch.og.dictation.ColdTest', 'more than once')
+
+    def test_every_phone_batch_entry_names_why_it_needs_the_phone(self):
+        for part, name in (('batch', 'ch.og.dictation.ReadyTest'), ('freshProcess', 'ch.og.dictation.ColdTest')):
+            for reason in ('', '  ', None):
+                with self.subTest(part=part, reason=reason):
+                    kept = self.listing['phoneBatch'][part][name]
+                    self.listing['phoneBatch'][part][name] = reason
+                    self.assert_one_problem(name, 'phone batch', 'without a reason')
+                    self.listing['phoneBatch'][part][name] = kept
+
+    def test_a_phone_batch_written_as_a_bare_list_fails(self):
+        self.listing['phoneBatch']['batch'] = ['ch.og.dictation.ReadyTest']
+        self.assert_one_problem('phoneBatch', 'batch', 'reason')
 
     def test_a_helper_with_tests_and_a_test_without_any_fail(self):
         self.listing['classes']['ch.og.dictation.OwnerScript'] = 'helper'
@@ -121,7 +135,7 @@ class DeviceClassTests(unittest.TestCase):
         del self.listing['retired']['ch.og.dictation.OldTest']
         self.write('SpikeTest.kt', TEST % 'SpikeTest')
         self.listing['classes']['ch.og.dictation.SpikeTest'] = 'test'
-        self.listing['phoneBatch']['batch'].append('ch.og.dictation.SpikeTest')
+        self.listing['phoneBatch']['batch']['ch.og.dictation.SpikeTest'] = 'spike'
         self.assert_one_problem('ch.og.dictation.SpikeTest', 'retired but still')
 
     def test_lab_run_code_that_reads_another_folder_than_the_lab_folder_fails(self):
@@ -163,6 +177,16 @@ class ThisCheckoutTests(unittest.TestCase):
         self.assertTrue(runs[0].startswith('ch.og.dictation.PhoneReadyTest,'))
         self.assertEqual(runs[1:], ['ch.og.dictation.ColdSettingsTest', 'ch.og.dictation.HistoryProcessTest'])
         self.assertFalse(any('.labrun.' in run for run in runs))
+
+    def test_the_final_phone_batch_is_the_seven_checks_that_need_the_real_phone(self):
+        batch = json.loads((ROOT / device_classes.CLASSIFICATION).read_text())['phoneBatch']
+        self.assertEqual(sorted(batch['batch']), ['ch.og.dictation.DictionarySettingsTest', 'ch.og.dictation.NormalBaselineTest',
+                                                  'ch.og.dictation.PhoneReadyTest', 'ch.og.dictation.RotationContinuityDemoTest',
+                                                  'ch.og.dictation.RotationFinishingDemoTest'])
+        self.assertEqual(sorted(batch['freshProcess']), ['ch.og.dictation.ColdSettingsTest', 'ch.og.dictation.HistoryProcessTest'])
+        for name in ('RotationContinuityDemoTest', 'RotationFinishingDemoTest'):
+            text = (ROOT / SOURCES / (name + '.kt')).read_text()
+            self.assertEqual(text.count('@Test'), 1, name + ' keeps one case through FUTO\'s key')
 
     def test_the_replay_spike_is_retired(self):
         listing = json.loads((ROOT / device_classes.CLASSIFICATION).read_text())

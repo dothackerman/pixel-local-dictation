@@ -7,7 +7,8 @@
   guided_check   a script the owner performs on the lab build; started by hand, never in the batch
   helper         shared code without tests of its own
 `retired` names classes that are gone, each with its reason. `phoneBatch` is the named phone batch: the
-classes of the one batched run, and the classes that each need a fresh process of their own.
+classes of the one batched run, and the classes that each need a fresh process of their own; each maps to
+the reason it needs the real phone (ADR-028: what the laptop can check runs on the laptop).
 
 A file without a top-level class is named after its file, as Kotlin does (`SessionReplayKt`).
 
@@ -71,6 +72,10 @@ def problems(root=ROOT):
     batch, fresh = listing['phoneBatch']['batch'], listing['phoneBatch']['freshProcess']
     classes = device_classes(root)
     found = []
+    for part in ('batch', 'freshProcess'):
+        if not isinstance(listing['phoneBatch'][part], dict):
+            found.append(f'{CLASSIFICATION}: phoneBatch.{part} maps each class to the reason it needs the real phone')
+    batch, fresh = (part if isinstance(part, dict) else dict.fromkeys(part, 'unknown') for part in (batch, fresh))
     inside = lambda name: classes[name][0] == package or classes[name][0].startswith(package + '.')
     for name in sorted(classes):
         _, text, path = classes[name]
@@ -104,10 +109,13 @@ def problems(root=ROOT):
             found.append(f'{CLASSIFICATION}: {name} is retired but still exists or is still classified')
         if not str(retired[name]).strip():
             found.append(f'{CLASSIFICATION}: {name} is retired without a reason')
-    listed = batch + fresh
+    listed = list(batch) + list(fresh)
     for name in sorted(set(listed)):
         if listed.count(name) > 1:
             found.append(f'{CLASSIFICATION}: {name} is in the phone batch more than once')
+        reason = batch.get(name, fresh.get(name))
+        if not isinstance(reason, str) or not reason.strip():
+            found.append(f'{CLASSIFICATION}: {name} is in the phone batch without a reason it needs the real phone')
         if kinds.get(name) != 'test':
             found.append(f'{CLASSIFICATION}: {name} is in the phone batch but is {kinds.get(name, "not classified")}, not a test')
     for name in sorted(name for name, kind in kinds.items() if kind == 'test' and name not in listed):
