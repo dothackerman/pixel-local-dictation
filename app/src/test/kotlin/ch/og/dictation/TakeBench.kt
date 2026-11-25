@@ -68,7 +68,7 @@ class TakeBench : AutoCloseable {
         fun feed(sample: Short) { if (running) frames.add(shortArrayOf(sample)) }
     }
 
-    /** One editor field; [accepts] is what its write answers. */
+    /** One editor field; [accepts] is what its write answers, [shows] whether the written text can be read back. */
     private inner class Field(service: DictationImeService) : BaseInputConnection(View(service), false) {
         private val content = StringBuilder()
         override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
@@ -77,7 +77,7 @@ class TakeBench : AutoCloseable {
             if (accepted) content.append(text)
             return accepted
         }
-        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence = content.takeLast(length).toString()
+        override fun getTextBeforeCursor(length: Int, flags: Int): CharSequence = if (shows) content.takeLast(length).toString() else ""
         override fun getExtractedText(request: android.view.inputmethod.ExtractedTextRequest?, flags: Int) = null
     }
 
@@ -95,6 +95,8 @@ class TakeBench : AutoCloseable {
 
     /** What the editor's write answers. */
     var accepts = true
+    /** The written text shows in the field; false: the editor answers the write and shows nothing (yet). */
+    var shows = true
     /** Steps and the frames each one showed. */
     val lines = mutableListOf<String>()
     /** The panel shown now. */
@@ -220,6 +222,14 @@ class TakeBench : AutoCloseable {
         panel = service.window.findViewById(R.id.panel)
     }
 
+    /** The display turns, the editor restarts input and hides our panel; the panel does not come back. */
+    fun rotateAndLoseThePanel(rotation: Int, info: EditorInfo = editor()) {
+        turn(rotation)
+        service.onStartInput(info, true)
+        service.onFinishInputView(false)
+        pump()
+    }
+
     /** The user taps another field: its input starts and our panel is shown on it. */
     fun leaveTheField(info: EditorInfo = editor()) {
         service.onFinishInputView(false)
@@ -244,7 +254,7 @@ class TakeBench : AutoCloseable {
 
     private fun pump() { shadowOf(Looper.getMainLooper()).idle() }
 
-    private fun await(condition: () -> Boolean) {
+    fun await(condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
         while (!condition() && System.nanoTime() < deadline) { pump(); Thread.sleep(5) }
         pump()

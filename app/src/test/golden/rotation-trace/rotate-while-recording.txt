@@ -1,0 +1,57 @@
+> open on a text field
+SERVICE_CREATE active=false authority=false rotation=0 rotations=0
+INPUT_START active=false authority=false flag=false rotation=0 rotations=0
+INPUT_START_DONE active=false authority=false flag=false rotation=0 rotations=0 retention=ELIGIBLE
+VIEW_CREATE active=false authority=false view=1 rotation=0 rotations=0
+INPUT_VIEW_START active=false authority=false flag=false view=1 rotation=0 rotations=0
+CAPTURE_START active=false authority=false view=1 take=1 rotation=0 rotations=0
+CAPTURE_STARTED take=1
+INPUT_VIEW_START_DONE active=true authority=true flag=false view=1 take=1 rotation=0 rotations=0
+> speech
+> rotate to landscape
+DISPLAY_CHANGED active=true authority=true view=1 take=1 rotation=1 rotations=1
+DISPLAY_CHANGED active=true authority=true view=1 take=1 rotation=1 rotations=1
+CONFIGURATION active=true authority=true view=1 take=1 rotation=1 rotations=1 configDiff=536872064
+VIEW_CREATE active=true authority=true view=2 take=1 rotation=1 rotations=1
+CONFIGURATION_DONE active=true authority=true view=2 take=1 rotation=1 rotations=1
+INPUT_START active=true authority=true flag=true view=2 take=1 rotation=1 rotations=1
+FIELD_JUDGED active=true authority=false flag=true view=2 take=1 rotation=1 rotations=1 connectionChanged=false sameField=true selValid=true typeNull=false
+HOLD_ENTERED active=true authority=false view=2 take=1 rotation=1 rotations=1
+INPUT_START_DONE active=true authority=false flag=true view=2 take=1 rotation=1 rotations=1 retention=ELIGIBLE
+INPUT_VIEW_START active=true authority=false flag=false view=2 take=1 rotation=1 rotations=1
+INPUT_VIEW_START_DONE active=true authority=true flag=false view=2 take=1 rotation=1 rotations=1
+WINDOW_SHOWN active=true authority=true view=2 take=1 rotation=1 rotations=1
+> rotation settled
+HOLD_SETTLED active=true authority=true view=2 take=1 rotation=1 rotations=1
+> more speech
+> rotate back to portrait
+DISPLAY_CHANGED active=true authority=true view=2 take=1 rotation=0 rotations=2
+DISPLAY_CHANGED active=true authority=true view=2 take=1 rotation=0 rotations=2
+CONFIGURATION active=true authority=true view=2 take=1 rotation=0 rotations=2 configDiff=536872064
+VIEW_CREATE active=true authority=true view=3 take=1 rotation=0 rotations=2
+CONFIGURATION_DONE active=true authority=true view=3 take=1 rotation=0 rotations=2
+INPUT_START active=true authority=true flag=true view=3 take=1 rotation=0 rotations=2
+FIELD_JUDGED active=true authority=false flag=true view=3 take=1 rotation=0 rotations=2 connectionChanged=false sameField=true selValid=true typeNull=false
+HOLD_ENTERED active=true authority=false view=3 take=1 rotation=0 rotations=2
+INPUT_START_DONE active=true authority=false flag=true view=3 take=1 rotation=0 rotations=2 retention=ELIGIBLE
+INPUT_VIEW_START active=true authority=false flag=false view=3 take=1 rotation=0 rotations=2
+INPUT_VIEW_START_DONE active=true authority=true flag=false view=3 take=1 rotation=0 rotations=2
+WINDOW_SHOWN active=true authority=true view=3 take=1 rotation=0 rotations=2
+> rotation settled
+HOLD_SETTLED active=true authority=true view=3 take=1 rotation=0 rotations=2
+> Stop
+STOP_REQUESTED take=1
+> microphone released
+CAPTURE_RELEASED take=1
+CAPTURE_STOPPED take=1
+> text prepared
+FINAL_READY take=1
+COMMIT_ATTEMPT active=true authority=true view=3 take=1 rotation=0 rotations=2
+COMMIT_VERIFIED active=true authority=true flag=true view=3 take=1 rotation=0 rotations=2 check=1 verified=true
+COMMIT_ACCEPTED active=true authority=true view=3 take=1 rotation=0 rotations=2
+TAKE_ENDED take=1
+TERMINAL_COMPLETED take=1
+> service destroyed
+SERVICE_DESTROY active=false authority=false view=3 take=1 rotation=0 rotations=2
+INPUT_FINISH active=false authority=false view=3 take=1 rotation=0 rotations=2
+INPUT_FINISH_DONE active=false authority=false view=3 take=1 rotation=0 rotations=2
