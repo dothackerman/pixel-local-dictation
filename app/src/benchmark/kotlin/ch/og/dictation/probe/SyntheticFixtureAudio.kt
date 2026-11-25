@@ -8,13 +8,14 @@ import java.nio.ByteOrder
 
 /** Shared benchmark-only WAV reader and real-time feeder; input samples are never written. */
 object SyntheticFixtureAudio {
-    fun file(filesDir: File, fixtureId: String): File {
+    /** The fixture [fixtureId] in the lab folder [lab]. */
+    fun file(lab: File, fixtureId: String): File {
         val name = when (fixtureId) {
             "continuous" -> "recovery_continuous_60s.wav"
             "paused" -> "recovery_paused_60s.wav"
             else -> error("unknown synthetic fixture")
         }
-        return File(filesDir, "lab/issue36-inputs/$name")
+        return File(lab, "issue36-inputs/$name")
     }
 
     fun read(file: File): FloatArray {

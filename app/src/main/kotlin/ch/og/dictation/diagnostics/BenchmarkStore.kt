@@ -12,9 +12,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Benchmark mode (plan D4): the only code that writes audio to storage. Off by
- * default; when the user switches it on, each take is kept as <timestamp>.wav plus
- * <timestamp>.json under files/benchmark until he deletes it in the settings.
+ * Benchmark mode (plan D4): the only code that writes audio to storage, and only in the lab
+ * build (ADR-028). Off by default; switched on, each take is kept as <timestamp>.wav plus
+ * <timestamp>.json in Storage's recordings folder until it is deleted in the settings. Release
+ * never saves; it counts and deletes what earlier builds left.
  */
 class BenchmarkStore(private val dir: File) {
     companion object {
@@ -26,9 +27,10 @@ class BenchmarkStore(private val dir: File) {
 
         fun recordingEnabled(optIn: Boolean, liveReceipt: Boolean): Boolean = optIn && !liveReceipt
 
-        fun of(context: Context) = BenchmarkStore(File(context.filesDir, "benchmark"))
+        fun of(context: Context) = BenchmarkStore(context.wiring.storage.recordingsRoot)
 
-        fun isEnabled(context: Context): Boolean = context.wiring.storage.settings.flag(KEY_ENABLED)
+        fun isEnabled(context: Context): Boolean =
+            context.wiring.storage.let { it.savesRecordings && it.settings.flag(KEY_ENABLED) }
 
         fun setEnabled(context: Context, enabled: Boolean) = context.wiring.storage.settings.setFlag(KEY_ENABLED, enabled)
 

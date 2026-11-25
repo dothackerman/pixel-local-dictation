@@ -35,9 +35,9 @@ class RecoveryTimingTest {
 
     @Test fun safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts() {
         context.wiring.engine.warmUp().get(10, TimeUnit.MINUTES)
-        val receipts = File(context.filesDir, "lab/recovery-timing.jsonl")
+        val receipts = File(context.wiring.storage.labFolder, "recovery-timing.jsonl")
         for (fixtureId in listOf("continuous", "paused")) {
-            val wav = SyntheticFixtureAudio.file(context.filesDir, fixtureId)
+            val wav = SyntheticFixtureAudio.file(context.wiring.storage.labFolder, fixtureId)
             assertTrue("synthetic fixture missing", wav.isFile)
             val samples = SyntheticFixtureAudio.read(wav)
             val takeId = UUID.randomUUID().toString()

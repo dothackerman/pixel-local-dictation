@@ -2848,7 +2848,7 @@ class DictationProductionLifecycleTest {
         devices.add(input)
         val app = RuntimeEnvironment.getApplication()
         BenchmarkStore.setEnabled(app, benchmark)
-        val benchmarkDir = File(app.filesDir, "benchmark")
+        val benchmarkDir = app.wiring.storage.recordingsRoot
         benchmarkDir.deleteRecursively()
         val (service, view) = service(editor())
         feed(input, 1000, 1)
@@ -2882,7 +2882,7 @@ class DictationProductionLifecycleTest {
         devices.add(input)
         val app = RuntimeEnvironment.getApplication()
         BenchmarkStore.setEnabled(app, true)
-        val benchmarkDir = File(app.filesDir, "benchmark")
+        val benchmarkDir = app.wiring.storage.recordingsRoot
         benchmarkDir.deleteRecursively()
         try {
             val (service, view) = service(editor(privateField = true))
@@ -3019,7 +3019,7 @@ class DictationProductionLifecycleTest {
         devices.add(input)
         val app = RuntimeEnvironment.getApplication()
         BenchmarkStore.setEnabled(app, true)
-        val benchmarkDir = File(app.filesDir, "benchmark")
+        val benchmarkDir = app.wiring.storage.recordingsRoot
         benchmarkDir.deleteRecursively()
         try {
             val (service, view) = service(editor())
@@ -3047,7 +3047,7 @@ class DictationProductionLifecycleTest {
         devices.add(input)
         val app = RuntimeEnvironment.getApplication()
         BenchmarkStore.setEnabled(app, true)
-        val benchmarkDir = File(app.filesDir, "benchmark")
+        val benchmarkDir = app.wiring.storage.recordingsRoot
         benchmarkDir.deleteRecursively()
         var blocked: File? = null
         try {

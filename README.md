@@ -24,6 +24,7 @@ Enable the app’s input method, grant microphone permission, and enable FUTO Ke
 - **Cancel** opens a choice inside the panel. While recording, the take pauses (the microphone stops) and you choose **Continue recording** (resumes the same take), **Stop and insert**, or **Discard take**. After Stop, choose **Keep finishing** or **Discard take** while insertion is pending. Back means Continue / Keep finishing.
 - If the keyboard disappears, the phone locks, or the microphone stops unexpectedly, capture ends. Open **Settings → History** to copy recoverable text. If insertion is uncertain, check the original field before pasting.
 - Open the app’s **Settings → Dictionary** to edit vocabulary. Changes apply to later takes, not a recording already in progress.
+- The release build has no Benchmark switch and stores no audio. **Settings → Delete benchmark data** removes recordings an earlier build saved.
 
 English or German is selected automatically, with one language per take. German output uses Swiss spelling (`ss` instead of `ß`). Mixed-language conversation and speaker diarization are outside scope.
 
@@ -41,7 +42,7 @@ See [the baseline decision and evidence](docs/adr/026-dictionary-first.md) and [
 
 History keeps ordinary-field transcripts on this device until you delete them. You can delete one take or clear History. Password, no-personalized-learning and unrecognized fields show a recovery-unavailable notice. A sudden process death can lose all speech since the last saved text, including the entire take before its first checkpoint.
 
-Normal-use audio stays in memory and is discarded after the take. Benchmark recording is opt-in and visibly marked. Model downloads are separate from on-device inference.
+Audio stays in memory and is discarded after the take; the release build never writes it to storage. Benchmark recording exists only in the lab build used for phone tests, opt-in and visibly marked. Model downloads are separate from on-device inference.
 
 Personal recordings, transcripts, dictionaries, signing credentials and evaluation evidence stay outside Git. Private lab files belong in gitignored `corpus/`; do not include them in issues or pull requests.
 

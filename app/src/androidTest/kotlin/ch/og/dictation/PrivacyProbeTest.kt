@@ -31,7 +31,7 @@ class PrivacyProbeTest {
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
         val history = context.wiring.storage.historyRoot
-        val benchmark = File(context.filesDir, "benchmark")
+        val benchmark = context.wiring.storage.recordingsRoot
         HistoryIo.executor.submit {}.get()
         val beforeHistory = inventory(history)
         val beforeBenchmark = inventory(benchmark)

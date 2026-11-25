@@ -2,8 +2,8 @@
 """Host check (ADR-028): only Storage resolves app storage, writes the clipboard or runs a shell.
 
 Checked: app, lab-build and device-test sources. Storage is `ch/og/dictation/storage/` in the app's
-source sets. A banned call anywhere else needs a named exception; EXCEPTIONS holds the stores not
-yet behind Storage and shrinks with each one that moves. An exception nothing needs any more fails too.
+source sets. A banned call anywhere else needs a named exception; EXCEPTIONS is empty since every
+store is behind Storage (#80). An exception nothing needs fails too.
 
 The wrapper's excluded locations (`EXCLUDED` in tools/phone: what its fingerprint and copies leave out)
 must equal the test layout's lab folder and test folders.
@@ -43,37 +43,9 @@ RULES = {name: re.compile(pattern) for name, pattern in {
     'test-automation shell': r'\bexecuteShellCommand(Rw|Rwe)?\b|\bUiDevice\b',
 }.items()}
 
-# path -> {banned kind: the store it still reaches directly}. Stores not yet behind Storage (#73);
-# History, the Dictionary, History notices, settings and the clipboard are, so nothing here names the
-# no-backup folder, preferences or the clipboard service.
-_MAIN = 'app/src/main/kotlin/ch/og/dictation/'
-_LAB = 'app/src/benchmark/kotlin/ch/og/dictation/probe/'
-_DEVICE = 'app/src/androidTest/kotlin/ch/og/dictation/'
-EXCEPTIONS = {
-    _MAIN + 'DictationImeService.kt': {'files folder': 'lab folder'},
-    _MAIN + 'diagnostics/BenchmarkStore.kt': {'files folder': 'recordings'},
-    _MAIN + 'diagnostics/StartupTrace.kt': {'files folder': 'lab folder'},
-    _MAIN + 'recognition/Engine.kt': {'files folder': 'lab folder'},
-    _LAB + 'CheckpointProducerService.kt': {'files folder': 'lab folder'},
-    _LAB + 'EditorProbeActivity.kt': {'files folder': 'lab folder'},
-    _LAB + 'SyntheticFixtureAudio.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'DictionarySettingsTest.kt': {'files folder': 'lab folder', 'cache folder': 'scratch files'},
-    _DEVICE + 'EditorGeometryTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'GuidedVisitTest.kt': {'files folder': 'lab folder, recordings'},
-    _DEVICE + 'LabTest.kt': {'files folder': 'lab folder, recordings'},
-    _DEVICE + 'MeasurementRun.kt': {'files folder': 'lab folder, recordings', 'cache folder': 'scratch files'},
-    _DEVICE + 'NormalBaselineTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'PanelPerformanceTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'PhoneReadyTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'PipelineTest.kt': {'files folder': 'recordings'},
-    _DEVICE + 'PrivacyProbeTest.kt': {'files folder': 'recordings'},
-    _DEVICE + 'RecoveryTimingTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'ReplayTest.kt': {'files folder': 'recordings'},
-    _DEVICE + 'RotationContinuityDemoTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'RotationFinishingDemoTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'SelfRotationProbeTest.kt': {'files folder': 'lab folder'},
-    _DEVICE + 'StartupTraceTest.kt': {'files folder': 'lab folder', 'cache folder': 'scratch files'},
-}
+# path -> {banned kind: the store it still reaches directly}. Every store is behind Storage (#80), so
+# nothing is listed; a new entry needs a reason that survives review.
+EXCEPTIONS = {}
 
 
 def code(source):

@@ -30,7 +30,7 @@ class PhoneReadyTest {
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             unmet += "microphone permission not granted to the app"
         }
-        val lab = File(context.filesDir, "lab")
+        val lab = context.wiring.storage.labFolder
         for (fixture in listOf("silero_vad.onnx", "models/parakeet-v3-fp32/encoder.onnx",
             "issue36-inputs/recovery_continuous_60s.wav", "issue36-inputs/recovery_paused_60s.wav")) {
             if (!File(lab, fixture).isFile) unmet += "fixture missing: files/lab/$fixture (phone push)"

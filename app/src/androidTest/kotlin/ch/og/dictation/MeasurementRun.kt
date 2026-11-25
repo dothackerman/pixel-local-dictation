@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.scratchFolder
 import ch.og.dictation.diagnostics.NativeRoleProfiler
 import ch.og.dictation.recognition.DictationRuntime
 import ch.og.dictation.recognition.ModelFiles
@@ -29,6 +30,11 @@ import org.json.JSONObject
 
 /** Separate diagnostic protocol. LabTest's historical full-run procedure remains available. */
 class MeasurementRun(private val context: Context, private val lab: File) {
+    /** Inputs are read only from the lab folder and the test recordings folder. */
+    private fun isInput(file: File) = context.wiring.storage.let { storage ->
+        listOf(storage.labFolder, storage.recordingsRoot).any { file.toPath().startsWith(it.canonicalFile.toPath()) }
+    }
+
     /** Preflight only: keep hashing outside the historical load/timing sequence. */
     fun verifyHistorical(takes: List<File>): JSONObject {
         val manifest = JSONObject(File(lab, "historical-manifest.json").readText())
@@ -51,7 +57,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
             require(!item.has("reference")) { "historical inputs must be full takes" }
             val path = item.getString("path")
             val file = File(lab, path).canonicalFile
-            require(file.parentFile == File(context.filesDir, "benchmark").canonicalFile)
+            require(file.parentFile == context.wiring.storage.recordingsRoot.canonicalFile)
             require(expectedFiles.add(file)) { "duplicate historical input" }
             val actual = sha(file)
             require(actual == item.getString("sha256")) { "historical input mismatch: $path" }
@@ -98,7 +104,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
         val repetitions = manifest.optInt("repetitions", 1)
         require(repetitions in 1..3 && (mode == "persistent" || repetitions == 1))
         val processStart = "${Process.myPid()}:${File("/proc/self/stat").readText().substringAfterLast(") ").split(' ')[19]}"
-        val marker = File(context.cacheDir, "measurement-process")
+        val marker = File(context.wiring.storage.scratchFolder.apply { mkdirs() }, "measurement-process")
         require(!marker.exists() || marker.readText() != processStart) { "diagnostic mode requires a fresh process" }
         marker.writeText(processStart)
         val inputs = manifest.getJSONArray("inputs")
@@ -140,7 +146,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 measuredInputs.getString(path)
             } else {
                 val file = File(lab, path).canonicalFile
-                require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
+                require(isInput(file))
                 sha(file)
             }
             require(actual == item.getString("sha256")) { "input hash mismatch before inference" }
@@ -237,7 +243,7 @@ class MeasurementRun(private val context: Context, private val lab: File) {
                 for (i in 0 until inputs.length()) {
                     val item = inputs.getJSONObject(i)
                     val file = File(lab, item.getString("path")).canonicalFile
-                    require(file.toPath().startsWith(context.filesDir.canonicalFile.toPath()))
+                    require(isInput(file))
                     require(sha(file) == item.getString("sha256")) { "input hash mismatch" }
                     val inputTimeline = TimelineObserver { record(it, i, repetition) }
                     val row = runInput(runtime!!, file, item, mode != "unpaced-only", inputTimeline)

@@ -23,16 +23,16 @@ import org.junit.runner.RunWith
 /**
  * Runs the takes saved in benchmark mode through the classes the keyboard service uses
  * (Engine, VadSegmenter, TakeTranscriber), fed in recorder-sized chunks without pacing.
- * Writes files/benchmark/pipeline.json. No UI, no microphone.
+ * Writes pipeline.json into the test recordings folder. No UI, no microphone.
  */
 @RunWith(AndroidJUnit4::class)
 class PipelineTest {
     private val ctx: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val dir = File(ctx.filesDir, "benchmark")
+    private val dir = ctx.wiring.storage.recordingsRoot
 
     @Test fun savedTakesThroughTheServicePipeline() {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
-        assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
+        assumeTrue("no takes in the test recordings folder", takes.isNotEmpty())
         ctx.wiring.engine.warmUp()
         val out = JSONArray()
         for (f in takes) {

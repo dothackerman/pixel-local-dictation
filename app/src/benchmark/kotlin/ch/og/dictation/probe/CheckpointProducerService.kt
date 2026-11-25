@@ -85,7 +85,7 @@ class CheckpointProducerService : Service() {
     }
 
     private fun produceFixtureScenario(mode: String, caseId: String, fixtureId: String) {
-            val audio = SyntheticFixtureAudio.read(SyntheticFixtureAudio.file(filesDir, fixtureId))
+            val audio = SyntheticFixtureAudio.read(SyntheticFixtureAudio.file(wiring.storage.labFolder, fixtureId))
             val root = wiring.storage.testHistoryRoot("issue54-producer/$caseId")
             root.deleteRecursively()
             check(root.mkdirs() || root.isDirectory)

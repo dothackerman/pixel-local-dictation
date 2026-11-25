@@ -9,7 +9,7 @@ import java.io.File
 internal object TestLayout : StorageLayout {
     /** The speech model and test output; shared with release, which reads only the model. */
     const val LAB_FOLDER = "files/lab"
-    /** Dictionary and recordings; History; History notices; settings. */
+    /** Dictionary, recordings and scratch files; History; History notices; settings. */
     val TEST_FOLDERS = listOf("files/test", "no_backup/test",
         "shared_prefs/test_history_notices.xml", "shared_prefs/test_settings.xml")
 
@@ -29,6 +29,10 @@ internal object TestLayout : StorageLayout {
     /** In the app: the lab build never writes the system clipboard, which is the owner's. */
     override fun clipboard(system: Clipboard): Clipboard = InAppClipboard()
 
+    override fun recordingsRoot(data: AppData) = File(data.files, "test/recordings")
+    override val savesRecordings = true
+    fun scratchFolder(data: AppData) = File(data.files, "test/scratch")
+
     fun testHistoryRoot(data: AppData, name: String) =
         File(historyFolder(data), name).also { requireHistoryRoot(data, it) }
 }
@@ -47,6 +51,9 @@ fun Storage.testHistoryRoot(name: String): File = TestLayout.testHistoryRoot(dat
 
 /** This storage with History kept at the test root [name]. */
 fun Storage.withTestHistory(name: String): Storage = withHistoryRoot(testHistoryRoot(name))
+
+/** Short-lived files of device tests, inside the test folders. */
+val Storage.scratchFolder: File get() = TestLayout.scratchFolder(data)
 
 /** The text Copy put on the lab build's in-app clipboard; null before the first copy. */
 val Storage.copiedText: String? get() = (clipboard as InAppClipboard).text

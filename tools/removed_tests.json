@@ -11,5 +11,6 @@
   "ch.og.dictation.HistoryUndoDeleteTest.deleteFromDetailReturnsToTheListWithUndo": "ch.og.dictation.history.HistoryScreenTest.detailDeleteIconReturnsToTheListWithUndo",
   "ch.og.dictation.HistoryUndoDeleteTest.leavingThePageRemovesTheTranscriptWithoutWaitingForTheWindow": "ch.og.dictation.history.HistoryScreenTest.leavingThePageRemovesAPendingDelete",
   "ch.og.dictation.HistoryStartupTest.applicationStartupSurvivesCleanupFailureAndCanRetry": "ch.og.dictation.history.HistoryStoreTest.failedStartupCleanupDoesNotPreventRetryOrChangeStoredData",
-  "ch.og.dictation.HistoryStartupTest.applicationStartupRemovesAbandonedTempWithoutOpeningHistory": "ch.og.dictation.WiringTest.historyStartsOnlyInTheOwningProcess"
+  "ch.og.dictation.HistoryStartupTest.applicationStartupRemovesAbandonedTempWithoutOpeningHistory": "ch.og.dictation.WiringTest.historyStartsOnlyInTheOwningProcess",
+  "ch.og.dictation.StartupTraceTest.persistsCapturedClocksAndOwnProcessBounds": "ch.og.dictation.diagnostics.StartupTraceFileTest.persistsCapturedClocksAndOwnProcessBounds"
 }

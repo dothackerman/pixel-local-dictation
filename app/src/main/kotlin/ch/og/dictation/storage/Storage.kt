@@ -43,6 +43,10 @@ internal interface StorageLayout {
     val settings: String
     /** The clipboard Copy writes; [system] is the phone's. */
     fun clipboard(system: Clipboard): Clipboard
+    /** Benchmark recordings: a take's audio and its metadata. */
+    fun recordingsRoot(data: AppData): File
+    /** Whether this build offers the Benchmark switch and saves recordings at all. */
+    val savesRecordings: Boolean
 }
 
 /**
@@ -73,10 +77,24 @@ class Storage private constructor(
     /** The switches of the Settings page. */
     val settings: Preferences get() = data.preferences(buildLayout.settings)
 
+    /**
+     * Benchmark recordings. Release only counts and deletes what earlier builds left there; the
+     * lab build also saves into it.
+     */
+    val recordingsRoot: File get() = buildLayout.recordingsRoot(data)
+
+    /** False in release: no Benchmark switch, no recording saved, whatever the settings hold. */
+    val savesRecordings: Boolean get() = buildLayout.savesRecordings
+
+    /** The lab folder: the speech model, which both builds read, and the lab build's test output. */
+    val labFolder: File get() = File(data.files, LAB_FOLDER)
+
     /** The same storage with History kept at [root]; the layout refuses a root outside its folders. */
     internal fun withHistoryRoot(root: File) = Storage(data, root, clipboard)
 
     companion object {
+        private const val LAB_FOLDER = "lab"
+
         fun forApp(context: Context) = context.applicationContext.let { app ->
             of(AppData(app.filesDir, app.noBackupFilesDir,
                 { name -> AndroidPreferences(app.getSharedPreferences(name, Context.MODE_PRIVATE)) },

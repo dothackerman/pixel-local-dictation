@@ -76,15 +76,10 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(['app/src/main/kotlin/Gone.kt: exception no longer needed: files folder (lab folder)'],
                          storage_guard.problems(self.tree({}), {'app/src/main/kotlin/Gone.kt': {'files folder': 'lab folder'}}))
 
-    def test_this_tree_passes_with_only_the_named_exceptions(self):
+    def test_this_tree_passes_without_any_exception(self):
+        """Every store is behind Storage (#80): app, lab-build and device-test sources reach none directly."""
+        self.assertEqual({}, storage_guard.EXCEPTIONS)
         self.assertEqual([], storage_guard.problems())
-        self.assertEqual(set(), {rule for rules in storage_guard.EXCEPTIONS.values() for rule in rules}
-                         - set(storage_guard.RULES))
-        self.assertFalse(any('no-backup folder' in rules for rules in storage_guard.EXCEPTIONS.values()),
-                         'History is behind Storage: nothing else names the no-backup folder')
-        for rule, store in (('preferences', 'History notices and settings'), ('clipboard service', 'the clipboard')):
-            self.assertFalse(any(rule in rules for rules in storage_guard.EXCEPTIONS.values()),
-                             f'{store}: behind Storage: no exception for the {rule}')
 
     def test_a_manifest_without_the_build_marker_fails(self):
         entry = '<meta-data android:name="ch.og.dictation.build" android:value="${buildMarker}" />'

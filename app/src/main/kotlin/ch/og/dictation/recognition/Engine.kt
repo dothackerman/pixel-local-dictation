@@ -115,7 +115,7 @@ class Engine(
          */
         fun forApp(context: Context, storage: Storage): Engine {
             val app = context.applicationContext
-            val runtimes = AppRuntimes(app)
+            val runtimes = AppRuntimes(app, storage.labFolder)
             return Engine({ DictionaryStore(storage.dictionaryRoot, runtimes.provisionedDictionary()) }, { app.resources.getBoolean(R.bool.benchmark_receipts) }, runtimes)
         }
 
@@ -129,14 +129,14 @@ class Engine(
     }
 }
 
-/** The app's runtimes: decode queue, dictionary leases and provisioning under `files/lab`. */
-private class AppRuntimes(private val app: Context) : Engine.Runtimes {
+/** The app's runtimes: decode queue, dictionary leases and provisioning in the lab folder. */
+private class AppRuntimes(private val app: Context, private val labFolder: File) : Engine.Runtimes {
     /** Serial: model load first, then segments in order. */
     private val decodeQueue: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "decode") }
     private val dictionaryModels = DictionaryModelLeases()
     override val modelLoads: Int get() = dictionaryModels.loads
 
-    private fun lab() = File(app.filesDir, "lab")
+    private fun lab() = labFolder
     private fun acceptance() =
         org.json.JSONObject(app.resources.openRawResource(R.raw.candidate_a).bufferedReader().use { it.readText() })
 

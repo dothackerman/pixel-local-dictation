@@ -39,7 +39,7 @@ import org.junit.runner.RunWith
 class RotationContinuityDemoTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
+    private val traceFile = File(context.wiring.storage.labFolder, "rotation-probe.jsonl")
 
     @Test fun keptEditorKeepsTakeAndStopInsertsOnce() = demo("demo52-keep", keep = true)
     @Test fun recreatedHiddenEditorGetsPanelBackAndStopInsertsOnce() = demo("demo52-hidden", keep = false)
@@ -134,7 +134,7 @@ class RotationContinuityDemoTest {
         }
         val futo = currentIme()
         assertTrue("current keyboard must be FUTO before the demo (${keys.selection()})", isFuto(futo))
-        val fixture = SyntheticFixtureAudio.file(context.filesDir, "continuous")
+        val fixture = SyntheticFixtureAudio.file(context.wiring.storage.labFolder, "continuous")
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         val starts = AtomicInteger()
@@ -235,8 +235,8 @@ class RotationContinuityDemoTest {
                 .put("otherFieldWritten", otherInserted.isNotEmpty())
                 .put("futoRestored", currentIme() == futo)
                 .put("serviceDestroyed", rows(run).any { it.getString("event") == "SERVICE_DESTROY" })
-            File(context.filesDir, "lab/issue52").mkdirs()
-            File(context.filesDir, "lab/issue52/demo-$case-$run.json").writeText(summary.toString(2))
+            File(context.wiring.storage.labFolder, "issue52").mkdirs()
+            File(context.wiring.storage.labFolder, "issue52/demo-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertEquals(1, captures)
             assertEquals(1, starts.get())

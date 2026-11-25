@@ -30,7 +30,7 @@ import org.junit.runner.RunWith
 class SelfRotationProbeTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
+    private val traceFile = File(context.wiring.storage.labFolder, "rotation-probe.jsonl")
 
     @Test fun keepFocusDuringCapture() = probe("self-keep-capture", keep = true, finishing = false)
     @Test fun keepFocusDuringStopWait() = probe("self-keep-finishing", keep = true, finishing = true)
@@ -125,8 +125,8 @@ class SelfRotationProbeTest {
             marks.close()
             val complete = RotationTrace.finishProbe(10_000)
             val summary = summarize(rows(run), panelBack, editorVisible).put("explicitStartTapped", explicitStart)
-            File(context.filesDir, "lab/issue56").mkdirs()
-            File(context.filesDir, "lab/issue56/probe-$case-$run.json").writeText(summary.toString(2))
+            File(context.wiring.storage.labFolder, "issue56").mkdirs()
+            File(context.wiring.storage.labFolder, "issue56/probe-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertTrue("trace incomplete", complete)
             assertTrue("keyboard not restored to FUTO (${keys.selection()})", currentIme() == futo)

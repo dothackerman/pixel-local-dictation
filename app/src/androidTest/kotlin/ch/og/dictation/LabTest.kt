@@ -31,7 +31,7 @@ import org.junit.runner.RunWith
 /**
  * Stage 2 of the experiment loop: runs the variant that `phone push DIR`
  * put under files/lab/ through the app's own classes (Pipeline, VadSegmenter,
- * TakeTranscriber) on the takes saved in files/benchmark, and writes files/lab/result.json:
+ * TakeTranscriber) on the takes in the test recordings folder, and writes files/lab/result.json:
  * chunk texts and decode times for every take (fed unpaced, 640 samples at a time, like the
  * laptop twin), a paced run of the longest and the shortest take for the wait after Stop,
  * peak memory, thermal status. No UI, no microphone, nothing leaves the phone.
@@ -42,8 +42,8 @@ class LabTest {
     private val tag = "LabTest"
     private val rate = SAMPLE_RATE
     private val ctx: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val takesDir = File(ctx.filesDir, "benchmark")
-    private val labDir = File(ctx.filesDir, "lab")
+    private val takesDir = ctx.wiring.storage.recordingsRoot
+    private val labDir = ctx.wiring.storage.labFolder
 
     @Test fun variantOnSavedTakes() {
         if (File(labDir, "measurement.json").isFile) {
@@ -51,7 +51,7 @@ class LabTest {
             return
         }
         val takes = takesDir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
-        assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
+        assumeTrue("no takes in the test recordings folder", takes.isNotEmpty())
         val variantFile = File(labDir, "variant.json")
         assumeTrue("no files/lab/variant.json: run phone push DIR first", variantFile.isFile)
         val v = Variant.parse(variantFile.readText())

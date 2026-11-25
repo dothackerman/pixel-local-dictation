@@ -39,7 +39,7 @@ class EditorGeometryTest {
             assertTrue("no laid-out editor geometry captured", receipt.geometryRows > 0)
             assertTrue("current keyboard never became visible; collection insufficient", receipt.sawIme)
             assertEquals("collection must reach its bounded observation deadline", "duration", receipt.reason)
-            val rows = LabReceipts.lines(File(instrumentation.targetContext.filesDir, "lab/editor-geometry.jsonl"))
+            val rows = LabReceipts.lines(File(instrumentation.targetContext.wiring.storage.labFolder, "editor-geometry.jsonl"))
                 .map { JSONObject(it) }
             val start = rows.last { it.getString("phase") == "start" }.getLong("runStartNs")
             val run = rows.filter { it.getLong("runStartNs") == start }
@@ -58,8 +58,8 @@ class EditorGeometryTest {
             }
             assertEquals("start", run.first().getString("phase"))
             assertEquals("end", run.last().getString("phase"))
-            assertTrue("receipt file exceeds byte budget", File(instrumentation.targetContext.filesDir,
-                "lab/editor-geometry.jsonl").length() <= LabReceipts.MAX_BYTES)
+            assertTrue("receipt file exceeds byte budget", File(instrumentation.targetContext.wiring.storage.labFolder,
+                "editor-geometry.jsonl").length() <= LabReceipts.MAX_BYTES)
             val geometry = run.filter { it.getString("phase") == "geometry" }
             assertEquals(receipt.geometryRows, geometry.size)
             assertTrue(geometry.size <= 4096)

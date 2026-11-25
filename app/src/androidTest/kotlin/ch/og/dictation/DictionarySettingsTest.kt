@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.scratchFolder
 import ch.og.dictation.dictionary.DictionaryActivity
 import ch.og.dictation.dictionary.DictionaryModel
 import ch.og.dictation.dictionary.DictionarySnapshot
@@ -44,14 +45,14 @@ class DictionarySettingsTest {
                 model.state.observe(activity) { if (!it.busy) loaded.countDown() }
             }
             check(loaded.await(30, java.util.concurrent.TimeUnit.SECONDS)) { "Unlock the phone and keep the editor foregrounded." }
-            val file = File(context.cacheDir, "dictionary-ui-synthetic.txt").apply { writeText("Bärlauch\nGrapheneOS\nMatterhorn\nSBB Mobile\nZürich HB\n") }
+            val file = File(context.wiring.storage.scratchFolder.apply { mkdirs() }, "dictionary-ui-synthetic.txt").apply { writeText("Bärlauch\nGrapheneOS\nMatterhorn\nSBB Mobile\nZürich HB\n") }
             val snapshot = DictionarySnapshot(file, ArtifactFiles.hash(file), file.readLines(), true)
             instrumentation.runOnMainSync {
                 val model = androidx.lifecycle.ViewModelProvider(activity)[DictionaryModel::class.java]
                 model.state.value = DictionaryModel.State(snapshot, busy = false)
             }
             settle()
-            val out = File(context.filesDir, "lab/dictionary-settings").apply { mkdirs() }
+            val out = File(context.wiring.storage.labFolder, "dictionary-settings").apply { mkdirs() }
             instrumentation.runOnMainSync {
                 val list = activity.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.dictionary_list)
                 assertEquals(5, list.adapter!!.itemCount)

@@ -1,5 +1,6 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.wiring
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.history.message
 import android.app.Activity
@@ -172,7 +173,7 @@ class EditorProbeActivity : Activity(), Choreographer.FrameCallback {
             .put("ns", System.nanoTime()).put("mode", mode).put("phase", phase).put("values", values)
             .toString() + "\n"
         writer.execute {
-            if (writeFailure.get() == null && !LabReceipts.append(File(filesDir, "lab/editor-geometry.jsonl"), line))
+            if (writeFailure.get() == null && !LabReceipts.append(File(wiring.storage.labFolder, "editor-geometry.jsonl"), line))
                 writeFailure.compareAndSet(null, "write failed; LabReceipts logged the cause")
         }
     }

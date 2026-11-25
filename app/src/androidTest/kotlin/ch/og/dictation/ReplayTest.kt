@@ -25,18 +25,18 @@ import org.junit.runner.RunWith
 /**
  * Throwaway spike for ADR-003 (milestone 2 step 1 of the October plan, Git history before 7319ccd): replays the takes
  * the user saved in benchmark mode through Parakeet v3 INT8 and writes the numbers the
- * gate asks for to files/benchmark/spike-<model>.json and the log. No UI, no microphone.
+ * gate asks for to spike-<model>.json in the test recordings folder and the log. No UI, no microphone.
  */
 @RunWith(AndroidJUnit4::class)
 class ReplayTest {
     private val tag = "ReplayTest"
     private val rate = 16_000
     private val ctx: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val dir = File(ctx.filesDir, "benchmark")
+    private val dir = ctx.wiring.storage.recordingsRoot
 
     @Test fun spike() {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
-        assumeTrue("no takes in files/benchmark", takes.isNotEmpty())
+        assumeTrue("no takes in the test recordings folder", takes.isNotEmpty())
         // Every model directory the build carries; since ADR-003 that is the shipped one only.
         for (model in listOf("parakeet-v3", "parakeet-v3-matmul8")) {
             if (ctx.assets.list(model).isNullOrEmpty()) continue

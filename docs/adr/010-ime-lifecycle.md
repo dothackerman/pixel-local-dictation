@@ -216,3 +216,10 @@ Signal after a rotation leaves input focus on a view that is not a text editor: 
 - **Read-back** (takes that went through a rotation hold only): after the write the text before the cursor must end with the last up to 64 committed characters (whitespace normalized), or the extracted text must have grown by the committed length; checked at once and once more after about 100 ms, without blocking the main thread. If neither holds, the take is not reported inserted, the keyboard is not handed back as if it were, and the text is held with "Could not confirm the insert. Check the field, or copy the text." A pass at the second look counts as inserted (the History receipt the rejected write left is corrected to inserted, and the trace reports the take as completed). The mark for this held state is "Insertion uncertain". A lock during the second-look wait locks the take like any other. Takes without a rotation are not read back.
 - The benchmark trace records only booleans and integers: per input start (`sameField`, `typeNull`, `selValid`, `connectionChanged`) and per read-back (`verified`, `check`). No text, field id or package.
 - Not covered: a field that is the same by these attributes but is another instance of the same kind (two identical id-less fields in one app).
+
+## Amendment — daily build (2026-11-25, ADR-028)
+
+Release is the owner's daily build and the product only. "Benchmark storage is opt-in, visible and
+deletable" now applies to the lab build only; release has no Benchmark switch and saves no benchmark
+recordings. Recordings saved before this amendment stay on the phone as owner data; release keeps the
+control that deletes them.

@@ -52,9 +52,9 @@ class ReleaseStorageTest {
         app.getSharedPreferences("history_notices", 0).edit().putStringSet("pending", setOf("INCOMPLETE")).commit()
         app.getSharedPreferences("settings", 0).edit().putBoolean("benchmark", true).commit()
         assertEquals(setOf(HistoryNotice.INCOMPLETE), historyNotices(app).pending())
-        assertTrue(BenchmarkStore.isEnabled(app))
+        assertTrue(app.wiring.storage.settings.flag("benchmark"))
         historyNotices(app).record(HistoryNotice.SAVE)
-        BenchmarkStore.setEnabled(app, false)
+        app.wiring.storage.settings.setFlag("benchmark", false)
         assertEquals(setOf("INCOMPLETE", "SAVE"), app.getSharedPreferences("history_notices", 0).getStringSet("pending", null))
         assertFalse(app.getSharedPreferences("settings", 0).getBoolean("benchmark", true))
         assertTrue(File(app.dataDir, "shared_prefs/history_notices.xml").isFile)
@@ -110,6 +110,29 @@ class ReleaseStorageTest {
             assertEquals(main, Wiring.forApp(app).storage.historyRoot)
             assertEquals(main, (app as DictationApplication).wiring.storage.historyRoot)
         } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+    }
+
+    @Test fun recordingsAndTheLabFolderAreTheOwners() {
+        val storage = app.wiring.storage
+        assertEquals(File(app.filesDir, "benchmark"), storage.recordingsRoot)
+        assertTrue(storage.recordingsRoot.path, storage.recordingsRoot.path.endsWith("/files/benchmark"))
+        // The speech model is read where the wrapper put it.
+        assertEquals(File(app.filesDir, "lab"), storage.labFolder)
+        assertTrue(storage.labFolder.path, storage.labFolder.path.endsWith("/files/lab"))
+        assertEquals(storage.recordingsRoot, Wiring.forApp(app).storage.recordingsRoot)
+        val base = Files.createTempDirectory("storage").toFile()
+        assertEquals(File(base, "files/benchmark"), Storage.under(base).recordingsRoot)
+        assertEquals(File(base, "files/lab"), Storage.under(base).labFolder)
+        base.deleteRecursively()
+    }
+
+    @Test fun releaseNeverSavesRecordingsWhateverTheOldSwitchSays() {
+        assertFalse(app.wiring.storage.savesRecordings)
+        // The owner's daily keyboard may still hold the switch of an earlier build, switched on.
+        app.getSharedPreferences("settings", 0).edit().putBoolean("benchmark", true).commit()
+        assertFalse(BenchmarkStore.isEnabled(app))
+        BenchmarkStore.setEnabled(app, true)
+        assertFalse(BenchmarkStore.isEnabled(app))
     }
 
     @Test fun theTimingReceiptFolderIsReserved() {

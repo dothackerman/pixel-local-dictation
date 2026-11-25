@@ -2,7 +2,6 @@ package ch.og.dictation.diagnostics
 
 import ch.og.dictation.take.TakeResult
 import ch.og.dictation.take.TimelineEvent
-import android.content.Context
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -12,7 +11,7 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 
 /** Benchmark timing/geometry only: no audio, text, editor identity or permission changes. */
-class StartupTrace(private val context: Context) {
+class StartupTrace(private val lab: File) {
     companion object {
         private val processId = UUID.randomUUID().toString()
         private val writer = Executors.newSingleThreadExecutor { Thread(it, "startup-receipts") }
@@ -81,12 +80,12 @@ class StartupTrace(private val context: Context) {
 
     /**
      * Rows are built and written on the writer thread, off the IME callbacks. Each
-     * files/lab/[name].jsonl rotates at the shared cap; [LabReceipts] logs rotation and write
+     * [name].jsonl in the lab folder rotates at the shared cap; [LabReceipts] logs rotation and write
      * failure itself, once per file per process. Only a row that cannot be built is logged here.
      */
     private fun append(name: String, row: () -> JSONObject) = writer.execute {
         runCatching { row().toString() + "\n" }
-            .onSuccess { LabReceipts.append(File(context.filesDir, "lab/$name.jsonl"), it) }
+            .onSuccess { LabReceipts.append(File(lab, "$name.jsonl"), it) }
             .onFailure { Log.e("StartupTrace", "$name receipt row could not be built", it) }
     }
 }

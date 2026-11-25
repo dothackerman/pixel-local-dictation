@@ -100,3 +100,27 @@ not accepted.
 - The History and Settings screen suites run on the host, on the test layout; their captures are
   gallery images in `app/build/panel-gallery/after/screens` (portrait, light, font 1× and 2×; fixed
   dates, so no Today or Yesterday header), compared like the panel images.
+
+## As built (#80, recordings, receipts and traces)
+
+- Storage has one accessor each for the recordings and the lab folder. Recordings: owner
+  `files/benchmark` (unchanged), test `files/test/recordings`. The lab folder is `files/lab` in both
+  builds: release reads the speech model there and writes no receipt or trace; the lab build writes its
+  receipts and traces (startup, geometry, live results, recovery timing, rotation trace, editor
+  geometry) and test output there. Scratch files of device tests: `files/test/scratch`.
+- Whether a build saves recordings is part of its layout, not a setting: release never does, whatever
+  its settings hold from an earlier build. Release Settings has no Benchmark switch and no
+  explanation of it; the count of old recordings and "Delete benchmark data" stay and act on
+  `files/benchmark`. Release lists that folder to count and deletes it; it never opens a recording.
+- The lab build keeps the switch, the banner and the saving, into its test recordings folder.
+- Host check: the exception list is empty. Every storage, clipboard and shell call in app, lab-build
+  and device-test sources goes through Storage.
+- The startup-trace device test wrote through an overridden files folder, a seam Storage closes; it
+  runs on the host on a temporary root.
+
+## Reserved rule: timing receipts in release (#63, not built)
+
+The one kind of receipt release may write. Numbers only: no audio, no text, no editor identity. Off by
+default, behind one switch. Owner data. Folder `files/timing-receipts`, reserved in the owner layout
+so the wrapper can pull it read-only without a later change. Until #63 builds it, release writes no
+receipt of any kind.

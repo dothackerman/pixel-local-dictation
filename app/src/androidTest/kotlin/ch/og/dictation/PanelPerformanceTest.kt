@@ -54,7 +54,7 @@ class PanelPerformanceTest {
         val report = JSONObject().put("protocol", "panel-component-replay-v1").put("label", label).put("passed", false)
         var reportFile: File? = null
         try {
-            val lab = File(context.filesDir, "lab")
+            val lab = context.wiring.storage.labFolder
             val outputFile = File(lab, "panel-performance-$label.json")
             require(outputFile.createNewFile()) { "preserve the previous report; choose a new label" }
             reportFile = outputFile

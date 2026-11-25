@@ -50,7 +50,7 @@ import org.junit.runner.RunWith
 class RotationFinishingDemoTest {
     private val instrumentation: Instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val traceFile = File(context.filesDir, "lab/rotation-probe.jsonl")
+    private val traceFile = File(context.wiring.storage.labFolder, "rotation-probe.jsonl")
     private val testHistory = context.wiring.storage.testHistoryRoot("history-ui-test-demo53")
 
     /** Rotate right after Stop, while the final decode is still running. */
@@ -273,7 +273,7 @@ class RotationFinishingDemoTest {
         }
         val futo = currentIme()
         assertTrue("current keyboard must be FUTO before the demo (${keys.selection()})", isFuto(futo))
-        val fixture = SyntheticFixtureAudio.file(context.filesDir, "continuous")
+        val fixture = SyntheticFixtureAudio.file(context.wiring.storage.labFolder, "continuous")
         assertTrue("synthetic fixture missing: push lab/issue36-inputs (see #54)", fixture.isFile)
         val audio = SyntheticFixtureAudio.read(fixture)
         starts.set(0)
@@ -331,8 +331,8 @@ class RotationFinishingDemoTest {
                 .put("serviceDestroyed", rows().any { it.getString("event") == "SERVICE_DESTROY" })
                 .put("boundaries", state.bounds)
                 .put("afterRotation", events)
-            File(context.filesDir, "lab/issue53").mkdirs()
-            File(context.filesDir, "lab/issue53/demo-$case-$run.json").writeText(summary.toString(2))
+            File(context.wiring.storage.labFolder, "issue53").mkdirs()
+            File(context.wiring.storage.labFolder, "issue53/demo-$case-$run.json").writeText(summary.toString(2))
             status("$case summary: $summary")
             assertEquals("one take", 1, count("CAPTURE_START"))
             assertEquals("microphone starts", state.expectedStarts, starts.get())

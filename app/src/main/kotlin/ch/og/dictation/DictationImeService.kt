@@ -237,12 +237,12 @@ class DictationImeService : InputMethodService() {
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
             if (RotationTrace.probeActive()) {
-                rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+                rotationTrace = RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl"))
                 lastConfiguration = Configuration(resources.configuration)
                 rotationEvent(RotationEvent.SERVICE_CREATE)
                 listenToDisplay()
             }
-            startup = StartupTrace(applicationContext).also {
+            startup = StartupTrace(wiring.storage.labFolder).also {
                 it.event("serviceCreate", ns = createdNs, uptimeMs = createdUptimeMs)
                 it.event("serviceCreateSuperReturned", ns = superReturnedNs, uptimeMs = superReturnedUptimeMs)
             }
@@ -343,7 +343,7 @@ class DictationImeService : InputMethodService() {
     private fun attachRotationTrace() {
         if ((rotationTrace == null || rotationTrace?.closed == true) && resources.getBoolean(R.bool.benchmark_receipts) &&
             RotationTrace.probeActive()) {
-            rotationTrace = RotationTrace(File(filesDir, "lab/rotation-probe.jsonl"))
+            rotationTrace = RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl"))
             rotationEvent(RotationEvent.SERVICE_ATTACH)
             listenToDisplay()
         }

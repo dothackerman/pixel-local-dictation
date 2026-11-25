@@ -52,7 +52,7 @@ class NormalBaselineTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertFalse("the test Dictionary holds a saved revision; the frozen Candidate A list must apply",
             context.wiring.engine.dictionaryStore().read().edited)
-        val lab = File(context.filesDir, "lab")
+        val lab = context.wiring.storage.labFolder
         val cases = JSONObject(File(lab, "baseline-parity.json").readText())
         require(cases.length() == 2) { "one retained take per language required" }
         val runtime = context.wiring.engine.runtime()

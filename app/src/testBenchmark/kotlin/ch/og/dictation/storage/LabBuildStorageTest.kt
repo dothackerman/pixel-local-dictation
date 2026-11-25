@@ -48,6 +48,27 @@ class LabBuildStorageTest {
             (0 until published.length()).any { root.startsWith(published.getString(it) + "/") })
     }
 
+    @Test fun recordingsResolveInsideTheTestFoldersAndTheLabFolderIsTheLabFolder() {
+        val storage = app.wiring.storage
+        assertTrue(storage.savesRecordings)
+        assertEquals(File(app.filesDir, "test/recordings"), storage.recordingsRoot)
+        assertEquals(File(app.filesDir, "test/recordings"), Wiring.forApp(app).storage.recordingsRoot)
+        assertEquals(File(app.filesDir, "test/scratch"), storage.scratchFolder)
+        assertEquals(File(app.filesDir, "lab"), storage.labFolder)
+        val published = JSONObject(File("src/benchmark/test-folders.json").readText())
+        val folders = published.getJSONArray("testFolders").let { list -> (0 until list.length()).map(list::getString) }
+        val data = app.filesDir.parentFile!!
+        for (root in listOf(storage.recordingsRoot, storage.scratchFolder))
+            assertTrue("$root lies in a published test folder",
+                folders.any { root.relativeTo(data).invariantSeparatorsPath.startsWith("$it/") })
+        assertEquals(published.getString("labFolder"), storage.labFolder.relativeTo(data).invariantSeparatorsPath)
+        assertFalse("never the owner's recordings", storage.recordingsRoot == File(app.filesDir, "benchmark"))
+        val base = Files.createTempDirectory("storage").toFile()
+        assertEquals(File(base, "files/test/recordings"), Storage.under(base).recordingsRoot)
+        assertEquals(File(base, "files/lab"), Storage.under(base).labFolder)
+        base.deleteRecursively()
+    }
+
     /** Settings, the Dictionary screen, the keyboard and the checkpoint producer all read through this engine. */
     @Test fun everyProcessReadsTheTestDictionaryAndNeverTheOwners() {
         fun save(root: File, term: String) = DictionaryStore(root, File(root, "none")).let { it.commit(it.prepare(listOf(term)), it.read()) }

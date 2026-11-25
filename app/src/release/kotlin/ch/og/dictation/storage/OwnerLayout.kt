@@ -15,6 +15,9 @@ internal object OwnerLayout : StorageLayout {
     override val historyNotices = "history_notices"
     override val settings = "settings"
     override fun clipboard(system: Clipboard) = system
+    /** What earlier builds saved; release keeps only the control that deletes it (ADR-010 amendment). */
+    override fun recordingsRoot(data: AppData) = File(data.files, "benchmark")
+    override val savesRecordings = false
 }
 
 internal val buildLayout: StorageLayout = OwnerLayout
