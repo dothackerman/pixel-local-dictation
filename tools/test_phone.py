@@ -62,8 +62,7 @@ class FakeDevice:
         self.packages = {RELEASE: {'installed': False, 'versionCode': 12, 'versionName': '1',
                                    'apk_path': '/data/app/r/base.apk', 'uid': 10100,
                                    'granted': ['android.permission.RECORD_AUDIO'], 'pid': None,
-                                   'first_install': '2026-10-01 08:00:00', 'last_update': '2026-11-20 08:00:00',
-                                   'signing': 'v3:1a2b3c4d'},
+                                   'first_install': '2026-10-01 08:00:00', 'last_update': '2026-11-20 08:00:00'},
                          APP: {'installed': False, 'versionCode': 12, 'versionName': '1',
                                'apk_path': '/data/app/x/base.apk', 'uid': 10123, 'granted': ['android.permission.RECORD_AUDIO'],
                                'pid': None, 'first_install': '2026-11-25 08:00:00'},
@@ -161,12 +160,12 @@ class FakeDevice:
     def apk_info(self, path):
         return dict(self.builds[sha(Path(path).read_bytes())])
 
-    def install(self, path, downgrade=False):
+    def install(self, path):
         self.attempt('install')
         content = Path(path).read_bytes()
         package = self.builds[sha(content)]['package']
         self.place(content)
-        self.calls.append(('install', package) + (('downgrade',) if downgrade else ()))
+        self.calls.append(('install', package))
         if package == RELEASE:
             self.packages[RELEASE]['last_update'] = '2026-11-25 12:00:00'
         if package in (RELEASE, APP):  # what Android and androidx write on every update
@@ -447,6 +446,14 @@ class PhoneTests(PhoneCase):
         self.assertEqual((result['visit_ended'], result['release_changed']), (name, []))
         self.assertIsNotNone(self.records()[0]['ended'])
         self.assertEqual(self.call('forget', name)['outcome'], 'forgotten')
+
+    def test_uninstall_leaves_the_0_2_5_tests_while_release_is_still_the_unmarked_build(self):
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.5 app'))
+        self.device.place(self.device.build(SWITCH_TEST, None, True, b'0.2.5 tests'))
+        (self.root / 'lab/.allow-uninstall').touch()
+        self.call('uninstall')
+        self.assertEqual(self.did('uninstall'), [('uninstall', TEST), ('uninstall', APP)])
+        self.assertTrue(self.device.packages[SWITCH_TEST]['installed'], 'the switch copy still needs it')
 
     def test_unknown_verbs_and_extra_arguments_are_refused(self):
         for argv in (['inspect'], ['status', 'x'], ['pull'], ['restore'], ['logs', 'x']):
@@ -957,6 +964,15 @@ class AdapterArgvTests(unittest.TestCase):
                     info = phone.Device(sdk).apk_info(apk)
                     self.assertEqual((info['debuggable'], info['marker']), expected)
 
+    def test_the_crash_buffer_keeps_the_lab_apps_lines_only(self):
+        crash = ('E AndroidRuntime: Process: %s, PID: 1\nE AndroidRuntime: at owner.Frame\n' % RELEASE
+                 + '\n'.join('x%d' % i for i in range(50))
+                 + '\nE AndroidRuntime: Process: %s:checkpoint_producer, PID: 2\nE AndroidRuntime: at lab.Frame\n' % APP)
+        device, _ = self.device({'logcat': (0, crash, '')})
+        text = device.logcat(None, crash=True)
+        self.assertIn('lab.Frame', text)
+        self.assertNotIn('owner.Frame', text)
+
     def test_tar_validation_rejects_traversal_links_and_foreign_dirs(self):
         phone.validate_tar(tar_bytes({'files/lab/a': b'1', 'shared_prefs/x.xml': b'2'}))
         for bad in ({'files/../x': b''}, {'/files/x': b''}, {'cache/x': b''}, {'./files/lab/model.onnx': b''},
@@ -974,24 +990,22 @@ class AdapterArgvTests(unittest.TestCase):
         with self.assertRaises(phone.Refused):
             phone.validate_tar(buffer.getvalue())
 
-    def test_install_downgrades_only_when_asked_and_package_facts_hold_the_first_install_time(self):
+    def test_install_never_downgrades_and_package_facts_hold_the_first_install_time(self):
         dump = '  versionCode=12\n    userId=10123\n    firstInstallTime=2026-10-01 08:00:00\n    lastUpdateTime=2026-11-25 09:00:00\n'
         device, runner = self.device({'pm path': (0, 'package:/data/app/x/base.apk\n', ''), 'pidof': (1, '', ''),
                                       'sha256sum': (0, 'c' * 64 + '  x\n', ''), 'dumpsys package': (0, dump, '')})
         self.assertEqual(device.package(APP)['first_install'], '2026-10-01 08:00:00')
         device.install('/host/app.apk')
-        device.install('/host/old.apk', downgrade=True)
-        self.assertEqual([argv[3:] for argv in runner.argv[-2:]],
-                         [['install', '-r', '/host/app.apk'], ['install', '-r', '-d', '/host/old.apk']])
+        self.assertEqual(runner.argv[-1][3:], ['install', '-r', '/host/app.apk'])
 
     def test_release_facts_come_from_the_package_manager_and_release_is_never_uninstalled_or_run_as(self):
         dump = ('  versionCode=12\n    userId=10100\n    firstInstallTime=2026-10-01 08:00:00\n'
-                '    lastUpdateTime=2026-11-25 09:00:00\n'
-                '    signatures=PackageSignatures{8c3f2e1 version:3, signatures:[1a2b3c4d], past signatures:[]}\n')
+                '    lastUpdateTime=2026-11-25 09:00:00\n')
         device, runner = self.device({'pm path': (0, 'package:/data/app/r/base.apk\n', ''), 'pidof': (1, '', ''),
                                       'sha256sum': (0, 'c' * 64 + '  x\n', ''), 'dumpsys package': (0, dump, '')})
         facts = device.package(RELEASE)
-        self.assertEqual((facts['versionCode'], facts['last_update'], facts['signing']), (12, '2026-11-25 09:00:00', 'v3:1a2b3c4d'))
+        self.assertEqual((facts['sha256'], facts['versionCode'], facts['last_update']), ('c' * 64, 12, '2026-11-25 09:00:00'))
+        self.assertNotIn('signing', facts)
         self.assertTrue(any(argv[3:] == ['shell', 'dumpsys package ' + RELEASE] for argv in runner.argv))
         for call in (lambda: device.uninstall(RELEASE), lambda: device.uninstall('com.other.app'), lambda: device.ime('com.other.app')):
             with self.assertRaises(phone.Refused):
@@ -1302,8 +1316,8 @@ class LabOverLabTests(PhoneCase):
         self.start_visit()
         install = self.device.install
 
-        def update(path, downgrade=False):
-            install(path, downgrade)
+        def update(path):
+            install(path)
             self.device.data['no_backup/history/1.json'] = b'{"text":"changed by the update"}'
         self.device.install = update
         with self.assertRaises(phone.Failed) as caught:
@@ -1340,8 +1354,8 @@ class ReleaseUpdateTests(PhoneCase):
         self.with_release_installed()
         install = self.device.install
 
-        def update(path, downgrade=False):
-            install(path, downgrade)
+        def update(path):
+            install(path)
             self.device.packages[RELEASE].update(granted=[], uid=10999)
             self.device.release_ime['enabled'] = False
         self.device.install = update
@@ -1373,11 +1387,23 @@ class ReleaseInstalledTests(PhoneCase):
         super().setUp()
         self.release = self.with_release_installed()
 
+    def test_a_release_mark_that_cannot_be_read_fails_instead_of_passing(self):
+        for field in ('sha256', 'versionCode', 'last_update'):
+            with self.subTest(field):
+                self.device.packages[RELEASE][field] = None
+                self.without_lab_app()
+                with self.assertRaises(phone.Failed) as caught:
+                    self.call('install', *self.lab_apks())
+                self.assertIn(field, str(caught.exception))
+                self.assertEqual(self.did('install'), [])
+                self.device.packages[RELEASE][field] = {'sha256': sha(b'release.apk'), 'versionCode': 12,
+                                                        'last_update': '2026-11-20 08:00:00'}[field]
+
     def test_app_reports_release_facts_from_the_package_manager_and_logs_are_the_lab_apps(self):
         info = self.call('app')
         self.assertEqual((info['release']['layout'], info['app']['layout'], info['test']['installed']), ('owner', 'test', True))
-        self.assertEqual({key: info['release'][key] for key in ('versionCode', 'last_update', 'signing')},
-                         {'versionCode': 12, 'last_update': '2026-11-20 08:00:00', 'signing': 'v3:1a2b3c4d'})
+        self.assertEqual({key: info['release'][key] for key in ('sha256', 'versionCode', 'last_update')},
+                         {'sha256': sha(b'release.apk'), 'versionCode': 12, 'last_update': '2026-11-20 08:00:00'})
         self.assertEqual(self.call('logs')['logs'], 'log for uid 10123')
         self.assertNotIn(('run_as', RELEASE), self.device.calls)
 
@@ -1685,35 +1711,35 @@ class SwitchTests(PhoneCase):
         self.assertNotIn(('run_as', RELEASE), self.device.calls)
         self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
 
-    def test_switch_restore_reinstalls_the_unmarked_apks_and_leaves_model_files(self):
+    def test_switch_restore_puts_the_unmarked_builds_data_back_and_leaves_model_files(self):
         self.switch_copy()
-        self.call('install', self.release_apk(), '--promote')
-        self.device.uninstall(SWITCH_TEST)
         self.device.release_data.update({'no_backup/history/1.json': b'{"text":"changed"}',
                                          'files/lab/encoder.onnx': b'the model now', 'databases/new.db': b'x'})
         del self.device.release_data['shared_prefs/settings.xml']
-        self.device.packages[RELEASE]['granted'] = []
-        self.device.calls.clear()
         self.refused('restore --switch switch', 'restore', 'switch')
-        result = self.call('restore', '--switch', 'switch')
-        self.assertEqual(self.did('install'), [('install', RELEASE, 'downgrade'), ('install', SWITCH_TEST, 'downgrade')])
-        self.assertEqual((self.device.packages[RELEASE]['sha256'], self.device.packages[SWITCH_TEST]['sha256']),
-                         (sha(b'0.2.5 app'), sha(b'0.2.5 tests')))
-        system = {path: content for path, content in self.device.release_data.items() if path.startswith('code_cache/')
-                  or path == 'files/profileInstalled'}
-        self.assertEqual(self.device.release_data, {**self.DATA, **system, 'files/lab/encoder.onnx': b'the model now'})
-        self.assertEqual(result['not_restored']['granted_permissions_missing'], ['android.permission.RECORD_AUDIO'])
-        self.device.calls.clear()
         self.call('restore', '--switch', 'switch')
-        self.assertEqual(self.did('install'), [], 'the retained APK is reinstalled only when another build is installed')
+        self.assertEqual(self.did('install'), [])
+        self.assertEqual(self.device.release_data, {**self.DATA, 'files/lab/encoder.onnx': b'the model now'})
 
-    def test_switch_restore_refuses_changed_apks_or_archive(self):
+    def test_switch_restore_is_refused_once_release_is_marked(self):
+        self.switch_copy()
+        self.call('install', self.release_apk(), '--promote')
+        owner = dict(self.device.release_data)
+        self.device.calls.clear()
+        self.refused('release', 'restore', '--switch', 'switch')
+        self.assertEqual(self.did('install', 'replace', 'stop'), [])
+        self.assertEqual(self.device.release_data, owner)
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
+
+    def test_switch_restore_is_refused_over_another_unmarked_build(self):
+        self.switch_copy()
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.4 app'))
+        self.refused('not the build of switch copy', 'restore', '--switch', 'switch')
+        self.assertEqual(self.did('install', 'replace'), [])
+
+    def test_switch_restore_refuses_a_changed_archive(self):
         self.switch_copy()
         folder = self.root / 'lab/snapshots/switch'
-        good = (folder / 'app.apk').read_bytes()
-        (folder / 'app.apk').write_bytes(b'another app')
-        self.refused('retained APK', 'restore', '--switch', 'switch')
-        (folder / 'app.apk').write_bytes(good)
         record = json.loads((folder / 'snapshot.json').read_text())
         payload = tar_bytes({path: content for path, content in self.DATA.items() if path != 'cache/x'})
         (folder / 'data.tar').write_bytes(payload)

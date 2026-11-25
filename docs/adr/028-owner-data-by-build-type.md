@@ -139,5 +139,5 @@ The lab app gets its own model copy, pushed from the kept model copy.
 Wrapper: every data verb acts on the lab app; a Visit starts when the lab app is installed and ends
 when it is removed; a release install no longer ends a Visit. The one-time switch is release
 installed with `--promote` over the unmarked build, given a current switch copy; afterwards no verb
-reads or writes release data (`restore --switch`, the switch's undo, puts the unmarked build back
-first). Guards that only the shared package needed are walked back by #99 (wrapper) and #100 (app).
+reads or writes release data: `restore --switch`, the switch's undo, works only before it, while
+the copy's unmarked build is release. Guards that only the shared package needed are walked back by #99 (wrapper) and #100 (app).
