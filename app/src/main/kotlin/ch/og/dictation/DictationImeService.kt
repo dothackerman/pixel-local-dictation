@@ -40,13 +40,13 @@ import ch.og.dictation.take.InsertCheck
 import ch.og.dictation.take.InsertReadBack
 import ch.og.dictation.take.ROTATION_HOLD_GAP_MS
 import ch.og.dictation.take.ROTATION_SETTLE_MS
-import ch.og.dictation.take.TakeCapture
+import ch.og.dictation.take.TakeDiagnostics
 import ch.og.dictation.take.TakeFacts
+import ch.og.dictation.take.TakeTraceFacts
 import ch.og.dictation.take.TakeOutcome
 import ch.og.dictation.take.TakeOutput
 import ch.og.dictation.take.TakeResult
 import ch.og.dictation.take.TakeSession
-import ch.og.dictation.take.TimelineObserver
 import android.Manifest
 import android.view.KeyEvent
 import android.view.Display
@@ -123,7 +123,8 @@ class DictationImeService : InputMethodService() {
         mainHandler.post { if (!destroyed) updateSharedMicrophone() }
     }
     private var inputViewVisible = false
-    private var rotationTrace: RotationTrace? = null
+    /** Take diagnostics: every traced event gets the take's facts as arguments (see [traceFacts]). */
+    private val diagnostics = TakeDiagnostics()
     /** Retention class of the editor that last started input. */
     private var editorRetention = EditorRetention.NO_EDITOR
     private var rotationView = 0L
@@ -241,7 +242,7 @@ class DictationImeService : InputMethodService() {
         val superReturnedUptimeMs = SystemClock.uptimeMillis()
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
             if (RotationTrace.probeActive()) {
-                rotationTrace = RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl"))
+                diagnostics.attach(RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl")))
                 lastConfiguration = Configuration(resources.configuration)
                 rotationEvent(RotationEvent.SERVICE_CREATE)
                 listenToDisplay()
@@ -282,7 +283,7 @@ class DictationImeService : InputMethodService() {
         if (resources.getBoolean(R.bool.benchmark_receipts)) {
             var drawn = false
             v.viewTreeObserver.addOnDrawListener {
-                if (!drawn && rotationTrace != null) {
+                if (!drawn && diagnostics.tracing) {
                     drawn = true
                     // A draw listener must not change the tree; record after this frame.
                     mainHandler.post { rotationEvent(RotationEvent.PANEL_DRAWN) }
@@ -345,9 +346,9 @@ class DictationImeService : InputMethodService() {
     }
 
     private fun attachRotationTrace() {
-        if ((rotationTrace == null || rotationTrace?.closed == true) && resources.getBoolean(R.bool.benchmark_receipts) &&
+        if (diagnostics.attachable && resources.getBoolean(R.bool.benchmark_receipts) &&
             RotationTrace.probeActive()) {
-            rotationTrace = RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl"))
+            diagnostics.attach(RotationTrace(File(wiring.storage.labFolder, "rotation-probe.jsonl")))
             rotationEvent(RotationEvent.SERVICE_ATTACH)
             listenToDisplay()
         }
@@ -487,7 +488,7 @@ class DictationImeService : InputMethodService() {
             configurationOrientation != newConfig.orientation) rotationChanges++
         configurationOrientation = newConfig.orientation
         rotationsAtConfiguration = rotationChanges
-        rotationTrace?.let { trace ->
+        if (diagnostics.tracing) {
             val diff = lastConfiguration?.diff(newConfig)
             val handled = runCatching {
                 getSystemService(InputMethodManager::class.java)?.inputMethodList
@@ -731,11 +732,15 @@ class DictationImeService : InputMethodService() {
 
     private fun rotationEvent(event: RotationEvent, flag: Boolean? = null, configDiff: Int? = null, handledConfig: Int? = null,
                               retention: EditorRetention? = null, detail: Map<String, Any>? = null) {
-        val trace = rotationTrace ?: return
+        if (!diagnostics.tracing) return
+        diagnostics.event(event, traceFacts(), flag, configDiff, handledConfig, retention, detail)
+    }
+
+    /** The take's facts for a traced event, read now. Reads the display rotation, as every traced event did. */
+    private fun traceFacts(): TakeTraceFacts {
         val rotation = observeRotation()
-        trace.event(event, takeActive, recordingToken != null && session.matches(recordingToken),
-            flag, rotationView.takeIf { it > 0 }, rotationTake.takeIf { it > 0 }, rotation, rotationChanges,
-            configDiff, handledConfig, retention, detail)
+        return TakeTraceFacts(active = takeActive, liveSession = recordingToken != null && session.matches(recordingToken),
+            view = rotationView.takeIf { it > 0 }, take = rotationTake.takeIf { it > 0 }, rotation = rotation, rotations = rotationChanges)
     }
 
     /** Trace only: the configuration this service last saw, to report what a change differs in. */
@@ -859,13 +864,7 @@ class DictationImeService : InputMethodService() {
                     if (outcomePending == generation) outcomePending = null
                     // A write that is still being read back reports its terminal event at the second look.
                     val lateLook = pendingConfirm != null && !result.interrupted && result.outcome == TakeOutcome.COMMIT_REJECTED
-                    if (!lateLook) rotationTrace?.event(when (result.outcome) {
-                        TakeOutcome.COMPLETED -> RotationEvent.TERMINAL_COMPLETED
-                        TakeOutcome.CANCELLED -> RotationEvent.TERMINAL_CANCELLED
-                        TakeOutcome.INPUT_CHANGED -> RotationEvent.TERMINAL_INPUT_CHANGED
-                        TakeOutcome.FAILED -> RotationEvent.TERMINAL_FAILED
-                        TakeOutcome.COMMIT_REJECTED -> RotationEvent.TERMINAL_COMMIT_REJECTED
-                    }, take = currentRotationTake)
+                    if (!lateLook) diagnostics.terminal(result.outcome, currentRotationTake)
                     identity()?.let { startup?.liveResult(liveTakeId, it, result) }
                     if (!result.interrupted) saveBenchmarkTake(save && !RotationTrace.probeActive(), pcm, result)
                     if (generation != takeGeneration) return
@@ -924,15 +923,11 @@ class DictationImeService : InputMethodService() {
             feedback?.stop()
             feedback = currentFeedback
             setRingLive(true)
-            val trace = startup
-            val traceTake = startupTake
-            val traceRotation = rotationTrace
-            val traceRotationTake = rotationTake
+            val takeTrace = diagnostics.forTake(rotationTake, startup, startupTake)
             val unexpectedEnd = AtomicBoolean(false)
             captureEnded = { unexpectedEnd.get() }
             val microphoneCapture = MicrophoneCapture(onStarted = {
-                traceRotation?.event(RotationEvent.CAPTURE_STARTED, take = traceRotationTake)
-                trace?.event("recordingStarted", traceTake)
+                takeTrace.captureStarted()
                 mainHandler.post {
                     if (feedback === currentFeedback && takeActive && !finishing) {
                         showPhase(PanelPhase.RECORDING)
@@ -940,7 +935,7 @@ class DictationImeService : InputMethodService() {
                 }
             }, feedback = currentFeedback, onInterrupted = {
                 unexpectedEnd.set(true)
-                traceRotation?.event(RotationEvent.CAPTURE_INTERRUPTED, take = traceRotationTake)
+                takeTrace.event(RotationEvent.CAPTURE_INTERRUPTED)
                 wiring.postCaptureEnd(mainHandler, Runnable {
                     if (feedback === currentFeedback && takeActive) {
                         // Unexpected capture end is a system interruption: revoke insertion,
@@ -949,56 +944,8 @@ class DictationImeService : InputMethodService() {
                     }
                 })
             }, recorder = wiring.recorderFactory())
-            val capture = object : TakeCapture {
-                override fun start(accept: (FloatArray) -> Unit) {
-                    try { microphoneCapture.start(accept) }
-                    catch (failure: Throwable) {
-                        traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
-                        throw failure
-                    }
-                }
-                override fun stop(done: (Result<ByteArray>) -> Unit) {
-                    microphoneCapture.stop { result ->
-                        if (result.isFailure) traceRotation?.event(RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
-                        else traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
-                        done(result)
-                    }
-                }
-                override fun cancel(done: () -> Unit) {
-                    microphoneCapture.cancel {
-                        traceRotation?.event(RotationEvent.CAPTURE_RELEASED, take = traceRotationTake)
-                        done()
-                    }
-                }
-                override fun pause() = microphoneCapture.pause()
-                override fun resume() = microphoneCapture.resume()
-                override fun cancelWithResult(done: (Result<Unit>) -> Unit) {
-                    microphoneCapture.cancelWithResult { result ->
-                        traceRotation?.event(if (result.isSuccess) RotationEvent.CAPTURE_RELEASED else RotationEvent.CAPTURE_FAILED, take = traceRotationTake)
-                        done(result)
-                    }
-                }
-            }
-            val observer = if (trace == null && traceRotation == null) null else TimelineObserver { event ->
-                val rotationEvent = when (event.phase) {
-                    "stopRequested" -> RotationEvent.STOP_REQUESTED
-                    "captureStopped" -> RotationEvent.CAPTURE_STOPPED
-                    "finalReady" -> RotationEvent.FINAL_READY
-                    "takeEnded" -> RotationEvent.TAKE_ENDED
-                    else -> null
-                }
-                if (rotationEvent != null) traceRotation?.event(rotationEvent, take = traceRotationTake)
-                if (event.phase in setOf("captureStart", "firstAudio", "takeEnded")) {
-                    trace?.event(event.phase, traceTake, event.ns)
-                }
-                if (event.phase in setOf("scenario", "captureStart", "captureSampleAnchor", "captureStopAnchor", "chunkReady", "chunkEnqueue",
-                        "chunkWorkerStart", "chunkWorkerEnd", "checkpointQueued", "checkpointDurable", "checkpointFailed",
-                        "stopRequested", "producerStop", "captureStopped", "finishCall", "finishEnqueue",
-                        "finishWorkerStart", "finishWorkerEnd", "finalReady", "commitAccepted", "commitRejected",
-                        "returnRequested", "takeEnded")) {
-                    startup?.timing(traceTake, event)
-                }
-            }
+            val capture = takeTrace.traced(microphoneCapture)
+            val observer = takeTrace.observer
             val historyRoot = wiring.storage.historyRoot
             val startedTake = wiring.engine.openTake { runtime, receipt ->
                 identity = receipt
@@ -1101,18 +1048,18 @@ class DictationImeService : InputMethodService() {
         mainHandler.postDelayed({
             takeHistory = null
             if (outcomePending == generation) { outcomePending = null; if (phase == PanelPhase.IDLE_WAITING) showPhase(PanelPhase.IDLE) }
-            if (destroyed) { rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake); return@postDelayed }
+            if (destroyed) { diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, rotationTake); return@postDelayed }
             val live = editor.live() == pending.connection && session.matches(pending.token)
             val check = if (live) InsertReadBack.look(pending.connection, pending.content, pending.extractedBefore) else InsertCheck.NONE
             traceVerified(check != InsertCheck.NONE, check)
             if (check != InsertCheck.NONE) {
                 // The write was seen after all: the receipt the rejected write left is corrected, and the take completed.
                 history?.receipt(HistoryDelivery.ACCEPTED)
-                rotationTrace?.event(RotationEvent.TERMINAL_COMPLETED, take = rotationTake)
+                diagnostics.takeEvent(RotationEvent.TERMINAL_COMPLETED, rotationTake)
                 if (held == null) returnToKeyboard()
                 return@postDelayed
             }
-            rotationTrace?.event(RotationEvent.TERMINAL_COMMIT_REJECTED, take = rotationTake)
+            diagnostics.takeEvent(RotationEvent.TERMINAL_COMMIT_REJECTED, rotationTake)
             val keep = textToHold(result)
             if (keep != null) holdText(keep, result.historySaved, unconfirmed = true) else {
                 showPhase(PanelPhase.NOT_INSERTED)
@@ -1221,7 +1168,7 @@ class DictationImeService : InputMethodService() {
         if (choice != null || !takeActive || finishing || interruptedView) return
         if (captureEnded()) { interruptTake(); return }
         if (take?.pause() != true) { interruptTake(); return }
-        rotationTrace?.event(RotationEvent.CAPTURE_PAUSED, take = rotationTake)
+        diagnostics.takeEvent(RotationEvent.CAPTURE_PAUSED, rotationTake)
         choice = PanelChoice.RECORDING
         setRingLive(false)
         showPhase(PanelPhase.PAUSED)
@@ -1241,7 +1188,7 @@ class DictationImeService : InputMethodService() {
             PanelChoice.RECORDING -> {
                 choice = null
                 if (take?.resume() != true) { render(); interruptTake(); return }
-                rotationTrace?.event(RotationEvent.CAPTURE_RESUMED, take = rotationTake)
+                diagnostics.takeEvent(RotationEvent.CAPTURE_RESUMED, rotationTake)
                 showPhase(PanelPhase.RECORDING)
                 if (!holding) setRingLive(true)
             }
