@@ -1,0 +1,44 @@
+{
+  "labRunPackage": "ch.og.dictation.labrun",
+  "classes": {
+    "ch.og.dictation.PhoneReadyTest": "test",
+    "ch.og.dictation.NormalBaselineTest": "test",
+    "ch.og.dictation.DictionarySettingsTest": "test",
+    "ch.og.dictation.RotationContinuityDemoTest": "test",
+    "ch.og.dictation.RotationFinishingDemoTest": "test",
+    "ch.og.dictation.SelfRotationProbeTest": "test",
+    "ch.og.dictation.ColdSettingsTest": "test",
+    "ch.og.dictation.HistoryProcessTest": "test",
+    "ch.og.dictation.GuidedVisitTest": "guided_check",
+    "ch.og.dictation.PrivacyProbeTest": "guided_check",
+    "ch.og.dictation.KeyboardHandoff": "helper",
+    "ch.og.dictation.SelfRotationProbe": "helper",
+    "ch.og.dictation.labrun.LabRun": "helper",
+    "ch.og.dictation.labrun.MeasurementRun": "helper",
+    "ch.og.dictation.labrun.SessionReplayKt": "helper",
+    "ch.og.dictation.labrun.LabTest": "lab_run",
+    "ch.og.dictation.labrun.PipelineTest": "lab_run",
+    "ch.og.dictation.labrun.PanelPerformanceTest": "lab_run",
+    "ch.og.dictation.labrun.RecoveryTimingTest": "lab_run",
+    "ch.og.dictation.labrun.EditorGeometryTest": "lab_run",
+    "ch.og.dictation.labrun.RotationProbeTest": "lab_run",
+    "ch.og.dictation.labrun.SelfRotationTrace": "lab_run"
+  },
+  "retired": {
+    "ch.og.dictation.ReplayTest": "the ADR-003 replay spike: decided long ago, and it wrote its results into the owner's recordings folder"
+  },
+  "phoneBatch": {
+    "batch": [
+      "ch.og.dictation.PhoneReadyTest",
+      "ch.og.dictation.NormalBaselineTest",
+      "ch.og.dictation.DictionarySettingsTest",
+      "ch.og.dictation.RotationContinuityDemoTest",
+      "ch.og.dictation.RotationFinishingDemoTest",
+      "ch.og.dictation.SelfRotationProbeTest"
+    ],
+    "freshProcess": [
+      "ch.og.dictation.ColdSettingsTest",
+      "ch.og.dictation.HistoryProcessTest"
+    ]
+  }
+}

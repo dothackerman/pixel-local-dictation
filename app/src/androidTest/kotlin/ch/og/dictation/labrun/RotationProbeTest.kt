@@ -1,4 +1,4 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
 import ch.og.dictation.diagnostics.RotationTrace
 import ch.og.dictation.probe.RotationProbeActivity
@@ -11,10 +11,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** The owner operates the host and any other app; this test does not automate gestures. */
+/** Rotation-probe trace collection: the owner operates the host and any other app; no gesture is automated. */
 @RunWith(AndroidJUnit4::class)
 class RotationProbeTest {
-    @Test fun observeUntilOwnerFinishes() {
+    @Test fun observeUntilOwnerFinishes() = LabRun.measure("RotationProbeTest.observeUntilOwnerFinishes") { observe() }
+
+    private fun observe() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val caseName = requireNotNull(InstrumentationRegistry.getArguments().getString("case")) { "case argument required" }

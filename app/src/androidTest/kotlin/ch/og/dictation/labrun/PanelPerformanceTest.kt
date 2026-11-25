@@ -1,4 +1,4 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
 import ch.og.dictation.wiring
 import ch.og.dictation.panel.PanelPreview
@@ -43,7 +43,9 @@ class PanelPerformanceTest {
     private val delivery = Executor { main.post(it) }
 
 
-    @Test fun matchedReplayWithInstalledPanel() {
+    @Test fun matchedReplayWithInstalledPanel() = LabRun.measure("PanelPerformanceTest.matchedReplayWithInstalledPanel") { lab -> matchedReplay(lab) }
+
+    private fun matchedReplay(lab: File) {
         val arguments = InstrumentationRegistry.getArguments()
         assumeTrue("explicit opt-in required", arguments.getString("panelPerformance") == "true")
         val label = requireNotNull(arguments.getString("label"))
@@ -54,7 +56,6 @@ class PanelPerformanceTest {
         val report = JSONObject().put("protocol", "panel-component-replay-v1").put("label", label).put("passed", false)
         var reportFile: File? = null
         try {
-            val lab = context.wiring.storage.labFolder
             val outputFile = File(lab, "panel-performance-$label.json")
             require(outputFile.createNewFile()) { "preserve the previous report; choose a new label" }
             reportFile = outputFile

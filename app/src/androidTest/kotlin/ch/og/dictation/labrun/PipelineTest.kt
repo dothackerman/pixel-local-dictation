@@ -1,4 +1,4 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
 import ch.og.dictation.wiring
 import ch.og.dictation.recognition.Engine
@@ -21,18 +21,21 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Runs the takes saved in benchmark mode through the classes the keyboard service uses
- * (Engine, VadSegmenter, TakeTranscriber), fed in recorder-sized chunks without pacing.
- * Writes pipeline.json into the test recordings folder. No UI, no microphone.
+ * Runs the copies of owner recordings that `phone measure … inputs=files/benchmark` placed in the
+ * lab-run input folder through the classes the keyboard service uses (Engine, VadSegmenter,
+ * TakeTranscriber), fed in recorder-sized chunks without pacing. Writes files/lab/pipeline.json.
+ * No UI, no microphone.
  */
 @RunWith(AndroidJUnit4::class)
 class PipelineTest {
     private val ctx: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val dir = ctx.wiring.storage.recordingsRoot
+    private val dir = LabRun.inputs("benchmark")
 
-    @Test fun savedTakesThroughTheServicePipeline() {
+    @Test fun savedTakesThroughTheServicePipeline() = LabRun.measure("PipelineTest.savedTakesThroughTheServicePipeline") { lab -> replay(lab) }
+
+    private fun replay(lab: File) {
         val takes = dir.listFiles { f -> f.name.endsWith(".wav") }.orEmpty().sortedBy { it.name }
-        assumeTrue("no takes in the test recordings folder", takes.isNotEmpty())
+        assumeTrue("no takes in the lab-run input folder: phone measure … inputs=files/benchmark", takes.isNotEmpty())
         ctx.wiring.engine.warmUp()
         val out = JSONArray()
         for (f in takes) {
@@ -42,13 +45,13 @@ class PipelineTest {
             val result = replaySession(ctx.wiring.engine.runtime(), x, paced = false) { previews.add(it) }
             assertTrue("session failed: ${result.outcome}", result.outcome == TakeOutcome.COMPLETED)
             val text = requireNotNull(result.text)
-            Log.i("ReplayTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters, " +
+            Log.i("PipelineTest", "pipeline ${f.name}: ${previews.size} previews, ${text.length} characters, " +
                 "${text.split(Regex("\\s+")).size} words")
             assertTrue("empty transcript for ${f.name}", text.isNotBlank())
             out.put(JSONObject().put("file", f.name).put("text", text).put("previews", previews.size)
                 .put("finishMs", (result.eventsNs.getValue("finalReady") - result.eventsNs.getValue("stopRequested")) / 1e6))
         }
-        File(dir, "pipeline.json").writeText(JSONObject().put("takes", out)
+        File(lab, "pipeline.json").writeText(JSONObject().put("takes", out)
             .put("timingProtocol", "dictation-session-replay-v1").put("editor", "simulated").toString(2))
     }
 }

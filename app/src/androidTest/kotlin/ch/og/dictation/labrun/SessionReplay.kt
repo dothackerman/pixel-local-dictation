@@ -1,4 +1,4 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
 import ch.og.dictation.recognition.DictationRuntime
 import ch.og.dictation.recognition.SAMPLE_RATE

@@ -1230,6 +1230,8 @@ is the current one; owner data must equal it after the update too); run; install
 Owner present (phone time is scarce): build, check, install and push before asking; the owner
 only unlocks, keeps FUTO selected and the screen awake; run ch.og.dictation.PhoneReadyTest
 (one NOT READY line per unmet precondition), then one batched run A,B,C; analyse afterwards.
+The named phone batch is app/src/androidTest/device-classes.json; python3 tools/device_classes.py
+--batch prints its run arguments: the batched run, then one run per fresh-process class.
 Receipts in files/lab roll over at 2 MiB into NAME.prev.jsonl (one older generation):
 pull NAME.jsonl and NAME.prev.jsonl right after measuring."""
 

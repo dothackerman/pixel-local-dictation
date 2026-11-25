@@ -12,5 +12,13 @@
   "ch.og.dictation.HistoryUndoDeleteTest.leavingThePageRemovesTheTranscriptWithoutWaitingForTheWindow": "ch.og.dictation.history.HistoryScreenTest.leavingThePageRemovesAPendingDelete",
   "ch.og.dictation.HistoryStartupTest.applicationStartupSurvivesCleanupFailureAndCanRetry": "ch.og.dictation.history.HistoryStoreTest.failedStartupCleanupDoesNotPreventRetryOrChangeStoredData",
   "ch.og.dictation.HistoryStartupTest.applicationStartupRemovesAbandonedTempWithoutOpeningHistory": "ch.og.dictation.WiringTest.historyStartsOnlyInTheOwningProcess",
-  "ch.og.dictation.StartupTraceTest.persistsCapturedClocksAndOwnProcessBounds": "ch.og.dictation.diagnostics.StartupTraceFileTest.persistsCapturedClocksAndOwnProcessBounds"
+  "ch.og.dictation.StartupTraceTest.persistsCapturedClocksAndOwnProcessBounds": "ch.og.dictation.diagnostics.StartupTraceFileTest.persistsCapturedClocksAndOwnProcessBounds",
+  "ch.og.dictation.LabTest.variantOnSavedTakes": "ch.og.dictation.labrun.LabTest.variantOnSavedTakes",
+  "ch.og.dictation.PipelineTest.savedTakesThroughTheServicePipeline": "ch.og.dictation.labrun.PipelineTest.savedTakesThroughTheServicePipeline",
+  "ch.og.dictation.PanelPerformanceTest.matchedReplayWithInstalledPanel": "ch.og.dictation.labrun.PanelPerformanceTest.matchedReplayWithInstalledPanel",
+  "ch.og.dictation.RecoveryTimingTest.safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts": "ch.og.dictation.labrun.RecoveryTimingTest.safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts",
+  "ch.og.dictation.EditorGeometryTest.collectManualKeyboardHandoffs": "ch.og.dictation.labrun.EditorGeometryTest.collectManualKeyboardHandoffs",
+  "ch.og.dictation.EditorGeometryTest.collectManualKeyboardHandoffsWithAnimationCallback": "ch.og.dictation.labrun.EditorGeometryTest.collectManualKeyboardHandoffsWithAnimationCallback",
+  "ch.og.dictation.RotationProbeTest.observeUntilOwnerFinishes": "ch.og.dictation.labrun.RotationProbeTest.observeUntilOwnerFinishes",
+  "ch.og.dictation.ReplayTest.spike": "retired: the ADR-003 replay spike, decided long ago; it wrote its results into the owner's recordings folder (#81)"
 }

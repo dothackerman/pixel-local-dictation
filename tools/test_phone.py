@@ -412,7 +412,7 @@ class PhoneTests(PhoneCase):
 
     def test_help_teaches_the_owner_session_order_and_receipt_rollover(self):
         usage = self.call('help')['usage']
-        for text in ('PhoneReadyTest', 'one batched run', '.prev.jsonl'):
+        for text in ('PhoneReadyTest', 'one batched run', '.prev.jsonl', 'named phone batch', 'device_classes.py'):
             self.assertIn(text, usage)
 
 

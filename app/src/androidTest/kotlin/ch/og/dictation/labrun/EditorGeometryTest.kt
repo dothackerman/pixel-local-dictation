@@ -1,4 +1,4 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.probe.EditorProbeActivity
@@ -13,19 +13,21 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Collection check only. Protocol: build, `phone check`, then `phone run` one of the two methods
- * with the probe editor visible and the phone awake. Within the 90 s window, twice: tap FUTO's
- * microphone, wait for our panel, Cancel. Then pull `files/lab/editor-geometry.jsonl` and the IME
- * receipts into a `corpus/` visit directory. A pass validates collection only: the owner confirms
+ * Lab run, collection only. Protocol: build, `phone check`, then `phone measure` one of the two
+ * methods (`ch.og.dictation.labrun.EditorGeometryTest#…`, no inputs) with the probe editor visible and
+ * the phone awake. Within the 90 s window, twice: tap FUTO's microphone, wait for our panel, Cancel.
+ * Then pull `files/lab/editor-geometry.jsonl` and the IME receipts into a `corpus/` visit directory.
+ * `completed` says the collection is whole, nothing more: the owner confirms
  * the handoffs and two matching panel requests, never inferred from geometry. The callback method
  * changes Android's animation routing, so compare the two as separate hosts. Polling sees framework
  * geometry, not compositor motion, and the probe is not the original editor.
  */
 @RunWith(AndroidJUnit4::class)
 class EditorGeometryTest {
-    @Test fun collectManualKeyboardHandoffs() = collect(false)
+    @Test fun collectManualKeyboardHandoffs() = LabRun.measure("EditorGeometryTest.collectManualKeyboardHandoffs") { collect(false) }
 
-    @Test fun collectManualKeyboardHandoffsWithAnimationCallback() = collect(true)
+    @Test fun collectManualKeyboardHandoffsWithAnimationCallback() =
+        LabRun.measure("EditorGeometryTest.collectManualKeyboardHandoffsWithAnimationCallback") { collect(true) }
 
     private fun collect(animationCallback: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -39,7 +41,7 @@ class EditorGeometryTest {
             assertTrue("no laid-out editor geometry captured", receipt.geometryRows > 0)
             assertTrue("current keyboard never became visible; collection insufficient", receipt.sawIme)
             assertEquals("collection must reach its bounded observation deadline", "duration", receipt.reason)
-            val rows = LabReceipts.lines(File(instrumentation.targetContext.wiring.storage.labFolder, "editor-geometry.jsonl"))
+            val rows = LabReceipts.lines(File(LabRun.lab, "editor-geometry.jsonl"))
                 .map { JSONObject(it) }
             val start = rows.last { it.getString("phase") == "start" }.getLong("runStartNs")
             val run = rows.filter { it.getLong("runStartNs") == start }
@@ -58,8 +60,7 @@ class EditorGeometryTest {
             }
             assertEquals("start", run.first().getString("phase"))
             assertEquals("end", run.last().getString("phase"))
-            assertTrue("receipt file exceeds byte budget", File(instrumentation.targetContext.wiring.storage.labFolder,
-                "editor-geometry.jsonl").length() <= LabReceipts.MAX_BYTES)
+            assertTrue("receipt file exceeds byte budget", File(LabRun.lab, "editor-geometry.jsonl").length() <= LabReceipts.MAX_BYTES)
             val geometry = run.filter { it.getString("phase") == "geometry" }
             assertEquals(receipt.geometryRows, geometry.size)
             assertTrue(geometry.size <= 4096)
@@ -70,7 +71,7 @@ class EditorGeometryTest {
                 val bounds = it.getJSONObject("values").getJSONObject("editor")
                 bounds.getInt("width") > 0 && bounds.getInt("height") > 0
             })
-            // Deliberately no handoff count/pass: geometry cannot identify another IME.
+            // Deliberately no handoff count: geometry cannot identify another IME.
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
         }

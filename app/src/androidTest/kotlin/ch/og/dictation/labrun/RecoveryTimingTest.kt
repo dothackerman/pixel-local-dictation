@@ -1,6 +1,5 @@
-package ch.og.dictation
+package ch.og.dictation.labrun
 
-import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.diagnostics.LabReceipts
 import ch.og.dictation.wiring
 import ch.og.dictation.history.HistoryIo
@@ -23,22 +22,28 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Synthetic audio only; receipt rows contain timing, sample offsets and opaque identities. */
+/**
+ * Synthetic audio only; receipt rows contain timing, sample offsets and opaque identities. Times a safe
+ * Stop with History attached; its History lives in a scratch folder inside the lab folder and is
+ * deleted afterwards. That a safe Stop saves the text it delivers is a host test:
+ * HistoryTakeTest.safeStopCompletesWithTheTextPrivateHistoryHolds.
+ */
 @RunWith(AndroidJUnit4::class)
 class RecoveryTimingTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test fun safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts() {
+    @Test fun safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts() =
+        LabRun.measure("RecoveryTimingTest.safeStopStoresContinuousAndPausedSyntheticSpeechWithTimingOnlyReceipts") { lab -> collect(lab) }
+
+    private fun collect(lab: File) {
         context.wiring.engine.warmUp().get(10, TimeUnit.MINUTES)
-        val receipts = File(context.wiring.storage.labFolder, "recovery-timing.jsonl")
+        val receipts = File(lab, "recovery-timing.jsonl")
         for (fixtureId in listOf("continuous", "paused")) {
-            val wav = SyntheticFixtureAudio.file(context.wiring.storage.labFolder, fixtureId)
-            assertTrue("synthetic fixture missing", wav.isFile)
+            val wav = SyntheticFixtureAudio.file(lab, fixtureId)
+            check(wav.isFile) { "synthetic fixture missing" }
             val samples = SyntheticFixtureAudio.read(wav)
             val takeId = UUID.randomUUID().toString()
             val processId = "test-${android.os.Process.myPid()}-${UUID.randomUUID()}"
@@ -48,8 +53,8 @@ class RecoveryTimingTest {
             val executor = Executors.newSingleThreadExecutor()
             val finished = CountDownLatch(1)
             var result: TakeResult? = null
-            val storage = context.wiring.storage.testHistoryRoot("issue54-timing/$takeId")
-            val store = HistoryStore(storage)
+            val scratch = File(lab, "labrun-scratch/issue54-timing/$takeId")
+            val store = HistoryStore(scratch)
             try {
             val delegate = object : TakeOutput {
                 override fun preview(text: String) {}
@@ -68,22 +73,18 @@ class RecoveryTimingTest {
             }
             capture.awaitInput()
             take.stop()
-            assertTrue("synthetic safe Stop did not finish", finished.await(10, TimeUnit.MINUTES))
-            val completed = requireNotNull(result)
-            assertEquals(TakeOutcome.COMPLETED, completed.outcome)
-            val entry = store.get(takeId)
-            assertTrue("final synthetic transcript was not saved", entry != null)
-            assertTrue("safe Stop differs from private History", completed.text == entry?.text)
+            check(finished.await(10, TimeUnit.MINUTES)) { "synthetic safe Stop did not finish" }
+            check(requireNotNull(result).outcome == TakeOutcome.COMPLETED) { "synthetic take did not complete" }
             appendReceipts(receipts, processId, takeId, events)
             HistoryIo.executor.submit<Boolean> { store.delete(takeId); true }.get(10, TimeUnit.SECONDS)
             } finally {
                 runCatching { HistoryIo.executor.submit {}.get(10, TimeUnit.SECONDS) }
-                storage.deleteRecursively()
+                scratch.deleteRecursively()
                 executor.shutdownNow()
                 executor.awaitTermination(10, TimeUnit.SECONDS)
             }
-            storage.deleteRecursively()
         }
+        File(lab, "labrun-scratch").deleteRecursively()
     }
 
     private fun appendReceipts(file: File, processId: String, takeId: String, events: List<TimelineEvent>) {
