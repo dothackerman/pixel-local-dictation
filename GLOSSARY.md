@@ -128,3 +128,19 @@ _Avoid_: trace helper, rotation logger
 **Delivery hold**:
 A reason, kept in the take session, why a finished result is not dispatched yet: a rotation hold, or the open finishing choice. The result is dispatched when no reason is left.
 _Avoid_: hold flag, delivery lock, paused delivery
+
+**Take controller**:
+Holds all take state and makes every take decision, on the IME main thread, without Android. The keyboard service forwards its events to it and carries out the effects it asks for.
+_Avoid_: take manager, take state machine, service logic
+
+**Take host**:
+What the take controller asks of the keyboard service: show the panel frame, return to the previous keyboard, request the panel, copy, ask for the microphone permission, record a History notice.
+_Avoid_: callbacks, service interface, view
+
+**Take scheduler**:
+The take controller's one thread: post, cancellable delayed post, and the one FIFO executor that the take session and History deliver on. It has no clock.
+_Avoid_: handler, main executor, timer
+
+**Take opener**:
+Opens a take's session from the engine with History attached, from the Wiring read at the take's start.
+_Avoid_: take factory, session builder

@@ -223,3 +223,11 @@ Release is the owner's daily build and the product only. "Benchmark storage is o
 deletable" now applies to the lab build only; release has no Benchmark switch and saves no benchmark
 recordings. Recordings saved before this amendment stay on the phone as owner data; release keeps the
 control that deletes them.
+
+## Amendment — the take controller (#85, 2026-11-25)
+
+The rules of this ADR are decided in `TakeController` (package `take`), which holds all take state and uses nothing from Android except resource ids. `DictationImeService` is its adapter: it forwards Android's callbacks in their order, counts rotations, builds the panel, registers the receivers and carries out effects. "The service" in the sections above means the controller wherever a take is decided.
+
+- The controller reaches the outside only through ports: the **take host** (show the frame, return to the keyboard, request the panel, copy, ask for the permission, record a History notice; plus three reads: microphone permission, capture silenced, the current field), the **take scheduler** (post, cancellable delayed post, the one FIFO executor the take session and History deliver on, a thread check; no clock), the **take opener** (opens a take's session from the Engine with History attached, from the Wiring read at the take's start), the editor port and take diagnostics.
+- The move was verbatim: no rule, order or timing changed. Rotation is still read at the same points (each editor event, the take's start, each traced event while a trace is attached).
+- `Wiring` holds neither the controller nor the scheduler. It still carries the panel request and the capture-end hook; the service's host and opener pass them through, because the lifecycle tests substitute them there.

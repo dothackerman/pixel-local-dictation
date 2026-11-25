@@ -53,14 +53,21 @@ class DictationImeLifecycleTest {
         MicrophoneOwner.acceptExplicitStart()
     }
 
+    /** Take state lives in the service's take controller (#85); these reach it by name. */
+    private fun controller(service: DictationImeService): Any =
+        service.javaClass.getDeclaredField("controller").apply { isAccessible = true }.get(service)!!
     private fun set(service: DictationImeService, name: String, value: Any?) {
-        service.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(service, value)
+        val controller = controller(service)
+        controller.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(controller, value)
     }
-    private fun get(service: DictationImeService, name: String): Any? =
-        service.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(service)
+    private fun get(service: DictationImeService, name: String): Any? {
+        val controller = controller(service)
+        return controller.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(controller)
+    }
     private fun publish(service: DictationImeService, text: String) {
-        service.javaClass.getDeclaredMethod("publishPreview", java.lang.Long.TYPE, String::class.java)
-            .apply { isAccessible = true }.invoke(service, 1L, text)
+        val controller = controller(service)
+        controller.javaClass.getDeclaredMethod("publishPreview", java.lang.Long.TYPE, String::class.java)
+            .apply { isAccessible = true }.invoke(controller, 1L, text)
     }
 
     @Test fun replacementServiceOffersRetryForOldUnconfirmedMicrophone() {
