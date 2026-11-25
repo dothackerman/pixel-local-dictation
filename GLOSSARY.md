@@ -103,6 +103,14 @@ _Avoid_: sanity check, manual check, owner test
 A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and works only on copies of owner data that the wrapper placed.
 _Avoid_: lab test, benchmark test, experiment run, phone test
 
+**Kept model copy**:
+The speech-model files on the laptop, laid out as in the phone's lab folder; its paths say which lab-folder files are the speech model, and a changed model is pushed back from it.
+_Avoid_: model backup, model snapshot
+
+**Switch copy**:
+The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before the first marked build is installed; only the owner deletes it.
+_Avoid_: switch snapshot, full backup
+
 ## Code
 
 **Wiring**:

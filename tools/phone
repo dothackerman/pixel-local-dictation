@@ -6,7 +6,9 @@ user installed with `tools/gate/apply.sh`. Every device command is built from fi
 package constant; caller strings reach the device only as validated names.
 
 Owner data (ADR-028): APKs are told apart by their build marker; `run`, `push` and `stop` work only in
-an open Visit whose fingerprint equals its copy; device verbs only from the main checkout.
+an open Visit whose fingerprint equals its copy; device verbs only from the main checkout. A Visit starts
+by installing the lab build (release pulled, owner data copied at once) and ends by installing the
+pulled release back; `phone help` holds the steps.
 
 Exit 0: success, one JSON object on stdout.
 Exit 3: `refused: <reason>` (policy).  Exit 1: `failed: <reason>` (device/transport).
@@ -41,8 +43,6 @@ PERMISSIONS = {PKG: {'android.permission.RECORD_AUDIO', 'android.permission.WAKE
 PERMISSIONS[TEST] = PERMISSIONS[PKG] | {'android.permission.REORDER_TASKS'}  # androidx test runner
 NETWORK = {'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
            'android.permission.QUERY_ALL_PACKAGES'}
-DATA_DIRS = ('files', 'shared_prefs', 'databases')
-PULL_ROOTS = ('files/lab', 'files/benchmark')
 NAME = re.compile(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*')
 HOST_VERBS = ('help', '-h', '--help', 'check')  # no device, no lock, no state: from any worktree
 MARKER_GUARD = 1  # tools/gate/apply.sh refuses to install a wrapper without this line
@@ -55,6 +55,14 @@ EXCLUDED = ('files/lab', 'files/test', 'no_backup/test', 'shared_prefs/test_hist
 # Written by Android and androidx on their own (caches, cleared on update; the profile installer's note
 # of the last update). Never owner data; left out of the fingerprint too.
 SYSTEM_FILES = ('cache', 'code_cache', 'files/profileInstalled')
+OWNER_SKIP = EXCLUDED + SYSTEM_FILES  # what a copy of owner data leaves out, like the fingerprint
+LAB_FOLDER, TEST_FOLDERS = EXCLUDED[0], EXCLUDED[1:]
+# Read-only: test output, owner recordings, the reserved timing-receipt folder, lab-build recordings.
+PULL_ROOTS = (LAB_FOLDER, 'files/benchmark', 'files/timing-receipts', 'files/test')
+# What the switch copy must hold before the one-time switch may go on (owner layout, ADR-028).
+SWITCH_HOLDS = {'History': 'no_backup/history/', 'Dictionary': 'files/dictionary/',
+                'History notices': 'shared_prefs/history_notices.xml', 'settings': 'shared_prefs/settings.xml'}
+MICROPHONE = 'android.permission.RECORD_AUDIO'
 LAB_RUN = PKG + '.labrun'  # Lab run classes live here; `run` refuses them
 VISIT_FIELDS = {'name', 'started', 'ended', 'release', 'copy', 'fingerprint', 'model', 'lab_builds'}
 
@@ -85,6 +93,15 @@ def sha_file(path):
         for block in iter(lambda: stream.read(1 << 20), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def under(path, roots):
+    return any(path == root or path.startswith(root + '/') for root in roots)
+
+
+def walk(skip):
+    """The `find` over app data that leaves `skip` out; the caller appends what to do with the rest."""
+    return 'find . \\( %s \\) -prune -o' % ' -o '.join('-path ' + shlex.quote('./' + rel) for rel in skip)
 
 
 def marker_layout(app, test=None):
@@ -206,6 +223,8 @@ class Device:
             raise Failed('cannot determine the app uid from the package dump; refusing to guess')
         info['uid'] = int(uid.group(1))
         info['granted'] = sorted(set(re.findall(r'^\s+(android\.permission\.\S+): granted=true', dump, re.M)))
+        first = re.search(r'^\s*firstInstallTime=(.+?)\s*$', dump, re.M)
+        info['first_install'] = first.group(1) if first else None
         pid = self.shell('pidof ' + pkg, check=False).split()
         info['pid'] = int(pid[0]) if pid and pid[0].isdigit() else None
         return info
@@ -240,11 +259,9 @@ class Device:
     def fingerprint(self):
         """Names, sizes and digests of every app-data file outside EXCLUDED and SYSTEM_FILES, reduced
         on the phone to one digest and a file count; nothing else leaves it."""
-        skipped = ' -o '.join('-path ' + shlex.quote('./' + rel) for rel in EXCLUDED + SYSTEM_FILES)
-        walk = 'find . \\( %s \\) -prune -o' % skipped
         code = ('{ %(walk)s -type f -exec sha256sum {} + && %(walk)s -type f -exec stat -c "%%s %%n" {} + && '
-                '%(walk)s ! -type f ! -type d -print; } | sort | sha256sum && %(walk)s -type f -print | wc -l'
-                ) % {'walk': walk}
+                '%(walk)s ! -type f ! -type d -print; } | LC_ALL=C sort | sha256sum && %(walk)s -type f -print | wc -l'
+                ) % {'walk': walk(OWNER_SKIP)}
         words = self.private(code, timeout=900).split()
         if len(words) != 3 or not re.fullmatch(r'[0-9a-f]{64}', words[0]) or not words[2].isdigit():
             raise Failed('unreadable fingerprint answer from the phone')
@@ -313,9 +330,10 @@ class Device:
                 'marker': marker.group(1) if marker else None}
 
     # --- mutations --------------------------------------------------------
-    def install(self, path):
+    def install(self, path, downgrade=False):
+        """`downgrade` only for the retained unmarked build of the switch; Android allows it on a debuggable app."""
         self.connect()
-        self.run('install', '-r', str(path), timeout=600)
+        self.run('install', '-r', *(['-d'] if downgrade else []), str(path), timeout=600)
 
     def uninstall(self, pkg):
         if pkg not in (PKG, TEST):
@@ -326,10 +344,10 @@ class Device:
     def stop(self):
         self.shell('am force-stop ' + PKG)
 
-    def push(self, directory, rel, changed, removed):
-        """Make files/<rel> equal to the host directory: send only `changed` files, delete `removed`."""
+    def push(self, directory, changed, removed):
+        """Into the lab folder only: send the `changed` files of the host directory, delete `removed`."""
         directory = validate_directory(directory)
-        quoted_rel = shlex.quote(rel)
+        quoted_rel = shlex.quote(LAB_FOLDER)
         if removed:
             self.private('cd %s && rm -f -- %s' % (quoted_rel, ' '.join(shlex.quote(name(r)) for r in sorted(removed))),
                          timeout=120)
@@ -358,19 +376,33 @@ class Device:
         self.connect()
         return self.run('exec-out', 'run-as', PKG, 'tar', 'c', *existing, timeout=900, binary=True)
 
+    def copy(self, skip):
+        """A tar of every app-data file outside `skip`: the walk of the fingerprint names the files, so a
+        copy and a fingerprint with the same `skip` cover the same files. The list sits in `cache/`, which
+        every copy leaves out."""
+        if not under('cache', skip):
+            raise Refused('a copy leaves the cache out')
+        names = 'cache/.dictation-copy-list'
+        code = ('mkdir -p cache && %s -type f -print > %s && { [ ! -s %s ] || tar c -T %s; }; '
+                'status=$?; rm -f %s; exit $status') % (walk(skip), names, names, names, names)
+        self.connect()
+        return self.run('exec-out', 'run-as %s sh -c %s' % (PKG, shlex.quote(code)), timeout=1800, binary=True)
+
     def pull_apk(self, remote, local):
         self.connect()
         if not re.fullmatch(r'/data/app/[A-Za-z0-9_./=~+-]+\.apk', remote):
             raise Refused('unexpected installed APK path')
         Path(local).write_bytes(self.run('exec-out', 'cat', remote, timeout=600, binary=True))
 
-    def replace_data(self, archive):
-        """Wipe app data dirs and extract a host-validated tar.
+    def replace(self, archive, skip):
+        """Delete every app-data file outside `skip`, then extract a host-validated tar: what is in
+        `skip` (the lab folder with the speech model, the test folders) is never touched.
 
-        The archive is uploaded before anything is wiped: exec-out does not pass stdin EOF,
+        The archive is uploaded before anything is deleted: exec-out does not pass stdin EOF,
         so streaming into `tar x` hung after the wipe (2026-10-21)."""
+        delete = walk(skip) + ' ! -type d -exec rm -f -- {} +'
         if not archive:
-            self.private('rm -rf -- ' + ' '.join(DATA_DIRS))
+            self.private(delete, timeout=900)
             return
         remote = '/data/local/tmp/dictation-' + uuid.uuid4().hex + '.tar'
         with tempfile.NamedTemporaryFile(suffix='.tar') as local:
@@ -380,9 +412,12 @@ class Device:
             self.connect()
             self.run('push', local.name, remote, timeout=900)
         try:
-            self.private('rm -rf -- %s && tar xf %s' % (' '.join(DATA_DIRS), remote), timeout=900)
+            self.private('%s && tar xf %s' % (delete, remote), timeout=900)
         finally:
             self.shell('rm -f -- ' + remote)
+
+    def empty_test_folders(self):
+        self.private('rm -rf -- ' + ' '.join(shlex.quote(rel) for rel in TEST_FOLDERS), timeout=300)
 
     def instrument(self, classes, extras, timeout):
         args = ' '.join('-e %s %s' % (shlex.quote(k), shlex.quote(v)) for k, v in extras)
@@ -402,17 +437,46 @@ def validate_directory(directory):
     return directory
 
 
-def validate_tar(payload):
-    """Members must be regular files/dirs under the app data dirs; no .., links, devices."""
+def members(payload, inside=None, outside=()):
+    """(path, member, archive) of every regular file of a tar from the phone or from our own state. Refuses
+    anything but regular files and folders, `..`, absolute names, a path outside `inside` or under `outside`."""
     if not payload:
         return
     with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
         for member in archive:
-            parts = Path(member.name).parts
-            if not parts or parts[0] not in DATA_DIRS or '..' in parts or member.name.startswith('/'):
-                raise Refused('archive member outside app data: ' + member.name[:80])
+            path = member.name[2:] if member.name.startswith('./') else member.name
+            parts = Path(path).parts
+            if member.isdir() and path in ('.', ''):
+                continue
+            if (not parts or '..' in parts or path.startswith('/') or under(path, outside)
+                    or (inside is not None and not under(path, inside))):
+                raise Refused('archive member outside its place: ' + member.name[:80])
             if not (member.isfile() or member.isdir()):
                 raise Refused('archive member is not a regular file: ' + member.name[:80])
+            if member.isfile():
+                yield path, member, archive
+
+
+def validate_tar(payload, inside=None, outside=()):
+    return [path for path, _, _ in members(payload, inside, outside)]
+
+
+def tar_fingerprint(payload, leave_out=()):
+    """What `Device.fingerprint` answers for app data holding exactly these files: the host's proof
+    that a copy is complete."""
+    lines, count = [], 0
+    for path, member, archive in members(payload):
+        if under(path, leave_out):
+            continue
+        digest, size = hashlib.sha256(), 0
+        with archive.extractfile(member) as stream:
+            for block in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(block)
+                size += len(block)
+        lines += ['%s  ./%s' % (digest.hexdigest(), path), '%d ./%s' % (size, path)]
+        count += 1
+    encoded = sorted(line.encode('utf-8', 'surrogateescape') for line in lines)
+    return {'digest': sha(b''.join(line + b'\n' for line in encoded)), 'files': count}
 
 
 class Phone:
@@ -421,6 +485,7 @@ class Phone:
     def __init__(self, device, state):
         self.device = device
         self.state = Path(state) if state is not None else None
+        self.read = {}  # sha256 -> facts of an installed APK pulled during this call
 
     # --- helpers ---------------------------------------------------------
     def app(self):
@@ -428,7 +493,7 @@ class Phone:
 
     def identity(self):
         app, test = self.device.package(PKG), self.device.package(TEST)
-        lab = self.device.inventory('files/lab') if app['installed'] else None
+        lab = self.device.inventory(LAB_FOLDER) if self.readable(app) else None
         return {'app_sha256': app.get('sha256'), 'test_sha256': test.get('sha256'),
                 'lab_sha256': sha(json.dumps(lab, sort_keys=True).encode()) if lab is not None else None}
 
@@ -460,13 +525,32 @@ class Phone:
         marker = self.markers().get(package['sha256'])
         if marker is not None:
             return {'sha256': package['sha256'], 'marker': marker, 'debuggable': marker.startswith('layout=test;')}
-        with tempfile.TemporaryDirectory() as folder:
-            local = Path(folder) / 'installed.apk'
-            self.device.pull_apk(package['apk_path'], local)
-            info = self.device.apk_info(local)
-        if info['sha256'] != package['sha256']:
-            raise Failed('pulled APK differs from the installed one')
-        return info
+        if package['sha256'] not in self.read:
+            with tempfile.TemporaryDirectory() as folder:
+                local = Path(folder) / 'installed.apk'
+                self.device.pull_apk(package['apk_path'], local)
+                info = self.device.apk_info(local)
+            if info['sha256'] != package['sha256']:
+                raise Failed('pulled APK differs from the installed one')
+            self.read[info['sha256']] = info
+        return self.read[package['sha256']]
+
+    def readable(self, app):
+        """Whether `run-as` reaches app data: only on a debuggable build, so never on release."""
+        return bool(app['installed'] and self.installed_apk(app)['debuggable'])
+
+    def layout(self, app):
+        """What is installed: None, 'owner' (release), 'test' (lab build) or 'unmarked' (a debuggable
+        build from before ADR-028, where the one-time switch starts). Anything else is refused."""
+        if not app['installed']:
+            return None
+        facts = self.installed_apk(app)
+        if facts['marker'] is None and facts['debuggable']:
+            return 'unmarked'
+        try:
+            return marker_layout(facts)
+        except Refused as error:
+            raise Refused('installed %s' % error) from None
 
     def lab_build(self, verb):
         """The installed app and test package when they are one lab build; else refuse."""
@@ -487,35 +571,78 @@ class Phone:
         self.remember(both)
         return app, test
 
+    def visit_record(self, label):
+        path = self.state / 'visits' / name(label) / 'visit.json'
+        record = json.loads(path.read_text())
+        if not isinstance(record, dict) or set(record) != VISIT_FIELDS or record['name'] != path.parent.name:
+            raise Refused('unreadable Visit record %s; nothing runs until it is repaired' % path.parent.name)
+        return record
+
     def visits(self):
         """Every kept Visit record, oldest first. One per Visit at visits/NAME/visit.json: the pulled
         release APK (or none), the Visit copy, fingerprint and model inventory at start, the lab
-        builds installed during it, and when it ended."""
-        records = []
-        for path in sorted((self.state / 'visits').glob('*/visit.json')):
-            record = json.loads(path.read_text())
-            if not isinstance(record, dict) or set(record) != VISIT_FIELDS or record['name'] != path.parent.name:
-                raise Refused('unreadable Visit record %s; nothing runs until it is repaired' % path.parent.name)
-            records.append(record)
+        builds installed during it, and when it ended. Copy, fingerprint and model are null until
+        the Visit copy is taken."""
+        records = [self.visit_record(path.parent.name) for path in sorted((self.state / 'visits').glob('*/visit.json'))]
         return sorted(records, key=lambda record: record['started'])
+
+    def open_visit(self):
+        current = [visit for visit in self.visits() if visit['ended'] is None]
+        return current[-1] if current else None
+
+    def save(self, visit):
+        path = self.state / 'visits' / name(visit['name']) / 'visit.json'
+        fresh = path.with_name('visit.json.new')
+        fresh.write_text(json.dumps(visit, indent=1, sort_keys=True))
+        os.replace(fresh, path)
 
     def visit_copy(self, visit):
         return self.state / 'visits' / name(visit['name']) / name(visit['copy']['archive'])
 
+    def same_owner_data(self, visit, verb):
+        if self.device.fingerprint() != visit['fingerprint']:
+            raise Refused('%s refused: owner data differs from the Visit copy %s; restore %s first'
+                          % (verb, self.visit_copy(visit), visit['name']))
+
     def in_visit(self, verb):
         """The open Visit, when the installed lab build belongs to it and owner data equals its copy."""
         app, test = self.lab_build(verb)
-        current = [visit for visit in self.visits() if visit['ended'] is None]
-        if not current:
+        visit = self.open_visit()
+        if visit is None:
             raise Refused(verb + ' refused: no Visit is open; a Visit starts by installing the lab build over release')
-        visit = current[-1]
+        if visit['copy'] is None:
+            raise Refused('%s refused: Visit %s has no copy of owner data yet; install the lab build again'
+                          % (verb, visit['name']))
         if not any(build['app_sha256'] == app['sha256'] and build['test_sha256'] == test['sha256']
                    for build in visit['lab_builds']):
             raise Refused('%s refused: the installed lab build is not part of Visit %s' % (verb, visit['name']))
-        if self.device.fingerprint() != visit['fingerprint']:
-            raise Refused('%s refused: owner data differs from the Visit copy %s; restore it first'
-                          % (verb, self.visit_copy(visit)))
+        self.same_owner_data(visit, verb)
         return visit
+
+    def kept_model(self):
+        """Lab-folder paths of the speech-model files: the files of the kept model copy, corpus/lab/model.
+        Everything else in the lab folder is test output. The wrapper knows no model by name."""
+        folder = self.state / 'model'
+        if not folder.is_dir():
+            raise Refused('no kept model copy at %s: put the speech-model files there as they lie in files/lab '
+                          '(an empty folder when the phone holds none); without it no model file is protected' % folder)
+        validate_directory(folder)
+        return sorted(path.relative_to(folder).as_posix() for path in folder.rglob('*') if path.is_file())
+
+    def model_inventory(self):
+        lab = self.device.inventory(LAB_FOLDER) or {}
+        return {path: lab[path] for path in self.kept_model() if path in lab}
+
+    def changed_model(self, visit):
+        lab = self.device.inventory(LAB_FOLDER) or {}
+        return sorted(path for path, digest in visit['model'].items() if lab.get(path) != digest)
+
+    def facts(self):
+        """What a release update must leave alone; nothing else can be read once release is installed."""
+        app, ime = self.app(), self.device.ime()
+        return {'uid': app.get('uid'), 'first_install': app.get('first_install'),
+                'microphone_granted': MICROPHONE in app.get('granted', []),
+                'keyboard_enabled': ime['enabled'], 'keyboard_selected': ime['selected']}
 
     def lock(self):
         import fcntl
@@ -542,9 +669,12 @@ class Phone:
     def app_info(self):
         info = {'app': self.app(), 'test': self.device.package(TEST), 'ime': self.device.ime(),
                 'futo': {p: self.device.package(p) for p in FUTO}}
+        info['app']['layout'] = self.layout(info['app'])
+        info['lab'] = self.device.inventory(LAB_FOLDER) if self.readable(info['app']) else None
         for key in ('app', 'test'):
             info[key].pop('apk_path', None)
-        info['lab'] = self.device.inventory('files/lab') if info['app']['installed'] else None
+        visit = self.open_visit()
+        info['visit'] = visit and visit['name']
         return info
 
     def check(self, app_apk, test_apk=None):
@@ -557,53 +687,220 @@ class Phone:
         marker_layout(*infos)
         return infos
 
-    def install(self, app_apk, test_apk=None):
+    def install(self, app_apk, test_apk=None, promote=False):
+        """Lab build: starts a Visit (over release, over the unmarked build of the switch, or on a
+        phone without the app) or continues the open one. Release: ends the Visit."""
         infos = self.check(app_apk, test_apk)
         # Signer continuity against the installed app is enforced by Android itself.
         self.not_live('install')
-        folder = self.meta('install', apks=[i['sha256'] for i in infos])
-        self.device.install(app_apk)
-        if test_apk:
-            self.device.install(test_apk)
-        after = self.identity()
-        if after['app_sha256'] != infos[0]['sha256'] or (test_apk and after['test_sha256'] != infos[1]['sha256']):
-            raise Failed('installed identity does not match the given APKs')
-        self.remember(infos)
-        return {'outcome': 'installed', **after, 'meta': str(folder / 'meta.json')}
+        app = self.app()
+        try:
+            current = self.layout(app)
+        except Refused as error:
+            raise Refused('install refused: %s' % error) from None
+        if marker_layout(*infos) == 'owner':
+            return self.install_release(app_apk, infos[0], app, current, promote)
+        if promote:
+            raise Refused('install refused: --promote names a new release, never a lab build')
+        if not test_apk:
+            raise Refused('install refused: a lab build is installed together with its test APK')
+        return self.install_lab(app_apk, test_apk, infos, app, current)
 
-    def push(self, directory, rel='lab'):
-        rel = name(rel)
+    def put(self, apks, infos):
+        self.remember(infos)  # known by hash before it is installed: no later verb pulls it to read its marker
+        for apk in apks:
+            self.device.install(apk)
+        after = self.identity()
+        if [after['app_sha256'], after['test_sha256']][:len(infos)] != [info['sha256'] for info in infos]:
+            raise Failed('installed identity does not match the given APKs')
+        return after
+
+    def install_lab(self, app_apk, test_apk, infos, app, current):
+        build = {'app_sha256': infos[0]['sha256'], 'test_sha256': infos[1]['sha256'], 'marker': infos[0]['marker']}
+        visit, switch = None, None
+        if current == 'test':
+            visit = self.open_visit()
+            if visit is None:
+                raise Refused('install refused: a lab build is installed outside any Visit; '
+                              'install a release with --promote')
+            if visit['copy'] is not None:
+                if not any(known['app_sha256'] == app['sha256'] for known in visit['lab_builds']):
+                    raise Refused('install refused: the installed lab build is not part of Visit ' + visit['name'])
+                self.same_owner_data(visit, 'install')
+        elif current == 'unmarked':
+            switch = self.switch_copy(app)
+        if visit is None or visit['copy'] is None:
+            self.kept_model()  # refused here, before anything changes on the phone
+        started = visit is None
+        if started:
+            visit = self.start_visit(app if current == 'owner' else None)
+        folder = self.meta('install', apks=[info['sha256'] for info in infos], visit=visit['name'])
+        try:
+            after = self.put([app_apk, test_apk], infos)
+        except Exception:
+            if started and self.app().get('sha256') == app.get('sha256'):  # nothing was replaced: no Visit began
+                shutil.rmtree(self.state / 'visits' / visit['name'])
+            raise
+        if visit['copy'] is None:
+            self.take_copy(visit, build, switch)
+        else:
+            if self.device.fingerprint() != visit['fingerprint']:
+                raise Failed('owner data changed while the lab build was updated; Visit copy: %s' % self.visit_copy(visit))
+            if build not in visit['lab_builds']:
+                visit['lab_builds'].append(build)
+                self.save(visit)
+        self.device.empty_test_folders()
+        return {'outcome': 'installed', **after, 'visit': visit['name'], 'visit_started': started,
+                'copy': str(self.visit_copy(visit)), 'fingerprint': visit['fingerprint'],
+                'model_files': len(visit['model']), 'meta': str(folder / 'meta.json')}
+
+    def start_visit(self, release):
+        """A new Visit record, not yet usable: the release APK is pulled, the copy comes after the install."""
+        stamp, count = time.strftime('%Y%m%dT%H%M%S'), 1
+        label = stamp
+        while (self.state / 'visits' / label).exists():
+            count += 1
+            label = '%s-%d' % (stamp, count)
+        folder = self.state / 'visits' / label
+        folder.mkdir(parents=True)
+        pulled = None
+        try:
+            if release is not None:
+                self.device.pull_apk(release['apk_path'], folder / 'release.apk')
+                if sha_file(folder / 'release.apk') != release['sha256']:
+                    raise Failed('pulled APK differs from the installed one')
+                pulled = {'apk': 'release.apk', 'sha256': release['sha256']}
+        except Exception:
+            shutil.rmtree(folder)
+            raise
+        visit = {'name': label, 'started': time.strftime('%Y-%m-%dT%H:%M:%S'), 'ended': None, 'release': pulled,
+                 'copy': None, 'fingerprint': None, 'model': None, 'lab_builds': []}
+        self.save(visit)
+        return visit
+
+    def take_copy(self, visit, build, switch):
+        """The Visit copy, taken right after the install and before anything is emptied or run."""
+        payload = self.device.copy(OWNER_SKIP)
+        validate_tar(payload, outside=OWNER_SKIP)
+        fingerprint = self.device.fingerprint()
+        if tar_fingerprint(payload) != fingerprint:
+            raise Failed('the copy of owner data does not hold what the fingerprint sees; Visit %s has no copy, '
+                         'nothing runs' % visit['name'])
+        if switch is not None and fingerprint != switch['fingerprint']:
+            raise Failed('owner data changed while the lab build replaced the unmarked build; '
+                         'restore --switch %s' % switch['name'])
+        (self.state / 'visits' / visit['name'] / 'owner-data.tar').write_bytes(payload)
+        visit.update(copy={'archive': 'owner-data.tar', 'sha256': sha(payload)}, fingerprint=fingerprint,
+                     model=self.model_inventory(), lab_builds=[build])
+        self.save(visit)
+
+    def switch_copy(self, app):
+        """The switch copy of the installed unmarked build whose fingerprint is the current one; else refuse."""
+        copies = []
+        for path in sorted((self.state / 'snapshots').glob('*/snapshot.json')):
+            record = json.loads(path.read_text())
+            if record.get('kind') == 'switch' and record.get('app_sha256') == app['sha256']:
+                copies.append({**record, 'name': path.parent.name})
+        if not copies:
+            raise Refused('install refused: the installed build has no marker and no switch copy; '
+                          'snapshot --switch NAME first')
+        fingerprint = self.device.fingerprint()
+        current = [record for record in copies if record['fingerprint'] == fingerprint]
+        if not current:
+            raise Refused('install refused: app data changed since the switch copy %s was taken; '
+                          'snapshot --switch again under a new name' % copies[-1]['name'])
+        return current[-1]
+
+    def install_release(self, app_apk, info, app, current, promote):
+        visit, pulled, after_check = None, None, 'none: no Visit ends'
+        if current == 'unmarked':
+            raise Refused('install refused: the installed build has no marker; the switch goes through the lab '
+                          'build: snapshot --switch NAME, install the lab build, then install the release with --promote')
+        if current == 'test':
+            visit = self.open_visit()
+            pulled = visit['release'] if visit else None
+            back = pulled is not None and info['sha256'] == pulled['sha256']
+            if visit is None:
+                if not promote:
+                    raise Refused('install refused: a lab build is installed outside any Visit; '
+                                  'a release goes over it only with --promote')
+            elif visit['copy'] is None:
+                if not back:
+                    raise Refused('install refused: Visit %s has no copy of owner data yet; only its pulled release '
+                                  'goes back, or install the lab build again' % visit['name'])
+                after_check = 'skipped: the Visit never got its copy, so nothing ran in it'
+            else:
+                self.same_owner_data(visit, 'install')
+                changed = self.changed_model(visit)
+                if changed:
+                    raise Refused('install refused: speech-model files differ from Visit start (%s); push the kept '
+                                  'model copy %s with --model' % (', '.join(changed)[:300], self.state / 'model'))
+                after_check = 'owner data and speech model as at Visit start'
+                if not back and not promote:
+                    was = ('ends with its pulled release %s' % (self.state / 'visits' / visit['name'] / pulled['apk'])
+                           if pulled else 'pulled no release')
+                    raise Refused('install refused: Visit %s %s; another release is a promotion and needs --promote'
+                                  % (visit['name'], was))
+        elif info['sha256'] != app.get('sha256') and not promote:
+            raise Refused('install refused: a release other than the installed one is a promotion and needs --promote')
+        before = self.facts() if app['installed'] else None
+        folder = self.meta('install', apks=[info['sha256']], visit=visit and visit['name'])
+        if self.device.package(TEST)['installed']:
+            self.device.uninstall(TEST)  # test code never stays beside the release build
+        after = self.put([app_apk], [info])
+        if visit is not None:
+            visit['ended'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+            self.save(visit)
+        facts = self.facts()
+        return {'outcome': 'installed', **after, 'visit_ended': visit and visit['name'], 'after_check': after_check,
+                'promoted': info['sha256'] != app.get('sha256') and not (pulled and info['sha256'] == pulled['sha256']),
+                'facts': facts, 'facts_before': before,
+                'facts_changed': sorted(key for key in facts if before is not None and facts[key] != before[key]),
+                'meta': str(folder / 'meta.json')}
+
+    def push(self, directory, model=False):
+        """Make the lab folder hold DIR. A speech-model file of the Visit's inventory is left alone:
+        kept when DIR lacks it, refused when DIR would change it; `model` lifts both."""
         directory = validate_directory(directory)
-        self.in_visit('push')
+        visit = self.in_visit('push')
         expected = {p.relative_to(directory).as_posix(): sha_file(p) for p in directory.rglob('*') if p.is_file()}
-        before = self.device.inventory('files/' + rel) or {}
+        before = self.device.inventory(LAB_FOLDER) or {}
+        protected = set() if model else set(visit['model'])
         changed = {item for item, digest in expected.items() if before.get(item) != digest}
-        removed = set(before) - set(expected)
+        if changed & protected:
+            raise Refused('push refused: it would overwrite speech-model files (%s); only with --model'
+                          % ', '.join(sorted(changed & protected))[:300])
+        kept = (set(before) - set(expected)) & protected
+        removed = set(before) - set(expected) - protected
         if changed or removed:
-            self.device.push(directory, 'files/' + rel, changed, removed)
-        actual = self.device.inventory('files/' + rel) or {}
-        if actual != expected:
+            self.device.push(directory, changed, removed)
+        actual = self.device.inventory(LAB_FOLDER) or {}
+        if actual != {**expected, **{item: before[item] for item in kept}}:
             raise Failed('pushed inventory differs from the host directory')
-        folder = self.meta('push', target='files/' + rel, files=len(expected), sent=len(changed), removed=len(removed))
-        return {'outcome': 'pushed' if changed or removed else 'unchanged', 'target': 'files/' + rel,
-                'files': len(expected), 'sent': len(changed), 'removed': len(removed), 'meta': str(folder / 'meta.json')}
+        folder = self.meta('push', target=LAB_FOLDER, files=len(expected), sent=len(changed), removed=len(removed),
+                           model=model)
+        return {'outcome': 'pushed' if changed or removed else 'unchanged', 'target': LAB_FOLDER,
+                'files': len(expected), 'sent': len(changed), 'removed': len(removed), 'model_files_kept': len(kept),
+                'model_differs_from_visit_start': self.changed_model(visit), 'meta': str(folder / 'meta.json')}
 
     def pull(self, paths, to=None):
         rels = [name(p, PULL_ROOTS) for p in paths]
+        app = self.app()
+        if not app['installed']:
+            raise Refused('pull refused: app not installed')
+        if not self.readable(app):
+            raise Refused("pull refused: nothing reads the release build's data; pull during a Visit")
         payload = self.device.tar(*rels)
-        validate_tar(payload)
+        validate_tar(payload, inside=rels)
         dest = Path(to) if to else self.state / 'pull' / time.strftime('%Y%m%dT%H%M%S')
         dest.mkdir(parents=True, exist_ok=False)
         count = 0
-        if payload:
-            with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
-                for member in archive:
-                    if member.isfile():
-                        target = dest / member.name
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        with archive.extractfile(member) as src, target.open('xb') as out:
-                            shutil.copyfileobj(src, out)
-                        count += 1
+        for path, member, archive in members(payload, inside=rels):
+            target = dest / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.extractfile(member) as src, target.open('xb') as out:
+                shutil.copyfileobj(src, out)
+            count += 1
         return {'outcome': 'pulled', 'files': count, 'path': str(dest)}
 
     def run(self, classes, extras, timeout=1800):
@@ -630,7 +927,7 @@ class Phone:
                          % (self.visit_copy(visit), folder))
         ok = bool(re.search(r'^OK \(\d+ tests?\)', output, re.M)) and 'INSTRUMENTATION_CODE: -1' in output
         return {'outcome': 'passed' if ok else 'failed', 'path': str(folder),
-                'lab': self.device.inventory('files/lab')}
+                'lab': self.device.inventory(LAB_FOLDER)}
 
     def logs(self, since=None):
         app = self.app()
@@ -647,56 +944,135 @@ class Phone:
         self.device.stop()
         return {'outcome': 'stopped'}
 
-    def snapshot(self, label):
-        label = name(label)
-        folder = self.state / 'snapshots' / label
+    def snapshot(self, label, switch=False):
+        """A further copy of owner data on the lab build; with `switch`, the switch copy: all app data
+        but the speech model, and both APKs of the unmarked build, taken before the one-time switch."""
+        folder = self.state / 'snapshots' / name(label)
         if folder.exists():
             raise Refused('snapshot exists: ' + label)
         app, test = self.device.package(PKG), self.device.package(TEST)
-        if not app['installed']:
-            raise Refused('nothing to snapshot; app not installed')
+        current = self.layout(app)
+        if switch and current != 'unmarked':
+            raise Refused('snapshot --switch refused: it copies the unmarked debuggable build of the switch; '
+                          'that is not what is installed')
+        if not switch and current != 'test':
+            raise Refused('snapshot refused: ' + {
+                'unmarked': 'the installed build has no marker; use snapshot --switch NAME',
+                'owner': "nothing reads the release build's data; a Visit takes its copy when the lab build is installed",
+            }.get(current, 'app not installed'))
+        model = [LAB_FOLDER + '/' + path for path in self.kept_model()] if switch else []
+        skip = tuple(model) + SYSTEM_FILES if switch else OWNER_SKIP
         folder.mkdir(parents=True)
-        self.device.pull_apk(app['apk_path'], folder / 'app.apk')
-        if test['installed']:
-            self.device.pull_apk(test['apk_path'], folder / 'test.apk')
-        payload = self.device.tar(*DATA_DIRS)
-        validate_tar(payload)
-        (folder / 'data.tar').write_bytes(payload)
-        record = {'app_sha256': app['sha256'], 'test_sha256': test.get('sha256'), 'granted': app['granted'],
-                  'ime': self.device.ime(), 'data_sha256': sha(payload), 'ts': time.strftime('%Y-%m-%dT%H:%M:%S')}
-        for key, local in (('app_sha256', 'app.apk'), ('test_sha256', 'test.apk')):
-            if record[key] and sha_file(folder / local) != record[key]:
-                raise Failed('pulled APK differs from the installed one')
-        (folder / 'snapshot.json').write_text(json.dumps(record, indent=1, sort_keys=True))
-        return {'outcome': 'snapshotted', 'path': str(folder), **record}
+        try:
+            payload = self.device.copy(skip)
+            held = validate_tar(payload, outside=skip)
+            fingerprint = self.device.fingerprint()
+            if tar_fingerprint(payload, leave_out=EXCLUDED) != fingerprint:
+                raise Failed('the copy does not hold what the fingerprint sees; nothing kept')
+            record = {'kind': 'switch' if switch else 'owner', 'archive': 'data.tar', 'data_sha256': sha(payload),
+                      'fingerprint': fingerprint, 'app_sha256': app['sha256'], 'test_sha256': test.get('sha256'),
+                      'ts': time.strftime('%Y-%m-%dT%H:%M:%S')}
+            if switch:
+                lacking = sorted(what for what, place in SWITCH_HOLDS.items()
+                                 if not any(path.startswith(place) for path in held))
+                if lacking:
+                    raise Refused('snapshot --switch refused: the copy holds no %s; nothing kept' % ', '.join(lacking))
+                for package, local in ((app, 'app.apk'), (test, 'test.apk')):
+                    if package['installed']:
+                        self.device.pull_apk(package['apk_path'], folder / local)
+                        if sha_file(folder / local) != package['sha256']:
+                            raise Failed('pulled APK differs from the installed one')
+                record.update(model_files=model, granted=app['granted'], ime=self.device.ime())
+            (folder / 'data.tar').write_bytes(payload)
+            (folder / 'snapshot.json').write_text(json.dumps(record, indent=1, sort_keys=True))
+        except Exception:
+            shutil.rmtree(folder)
+            raise
+        return {'outcome': 'snapshotted', 'path': str(folder), 'files': len(held), **record}
 
-    def restore(self, label):
-        folder = self.state / 'snapshots' / name(label)
-        record = json.loads((folder / 'snapshot.json').read_text())
-        payload = (folder / 'data.tar').read_bytes()
-        if sha(payload) != record['data_sha256']:
-            raise Refused('snapshot archive changed since it was taken')
-        validate_tar(payload)
-        for key, local in (('app_sha256', 'app.apk'), ('test_sha256', 'test.apk')):
-            if record.get(key) and sha_file(folder / local) != record[key]:
-                raise Refused('snapshot APK changed since it was taken')
+    def kept_copy(self, label, switch):
+        """Archive, digest, fingerprint, what a restore leaves alone, and the record, of a Visit copy or a snapshot."""
+        visit = (self.state / 'visits' / name(label) / 'visit.json').is_file()
+        folder = self.state / 'snapshots' / label
+        record = json.loads((folder / 'snapshot.json').read_text()) if (folder / 'snapshot.json').is_file() else None
+        if switch:
+            if record is None or record.get('kind') != 'switch':
+                raise Refused('restore --switch refused: %s is no switch copy' % label)
+            return (folder / 'data.tar', record['data_sha256'], record['fingerprint'],
+                    tuple(record['model_files']) + SYSTEM_FILES, record)
+        if visit and folder.exists():
+            raise Refused('restore refused: %s names a Visit and a snapshot' % label)
+        if visit:
+            record = self.visit_record(label)
+            if record['copy'] is None:
+                raise Refused('restore refused: Visit %s never got its copy' % label)
+            return self.visit_copy(record), record['copy']['sha256'], record['fingerprint'], OWNER_SKIP, record
+        if record is None:
+            raise Refused('restore refused: no Visit and no snapshot named ' + label)
+        if record.get('kind') == 'switch':
+            raise Refused('restore refused: %s is a switch copy; use restore --switch %s' % (label, label))
+        if record.get('kind') != 'owner':
+            raise Refused('restore refused: %s was taken before ADR-028 and holds the model and test output; '
+                          'it stays with the owner' % label)
+        return folder / 'data.tar', record['data_sha256'], record['fingerprint'], OWNER_SKIP, record
+
+    def restore(self, label, switch=False):
+        """Owner data only: the lab folder (speech model, test output) and the test folders stay as they
+        are. With `switch`: all app data but the speech model, and the retained unmarked APKs when
+        another build is installed."""
+        archive, digest, fingerprint, skip, record = self.kept_copy(label, switch)
+        payload = archive.read_bytes()
+        if sha(payload) != digest:
+            raise Refused('restore refused: the copy changed since it was taken')
+        validate_tar(payload, outside=skip)
+        if tar_fingerprint(payload, leave_out=EXCLUDED) != fingerprint:
+            raise Refused('restore refused: the copy does not hold what its fingerprint names')
+        folder = self.state / 'snapshots' / label
+        apks = [(key, folder / local) for key, local in (('app_sha256', 'app.apk'), ('test_sha256', 'test.apk'))
+                if switch and record.get(key)]
+        for key, local in apks:
+            if not local.is_file() or sha_file(local) != record[key]:
+                raise Refused('restore refused: a retained APK changed since the switch copy was taken')
         self.not_live('restore')
-        meta = self.meta('restore', snapshot=label)
-        current = self.identity()
-        if current['app_sha256'] != record['app_sha256']:
-            self.device.install(folder / 'app.apk')
-        if record.get('test_sha256') and current['test_sha256'] != record['test_sha256']:
-            self.device.install(folder / 'test.apk')
-        self.device.replace_data(payload)
-        after = self.identity()
-        app = self.app()
-        if after['app_sha256'] != record['app_sha256'] or (
-                record.get('test_sha256') and after['test_sha256'] != record['test_sha256']):
-            raise Failed('restored APK identity does not match the snapshot')
-        not_restored = {'granted_permissions_missing': sorted(set(record['granted']) - set(app['granted'])),
-                        'ime_state_then': record['ime'], 'ime_state_now': self.device.ime(),
-                        'note': 'microphone grant, IME enablement/selection and FUTO toggles are not restorable here'}
-        return {'outcome': 'restored', **after, 'not_restored': not_restored, 'meta': str(meta / 'meta.json')}
+        if not switch:
+            try:
+                current = self.layout(self.app())
+            except Refused:
+                current = None
+            if current != 'test':
+                raise Refused('restore refused: owner data is written only under the lab build; install it first')
+        meta = self.meta('restore', copy=label, switch=switch)
+        installed = self.identity()
+        for key, local in apks:
+            if installed[key] != record[key]:
+                self.device.install(local, downgrade=True)
+        if switch and self.identity()['app_sha256'] != record['app_sha256']:
+            raise Failed('the retained unmarked APK is not installed; app data left as it was')
+        self.device.stop()
+        self.device.replace(payload, skip)
+        if self.device.fingerprint() != fingerprint:
+            raise Failed('restored owner data does not equal the copy %s; nothing runs until it does' % archive)
+        result = {'outcome': 'restored', **self.identity(), 'copy': str(archive), 'fingerprint': fingerprint,
+                  'meta': str(meta / 'meta.json')}
+        if switch:
+            result['not_restored'] = {
+                'granted_permissions_missing': sorted(set(record['granted']) - set(self.app()['granted'])),
+                'ime_state_then': record['ime'], 'ime_state_now': self.device.ime(),
+                'note': 'microphone grant, IME enablement/selection and FUTO toggles are not restorable here'}
+        return result
+
+    def forget(self, label):
+        """Delete a Visit record with its pulled release APK and its copy, once the Visit ended; it ends
+        only through the after-check of the release install."""
+        folder = self.state / 'visits' / name(label)
+        if folder.is_symlink() or not (folder / 'visit.json').is_file():
+            raise Refused('forget refused: no Visit named ' + label)
+        visit = self.visit_record(label)
+        if visit['ended'] is None:
+            raise Refused('forget refused: Visit %s has not ended; until its release is back its copy is the '
+                          'only one of owner data' % label)
+        shutil.rmtree(folder)
+        return {'outcome': 'forgotten', 'visit': label}
 
     def uninstall(self):
         token = self.state / '.allow-uninstall'
@@ -716,16 +1092,26 @@ class Phone:
 USAGE = """App-scoped phone access for ch.og.dictation. Output is one JSON object.
   status                          phone connected and permitted
   device                          allowlisted hardware/OS props, thermal status, GPU/TPU driver libs
-  app                             our app, test package, our IME state, FUTO versions, files/lab inventory
+  app                             our app with its layout, test package, our IME state, FUTO versions,
+                                  the open Visit; files/lab inventory unless release is installed
   check APP.apk [TEST.apk]        host-only: would install accept these APKs? (no phone, any worktree)
-  install APP.apk [TEST.apk]      only our packages; permission allowlist; no network permissions
-  push DIR [NAME]                 make files/NAME (default lab) equal DIR; sends only changed files
-  pull PATH... [--to DIR]         from files/lab or files/benchmark into corpus/lab/pull/<ts>/
+  install APP.apk TEST.apk        lab build: starts a Visit or continues the open one
+  install RELEASE.apk [--promote] release: ends the Visit; --promote for another release than the pulled one
+  push DIR [--model]              make files/lab hold DIR; sends only changed files; speech-model files
+                                  are kept, never deleted or overwritten, unless --model
+  pull PATH... [--to DIR]         read-only, from files/lab, files/benchmark, files/timing-receipts or
+                                  files/test into corpus/lab/pull/<ts>/; not while release is installed
   run CLASS[#method][,...] [k=v]  am instrument on the test package; saves output + app logcat;
                                   owner data is fingerprinted before and after
   logs [--since 'MM-DD HH:MM:SS.mmm'] | crash
   stop                            force-stop our app
-  snapshot NAME | restore NAME    retained APKs + files/, shared_prefs/, databases/; reports what it cannot restore
+  snapshot NAME                   a further copy of owner data, on the lab build
+  restore NAME                    owner data back from the copy of Visit NAME or snapshot NAME; the
+                                  speech model, test output and test folders stay as they are
+  forget NAME                     delete the record, pulled release APK and copy of an ended Visit
+  snapshot --switch NAME          one-time switch: all app data but the speech model, and both APKs,
+                                  of the unmarked debuggable build
+  restore --switch NAME           puts that back, the unmarked APKs too; speech-model files stay
   uninstall                       needs corpus/lab/.allow-uninstall created by the user
 Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
 install, run, restore, stop, uninstall refuse while the keyboard is in use.
@@ -734,12 +1120,35 @@ APK the app's marker; an APK without a marker is refused by check, install and r
 run, push, stop need an open Visit on that lab build with owner data equal to the Visit copy; run
 refuses classes under ch.og.dictation.labrun (Lab runs).
 Every verb but help and check works only from the main checkout, never from a worktree.
-Visit: snapshot NAME, check, install, push DIR, run, pull, restore NAME.
+Speech model: the files of the kept model copy corpus/lab/model, laid out as in files/lab, are the
+speech-model files; everything else in files/lab is test output. No Visit starts without that folder.
+Visit:
+  1. install APP.apk TEST.apk over release: the release APK is pulled, the lab build installed, owner
+     data copied at once (History included; not the speech model, test output or test folders) with
+     its fingerprint and the model inventory, then the test folders are emptied. All of it is kept
+     in corpus/lab/visits/NAME/ until forget NAME.
+  2. push DIR, run, pull. A later lab build goes over the first with install APP.apk TEST.apk: only
+     while owner data equals the copy; no new pull or copy; the test folders are emptied again.
+  3. install corpus/lab/visits/NAME/release.apk ends the Visit: refused until owner data equals the
+     copy (else restore NAME) and the speech model equals Visit start (else push corpus/lab/model
+     --model). It removes the test package and reports uid, first-install time, microphone grant,
+     keyboard enabled and selected, before and after. Another release needs --promote.
+  Any failure: restore NAME if owner data differs, release back in the same session, debug afterwards.
+  A Visit whose copy could not be taken runs nothing: install the lab build again, or its release back.
+One-time switch (unmarked debuggable build installed): snapshot --switch NAME; pull files/benchmark
+and receipts; install APP.apk TEST.apk (refused without a switch copy of that APK whose fingerprint
+is the current one; owner data must equal it after the update too); run; install RELEASE.apk
+--promote. Undo: restore --switch NAME. The owner deletes the switch copy by hand.
 Owner present (phone time is scarce): build, check, install and push before asking; the owner
 only unlocks, keeps FUTO selected and the screen awake; run ch.og.dictation.PhoneReadyTest
 (one NOT READY line per unmet precondition), then one batched run A,B,C; analyse afterwards.
 Receipts in files/lab roll over at 2 MiB into NAME.prev.jsonl (one older generation):
 pull NAME.jsonl and NAME.prev.jsonl right after measuring."""
+
+
+def flag(args, word):
+    """(whether `word` is among the arguments, the arguments without it)."""
+    return word in args, [arg for arg in args if arg != word]
 
 
 def dispatch(argv, phone):
@@ -754,10 +1163,14 @@ def dispatch(argv, phone):
         return simple[verb]()
     if verb == 'check' and 1 <= len(args) <= 2:
         return phone.check(*args)
-    if verb == 'install' and 1 <= len(args) <= 2:
-        return phone.install(*args)
-    if verb == 'push' and 1 <= len(args) <= 2:
-        return phone.push(*args)
+    if verb == 'install':
+        promote, apks = flag(args, '--promote')
+        if 1 <= len(apks) <= 2:
+            return phone.install(*apks, promote=promote)
+    if verb == 'push':
+        model, folders = flag(args, '--model')
+        if len(folders) == 1:
+            return phone.push(folders[0], model=model)
     if verb == 'pull' and args:
         to = None
         if '--to' in args:
@@ -770,8 +1183,12 @@ def dispatch(argv, phone):
         return phone.run(args[0], args[1:])
     if verb == 'logs' and len(args) in (0, 2):
         return phone.logs(args[1] if args else None)
-    if verb in ('snapshot', 'restore') and len(args) == 1:
-        return getattr(phone, verb)(args[0])
+    if verb in ('snapshot', 'restore'):
+        switch, names = flag(args, '--switch')
+        if len(names) == 1:
+            return getattr(phone, verb)(names[0], switch=switch)
+    if verb == 'forget' and len(args) == 1:
+        return phone.forget(args[0])
     raise Refused('unknown command or arguments; see help')
 
 

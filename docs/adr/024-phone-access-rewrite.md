@@ -108,3 +108,57 @@ Open:
 - Supersedes above: "`install restore stop uninstall` refuse while our IME is bound" now includes `run`;
   "`python3 tools/phone` … irrelevant" still holds for device verbs, while `python3 tools/phone check`
   is the supported host-only call.
+
+## Amendment (2026-11-25, ADR-028): Visit lifecycle (#76)
+
+- Visit start is `install APP.apk TEST.apk` over release: the release APK is pulled into the Visit
+  record's folder, the lab build installed, owner data copied at once (everything the fingerprint sees,
+  History in `no_backup/` included; lab folder and test folders excluded) with the fingerprint and the
+  model inventory, and only then the test folders are emptied. The host recomputes the fingerprint from
+  the archive; a copy that does not equal it is no Visit copy. Until the copy exists the record holds
+  null for copy, fingerprint and model, nothing runs, and only the lab build again or the pulled release
+  goes on. An install that replaced nothing leaves no record.
+- Lab over lab keeps the Visit: only on a lab build the Visit lists and with an equal fingerprint before
+  and after; no pull, no copy; test folders emptied again; the record lists every build. Lab over release
+  always opens a new record with its own pull and copy, whatever older records exist; pulled APKs and
+  copies stay per record until `forget`.
+- Visit end is `install` of a release over the lab build: refused until the fingerprint equals the copy
+  and every inventoried speech-model file is as at Visit start. The pulled release needs no flag; any
+  other release, and any release when none was pulled, needs `--promote`. The test package is removed
+  first, so test code never sits beside release. Output: uid, first-install time, microphone grant,
+  keyboard enabled and selected, before and after, and which changed. Release over release is a
+  promotion unless it is the installed one. Release never goes straight over an unmarked build.
+- Speech-model files are the lab-folder paths that exist in the kept model copy `corpus/lab/model`
+  (laid out as in `files/lab`); everything else in the lab folder is test output. The wrapper holds no
+  model name. No Visit starts and no switch copy is taken without that folder. Reason: the lab build
+  appends to its own traces in the lab folder, so "everything there at Visit start" would block every
+  Visit end.
+- `app`, `install`, `logs`, `crash` and `meta.json` never use `run-as` on a non-debuggable app
+  (`lab_sha256` is then null); `pull`, `snapshot`, `restore`, `push`, `run`, `stop` refuse on release.
+- `snapshot NAME` (lab build only) and `restore NAME` (a Visit's copy or a snapshot) cover owner data
+  only: restore deletes and rewrites what the fingerprint sees and nothing in the lab folder, the test
+  folders or the caches; it checks the archive against its fingerprint before deleting and the phone
+  against it afterwards. Snapshots hold no APK. Snapshots from before this amendment are refused.
+- `push DIR [--model]` writes only the lab folder (no target argument). Without `--model` an inventoried
+  speech-model file is kept when DIR lacks it and the push is refused when DIR would change it; test
+  output absent from DIR is deleted as before. Recovery from a changed model:
+  `push corpus/lab/model --model`.
+- `forget NAME` deletes one ended Visit's folder (record, pulled APK, copy); a Visit ends only through
+  the after-check of its release install.
+- Switch mode: `snapshot --switch NAME` on an unmarked debuggable build keeps all app data except the
+  speech-model files and the caches, plus both APKs, and is refused unless the archive holds History,
+  Dictionary, History notices and settings. A lab install over an unmarked build needs a switch copy of
+  that APK whose fingerprint is the current one, and the fingerprint must equal it again after the
+  update; the Visit it starts pulled no release, so its end needs `--promote`. `restore --switch NAME`
+  reinstalls the retained APKs when another build is installed (`install -r -d`), then puts the data back
+  without touching speech-model files. Nothing deletes a switch copy.
+- `pull` reads `files/lab`, `files/benchmark`, `files/timing-receipts` and `files/test`, and only
+  members under the paths asked for are accepted.
+- Asking stays a harness rule: `install`, `restore`, `stop`, `forget` are not in the allow list. `push`
+  is, with or without `--model`.
+- Withdrawn: "Test code runs as the app's uid and can copy `files/benchmark` into `files/lab`; accepted
+  and stated." The lab build has no path to owner recordings (ADR-028). Superseded above: `push … NAME`,
+  "`pull` is limited to `files/lab` and `files/benchmark`", and Recovery's "`snapshot`/`restore` cover the
+  retained APK pair plus `files/`, `shared_prefs/`, `databases/`".
+- Not built: later Visit copies skipping the legacy recordings while their fingerprint is unchanged;
+  every Visit copy holds them.
