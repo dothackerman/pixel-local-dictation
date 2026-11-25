@@ -25,6 +25,11 @@ data class TakeFacts(
      * before this event. Never inferred from package, field ID or editor attributes.
      */
     val rotation: Boolean,
+    /**
+     * The editor that last started input belongs to another app than the one the take started in
+     * (both packages known). A rotation never moves a take to another app.
+     */
+    val otherApp: Boolean,
 )
 
 /**
@@ -56,6 +61,8 @@ object EditorEventPolicy {
             // The view can be restarted without a new input start; keep that take. After a rotation
             // the panel returning on a live session ends the hold with the take continuing.
             EditorEvent.INPUT_VIEW_START -> if (take.sameSession || hold) EditorDecision.NOTHING else EditorDecision.INTERRUPT
+            // An input start from another app ends the hold, whatever the rotation says: no authority, no panel there.
+            EditorEvent.INPUT_START -> if (hold && !take.otherApp) EditorDecision.REVOKE_AUTHORITY else EditorDecision.INTERRUPT
             // Every input start ends the session (InputSession.start); hide and input loss end it too.
             else -> if (hold) EditorDecision.REVOKE_AUTHORITY else EditorDecision.INTERRUPT
         }

@@ -11,7 +11,7 @@ class EditorEventPolicyTest {
         EditorEvent.WINDOW_HIDDEN, EditorEvent.SCREEN_OFF)
     /** A recording take with no rotation; tests vary one fact at a time with copy(). */
     private fun take(sameSession: Boolean = true, returning: Boolean = false) = TakeFacts(
-        active = true, returning = returning, sameSession = sameSession, capturing = true, finishing = false, rotation = false)
+        active = true, returning = returning, sameSession = sameSession, capturing = true, finishing = false, rotation = false, otherApp = false)
 
     @Test fun everyEndingEventInterruptsATake() {
         for (event in ending) assertEquals(event.name, INTERRUPT, EditorEventPolicy.decide(event, take()))
@@ -72,6 +72,29 @@ class EditorEventPolicyTest {
     @Test fun withoutATakeNothingHappens() {
         for (event in EditorEvent.entries) {
             assertEquals(event.name, NOTHING, EditorEventPolicy.decide(event, take(sameSession = false).copy(active = false, capturing = false)))
+        }
+    }
+
+    /** A rotation never moves a take to another app: its input start ends the take, whatever the rotation says. */
+    @Test fun anotherAppsInputStartInterruptsEvenDuringARotation() {
+        val capturing = take(sameSession = false).copy(rotation = true, otherApp = true)
+        val stopWait = capturing.copy(capturing = false, finishing = true)
+        for (facts in listOf(capturing, stopWait)) {
+            assertEquals(INTERRUPT, EditorEventPolicy.decide(EditorEvent.INPUT_START, facts))
+        }
+    }
+
+    /** Only the input start tells whose editor it is: the hides before it are still the rotation's. */
+    @Test fun theOtherAppFactChangesNothingButTheInputStart() {
+        val facts = take(sameSession = false).copy(rotation = true, otherApp = true)
+        for (event in ending - EditorEvent.SCREEN_OFF - EditorEvent.INPUT_START) {
+            assertEquals(event.name, EditorDecision.REVOKE_AUTHORITY, EditorEventPolicy.decide(event, facts))
+        }
+        assertEquals(NOTHING, EditorEventPolicy.decide(EditorEvent.INPUT_VIEW_START, facts))
+        assertEquals("a hand-back is not an interruption there either",
+            NOTHING, EditorEventPolicy.decide(EditorEvent.INPUT_START, facts.copy(returning = true)))
+        for (event in EditorEvent.entries) {
+            assertEquals(event.name, EditorEventPolicy.decide(event, take()), EditorEventPolicy.decide(event, take().copy(otherApp = true)))
         }
     }
 }

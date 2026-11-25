@@ -295,15 +295,11 @@ class TakeController(
     fun editorEvent(event: EditorEvent): EditorDecision {
         // Identification uses only what this app observed, at or before this event.
         rotations.observe()
-        val decided = EditorEventPolicy.decide(event, TakeFacts(
+        val decision = EditorEventPolicy.decide(event, TakeFacts(
             active = takeActive, returning = returning, sameSession = session.matches(recordingToken),
             capturing = takeActive && !stopWait && !interrupted,
             finishing = takeActive && stopWait && !interrupted,
-            rotation = rotationIdentified(event)))
-        // A rotation never moves a take to another app: an input start from a different package
-        // ends the hold, whatever the rotation window says (no authority, no panel there).
-        val decision = if (decided == EditorDecision.REVOKE_AUTHORITY && event == EditorEvent.INPUT_START && anotherApp())
-            EditorDecision.INTERRUPT else decided
+            rotation = rotationIdentified(event), otherApp = anotherApp()))
         if (event == EditorEvent.INPUT_START && takeActive && decision == EditorDecision.REVOKE_AUTHORITY) judgeField()
         when (decision) {
             EditorDecision.NOTHING -> if (event == EditorEvent.INPUT_VIEW_START && takeActive && !returning) panelVisible()
