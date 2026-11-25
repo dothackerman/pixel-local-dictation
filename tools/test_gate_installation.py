@@ -50,6 +50,11 @@ class GateInstallationTests(unittest.TestCase):
                 self.assertEqual(claude['sandbox']['filesystem']['allowWrite'], ['~/.gradle'])
                 for name in ('./AGENTS.md', './CLAUDE.md'):
                     self.assertIn(name, claude['sandbox']['filesystem']['denyWrite'])
+                # Claude Code creates agent worktrees under .claude/worktrees; they must stay writable.
+                worktrees = Path('.claude/worktrees')
+                for entry in claude['sandbox']['filesystem']['denyWrite']:
+                    denied = Path(entry)
+                    self.assertFalse(denied == worktrees or denied in worktrees.parents, entry)
             # Copied absolute configuration must fail readiness in another checkout.
             other = Path(directory) / 'other-checkout'
             shutil.copytree(root, other, ignore=shutil.ignore_patterns('.git', '__pycache__'))
