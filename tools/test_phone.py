@@ -24,13 +24,14 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 phone = importlib.util.module_from_spec(spec)
 loader.exec_module(phone)
 
-PKG, TEST = phone.PKG, phone.TEST
+RELEASE, APP, TEST, SWITCH_TEST = phone.PKG, phone.LAB_APP, phone.TEST, phone.SWITCH_TEST
+NS = phone.PKG  # the code namespace, which class names keep
 BUILD = 'commit=' + '1' * 40 + ';hash=' + '2' * 64
 LAB, OWNER = 'layout=test;' + BUILD, 'layout=owner;' + BUILD
 OTHER_LAB = 'layout=test;commit=' + '3' * 40 + ';hash=' + '4' * 64
 # ADR-028 as built: lab folder and test folders; plus what Android and androidx write on their own.
 INPUTS = 'files/lab/labrun-inputs'  # where `measure` places copies of owner recordings and receipts
-LAB_RUN_CLASS = PKG + '.labrun.PipelineTest'
+LAB_RUN_CLASS = NS + '.labrun.PipelineTest'
 NOT_FINGERPRINTED = ('files/lab', 'files/test', 'no_backup/test', 'shared_prefs/test_history_notices.xml',
                      'shared_prefs/test_settings.xml', 'cache', 'code_cache', 'files/profileInstalled')
 
@@ -50,36 +51,47 @@ def tar_bytes(files):
 
 
 class FakeDevice:
-    """In-memory phone: app data as {relpath: bytes}, installed APKs as bytes.
+    """In-memory phone: app data as {relpath: bytes} per app, installed APKs as bytes.
 
-    Like the phone, it refuses `run-as` when the installed app is not debuggable."""
+    `data` is the lab app's data, `release_data` release's. Like the phone, it refuses `run-as`
+    when the app is not installed or not debuggable."""
 
     def __init__(self):
         self.builds = {}  # sha256 of APK bytes -> what the build tools report for it
         self.contents = {}  # package -> installed APK bytes
-        self.packages = {PKG: {'installed': False, 'versionCode': 12, 'versionName': '1',
+        self.packages = {RELEASE: {'installed': False, 'versionCode': 12, 'versionName': '1',
+                                   'apk_path': '/data/app/r/base.apk', 'uid': 10100,
+                                   'granted': ['android.permission.RECORD_AUDIO'], 'pid': None,
+                                   'first_install': '2026-10-01 08:00:00', 'last_update': '2026-11-20 08:00:00'},
+                         APP: {'installed': False, 'versionCode': 12, 'versionName': '1',
                                'apk_path': '/data/app/x/base.apk', 'uid': 10123, 'granted': ['android.permission.RECORD_AUDIO'],
-                               'pid': None, 'first_install': '2026-10-01 08:00:00'},
+                               'pid': None, 'first_install': '2026-11-25 08:00:00'},
                          TEST: {'installed': False, 'versionCode': 0, 'versionName': None,
-                                'apk_path': '/data/app/y/base.apk', 'uid': 10123, 'granted': [], 'pid': None}}
+                                'apk_path': '/data/app/y/base.apk', 'uid': 10124, 'granted': [], 'pid': None},
+                         SWITCH_TEST: {'installed': False, 'versionCode': 0, 'versionName': None,
+                                       'apk_path': '/data/app/z/base.apk', 'uid': 10101, 'granted': [], 'pid': None}}
         for futo in phone.FUTO:
             self.packages[futo] = {'installed': False}
         self.data = {'files/lab/variant.json': b'{}', 'files/lab/encoder.onnx': b'onnx',
                      'files/benchmark/take1.wav': b'RIFF', 'shared_prefs/p.xml': b'<x/>',
-                     'no_backup/history/1.json': b'{"text":"owner"}', 'files/test/dictionary.json': b'[]'}
+                     'no_backup/history/1.json': b'{"text":"lab"}', 'files/test/dictionary.json': b'[]'}
+        self.release_data = {'files/lab/encoder.onnx': b'onnx', 'files/dictionary/revision.json': b'["Oriol"]',
+                             'no_backup/history/1.json': b'{"text":"owner"}', 'shared_prefs/settings.xml': b'<s/>'}
         self.fail = set()  # the adapter calls that fail, as a broken transport would
-        self.ime_state = {'enabled': True, 'selected': False, 'bound': False, 'input_shown': False}
+        self.ime_state = {'enabled': True, 'selected': False, 'bound': False, 'input_shown': False}  # the lab keyboard
+        self.release_ime = {'enabled': True, 'selected': False, 'bound': False, 'input_shown': False}
         self.calls = []
         self.during_run = lambda: None
         self.report = 'INSTRUMENTATION_STATUS: stream=LAB RUN completed: fake\n'  # what a Lab run's harness reports
         self.seen_inputs = None  # the input folder as the instrumented class found it
-        self.place(self.build(PKG, LAB, True, b'lab app'))
+        self.place(self.build(APP, LAB, True, b'lab app'))
         self.place(self.build(TEST, LAB, True, b'lab tests'))
 
     def build(self, package, marker, debuggable, content, signer='s'):
         """An APK the build tools can read; returns its bytes."""
-        self.builds[sha(content)] = {'package': package, 'versionCode': 12 if package == PKG else 0, 'sha256': sha(content),
-                                     'signer': signer, 'permissions': [], 'debuggable': debuggable, 'marker': marker}
+        self.builds[sha(content)] = {'package': package, 'versionCode': 0 if package in (TEST, SWITCH_TEST) else 12,
+                                     'sha256': sha(content), 'signer': signer, 'permissions': [],
+                                     'debuggable': debuggable, 'marker': marker}
         return content
 
     def place(self, content):
@@ -88,18 +100,22 @@ class FakeDevice:
         self.contents[package] = content
         self.packages[package].update(installed=True, sha256=sha(content))
 
-    def run_as(self):
-        if not self.packages[PKG]['installed']:
-            raise phone.Failed('run-as: unknown package: ' + PKG)
-        if not self.builds[self.packages[PKG]['sha256']]['debuggable']:
-            raise phone.Failed('run-as: package not debuggable: ' + PKG)
+    def run_as(self, of=APP):
+        if not self.packages[of]['installed']:
+            raise phone.Failed('run-as: unknown package: ' + of)
+        if not self.builds[self.packages[of]['sha256']]['debuggable']:
+            raise phone.Failed('run-as: package not debuggable: ' + of)
+        self.calls.append(('run_as', of))
+
+    def of(self, package):
+        return self.release_data if package == RELEASE else self.data
 
     def attempt(self, call):
         if call in self.fail:
             raise phone.Failed(call + ': transport error')
 
-    def outside(self, skip):
-        return {k: v for k, v in self.data.items() if not any(k == s or k.startswith(s + '/') for s in skip)}
+    def outside(self, skip, of=APP):
+        return {k: v for k, v in self.of(of).items() if not any(k == s or k.startswith(s + '/') for s in skip)}
 
     def connect(self):
         pass
@@ -118,19 +134,19 @@ class FakeDevice:
             raise phone.Refused('package outside scope')
         return dict(self.packages[pkg])
 
-    def ime(self):
-        return dict(self.ime_state)
+    def ime(self, of=APP):
+        return dict(self.release_ime if of == RELEASE else self.ime_state)
 
     def inventory(self, rel):
         self.run_as()
         files = {k[len(rel) + 1:]: sha(v) for k, v in self.data.items() if k.startswith(rel + '/')}
         return files or None
 
-    def fingerprint(self):
-        self.run_as()
+    def fingerprint(self, of=APP):
+        self.run_as(of)
         self.calls.append(('fingerprint',))
         lines = []
-        for path, content in self.outside(NOT_FINGERPRINTED).items():
+        for path, content in self.outside(NOT_FINGERPRINTED, of).items():
             lines += ['%s  ./%s' % (sha(content), path), '%d ./%s' % (len(content), path)]
         return {'digest': sha(''.join(line + '\n' for line in sorted(lines)).encode()), 'files': len(lines) // 2}
 
@@ -144,21 +160,26 @@ class FakeDevice:
     def apk_info(self, path):
         return dict(self.builds[sha(Path(path).read_bytes())])
 
-    def install(self, path, downgrade=False):
+    def install(self, path):
         self.attempt('install')
         content = Path(path).read_bytes()
+        package = self.builds[sha(content)]['package']
         self.place(content)
-        self.calls.append(('install', self.builds[sha(content)]['package']) + (('downgrade',) if downgrade else ()))
-        # What Android and androidx write on every update.
-        self.data.update({'code_cache/startup': sha(content).encode(), 'files/profileInstalled': b'1'})
+        self.calls.append(('install', package))
+        if package == RELEASE:
+            self.packages[RELEASE]['last_update'] = '2026-11-25 12:00:00'
+        if package in (RELEASE, APP):  # what Android and androidx write on every update
+            self.of(package).update({'code_cache/startup': sha(content).encode(), 'files/profileInstalled': b'1'})
 
     def uninstall(self, pkg):
         self.packages[pkg]['installed'] = False
         self.packages[pkg].pop('sha256', None)
         self.calls.append(('uninstall', pkg))
+        if pkg == APP:
+            self.data = {}  # Android removes the app's data with it
 
-    def stop(self):
-        self.calls.append(('stop',))
+    def stop(self, of=APP):
+        self.calls.append(('stop',) + (() if of == APP else (of,)))
 
     def push(self, directory, changed, removed):
         self.run_as()
@@ -168,9 +189,9 @@ class FakeDevice:
         for item in changed:
             self.data['files/lab/' + item] = (Path(directory) / item).read_bytes()
 
-    def tar(self, *rels):
-        self.run_as()
-        files = {k: v for k, v in self.data.items() if any(k == r or k.startswith(r + '/') for r in rels)}
+    def tar(self, *rels, of=APP):
+        self.run_as(of)
+        files = {k: v for k, v in self.of(of).items() if any(k == r or k.startswith(r + '/') for r in rels)}
         return tar_bytes(files) if files else b''
 
     def pull_apk(self, remote, local):
@@ -179,23 +200,26 @@ class FakeDevice:
                 Path(local).write_bytes(self.contents[pkg])
                 self.calls.append(('pull_apk', pkg))
 
-    def copy(self, skip):
-        self.run_as()
+    def copy(self, skip, of=APP):
+        self.run_as(of)
         self.attempt('copy')
         self.calls.append(('copy',))
-        files = self.outside(skip)
+        files = self.outside(skip, of)
         return tar_bytes({'./' + path: content for path, content in files.items()}) if files else b''
 
-    def replace(self, archive, skip):
-        self.run_as()
+    def replace(self, archive, skip, of=APP):
+        self.run_as(of)
         self.calls.append(('replace',))
-        self.data = {k: v for k, v in self.data.items() if k not in self.outside(skip)}
+        data = {k: v for k, v in self.of(of).items() if k not in self.outside(skip, of)}
         if archive:
             with tarfile.open(fileobj=io.BytesIO(archive)) as a:
                 for m in a:
                     if m.isfile():
-                        self.data[m.name[2:] if m.name.startswith('./') else m.name] = a.extractfile(m).read()
-
+                        data[m.name[2:] if m.name.startswith('./') else m.name] = a.extractfile(m).read()
+        if of == RELEASE:
+            self.release_data = data
+        else:
+            self.data = data
     def empty_test_folders(self):
         self.run_as()
         self.calls.append(('empty',))
@@ -248,10 +272,10 @@ class PhoneCase(unittest.TestCase):
 
     def visit(self, **changes):
         """A Visit record as Visit start leaves it, for the installed lab build; returns the path of its copy."""
-        record = {'name': 'v1', 'started': '2026-11-24T10:00:00', 'ended': None, 'release': None,
+        record = {'name': 'v1', 'started': '2026-11-24T10:00:00', 'ended': None,
                   'copy': {'archive': 'owner-data.tar', 'sha256': 'c' * 64},
                   'fingerprint': self.device.fingerprint(), 'model': {},
-                  'lab_builds': [{'app_sha256': self.device.packages[PKG]['sha256'],
+                  'lab_builds': [{'app_sha256': self.device.packages[APP]['sha256'],
                                   'test_sha256': self.device.packages[TEST]['sha256'], 'marker': LAB}], **changes}
         folder = self.root / 'lab/visits' / record['name']
         folder.mkdir(parents=True, exist_ok=True)
@@ -271,34 +295,41 @@ class PhoneCase(unittest.TestCase):
         return [json.loads(path.read_text()) for path in sorted((self.root / 'lab/visits').glob('*/visit.json'))]
 
     def lab_apks(self, tag='lab', marker=LAB):
-        return [self.apk(tag + '-app.apk', PKG, marker, True), self.apk(tag + '-test.apk', TEST, marker, True)]
+        return [self.apk(tag + '-app.apk', APP, marker, True), self.apk(tag + '-test.apk', TEST, marker, True)]
 
     def release_apk(self, tag='release'):
-        return self.apk(tag + '.apk', PKG, OWNER, False)
+        return self.apk(tag + '.apk', RELEASE, OWNER, False)
 
     def with_release_installed(self, tag='release'):
-        """The phone between Visits: release, the test package and test data left over from an earlier Visit."""
+        """Release installed and known to the wrapper, as after the switch."""
         path = self.release_apk(tag)
         self.device.place(Path(path).read_bytes())
         self.phone.remember([self.device.builds[sha(Path(path).read_bytes())]])  # as its own install recorded it
         self.device.calls.clear()
         return path
 
+    def without_lab_app(self):
+        """No lab app installed; what lies in `data` stands for what a fresh lab app finds."""
+        for package in (APP, TEST):
+            self.device.packages[package]['installed'] = False
+            self.device.packages[package].pop('sha256', None)
+
     def start_visit(self):
-        """Release installed, then the lab build over it; returns the pulled release APK of the new Visit."""
+        """Release installed, then the lab app beside it; returns the name of the new Visit."""
         self.with_release_installed()
+        self.without_lab_app()
         name = self.call('install', *self.lab_apks())['visit']
         self.device.calls.clear()
-        return str(self.root / 'lab/visits' / name / 'release.apk')
-
+        return name
 
 class PhoneTests(PhoneCase):
     def test_read_only_verbs_expose_only_our_app_and_allowlisted_facts(self):
         info = self.call('app')
-        self.assertEqual(set(info), {'app', 'test', 'ime', 'futo', 'lab', 'visit'})
-        self.assertEqual((info['app']['layout'], info['visit']), ('test', None))
-        self.assertNotIn('apk_path', info['app'])
-        self.assertNotIn('apk_path', info['test'])
+        self.assertEqual(set(info), {'release', 'app', 'test', 'ime', 'futo', 'lab', 'visit'})
+        self.assertEqual((info['release']['layout'], info['app']['layout'], info['visit']), (None, 'test', None))
+        self.assertEqual(set(info['ime']), {'release', 'lab'})
+        for key in ('release', 'app', 'test'):
+            self.assertNotIn('apk_path', info[key])
         self.assertEqual(set(info['futo']), set(phone.FUTO))
         device = self.call('device')
         self.assertEqual(set(device['props']), set(phone.PROPS))
@@ -316,7 +347,7 @@ class PhoneTests(PhoneCase):
                 self.call('pull', bad)
 
     def test_pull_takes_only_what_was_asked_for_from_the_archive(self):
-        self.device.tar = lambda *rels: tar_bytes({'files/lab/a': b'1', 'shared_prefs/settings.xml': b'<owner/>'})
+        self.device.tar = lambda *rels, of: tar_bytes({'files/lab/a': b'1', 'shared_prefs/settings.xml': b'<owner/>'})
         with self.assertRaises(phone.Refused):
             self.call('pull', 'files/lab', '--to', str(self.root / 'out'))
         self.assertFalse((self.root / 'out').exists())
@@ -347,32 +378,32 @@ class PhoneTests(PhoneCase):
 
     def test_run_records_output_logcat_and_lab_inventory(self):
         self.visit()
-        result = self.call('run', PKG + '.NormalBaselineTest', 'provider=webgpu')
+        result = self.call('run', NS + '.NormalBaselineTest', 'provider=webgpu')
         self.assertEqual(result['outcome'], 'passed')
         self.assertIn('result.json', result['lab'])
         folder = Path(result['path'])
         self.assertTrue((folder / 'meta.json').exists() and (folder / 'logcat.txt').exists())
-        self.assertEqual(self.did('instrument'), [('instrument', PKG + '.NormalBaselineTest', (('provider', 'webgpu'),))])
+        self.assertEqual(self.did('instrument'), [('instrument', NS + '.NormalBaselineTest', (('provider', 'webgpu'),))])
         self.assertEqual(self.did('logcat')[0][:2], ('logcat', 10123))
         meta = json.loads((folder / 'meta.json').read_text())
         self.assertEqual(set(meta) >= {'verb', 'ts', 'app_sha256', 'test_sha256', 'lab_sha256'}, True)
-        for bad in (['run', 'Foo;rm'], ['run', PKG + '.NormalBaselineTest', 'noequals'], ['run', PKG + '.NormalBaselineTest', '1bad=x']):
+        for bad in (['run', 'Foo;rm'], ['run', NS + '.NormalBaselineTest', 'noequals'], ['run', NS + '.NormalBaselineTest', '1bad=x']):
             with self.assertRaises(phone.Refused):
                 self.call(*bad)
 
     def test_check_accepts_or_refuses_apks_without_touching_the_phone(self):
-        app = self.apk('app.apk', PKG, LAB, True)
+        app = self.apk('app.apk', APP, LAB, True)
         test = self.apk('test.apk', TEST, LAB, True, signer='other')
         with self.assertRaises(phone.Refused):
             self.call('check', app, test)
         test = self.apk('test.apk', TEST, LAB, True)
         result = self.call('check', app, test)
-        self.assertEqual([r['package'] for r in result], [PKG, TEST])
+        self.assertEqual([r['package'] for r in result], [APP, TEST])
         self.assertEqual(self.device.calls, [])
 
     def test_install_refuses_network_permissions_foreign_packages_and_live_keyboard(self):
         self.visit()
-        app = self.apk('app.apk', PKG, LAB, True)
+        app = self.apk('app.apk', APP, LAB, True)
         test = self.apk('test.apk', TEST, LAB, True, signer='other')
         with self.assertRaises(phone.Refused):
             self.call('install', app, test)
@@ -384,7 +415,7 @@ class PhoneTests(PhoneCase):
         result = self.call('install', app, test)
         self.assertEqual(result['outcome'], 'installed')
         self.assertEqual(result['app_sha256'], sha(b'app.apk'))
-        self.assertEqual(self.did('install'), [('install', PKG), ('install', TEST)])
+        self.assertEqual(self.did('install'), [('install', APP), ('install', TEST)])
 
     def test_stop_and_uninstall_gates(self):
         self.visit()
@@ -397,12 +428,32 @@ class PhoneTests(PhoneCase):
             self.call('uninstall')
         (self.root / 'lab').mkdir(exist_ok=True)
         (self.root / 'lab/.allow-uninstall').touch()
-        with self.assertRaises(phone.Refused):  # IME still enabled
-            self.call('uninstall')
-        self.device.ime_state['enabled'] = False
+        self.device.ime_state['bound'] = True
+        self.refused('lab keyboard is in use', 'uninstall')
+        self.device.ime_state['bound'] = False
         self.assertEqual(self.call('uninstall')['outcome'], 'uninstalled')
         self.assertFalse((self.root / 'lab/.allow-uninstall').exists())
-        self.assertFalse(self.device.packages[PKG]['installed'])
+        self.assertFalse(self.device.packages[APP]['installed'])
+
+    def test_uninstall_removes_the_lab_app_and_the_0_2_5_tests_never_release_and_ends_the_visit(self):
+        self.with_release_installed()
+        self.device.place(self.device.build(SWITCH_TEST, None, True, b'0.2.5 tests'))
+        name = self.visit(name='v1').parent.name
+        (self.root / 'lab/.allow-uninstall').touch()
+        result = self.call('uninstall')
+        self.assertEqual(self.did('uninstall'), [('uninstall', TEST), ('uninstall', APP), ('uninstall', SWITCH_TEST)])
+        self.assertTrue(self.device.packages[RELEASE]['installed'])
+        self.assertEqual((result['visit_ended'], result['release_changed']), (name, []))
+        self.assertIsNotNone(self.records()[0]['ended'])
+        self.assertEqual(self.call('forget', name)['outcome'], 'forgotten')
+
+    def test_uninstall_leaves_the_0_2_5_tests_while_release_is_still_the_unmarked_build(self):
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.5 app'))
+        self.device.place(self.device.build(SWITCH_TEST, None, True, b'0.2.5 tests'))
+        (self.root / 'lab/.allow-uninstall').touch()
+        self.call('uninstall')
+        self.assertEqual(self.did('uninstall'), [('uninstall', TEST), ('uninstall', APP)])
+        self.assertTrue(self.device.packages[SWITCH_TEST]['installed'], 'the switch copy still needs it')
 
     def test_unknown_verbs_and_extra_arguments_are_refused(self):
         for argv in (['inspect'], ['status', 'x'], ['pull'], ['restore'], ['logs', 'x']):
@@ -419,20 +470,22 @@ class PhoneTests(PhoneCase):
 class MarkerTests(PhoneCase):
     """ADR-028: debuggable <=> test layout, non-debuggable <=> owner layout, test APK marker = app marker."""
 
-    REFUSED = {  # case -> (app marker, app debuggable, test APK marker or ... for no test APK)
-        'a debuggable build with the owner layout': (OWNER, True, ...),
-        'a release build with the test layout': (LAB, False, ...),
-        'a 0.2.5-like build: debuggable, no marker': (None, True, None),
-        'a release build without a marker': (None, False, ...),
-        'a malformed marker': ('layout=test;commit=abc;hash=def', True, ...),
-        'a test APK without a marker': (LAB, True, None),
-        'a test APK from another build': (LAB, True, OTHER_LAB),
-        'a test APK beside a release build': (OWNER, False, LAB),
+    REFUSED = {  # case -> (package, app marker, app debuggable, test APK marker or ... for no test APK)
+        'a debuggable build with the owner layout': (RELEASE, OWNER, True, ...),
+        'a release build with the test layout': (APP, LAB, False, ...),
+        'a 0.2.5-like build: debuggable, no marker': (RELEASE, None, True, None),
+        'a release build without a marker': (RELEASE, None, False, ...),
+        'a malformed marker': (APP, 'layout=test;commit=abc;hash=def', True, ...),
+        'a test APK without a marker': (APP, LAB, True, None),
+        'a test APK from another build': (APP, LAB, True, OTHER_LAB),
+        'a test APK beside a release build': (RELEASE, OWNER, False, LAB),
+        'a lab build under the release package (#98)': (RELEASE, LAB, True, LAB),
+        'a release build under the lab app package': (APP, OWNER, False, ...),
     }
 
     def pair(self, case):
-        app_marker, debuggable, test_marker = self.REFUSED[case]
-        apks = [self.apk('app.apk', PKG, app_marker, debuggable)]
+        package, app_marker, debuggable, test_marker = self.REFUSED[case]
+        apks = [self.apk('app.apk', package, app_marker, debuggable)]
         return apks + ([] if test_marker is ... else [self.apk('test.apk', TEST, test_marker, True)])
 
     def test_check_refuses_each_disagreement_of_marker_and_build(self):
@@ -442,9 +495,9 @@ class MarkerTests(PhoneCase):
         self.assertEqual(self.device.calls, [])
 
     def test_check_accepts_a_lab_build_with_its_tests_and_a_release_build_alone(self):
-        lab = self.call('check', self.apk('app.apk', PKG, LAB, True), self.apk('test.apk', TEST, LAB, True))
+        lab = self.call('check', self.apk('app.apk', APP, LAB, True), self.apk('test.apk', TEST, LAB, True))
         self.assertEqual([(i['marker'], i['debuggable']) for i in lab], [(LAB, True), (LAB, True)])
-        release = self.call('check', self.apk('release.apk', PKG, OWNER, False))
+        release = self.call('check', self.apk('release.apk', RELEASE, OWNER, False))
         self.assertEqual([(i['marker'], i['debuggable']) for i in release], [(OWNER, False)])
 
     def test_install_refuses_each_disagreement_and_installs_nothing(self):
@@ -455,17 +508,17 @@ class MarkerTests(PhoneCase):
 
     def test_run_needs_no_apk_pull_for_a_build_install_recorded(self):
         self.visit()
-        self.call('install', self.apk('app.apk', PKG, LAB, True), self.apk('test.apk', TEST, LAB, True))
+        self.call('install', self.apk('app.apk', APP, LAB, True), self.apk('test.apk', TEST, LAB, True))
         self.device.calls.clear()
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
         self.assertEqual(self.did('pull_apk'), [])
 
     def test_an_installed_build_nobody_recorded_is_read_from_its_pulled_apk_once(self):
         self.visit()
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
-        self.assertEqual(self.did('pull_apk'), [('pull_apk', PKG), ('pull_apk', TEST)])
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.did('pull_apk'), [('pull_apk', APP), ('pull_apk', TEST)])
         self.device.calls.clear()
-        self.call('run', PKG + '.NormalBaselineTest')
+        self.call('run', NS + '.NormalBaselineTest')
         self.assertEqual(self.did('pull_apk'), [])
 
 
@@ -476,7 +529,7 @@ class VisitGuardTests(PhoneCase):
         folder = self.root / 'push-source'
         folder.mkdir(exist_ok=True)
         (folder / 'new.json').write_text('{}')
-        return {'run': ['run', PKG + '.NormalBaselineTest'], 'push': ['push', str(folder)], 'stop': ['stop'],
+        return {'run': ['run', NS + '.NormalBaselineTest'], 'push': ['push', str(folder)], 'stop': ['stop'],
                 'measure': ['measure', LAB_RUN_CLASS, 'inputs=files/benchmark']}
 
     def assert_all_refused(self, expected):
@@ -498,12 +551,12 @@ class VisitGuardTests(PhoneCase):
 
     def test_refused_on_a_0_2_5_like_build(self):
         self.visit()
-        self.device.place(self.device.build(PKG, None, True, b'0.2.5'))
+        self.device.place(self.device.build(APP, None, True, b'0.2.5'))
         self.assert_all_refused('no build marker')
 
     def test_refused_on_the_release_build_without_trying_run_as(self):
         self.visit()
-        self.device.place(self.device.build(PKG, OWNER, False, b'release'))
+        self.device.place(self.device.build(APP, OWNER, False, b'release'))
         self.assert_all_refused('release build')
 
     def test_refused_when_the_test_package_is_missing_or_from_another_build(self):
@@ -515,7 +568,7 @@ class VisitGuardTests(PhoneCase):
 
     def test_refused_on_a_lab_build_the_visit_does_not_list(self):
         self.visit()
-        self.device.place(self.device.build(PKG, OTHER_LAB, True, b'other lab app'))
+        self.device.place(self.device.build(APP, OTHER_LAB, True, b'other lab app'))
         self.device.place(self.device.build(TEST, OTHER_LAB, True, b'other lab tests'))
         self.assert_all_refused('not part of Visit v1')
 
@@ -537,26 +590,26 @@ class VisitGuardTests(PhoneCase):
     def test_run_and_measure_are_refused_while_the_keyboard_is_in_use(self):
         self.visit()
         self.device.ime_state['bound'] = True
-        for argv in (['run', PKG + '.NormalBaselineTest'], ['measure', LAB_RUN_CLASS, 'inputs=files/benchmark']):
+        for argv in (['run', NS + '.NormalBaselineTest'], ['measure', LAB_RUN_CLASS, 'inputs=files/benchmark']):
             with self.subTest(argv[0]):
                 self.refused('in use', *argv)
         self.assertEqual(self.did('instrument', 'place_inputs'), [])
 
     def test_run_refuses_classes_of_the_lab_run_package(self):
         self.visit()
-        for classes in (PKG + '.labrun.PipelineRun', PKG + '.LabTest,' + PKG + '.labrun.deep.Trace#collect'):
+        for classes in (NS + '.labrun.PipelineRun', NS + '.LabTest,' + NS + '.labrun.deep.Trace#collect'):
             with self.subTest(classes):
                 with self.assertRaises(phone.Refused) as caught:
                     self.call('run', classes)
                 self.assertIn('Lab run', str(caught.exception))
         self.assertEqual(self.did('instrument'), [])
-        self.assertEqual(self.call('run', PKG + '.labrunner.NotALabRun')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.labrunner.NotALabRun')['outcome'], 'passed')
 
     def test_run_fingerprints_before_and_after_and_fails_on_a_change_naming_the_copy(self):
         copy = self.visit()
         self.device.during_run = lambda: self.device.data.update({'files/dictionary/revision.json': b'[]'})
         with self.assertRaises(phone.Failed) as caught:
-            self.call('run', PKG + '.NormalBaselineTest')
+            self.call('run', NS + '.NormalBaselineTest')
         self.assertIn(str(copy), str(caught.exception))
         kinds = [c[0] for c in self.device.calls if c[0] in ('fingerprint', 'instrument')]
         self.assertEqual(kinds, ['fingerprint', 'instrument', 'fingerprint'])
@@ -569,7 +622,7 @@ class VisitGuardTests(PhoneCase):
             'files/lab/receipts.jsonl': b'{}', 'files/test/dictionary.json': b'["a"]', 'no_backup/test/history/1.json': b'{}',
             'shared_prefs/test_settings.xml': b'<s/>', 'shared_prefs/test_history_notices.xml': b'<n/>',
             'code_cache/com.android.skia.shaders_cache': b'x', 'cache/scratch.wav': b'x', 'files/profileInstalled': b'1'})
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
 
 
 class MeasureTests(PhoneCase):
@@ -585,11 +638,11 @@ class MeasureTests(PhoneCase):
         return [c[0] for c in self.did('fingerprint', 'place_inputs', 'instrument', 'remove_inputs')]
 
     def test_measure_refuses_classes_outside_the_lab_run_package(self):
-        for classes in (PKG + '.NormalBaselineTest', LAB_RUN_CLASS + ',' + PKG + '.HistoryProcessTest#x',
-                        PKG + '.labrunner.NotALabRun', PKG + '.labrun', 'Foo;rm'):
+        for classes in (NS + '.NormalBaselineTest', LAB_RUN_CLASS + ',' + NS + '.HistoryProcessTest#x',
+                        NS + '.labrunner.NotALabRun', NS + '.labrun', 'Foo;rm'):
             with self.subTest(classes):
                 self.refused('', 'measure', classes, 'inputs=files/benchmark')
-        self.refused('only Lab run classes', 'measure', PKG + '.NormalBaselineTest')
+        self.refused('only Lab run classes', 'measure', NS + '.NormalBaselineTest')
         self.assertEqual(self.did('instrument', 'place_inputs', 'remove_inputs'), [])
 
     def test_inputs_are_copied_on_the_phone_for_the_run_and_removed_afterwards(self):
@@ -714,7 +767,7 @@ class CallerTests(PhoneCase):
                  'outside any checkout': ['--caller', str(outside)], 'another clone': ['--caller', str(other)],
                  'no caller directory': [], 'relative caller': ['--caller', '.'],
                  'a second caller after the one the shim passed': ['--caller', str(self.worktree), '--caller', str(self.main)]}
-        for verb in (['status'], ['device'], ['app'], ['crash'], ['logs'], ['stop'], ['uninstall'], ['run', PKG + '.NormalBaselineTest'],
+        for verb in (['status'], ['device'], ['app'], ['crash'], ['logs'], ['stop'], ['uninstall'], ['run', NS + '.NormalBaselineTest'],
                      ['measure', LAB_RUN_CLASS], ['push', str(outside)], ['pull', 'files/lab'], ['snapshot', 'a'],
                      ['restore', 'a'],
                      ['install', 'app.apk']):
@@ -725,19 +778,19 @@ class CallerTests(PhoneCase):
         self.assertFalse((self.main / 'corpus').exists())
 
     def test_check_and_help_work_from_a_worktree_without_lock_or_state(self):
-        app, test = self.apk('app.apk', PKG, LAB, True), self.apk('test.apk', TEST, LAB, True)
+        app, test = self.apk('app.apk', APP, LAB, True), self.apk('test.apk', TEST, LAB, True)
         for caller in (['--caller', str(self.worktree)], []):
             with self.subTest(caller=caller):
                 status, output = self.main_call(*caller, 'check', app, test)
                 self.assertEqual(status, 0)
-                self.assertEqual([i['package'] for i in json.loads(output)], [PKG, TEST])
+                self.assertEqual([i['package'] for i in json.loads(output)], [APP, TEST])
                 self.assertIn('status', self.main_call(*caller, 'help')[1])
         self.assertEqual(self.device.calls, [])
         self.assertFalse((self.main / 'corpus').exists())
         self.assertFalse((self.worktree / 'corpus').exists())
 
     def test_check_from_a_worktree_still_refuses_a_lab_app_with_tests_from_another_build(self):
-        app, test = self.apk('app.apk', PKG, LAB, True), self.apk('test.apk', TEST, OTHER_LAB, True)
+        app, test = self.apk('app.apk', APP, LAB, True), self.apk('test.apk', TEST, OTHER_LAB, True)
         with self.assertRaises(phone.Refused):
             self.main_call('--caller', str(self.worktree), 'check', app, test)
 
@@ -768,14 +821,14 @@ class AdapterArgvTests(unittest.TestCase):
                                       'sha256sum': (0, 'c' * 64 + '  /data/app/x/base.apk\n', ''),
                                       'dumpsys package': (0, 'versionCode=12 versionName=1\n userId=10123\n', ''),
                                       'pidof': (1, '', '')})
-        device.package(PKG)
+        device.package(APP)
         device.logcat(10123, since='10-21 10:00:00.000')
         device.private('ls files/lab')
         for argv in runner.argv[2:]:
             self.assertEqual(argv[:3], ['/sdk/platform-tools/adb', '-s', 'SERIAL123'])
         joined = ['\x00'.join(a) for a in runner.argv]
         self.assertTrue(any('--uid\x0010123' in j for j in joined))
-        self.assertTrue(all('run-as %s sh -c' % PKG in j for j in joined if 'run-as' in j))
+        self.assertTrue(all('run-as %s sh -c' % APP in j for j in joined if 'run-as' in j))
         self.assertFalse(any('logcat' in j and '--uid' not in j and 'crash' not in j for j in joined))
 
     def test_replace_uploads_before_deleting_and_never_streams_stdin(self):
@@ -806,10 +859,10 @@ class AdapterArgvTests(unittest.TestCase):
                    'pidof': (1, '', '')}
         for dump, expected in (('  versionCode=12\n    appId=10123\n', 10123), ('  versionCode=12\n    userId=10456\n', 10456)):
             device, _ = self.device({**answers, 'dumpsys package': (0, dump, '')})
-            self.assertEqual(device.package(PKG)['uid'], expected)
+            self.assertEqual(device.package(APP)['uid'], expected)
         device, _ = self.device({**answers, 'dumpsys package': (0, '  versionCode=12\n  versionName=null\n', '')})
         with self.assertRaises(phone.Failed):
-            device.package(PKG)
+            device.package(APP)
         with self.assertRaises(phone.Refused):
             device.logcat(0)
         with self.assertRaises(phone.Refused):
@@ -852,9 +905,9 @@ class AdapterArgvTests(unittest.TestCase):
                 (data / rel).write_bytes(content)
 
             def on_phone(argv, capture_output, text, timeout, input=None):
-                """adb shell `run-as PKG sh -c CODE` runs CODE here, in a folder standing in for the app's data."""
+                """adb shell `run-as APP sh -c CODE` runs CODE here, in a folder standing in for the app's data."""
                 words = shlex.split(argv[-1])
-                if argv[3:4] == ['shell'] and words[:4] == ['run-as', PKG, 'sh', '-c']:
+                if argv[3:4] == ['shell'] and words[:4] == ['run-as', APP, 'sh', '-c']:
                     return subprocess.run(['sh', '-c', words[4]], cwd=data, capture_output=True, text=True)
                 answer = phone.MODEL if 'ro.product.model' in argv[-1] else 'List of devices attached\nS\tdevice\n'
                 return subprocess.CompletedProcess(argv, 0, answer, '')
@@ -911,6 +964,15 @@ class AdapterArgvTests(unittest.TestCase):
                     info = phone.Device(sdk).apk_info(apk)
                     self.assertEqual((info['debuggable'], info['marker']), expected)
 
+    def test_the_crash_buffer_keeps_the_lab_apps_lines_only(self):
+        crash = ('E AndroidRuntime: Process: %s, PID: 1\nE AndroidRuntime: at owner.Frame\n' % RELEASE
+                 + '\n'.join('x%d' % i for i in range(50))
+                 + '\nE AndroidRuntime: Process: %s:checkpoint_producer, PID: 2\nE AndroidRuntime: at lab.Frame\n' % APP)
+        device, _ = self.device({'logcat': (0, crash, '')})
+        text = device.logcat(None, crash=True)
+        self.assertIn('lab.Frame', text)
+        self.assertNotIn('owner.Frame', text)
+
     def test_tar_validation_rejects_traversal_links_and_foreign_dirs(self):
         phone.validate_tar(tar_bytes({'files/lab/a': b'1', 'shared_prefs/x.xml': b'2'}))
         for bad in ({'files/../x': b''}, {'/files/x': b''}, {'cache/x': b''}, {'./files/lab/model.onnx': b''},
@@ -928,15 +990,31 @@ class AdapterArgvTests(unittest.TestCase):
         with self.assertRaises(phone.Refused):
             phone.validate_tar(buffer.getvalue())
 
-    def test_install_downgrades_only_when_asked_and_package_facts_hold_the_first_install_time(self):
+    def test_install_never_downgrades_and_package_facts_hold_the_first_install_time(self):
         dump = '  versionCode=12\n    userId=10123\n    firstInstallTime=2026-10-01 08:00:00\n    lastUpdateTime=2026-11-25 09:00:00\n'
         device, runner = self.device({'pm path': (0, 'package:/data/app/x/base.apk\n', ''), 'pidof': (1, '', ''),
                                       'sha256sum': (0, 'c' * 64 + '  x\n', ''), 'dumpsys package': (0, dump, '')})
-        self.assertEqual(device.package(PKG)['first_install'], '2026-10-01 08:00:00')
+        self.assertEqual(device.package(APP)['first_install'], '2026-10-01 08:00:00')
         device.install('/host/app.apk')
-        device.install('/host/old.apk', downgrade=True)
-        self.assertEqual([argv[3:] for argv in runner.argv[-2:]],
-                         [['install', '-r', '/host/app.apk'], ['install', '-r', '-d', '/host/old.apk']])
+        self.assertEqual(runner.argv[-1][3:], ['install', '-r', '/host/app.apk'])
+
+    def test_release_facts_come_from_the_package_manager_and_release_is_never_uninstalled_or_run_as(self):
+        dump = ('  versionCode=12\n    userId=10100\n    firstInstallTime=2026-10-01 08:00:00\n'
+                '    lastUpdateTime=2026-11-25 09:00:00\n')
+        device, runner = self.device({'pm path': (0, 'package:/data/app/r/base.apk\n', ''), 'pidof': (1, '', ''),
+                                      'sha256sum': (0, 'c' * 64 + '  x\n', ''), 'dumpsys package': (0, dump, '')})
+        facts = device.package(RELEASE)
+        self.assertEqual((facts['sha256'], facts['versionCode'], facts['last_update']), ('c' * 64, 12, '2026-11-25 09:00:00'))
+        self.assertNotIn('signing', facts)
+        self.assertTrue(any(argv[3:] == ['shell', 'dumpsys package ' + RELEASE] for argv in runner.argv))
+        for call in (lambda: device.uninstall(RELEASE), lambda: device.uninstall('com.other.app'), lambda: device.ime('com.other.app')):
+            with self.assertRaises(phone.Refused):
+                call()
+        device.private('ls files/lab')
+        device.stop()
+        joined = [' '.join(argv) for argv in runner.argv]
+        self.assertIn('am force-stop ' + APP, joined[-1])
+        self.assertFalse(any('run-as %s ' % RELEASE in j for j in joined), 'the lab app is the default')
 
 
 class LocalPhone:
@@ -954,7 +1032,7 @@ class LocalPhone:
         command = argv[3:] if argv[1:2] == ['-s'] else argv[1:]
         if command[0] in ('shell', 'exec-out') and command[1].startswith('run-as '):
             words = shlex.split(command[1])
-            assert words[:4] == ['run-as', PKG, 'sh', '-c'] and len(words) == 5, words
+            assert words[:4] == ['run-as', APP, 'sh', '-c'] and len(words) == 5, words
             return subprocess.run(['sh', '-c', self.local(words[4])], cwd=self.data, capture_output=True, text=text)
         if command[0] == 'push':
             Path(self.local(command[2])).write_bytes(Path(command[1]).read_bytes())
@@ -1100,18 +1178,27 @@ def archive_names(path):
 
 
 class VisitStartTests(PhoneCase):
-    """Installing the lab build over release: pull, install, copy, then empty."""
+    """Installing the lab app beside release: install, copy, then empty; release is never touched."""
 
-    def test_visit_start_pulls_the_release_installs_copies_and_only_then_empties(self):
-        release = self.with_release_installed()
+    def setUp(self):
+        super().setUp()
+        self.release = self.with_release_installed()
+        self.without_lab_app()
+        self.release_before = (dict(self.device.release_data), dict(self.device.packages[RELEASE]))
+
+    def assert_release_untouched(self):
+        self.assertEqual((self.device.release_data, self.device.packages[RELEASE]), self.release_before)
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
+
+    def test_visit_start_installs_beside_release_copies_and_only_then_empties(self):
         result = self.call('install', *self.lab_apks())
         self.assertEqual(self.did('pull_apk', 'install', 'copy', 'empty'),
-                         [('pull_apk', PKG), ('install', PKG), ('install', TEST), ('copy',), ('empty',)])
+                         [('install', APP), ('install', TEST), ('copy',), ('empty',)])
         [record] = self.records()
         folder = self.root / 'lab/visits' / record['name']
         self.assertEqual((result['visit'], result['visit_started'], record['ended']), (record['name'], True, None))
-        self.assertEqual((folder / 'release.apk').read_bytes(), Path(release).read_bytes())
-        self.assertEqual(record['release'], {'apk': 'release.apk', 'sha256': sha(b'release.apk')})
+        self.assertEqual((result['release_changed'], sorted(path.name for path in folder.iterdir())),
+                         ([], ['owner-data.tar', 'visit.json']))
         self.assertEqual(record['copy'], {'archive': 'owner-data.tar', 'sha256': sha((folder / 'owner-data.tar').read_bytes())})
         self.assertEqual(archive_names(folder / 'owner-data.tar'),
                          {'no_backup/history/1.json', 'files/benchmark/take1.wav', 'shared_prefs/p.xml'})
@@ -1121,95 +1208,85 @@ class VisitStartTests(PhoneCase):
                                                  'marker': LAB}])
         self.assertNotIn('files/test/dictionary.json', self.device.data)
         self.assertEqual(self.device.data['files/lab/variant.json'], b'{}', 'the lab folder is not a test folder')
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
         self.assertEqual(self.call('app')['visit'], record['name'])
+        self.assert_release_untouched()
 
     def test_no_visit_starts_without_the_kept_model_copy(self):
-        self.with_release_installed()
         (self.model / 'encoder.onnx').unlink()
         self.model.rmdir()
         self.refused('kept model copy', 'install', *self.lab_apks())
         self.assertEqual((self.did('pull_apk', 'install', 'copy', 'empty'), self.records()), ([], []))
 
     def test_a_failed_install_leaves_no_visit_behind(self):
-        self.with_release_installed()
         self.device.fail = {'install'}
         with self.assertRaises(phone.Failed):
             self.call('install', *self.lab_apks())
         self.assertEqual(list((self.root / 'lab/visits').iterdir()), [])
-        self.assertEqual(self.device.packages[PKG]['sha256'], sha(b'release.apk'))
+        self.assert_release_untouched()
 
     def test_a_visit_without_its_copy_runs_nothing_until_the_lab_build_is_installed_again(self):
-        self.with_release_installed()
         self.device.fail = {'copy'}
         with self.assertRaises(phone.Failed):
             self.call('install', *self.lab_apks())
         self.assertEqual(self.did('empty'), [], 'nothing is emptied before the copy exists')
         self.assertIn('files/test/dictionary.json', self.device.data)
-        for argv in (['run', PKG + '.NormalBaselineTest'], ['stop'], ['push', str(self.model)]):
+        for argv in (['run', NS + '.NormalBaselineTest'], ['stop'], ['push', str(self.model)]):
             self.refused('no copy of owner data yet', *argv)
         self.device.fail = set()
         self.device.calls.clear()
         self.call('install', *self.lab_apks())
-        self.assertEqual(self.did('pull_apk', 'copy', 'empty'), [('copy',), ('empty',)], 'the release is not pulled again')
+        self.assertEqual(self.did('copy', 'empty'), [('copy',), ('empty',)])
         [record] = self.records()
-        self.assertEqual(record['release']['sha256'], sha(b'release.apk'))
         self.assertEqual(record['fingerprint'], self.device.fingerprint())
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
 
-    def test_a_visit_without_its_copy_lets_only_its_pulled_release_back(self):
-        self.with_release_installed()
+    def test_a_visit_without_its_copy_ends_when_the_lab_app_is_removed(self):
         self.device.fail = {'copy'}
         with self.assertRaises(phone.Failed):
             self.call('install', *self.lab_apks())
-        [record] = self.records()
-        self.refused('only its pulled release', 'install', self.release_apk('release-2'), '--promote')
-        result = self.call('install', str(self.root / 'lab/visits' / record['name'] / 'release.apk'))
-        self.assertEqual((result['visit_ended'], result['promoted']), (record['name'], False))
-        self.assertIn('skipped', result['after_check'])
-        self.assertIsNotNone(self.records()[0]['ended'])
+        (self.root / 'lab/.allow-uninstall').touch()
+        self.assertEqual(self.call('uninstall')['visit_ended'], self.records()[0]['name'])
+        self.assert_release_untouched()
 
     def test_a_copy_that_lacks_what_the_fingerprint_sees_is_no_visit_copy(self):
-        self.with_release_installed()
-        self.device.copy = lambda skip: tar_bytes({'./shared_prefs/p.xml': b'<x/>'})
+        self.device.copy = lambda skip, of=APP: tar_bytes({'./shared_prefs/p.xml': b'<x/>'})
         with self.assertRaises(phone.Failed) as caught:
             self.call('install', *self.lab_apks())
         self.assertIn('does not hold', str(caught.exception))
         self.assertIsNone(self.records()[0]['copy'])
-        self.refused('no copy of owner data yet', 'run', PKG + '.NormalBaselineTest')
+        self.refused('no copy of owner data yet', 'run', NS + '.NormalBaselineTest')
 
     def test_a_copy_reaching_into_the_lab_or_a_test_folder_is_refused(self):
-        self.with_release_installed()
-        self.device.copy = lambda skip: tar_bytes({'./shared_prefs/p.xml': b'<x/>', './files/lab/encoder.onnx': b'onnx'})
+        self.device.copy = lambda skip, of=APP: tar_bytes({'./shared_prefs/p.xml': b'<x/>', './files/lab/encoder.onnx': b'onnx'})
         with self.assertRaises(phone.Refused):
             self.call('install', *self.lab_apks())
         self.assertIsNone(self.records()[0]['copy'])
 
-    def test_lab_over_release_opens_a_new_record_beside_an_older_open_one(self):
+    def test_a_fresh_lab_app_opens_a_new_record_beside_an_older_open_one(self):
+        self.device.place(self.device.contents[TEST])
+        self.device.packages[APP].update(installed=True, sha256=sha(b'lab app'))
         self.visit(name='old', started='2026-11-01T10:00:00')
-        self.with_release_installed()
+        self.without_lab_app()
         new = self.call('install', *self.lab_apks())['visit']
         records = {record['name']: record for record in self.records()}
         self.assertEqual(set(records), {'old', new})
         self.assertIsNone(records['old']['ended'])
-        self.assertEqual(self.did('pull_apk', 'copy'), [('pull_apk', PKG), ('copy',)])
+        self.assertEqual(self.did('pull_apk', 'copy'), [('copy',)])
         self.assertEqual(self.call('app')['visit'], new)
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
 
     def test_a_lab_build_goes_on_only_with_its_test_apk_and_never_as_a_promotion(self):
-        self.with_release_installed()
         app, test = self.lab_apks()
         self.refused('test APK', 'install', app)
         self.refused('--promote', 'install', app, test, '--promote')
         self.assertEqual((self.did('install'), self.records()), ([], []))
 
-    def test_a_lab_build_on_a_phone_without_the_app_starts_a_visit_that_pulled_no_release(self):
-        self.device.uninstall(PKG)
-        self.device.uninstall(TEST)
-        self.device.calls.clear()
+    def test_a_lab_build_on_a_phone_without_release_starts_a_visit_too(self):
+        self.device.packages[RELEASE] = {'installed': False}
         self.call('install', *self.lab_apks())
         [record] = self.records()
-        self.assertEqual((record['release'], self.did('pull_apk')), (None, []))
+        self.assertEqual((record['ended'], self.did('pull_apk')), (None, []))
         self.refused('--promote', 'install', self.release_apk())
 
 
@@ -1218,13 +1295,13 @@ class LabOverLabTests(PhoneCase):
         self.start_visit()
         self.device.data['files/test/dictionary.json'] = b'["written by a test"]'
         result = self.call('install', *self.lab_apks('lab2', OTHER_LAB))
-        self.assertEqual(self.did('pull_apk', 'install', 'copy', 'empty'), [('install', PKG), ('install', TEST), ('empty',)])
+        self.assertEqual(self.did('pull_apk', 'install', 'copy', 'empty'), [('install', APP), ('install', TEST), ('empty',)])
         self.assertNotIn('files/test/dictionary.json', self.device.data)
         [record] = self.records()
         self.assertEqual((result['visit'], result['visit_started']), (record['name'], False))
         self.assertEqual([build['app_sha256'] for build in record['lab_builds']], [sha(b'lab-app.apk'), sha(b'lab2-app.apk')])
         self.assertEqual(record['lab_builds'][1]['marker'], OTHER_LAB)
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
         self.call('install', *self.lab_apks('lab2', OTHER_LAB))
         self.assertEqual(len(self.records()[0]['lab_builds']), 2, 'the same build is listed once')
 
@@ -1239,8 +1316,8 @@ class LabOverLabTests(PhoneCase):
         self.start_visit()
         install = self.device.install
 
-        def update(path, downgrade=False):
-            install(path, downgrade)
+        def update(path):
+            install(path)
             self.device.data['no_backup/history/1.json'] = b'{"text":"changed by the update"}'
         self.device.install = update
         with self.assertRaises(phone.Failed) as caught:
@@ -1251,136 +1328,113 @@ class LabOverLabTests(PhoneCase):
     def test_refused_on_a_lab_build_outside_any_visit_or_one_the_visit_does_not_list(self):
         self.refused('outside any Visit', 'install', *self.lab_apks())
         self.visit()
-        self.device.place(self.device.build(PKG, OTHER_LAB, True, b'a lab app from elsewhere'))
+        self.device.place(self.device.build(APP, OTHER_LAB, True, b'a lab app from elsewhere'))
         self.refused('not part of Visit v1', 'install', *self.lab_apks())
         self.assertEqual(self.did('install'), [])
 
 
-class VisitEndTests(PhoneCase):
-    """Installing the pulled release back: after-check first, promotion only by flag."""
+class ReleaseUpdateTests(PhoneCase):
+    """Release goes on as an update of release; the lab app and its Visit play no part (#98)."""
 
-    def test_the_pulled_release_goes_back_after_the_after_check_and_reports_package_facts(self):
-        release = self.start_visit()
-        self.device.data.update({'files/lab/receipts.jsonl': b'{}', 'files/test/dictionary.json': b'["t"]'})
-        result = self.call('install', release)
-        self.assertEqual(self.did('uninstall', 'install'), [('install', PKG)])
-        self.assertEqual(self.device.packages[PKG]['sha256'], sha(b'release.apk'))
-        [record] = self.records()
-        self.assertEqual((result['visit_ended'], result['promoted']), (record['name'], False))
-        self.assertIsNotNone(record['ended'])
-        facts = {'uid': 10123, 'first_install': '2026-10-01 08:00:00', 'microphone_granted': True,
-                 'keyboard_enabled': True, 'keyboard_selected': False}
-        self.assertEqual((result['facts'], result['facts_before'], result['facts_changed']), (facts, facts, []))
-        self.assertIsNone(result['lab_sha256'], 'nothing reads app data once release is installed')
-        self.assertEqual(self.call('app')['visit'], None)
-        self.refused('release build', 'run', PKG + '.NormalBaselineTest')
+    FACTS = {'uid': 10100, 'first_install': '2026-10-01 08:00:00', 'microphone_granted': True,
+             'keyboard_enabled': True, 'keyboard_selected': False}
 
-    def test_visit_end_leaves_the_test_package_installed_and_nothing_runs_on_release(self):
-        release = self.start_visit()
-        result = self.call('install', release)
-        self.assertEqual(self.did('uninstall'), [], 'uninstalling is the owner\'s, by token')
-        self.assertTrue(self.device.packages[TEST]['installed'])
-        self.assertEqual((result['test_sha256'], self.call('app')['test']['sha256']), (sha(b'lab-test.apk'),) * 2)
-        self.refused('release build', 'run', PKG + '.NormalBaselineTest')
-        self.assertEqual(self.did('instrument'), [])
-
-    def test_package_facts_that_changed_are_named(self):
-        release = self.start_visit()
-        install = self.device.install
-
-        def update(path, downgrade=False):
-            install(path, downgrade)
-            self.device.packages[PKG].update(granted=[], uid=10999)
-            self.device.ime_state['enabled'] = False
-        self.device.install = update
-        self.assertEqual(self.call('install', release)['facts_changed'], ['keyboard_enabled', 'microphone_granted', 'uid'])
-
-    def test_refused_until_owner_data_equals_the_copy(self):
-        release = self.start_visit()
-        name = self.records()[0]['name']
-        self.device.data['no_backup/history/1.json'] = b'{"text":"changed"}'
-        self.refused('restore ' + name, 'install', release)
-        self.assertEqual(self.did('uninstall', 'install'), [])
-        self.call('restore', name)
-        self.assertEqual(self.call('install', release)['visit_ended'], name)
-
-    def test_refused_until_the_speech_model_equals_visit_start(self):
-        release = self.start_visit()
-        for change in (lambda: self.device.data.update({'files/lab/encoder.onnx': b'another model'}),
-                       lambda: self.device.data.pop('files/lab/encoder.onnx')):
-            change()
-            with self.assertRaises(phone.Refused) as caught:
-                self.call('install', release)
-            self.assertIn('encoder.onnx', str(caught.exception))
-            self.assertIn('--model', str(caught.exception))
-            self.assertEqual(self.did('uninstall', 'install'), [])
-            self.call('push', str(self.model), '--model')  # recovery: the kept model copy, with the flag
-            self.device.calls.clear()
-        self.assertIsNotNone(self.call('install', release)['visit_ended'])
-
-    def test_another_release_needs_the_promotion_flag(self):
-        self.start_visit()
+    def test_another_release_is_a_promotion_and_reports_package_facts(self):
+        self.with_release_installed()
         other = self.release_apk('release-2')
         self.refused('--promote', 'install', other)
-        self.assertEqual(self.did('uninstall', 'install'), [])
-        self.assertIsNone(self.records()[0]['ended'])
-        result = self.call('install', other, '--promote')
-        self.assertEqual((result['promoted'], result['app_sha256']), (True, sha(b'release-2.apk')))
-        self.assertIsNotNone(self.records()[0]['ended'])
-
-    def test_a_promotion_still_needs_the_after_check(self):
-        self.start_visit()
-        self.device.data['shared_prefs/p.xml'] = b'<changed/>'
-        self.refused('restore', 'install', self.release_apk('release-2'), '--promote')
         self.assertEqual(self.did('install'), [])
+        result = self.call('install', other, '--promote')
+        self.assertEqual(self.did('install', 'uninstall'), [('install', RELEASE)])
+        self.assertEqual((result['promoted'], result['release_sha256'], result['switch']), (True, sha(b'release-2.apk'), None))
+        self.assertEqual((result['facts'], result['facts_before'], result['facts_changed']), (self.FACTS, self.FACTS, []))
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
 
-    def test_a_second_visit_after_a_promotion_has_its_own_pull_and_copy_and_the_first_is_kept(self):
-        self.start_visit()
+    def test_package_facts_that_changed_are_named(self):
+        self.with_release_installed()
+        install = self.device.install
+
+        def update(path):
+            install(path)
+            self.device.packages[RELEASE].update(granted=[], uid=10999)
+            self.device.release_ime['enabled'] = False
+        self.device.install = update
+        self.assertEqual(self.call('install', self.release_apk('release-2'), '--promote')['facts_changed'],
+                         ['keyboard_enabled', 'microphone_granted', 'uid'])
+
+    def test_a_release_update_leaves_the_lab_app_and_its_visit_alone(self):
+        name = self.start_visit()
+        lab = dict(self.device.data)
         self.call('install', self.release_apk('release-2'), '--promote')
-        self.device.data['no_backup/history/2.json'] = b'{"text":"a take on the new release"}'
-        self.device.calls.clear()
-        self.call('install', *self.lab_apks())
-        self.assertEqual(self.did('pull_apk', 'copy'), [('pull_apk', PKG), ('copy',)])
-        first, second = self.records()
-        self.assertEqual((first['release']['sha256'], second['release']['sha256']), (sha(b'release.apk'), sha(b'release-2.apk')))
-        self.assertEqual((first['ended'] is None, second['ended'] is None), (False, True))
-        for record, history in ((first, False), (second, True)):
-            folder = self.root / 'lab/visits' / record['name']
-            self.assertEqual(sha((folder / 'release.apk').read_bytes()), record['release']['sha256'])
-            self.assertEqual('no_backup/history/2.json' in archive_names(folder / 'owner-data.tar'), history)
-        self.assertEqual(self.call('install', str(self.root / 'lab/visits' / second['name'] / 'release.apk'))['promoted'], False)
+        self.assertEqual((self.records()[0]['ended'], self.device.data), (None, lab))
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
+        self.assertEqual(self.call('app')['visit'], name)
 
-    def test_release_over_a_lab_build_outside_any_visit_needs_the_promotion_flag(self):
-        release = self.release_apk()
-        self.refused('--promote', 'install', release)
-        self.assertEqual(self.call('install', release, '--promote')['visit_ended'], None)
+    def test_a_release_update_is_refused_while_the_dictation_keyboard_is_in_use(self):
+        self.with_release_installed()
+        self.device.ime_state['bound'] = True  # the lab keyboard does not count
+        self.device.release_ime['bound'] = True
+        self.refused('dictation keyboard is in use', 'install', self.release_apk('release-2'), '--promote')
+        self.device.release_ime['bound'] = False
+        self.assertEqual(self.call('install', self.release_apk('release-2'), '--promote')['outcome'], 'installed')
 
 
 class ReleaseInstalledTests(PhoneCase):
-    """Nothing may try `run-as` on release: the fake fails it, as the phone does."""
+    """After the switch no verb reads or writes release data: the fake fails `run-as` on release, as the
+    phone does, and records every `run-as`."""
 
     def setUp(self):
         super().setUp()
         self.release = self.with_release_installed()
 
-    def test_app_and_logs_answer_without_reading_app_data(self):
+    def test_a_release_mark_that_cannot_be_read_fails_instead_of_passing(self):
+        for field in ('sha256', 'versionCode', 'last_update'):
+            with self.subTest(field):
+                self.device.packages[RELEASE][field] = None
+                self.without_lab_app()
+                with self.assertRaises(phone.Failed) as caught:
+                    self.call('install', *self.lab_apks())
+                self.assertIn(field, str(caught.exception))
+                self.assertEqual(self.did('install'), [])
+                self.device.packages[RELEASE][field] = {'sha256': sha(b'release.apk'), 'versionCode': 12,
+                                                        'last_update': '2026-11-20 08:00:00'}[field]
+
+    def test_app_reports_release_facts_from_the_package_manager_and_logs_are_the_lab_apps(self):
         info = self.call('app')
-        self.assertEqual((info['app']['layout'], info['lab'], info['test']['installed']), ('owner', None, True))
+        self.assertEqual((info['release']['layout'], info['app']['layout'], info['test']['installed']), ('owner', 'test', True))
+        self.assertEqual({key: info['release'][key] for key in ('sha256', 'versionCode', 'last_update')},
+                         {'sha256': sha(b'release.apk'), 'versionCode': 12, 'last_update': '2026-11-20 08:00:00'})
         self.assertEqual(self.call('logs')['logs'], 'log for uid 10123')
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
 
     def test_the_same_release_installs_again_and_another_one_only_as_a_promotion(self):
         result = self.call('install', self.release)
-        self.assertEqual((result['outcome'], result['promoted'], result['visit_ended']), ('installed', False, None))
+        self.assertEqual((result['outcome'], result['promoted']), ('installed', False))
         other = self.release_apk('release-2')
         self.refused('--promote', 'install', other)
         self.assertEqual(self.call('install', other, '--promote')['promoted'], True)
 
-    def test_verbs_that_need_app_data_refuse_instead_of_failing(self):
-        for argv in (['pull', 'files/benchmark'], ['snapshot', 'now'], ['snapshot', '--switch', 'now'], ['restore', 'v1'],
-                     ['run', PKG + '.NormalBaselineTest'], ['push', str(self.model)], ['stop']):
+    def test_a_whole_visit_and_every_other_verb_leave_release_alone(self):
+        owner, package = dict(self.device.release_data), dict(self.device.packages[RELEASE])
+        self.without_lab_app()
+        self.device.data = {}
+        source = self.root / 'model-and-fixture'
+        shutil.copytree(self.model, source)
+        (source / 'fixture.wav').write_bytes(b'RIFF')
+        name = self.call('install', *self.lab_apks())['visit']
+        for argv in (['push', str(source), '--model'], ['run', NS + '.NormalBaselineTest'], ['pull', 'files/lab'],
+                     ['measure', LAB_RUN_CLASS], ['snapshot', 'mid'], ['restore', 'mid'], ['restore', name], ['stop'],
+                     ['app'], ['logs'], ['crash']):
+            with self.subTest(argv[0]):
+                self.call(*argv)
+        for argv in (['pull', '--switch', 'files/benchmark'], ['snapshot', '--switch', 'now'], ['restore', '--switch', 'mid']):
             with self.subTest(argv[0]), self.assertRaises(phone.Refused):
                 self.call(*argv)
-        self.assertEqual(self.did('fingerprint', 'copy', 'replace', 'push'), [])
+        (self.root / 'lab/.allow-uninstall').touch()
+        self.assertEqual(self.call('uninstall')['release_changed'], [])
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
+        self.assertEqual((self.device.release_data, self.device.packages[RELEASE]), (owner, package))
+        self.assertNotIn(RELEASE, [call[1] for call in self.did('install', 'uninstall', 'pull_apk')])
 
 
 class OwnerDataCopyTests(PhoneCase):
@@ -1422,7 +1476,7 @@ class OwnerDataCopyTests(PhoneCase):
                         or path.startswith('shared_prefs/test_')}
                 self.assertEqual(len(kept), 5)
                 self.assertEqual(self.device.data, {**before, **kept})
-                self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+                self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
                 self.device.data.pop('files/lab/result.json')
 
     def test_restore_refuses_a_copy_that_changed_or_reaches_outside_owner_data(self):
@@ -1431,7 +1485,7 @@ class OwnerDataCopyTests(PhoneCase):
         folder = self.root / 'lab/snapshots/mid'
         record = json.loads((folder / 'snapshot.json').read_text())
         good = (folder / 'data.tar').read_bytes()
-        owner = {'no_backup/history/1.json': b'{"text":"owner"}', 'files/benchmark/take1.wav': b'RIFF', 'shared_prefs/p.xml': b'<x/>'}
+        owner = {'no_backup/history/1.json': b'{"text":"lab"}', 'files/benchmark/take1.wav': b'RIFF', 'shared_prefs/p.xml': b'<x/>'}
         self.assertEqual(phone.tar_fingerprint(tar_bytes(owner)), record['fingerprint'])
         cases = {'other bytes, old digest': (tar_bytes({**owner, 'shared_prefs/p.xml': b'<y/>'}), False),
                  'other bytes, new digest': (tar_bytes({**owner, 'shared_prefs/p.xml': b'<y/>'}), True),
@@ -1464,7 +1518,7 @@ class OwnerDataCopyTests(PhoneCase):
 
     def test_restore_fails_when_owner_data_does_not_equal_the_copy_afterwards(self):
         self.start_visit()
-        self.device.replace = lambda archive, skip: None
+        self.device.replace = lambda archive, skip, of: None
         self.device.data['shared_prefs/p.xml'] = b'<changed/>'
         with self.assertRaises(phone.Failed):
             self.call('restore', self.records()[0]['name'])
@@ -1519,6 +1573,15 @@ class ModelSafePushTests(PhoneCase):
         self.refused('--model', 'push', str(self.source))  # putting it back is a model write too
         self.assertEqual(self.push('--model')['model_differs_from_visit_start'], [])
 
+    def test_the_lab_apps_first_model_copy_needs_the_model_flag_and_is_kept_afterwards(self):
+        self.device.data.pop('files/lab/encoder.onnx')
+        (self.source / 'encoder.onnx').write_bytes(b'onnx')
+        self.refused('--model', 'push', str(self.source))
+        self.assertEqual(self.push('--model')['sent'], 3)
+        (self.source / 'encoder.onnx').unlink()
+        self.assertEqual(self.push()['model_files_kept'], 1)
+        self.assertEqual(self.device.data['files/lab/encoder.onnx'], b'onnx')
+
     def test_a_file_that_was_no_model_file_at_visit_start_is_not_protected(self):
         (self.source / 'variant.json').write_text('{"v":3}')
         self.assertEqual(self.push()['sent'], 2)
@@ -1533,15 +1596,13 @@ class ModelSafePushTests(PhoneCase):
 
 
 class ForgetTests(PhoneCase):
-    def test_forget_deletes_record_release_and_copy_of_an_ended_visit_only(self):
-        release = self.start_visit()
-        name = self.records()[0]['name']
+    def test_forget_deletes_record_and_copy_of_an_ended_visit_only(self):
+        name = self.start_visit()
         folder = self.root / 'lab/visits' / name
         self.refused('has not ended', 'forget', name)
-        self.assertTrue((folder / 'owner-data.tar').is_file() and (folder / 'release.apk').is_file())
-        kept = self.root / 'kept-release.apk'
-        kept.write_bytes(Path(release).read_bytes())
-        self.call('install', str(kept))
+        self.assertTrue((folder / 'owner-data.tar').is_file())
+        (self.root / 'lab/.allow-uninstall').touch()
+        self.call('uninstall')
         self.assertTrue((folder / 'owner-data.tar').is_file(), 'ending a Visit deletes nothing')
         self.assertEqual(self.call('forget', name), {'outcome': 'forgotten', 'visit': name})
         self.assertFalse(folder.exists())
@@ -1559,7 +1620,8 @@ class ForgetTests(PhoneCase):
 
 
 class SwitchTests(PhoneCase):
-    """The one-time switch from the unmarked debuggable build (0.2.5) to marked builds."""
+    """The one-time switch of release from the unmarked debuggable build (0.2.5) to the marked release.
+    The lab app is another package and plays no part in it."""
 
     DATA = {'files/lab/encoder.onnx': b'onnx', 'files/lab/startup.jsonl': b'{"old":"trace"}',
             'files/benchmark/take1.wav': b'RIFF', 'files/dictionary/revision.json': b'["Oriol"]',
@@ -1568,10 +1630,15 @@ class SwitchTests(PhoneCase):
 
     def setUp(self):
         super().setUp()
-        self.device.place(self.device.build(PKG, None, True, b'0.2.5 app'))
-        self.device.place(self.device.build(TEST, None, True, b'0.2.5 tests'))
-        self.device.data = dict(self.DATA)
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.5 app'))
+        self.device.place(self.device.build(SWITCH_TEST, None, True, b'0.2.5 tests'))
+        self.device.release_data = dict(self.DATA)
         self.device.calls.clear()
+
+    def switch_copy(self, label='switch'):
+        result = self.call('snapshot', '--switch', label)
+        self.device.calls.clear()
+        return result
 
     def test_the_switch_copy_holds_all_app_data_but_the_model_and_both_apks(self):
         result = self.call('snapshot', '--switch', 'switch')
@@ -1579,105 +1646,100 @@ class SwitchTests(PhoneCase):
         self.assertEqual(archive_names(folder / 'data.tar'), set(self.DATA) - {'files/lab/encoder.onnx', 'cache/x'})
         self.assertEqual(((folder / 'app.apk').read_bytes(), (folder / 'test.apk').read_bytes()), (b'0.2.5 app', b'0.2.5 tests'))
         self.assertEqual((result['kind'], result['fingerprint'], result['model_files']),
-                         ('switch', self.device.fingerprint(), ['files/lab/encoder.onnx']))
+                         ('switch', self.device.fingerprint(of=RELEASE), ['files/lab/encoder.onnx']))
         self.assertEqual(self.call('snapshot', 'switch-again', '--switch')['kind'], 'switch')
 
     def test_the_switch_copy_is_refused_and_not_kept_when_it_lacks_a_part_of_owner_data(self):
         for what, path in (('History', 'no_backup/history/1.json'), ('Dictionary', 'files/dictionary/revision.json'),
                            ('History notices', 'shared_prefs/history_notices.xml'), ('settings', 'shared_prefs/settings.xml')):
-            self.device.data = {k: v for k, v in self.DATA.items() if k != path}
+            self.device.release_data = {k: v for k, v in self.DATA.items() if k != path}
             with self.subTest(what):
                 self.refused('holds no ' + what, 'snapshot', '--switch', 'switch')
                 self.assertFalse((self.root / 'lab/snapshots/switch').exists())
 
-    def test_switch_copies_are_for_the_unmarked_build_and_plain_snapshots_are_not(self):
-        self.refused('--switch', 'snapshot', 'plain')
+    def test_switch_copies_are_for_the_unmarked_build_and_plain_snapshots_copy_the_lab_app(self):
+        self.call('snapshot', 'plain')
+        self.assertNotIn('files/dictionary/revision.json', archive_names(self.root / 'lab/snapshots/plain/data.tar'))
         (self.model / 'encoder.onnx').unlink()
         self.model.rmdir()
         self.refused('kept model copy', 'snapshot', '--switch', 'switch')
-        self.assertEqual(self.did('copy'), [])
-        self.device.place(self.device.build(PKG, LAB, True, b'lab app'))
+        self.device.place(self.device.build(RELEASE, OWNER, False, b'release'))
         self.refused('unmarked', 'snapshot', '--switch', 'switch')
 
-    def test_the_lab_build_goes_over_the_unmarked_build_only_with_a_current_switch_copy(self):
-        lab = self.lab_apks()
-        self.refused('no switch copy', 'install', *lab)
-        self.call('snapshot', '--switch', 'switch')
-        self.device.data['no_backup/history/2.json'] = b'{"text":"a take after the copy"}'
-        self.device.calls.clear()
-        self.refused('changed since the switch copy switch', 'install', *lab)
-        self.assertEqual((self.did('install'), self.records()), ([], []))
-        self.call('snapshot', '--switch', 'switch-2')
-        self.device.calls.clear()
-        result = self.call('install', *lab)
-        self.assertEqual(self.did('install', 'copy', 'empty'), [('install', PKG), ('install', TEST), ('copy',), ('empty',)])
-        [record] = self.records()
-        self.assertEqual((result['visit_started'], record['release']), (True, None))
-        self.assertEqual(record['fingerprint'], json.loads((self.root / 'lab/snapshots/switch-2/snapshot.json').read_text())['fingerprint'])
-        self.assertEqual(self.call('run', PKG + '.NormalBaselineTest')['outcome'], 'passed')
+    def test_pull_switch_reads_legacy_recordings_from_the_unmarked_build_only(self):
+        result = self.call('pull', '--switch', 'files/benchmark', '--to', str(self.root / 'legacy'))
+        self.assertEqual(((self.root / 'legacy/files/benchmark/take1.wav').read_bytes(), result['files']), (b'RIFF', 1))
+        self.device.place(self.device.build(RELEASE, OWNER, False, b'release'))
+        self.phone.remember([self.device.builds[sha(b'release')]])
+        self.refused('unmarked build', 'pull', '--switch', 'files/benchmark')
+
+    def test_release_goes_over_the_unmarked_build_only_with_promote_and_a_current_switch_copy(self):
+        release = self.release_apk()
+        self.refused('--promote', 'install', release)
+        self.refused('no switch copy', 'install', release, '--promote')
+        self.switch_copy()
+        self.device.release_data['no_backup/history/2.json'] = b'{"text":"a take after the copy"}'
+        self.refused('changed since the switch copy switch', 'install', release, '--promote')
+        self.assertEqual(self.did('install'), [])
+        self.switch_copy('switch-2')
+        result = self.call('install', release, '--promote')
+        self.assertEqual(self.did('install'), [('install', RELEASE)])
+        self.assertEqual((result['switch'], result['promoted'], result['facts_changed']), ('switch-2', True, []))
+        self.assertEqual(self.call('app')['release']['layout'], 'owner')
+        self.assertEqual(self.records(), [], 'the switch opens no Visit')
 
     def test_a_switch_copy_of_another_apk_does_not_count(self):
-        self.call('snapshot', '--switch', 'switch')
-        self.device.place(self.device.build(PKG, None, True, b'0.2.4 app'))
-        self.refused('no switch copy', 'install', *self.lab_apks())
+        self.switch_copy()
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.4 app'))
+        self.refused('no switch copy', 'install', self.release_apk(), '--promote')
 
-    def test_the_switch_fails_when_the_update_changed_owner_data(self):
-        self.call('snapshot', '--switch', 'switch')
-        install = self.device.install
-
-        def update(path, downgrade=False):
-            install(path, downgrade)
-            self.device.data.pop('files/dictionary/revision.json', None)
-        self.device.install = update
-        with self.assertRaises(phone.Failed) as caught:
-            self.call('install', *self.lab_apks())
-        self.assertIn('restore --switch switch', str(caught.exception))
-        self.assertIsNone(self.records()[0]['copy'])
-        self.refused('no copy of owner data yet', 'run', PKG + '.NormalBaselineTest')
-
-    def test_visit_end_after_a_switch_start_needs_the_promotion_flag(self):
-        self.call('snapshot', '--switch', 'switch')
-        self.call('install', *self.lab_apks())
-        release = self.release_apk()
+    def test_after_the_switch_nothing_reads_release_data(self):
+        self.switch_copy()
+        self.call('install', self.release_apk(), '--promote')
         self.device.calls.clear()
-        self.refused('--promote', 'install', release)
-        self.assertEqual(self.did('install', 'uninstall'), [])
-        result = self.call('install', release, '--promote')
-        self.assertEqual((result['promoted'], result['visit_ended']), (True, self.records()[0]['name']))
+        for argv in (['pull', '--switch', 'files/benchmark'], ['snapshot', '--switch', 'again']):
+            with self.subTest(argv[0]), self.assertRaises(phone.Refused):
+                self.call(*argv)
+        self.call('app')
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
 
-    def test_release_never_goes_straight_over_the_unmarked_build_and_nothing_runs_on_it(self):
-        self.refused('lab build', 'install', self.release_apk(), '--promote')
-        self.refused('no build marker', 'run', PKG + '.NormalBaselineTest')
-        self.assertEqual(self.did('install', 'instrument'), [])
-
-    def test_switch_restore_reinstalls_the_unmarked_apks_and_leaves_model_files(self):
-        self.call('snapshot', '--switch', 'switch')
+    def test_the_lab_app_installs_beside_the_unmarked_build_without_touching_it(self):
+        self.without_lab_app()
         self.call('install', *self.lab_apks())
-        self.device.data.update({'no_backup/history/1.json': b'{"text":"changed"}', 'files/lab/encoder.onnx': b'the model now',
-                                 'files/lab/startup.jsonl': b'{"new":"trace"}', 'files/test/dictionary.json': b'["test"]',
-                                 'shared_prefs/test_settings.xml': b'<t/>', 'databases/new.db': b'x'})
-        del self.device.data['shared_prefs/settings.xml']
-        self.device.packages[PKG]['granted'] = []
-        self.device.calls.clear()
+        self.assertEqual(self.device.packages[RELEASE]['sha256'], sha(b'0.2.5 app'))
+        self.assertEqual(self.device.release_data, self.DATA)
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
+
+    def test_switch_restore_puts_the_unmarked_builds_data_back_and_leaves_model_files(self):
+        self.switch_copy()
+        self.device.release_data.update({'no_backup/history/1.json': b'{"text":"changed"}',
+                                         'files/lab/encoder.onnx': b'the model now', 'databases/new.db': b'x'})
+        del self.device.release_data['shared_prefs/settings.xml']
         self.refused('restore --switch switch', 'restore', 'switch')
-        result = self.call('restore', '--switch', 'switch')
-        self.assertEqual(self.did('install'), [('install', PKG, 'downgrade'), ('install', TEST, 'downgrade')])
-        self.assertEqual((self.device.packages[PKG]['sha256'], self.device.packages[TEST]['sha256']), (sha(b'0.2.5 app'), sha(b'0.2.5 tests')))
-        system = {path: content for path, content in self.device.data.items() if path.startswith('code_cache/')
-                  or path == 'files/profileInstalled'}
-        self.assertEqual(self.device.data, {**self.DATA, **system, 'files/lab/encoder.onnx': b'the model now'})
-        self.assertEqual(result['not_restored']['granted_permissions_missing'], ['android.permission.RECORD_AUDIO'])
-        self.device.calls.clear()
         self.call('restore', '--switch', 'switch')
-        self.assertEqual(self.did('install'), [], 'the retained APK is reinstalled only when another build is installed')
+        self.assertEqual(self.did('install'), [])
+        self.assertEqual(self.device.release_data, {**self.DATA, 'files/lab/encoder.onnx': b'the model now'})
 
-    def test_switch_restore_refuses_changed_apks_or_archive(self):
-        self.call('snapshot', '--switch', 'switch')
+    def test_switch_restore_is_refused_once_release_is_marked(self):
+        self.switch_copy()
+        self.call('install', self.release_apk(), '--promote')
+        owner = dict(self.device.release_data)
+        self.device.calls.clear()
+        self.refused('release', 'restore', '--switch', 'switch')
+        self.assertEqual(self.did('install', 'replace', 'stop'), [])
+        self.assertEqual(self.device.release_data, owner)
+        self.assertNotIn(('run_as', RELEASE), self.device.calls)
+
+    def test_switch_restore_is_refused_over_another_unmarked_build(self):
+        self.switch_copy()
+        self.device.place(self.device.build(RELEASE, None, True, b'0.2.4 app'))
+        self.refused('not the build of switch copy', 'restore', '--switch', 'switch')
+        self.assertEqual(self.did('install', 'replace'), [])
+
+    def test_switch_restore_refuses_a_changed_archive(self):
+        self.switch_copy()
         folder = self.root / 'lab/snapshots/switch'
-        good = (folder / 'app.apk').read_bytes()
-        (folder / 'app.apk').write_bytes(b'another app')
-        self.refused('retained APK', 'restore', '--switch', 'switch')
-        (folder / 'app.apk').write_bytes(good)
         record = json.loads((folder / 'snapshot.json').read_text())
         payload = tar_bytes({path: content for path, content in self.DATA.items() if path != 'cache/x'})
         (folder / 'data.tar').write_bytes(payload)
@@ -1690,12 +1752,16 @@ class UsageTests(PhoneCase):
     def test_help_holds_the_visit_steps_the_switch_and_every_verb(self):
         usage = self.call('help')['usage']
         for text in ('install APP.apk TEST.apk', '--promote', 'push DIR [--model]', 'forget NAME', 'snapshot --switch NAME',
-                     'restore --switch NAME', 'corpus/lab/model', 'corpus/lab/visits/NAME/release.apk', 'restore NAME',
-                     'files/timing-receipts', 'emptied', 'One-time switch', 'measure CLASS', 'inputs=PATH',
-                     'completed or incomplete', 'files/lab/labrun-inputs'):
+                     'restore --switch NAME', 'pull --switch', 'corpus/lab/model', 'restore NAME', 'files/timing-receipts',
+                     'emptied', 'One-time switch', 'measure CLASS', 'inputs=PATH', 'completed or incomplete',
+                     'files/lab/labrun-inputs', APP, TEST, 'push corpus/lab/model --model once'):
             self.assertIn(text, usage)
-        steps = [usage.index(step) for step in ('the release APK is pulled', 'the lab build installed', 'copied at once',
-                                                'test folders are emptied', 'release.apk ends the Visit')]
+        # The owner's work, which agents never do (#98).
+        for text in ('agents never change phone settings or FUTO', 'enable "Local dictation lab"', 'the microphone',
+                     'FUTO\'s voice input to "Local dictation lab"', 'back to "Local dictation" afterwards'):
+            self.assertIn(text, usage)
+        steps = [usage.index(step) for step in ('the lab build installed beside release', 'copied at once',
+                                                'test folders are emptied', 'uninstall removes it and ends the Visit')]
         self.assertEqual(steps, sorted(steps))
         self.assertNotIn('files/NAME', usage)
 

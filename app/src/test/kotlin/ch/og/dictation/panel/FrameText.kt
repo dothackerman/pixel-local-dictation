@@ -32,7 +32,7 @@ object FrameText {
     fun isFrame(line: String) = line.isNotBlank() && !line.startsWith(">")
 
     fun frame(line: String, resources: Resources): PanelFrame {
-        fun id(name: String) = resources.getIdentifier(name, "string", R::class.java.packageName)
+        fun id(name: String) = runCatching { R.string::class.java.getField(name).getInt(null) }.getOrDefault(0)
             .also { require(it != 0) { "no string resource $name in: $line" } }
         val body = line.removePrefix(FRESH)
         val cut = body.indexOf(" | preview: ").also { require(it >= 0) { "no preview in: $line" } }

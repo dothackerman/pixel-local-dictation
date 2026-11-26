@@ -24,7 +24,7 @@ _Avoid_: segment, window
 How many audio samples the laptop replay hands to the chunker at once; three sizes give the noise floor.
 
 **Visit**:
-One connected phone lab period: the lab build replaces the release build, owner data is copied first and found unchanged after every run, and the same release build is installed back at the end.
+One connected phone lab period, from installing the lab app beside release until removing it: the lab app's data is copied first and found unchanged after every run; release is never touched.
 _Avoid_: phone session, lab session
 
 ## Recognition models
@@ -88,7 +88,7 @@ The owner's Dictionary, History (transcripts and their checkpoints), History not
 _Avoid_: user data, personal data, app data, real data
 
 **Lab build**:
-The debuggable build marked with the test storage layout; it reaches only test folders and is on the phone only during a Visit (Gradle calls it `benchmark`).
+The debuggable build marked with the test storage layout, its own app `ch.og.dictation.lab` beside release; it reaches only test folders (Gradle calls it `benchmark`).
 _Avoid_: benchmark build, test build, debug build
 
 **Guided check**:

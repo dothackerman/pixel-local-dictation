@@ -1,6 +1,7 @@
 package ch.og.dictation.storage
 
 import ch.og.dictation.DictationApplication
+import ch.og.dictation.R
 import ch.og.dictation.Wiring
 import ch.og.dictation.diagnostics.BenchmarkStore
 import ch.og.dictation.dictionary.DictionaryStore
@@ -76,10 +77,10 @@ class LabBuildStorageTest {
         assertFalse("nothing saved in the test folders: the provisioned list applies", app.wiring.engine.dictionaryStore().read().edited)
         save(File(app.filesDir, "test/dictionary"), "Test term")
         assertEquals(listOf("Test term"), app.wiring.engine.dictionaryStore().read().entries)
-        ShadowApplication.setProcessName("ch.og.dictation:checkpoint_producer")
+        ShadowApplication.setProcessName(app.packageName + ":checkpoint_producer")
         try {
             assertEquals(listOf("Test term"), Wiring.forApp(app).engine.dictionaryStore().read().entries)
-        } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+        } finally { ShadowApplication.setProcessName(app.packageName) }
     }
 
     @Test fun historyNoticesAndSettingsResolveInsideTheTestFolders() {
@@ -96,12 +97,12 @@ class LabBuildStorageTest {
         assertTrue(BenchmarkStore.isEnabled(app))
         historyNotices(app).dismiss(HistoryNotice.SAVE)
         BenchmarkStore.setEnabled(app, false)
-        ShadowApplication.setProcessName("ch.og.dictation:checkpoint_producer")
+        ShadowApplication.setProcessName(app.packageName + ":checkpoint_producer")
         try {
             val second = Wiring.forApp(app).storage
             assertEquals(emptySet<String>(), second.historyNotices.names("pending"))
             assertFalse(second.settings.flag("benchmark"))
-        } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+        } finally { ShadowApplication.setProcessName(app.packageName) }
         val published = JSONObject(File("src/benchmark/test-folders.json").readText()).getJSONArray("testFolders")
         val names = (0 until published.length()).map(published::getString)
         assertTrue(names.containsAll(listOf("shared_prefs/test_history_notices.xml", "shared_prefs/test_settings.xml")))
@@ -190,14 +191,14 @@ class LabBuildStorageTest {
 
     @Test fun aSecondProcessGetsTheSameLayout() {
         val main = app.wiring.storage.historyRoot
-        ShadowApplication.setProcessName("ch.og.dictation:checkpoint_producer")
+        ShadowApplication.setProcessName(app.packageName + ":checkpoint_producer")
         try {
-            assertEquals("ch.og.dictation:checkpoint_producer", android.app.Application.getProcessName())
+            assertEquals(app.packageName + ":checkpoint_producer", android.app.Application.getProcessName())
             val second = Wiring.forApp(app).storage
             assertEquals("test", second.layout)
             assertEquals(main, second.historyRoot)
             assertEquals(main, (app as DictationApplication).wiring.storage.historyRoot)
-        } finally { ShadowApplication.setProcessName("ch.og.dictation") }
+        } finally { ShadowApplication.setProcessName(app.packageName) }
     }
 
     @Test fun theBuildMarkerNamesTheTestLayout() {
@@ -205,5 +206,13 @@ class LabBuildStorageTest {
             .metaData.getString("ch.og.dictation.build")!!
         assertTrue(marker, Regex("layout=test;commit=[0-9a-f]{40};hash=[0-9a-f]{64}").matches(marker))
         assertEquals(app.wiring.storage.layout, marker.substringAfter("layout=").substringBefore(';'))
+    }
+
+    /** The lab app is its own package beside release (#98): Android gives it its own storage. The code
+     *  namespace stays; the keyboard label tells the two apart in FUTO's voice input dropdown. */
+    @Test fun theLabAppIsItsOwnPackageWithItsOwnKeyboardLabel() {
+        assertEquals("ch.og.dictation.lab", app.packageName)
+        assertEquals("ch.og.dictation", R::class.java.packageName)
+        assertEquals("Local dictation lab", app.getString(R.string.ime_label))
     }
 }

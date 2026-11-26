@@ -95,7 +95,10 @@ class InstallGuardTests(unittest.TestCase):
 
     def test_the_claude_allow_list_leaves_out_every_verb_that_asks(self):
         settings = json.loads((ROOT / 'tools/gate/settings.json').read_text())
-        shim = str(ROOT / '.claude/hooks/phone') + ' '
+        # The rules name the main checkout's shim, also when this runs in a worktree.
+        main = Path(subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                            cwd=ROOT, text=True).strip()).parent
+        shim = str(main / '.claude/hooks/phone') + ' '
         allowed = {rule[len('Bash(' + shim):].rstrip(')').split(':')[0]
                    for rule in settings['permissions']['allow'] if rule.startswith('Bash(' + shim)}
         self.assertEqual(allowed, {'help', 'check', 'status', 'device', 'app', 'crash', 'logs', 'pull', 'push', 'run',
