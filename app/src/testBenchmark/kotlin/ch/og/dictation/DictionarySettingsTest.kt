@@ -114,7 +114,7 @@ class DictionarySettingsTest {
             val state = page.findViewById<TextView>(R.id.dictionary_state)
             assertTrue(state.isShown)
             assertEquals(app.getString(R.string.dictionary_empty), state.text.toString())
-            assertNull("nothing is saved", File(app.filesDir, "test/dictionary").list())
+            assertNull("nothing is saved", app.wiring.storage.dictionaryRoot.list())
         } finally { controller.pause().stop().destroy() }
     }
 }

@@ -146,8 +146,9 @@ the copy's unmarked build is release. Guards that only the shared package needed
 
 The lab app has its own storage (#98), so the app no longer splits storage by build type. Removed: the
 two layouts (`OwnerLayout`, `TestLayout`), the test folders as the lab build's data paths and their
-published list `app/src/benchmark/test-folders.json`, the History-root check, and the host check
-`tools/storage_guard.py`. Storage stays as the one accessor per data kind, with release's paths in both
+published list `app/src/benchmark/test-folders.json`, the History-root check, and the storage-path rules of the host check
+`tools/storage_guard.py`. That check keeps two rules no package guards: the clipboard is written only in
+Storage, and no app, lab-build or device-test code runs a shell (a lab shell could `pm clear` release). Storage stays as the one accessor per data kind, with release's paths in both
 builds; release paths and behaviour are unchanged. What still differs by build type is in
 `app/src/{release,benchmark}/kotlin/ch/og/dictation/storage/BuildType.kt`: whether recordings are saved
 (release is the product only) and Copy's target (the lab build keeps an in-app clipboard: the system
