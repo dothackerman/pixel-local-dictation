@@ -116,7 +116,7 @@ def problems(root=ROOT):
 
 
 def wrapper_problems(root, package, classes):
-    """The wrapper tells Lab runs by this package, fills this input folder and reads these outcome lines."""
+    """The wrapper tells Lab runs by this package, names this input folder and reads these outcome lines."""
     phone = wrapper(root)
     found = []
     if phone.LAB_RUN != package:
@@ -128,7 +128,7 @@ def wrapper_problems(root, package, classes):
     lab = json.loads((Path(root) / LAYOUT).read_text(encoding='utf-8'))['labFolder']
     inputs = re.search(r'const\s+val\s+INPUTS\s*=\s*"([^"]*)"', text)
     if not inputs or lab + '/' + inputs.group(1) != phone.LAB_RUN_INPUTS:
-        found.append(f'{harness[2]}: INPUTS must name the folder the wrapper fills, {phone.LAB_RUN_INPUTS}, inside {lab}')
+        found.append(f'{harness[2]}: INPUTS must name the folder the wrapper names, {phone.LAB_RUN_INPUTS}, inside {lab}')
     for line in (phone.LAB_RUN_COMPLETED, phone.LAB_RUN_INCOMPLETE):
         if f'"{line}"' not in text:
             found.append(f'{harness[2]}: the harness must report "{line}", which the wrapper reads')
