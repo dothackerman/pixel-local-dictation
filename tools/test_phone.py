@@ -29,10 +29,9 @@ NS = phone.PKG  # the code namespace, which class names keep
 BUILD = 'commit=' + '1' * 40 + ';hash=' + '2' * 64
 LAB, OWNER = 'layout=test;' + BUILD, 'layout=owner;' + BUILD
 OTHER_LAB = 'layout=test;commit=' + '3' * 40 + ';hash=' + '4' * 64
-# ADR-028 as built: lab folder and test folders; plus what Android and androidx write on their own.
+# The lab folder; plus what Android and androidx write on their own.
 LAB_RUN_CLASS = NS + '.labrun.PipelineTest'
-NOT_FINGERPRINTED = ('files/lab', 'files/test', 'no_backup/test', 'shared_prefs/test_history_notices.xml',
-                     'shared_prefs/test_settings.xml', 'cache', 'code_cache', 'files/profileInstalled')
+NOT_FINGERPRINTED = ('files/lab', 'cache', 'code_cache', 'files/profileInstalled')
 
 
 def sha(data):
@@ -73,7 +72,7 @@ class FakeDevice:
             self.packages[futo] = {'installed': False}
         self.data = {'files/lab/variant.json': b'{}', 'files/lab/encoder.onnx': b'onnx',
                      'files/benchmark/take1.wav': b'RIFF', 'shared_prefs/p.xml': b'<x/>',
-                     'no_backup/history/1.json': b'{"text":"lab"}', 'files/test/dictionary.json': b'[]'}
+                     'no_backup/history/1.json': b'{"text":"lab"}', 'files/dictionary/revision.json': b'[]'}
         self.release_data = {'files/lab/encoder.onnx': b'onnx', 'files/dictionary/revision.json': b'["Oriol"]',
                              'no_backup/history/1.json': b'{"text":"owner"}', 'shared_prefs/settings.xml': b'<s/>'}
         self.fail = set()  # the adapter calls that fail, as a broken transport would
@@ -294,9 +293,9 @@ class PhoneTests(PhoneCase):
         self.assertEqual(set(device['props']), set(phone.PROPS))
 
     def test_pull_reads_test_output_recordings_and_timing_receipts_and_refuses_traversal(self):
-        self.device.data.update({'files/timing-receipts/1.jsonl': b'{}', 'files/test/recordings/t.wav': b'RIFF'})
-        result = self.call('pull', 'files/lab', 'files/benchmark', 'files/timing-receipts', 'files/test/recordings')
-        self.assertEqual(result['files'], 5)
+        self.device.data.update({'files/timing-receipts/1.jsonl': b'{}'})
+        result = self.call('pull', 'files/lab', 'files/benchmark', 'files/timing-receipts')
+        self.assertEqual(result['files'], 4)
         self.assertTrue((Path(result['path']) / 'files/benchmark/take1.wav').exists())
         single = self.call('pull', 'files/benchmark/take1.wav', '--to', str(self.root / 'one'))
         self.assertEqual(single['files'], 1)
@@ -754,19 +753,18 @@ class AdapterArgvTests(unittest.TestCase):
 
             device = phone.Device('/sdk', runner=on_phone)
             for rel in ('no_backup/history/1.json', 'files/dictionary/revision 1.json', 'shared_prefs/settings.xml',
-                        'files/benchmark/take.wav', 'databases/d.db', *(skipped + '/x' for skipped in NOT_FINGERPRINTED[:3]),
-                        *NOT_FINGERPRINTED[3:5], 'cache/x', 'code_cache/x', 'files/profileInstalled'):
+                        'files/benchmark/take.wav', 'databases/d.db', 'files/lab/x', 'cache/x', 'code_cache/x',
+                        'files/profileInstalled'):
                 write(rel, b'before')
             first = device.fingerprint()
             self.assertEqual(first['files'], 5)
             self.assertRegex(first['digest'], '^[0-9a-f]{64}$')
-            for rel in (*(skipped + '/x' for skipped in NOT_FINGERPRINTED[:3]), *NOT_FINGERPRINTED[3:5],
-                        'cache/x', 'code_cache/x', 'files/profileInstalled', 'files/lab/model/new.onnx', 'files/test/new'):
+            for rel in ('files/lab/x', 'cache/x', 'code_cache/x', 'files/profileInstalled', 'files/lab/model/new.onnx'):
                 write(rel, b'after')
-            self.assertEqual(device.fingerprint(), first, 'lab folder, test folders and system files do not count')
+            self.assertEqual(device.fingerprint(), first, 'lab folder and system files do not count')
             seen = {first['digest']}
             changes = (lambda: write('no_backup/history/1.json', b'BEFORE'),  # same size, other content
-                       lambda: write('shared_prefs/test_settings.xml.owner', b''),  # a new empty file beside a test file
+                       lambda: write('shared_prefs/settings.xml.new', b''),  # a new empty file
                        lambda: (data / 'files/benchmark/take.wav').rename(data / 'files/benchmark/take2.wav'),
                        lambda: (data / 'databases/d.db').unlink(),
                        lambda: (data / 'files/link').symlink_to('/etc/hostname'),
@@ -816,7 +814,7 @@ class AdapterArgvTests(unittest.TestCase):
     def test_tar_validation_rejects_traversal_links_and_foreign_dirs(self):
         phone.validate_tar(tar_bytes({'files/lab/a': b'1', 'shared_prefs/x.xml': b'2'}))
         for bad in ({'files/../x': b''}, {'/files/x': b''}, {'cache/x': b''}, {'./files/lab/model.onnx': b''},
-                    {'files/test/x': b''}, {'shared_prefs/test_settings.xml': b''}):
+                    {'files/lab/x': b''}):
             with self.assertRaises(phone.Refused):
                 phone.validate_tar(tar_bytes(bad), outside=phone.OWNER_SKIP)
         with self.assertRaises(phone.Refused):
@@ -887,9 +885,8 @@ class AdapterOnLocalFilesTests(unittest.TestCase):
 
     OWNER = ('no_backup/history/1.json', 'files/dictionary/revision 1.json', 'shared_prefs/settings.xml',
              'files/benchmark/take.wav', 'databases/d.db', 'app_other/unknown-store')
-    LEFT_ALONE = ('files/lab/model/encoder.onnx', 'files/lab/receipts.jsonl', 'files/test/dictionary/revision.json',
-                  'no_backup/test/history/1.json', 'shared_prefs/test_settings.xml',
-                  'shared_prefs/test_history_notices.xml', 'cache/x', 'code_cache/x', 'files/profileInstalled')
+    LEFT_ALONE = ('files/lab/model/encoder.onnx', 'files/lab/receipts.jsonl', 'cache/x', 'code_cache/x',
+                  'files/profileInstalled')
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -922,7 +919,7 @@ class AdapterOnLocalFilesTests(unittest.TestCase):
         skip = ('files/lab/model/encoder.onnx',) + phone.SYSTEM_FILES
         payload = self.device.copy(skip)
         held = set(phone.validate_tar(payload, outside=skip))
-        self.assertEqual(held, set(self.OWNER + self.LEFT_ALONE[1:6]))
+        self.assertEqual(held, set(self.OWNER + self.LEFT_ALONE[1:2]))
         self.assertEqual(phone.tar_fingerprint(payload, leave_out=phone.EXCLUDED), self.device.fingerprint())
 
     def test_a_copy_must_leave_the_cache_out(self):
@@ -934,7 +931,7 @@ class AdapterOnLocalFilesTests(unittest.TestCase):
         skip = ('files/lab/model/encoder.onnx',) + phone.SYSTEM_FILES
         payload = self.device.copy(skip)
         self.write('files/lab/model/encoder.onnx', b'the model as it is now')
-        self.write('files/test/dictionary/later.json', b'written by the lab build')
+        self.write('files/dictionary/later.json', b'written by the lab build')
         self.write('files/lab/later.jsonl', b'written by the lab build')
         self.device.replace(payload, skip)
         files = self.files()
@@ -965,7 +962,7 @@ class LabInstallTests(PhoneCase):
         self.assertEqual(self.did('pull_apk', 'install', 'copy', 'fingerprint'), [('install', APP), ('install', TEST)])
         self.assertEqual((result['outcome'], result['release_changed']), ('installed', []))
         self.assertEqual(self.device.data, {**lab, 'code_cache/startup': sha(b'lab-app.apk').encode(),
-                                            'files/profileInstalled': b'1'}, 'test folders are left as they are')
+                                            'files/profileInstalled': b'1'}, 'lab data is left as it is')
         self.assertFalse((self.root / 'lab/visits').exists())
         self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
         self.assert_release_untouched()
