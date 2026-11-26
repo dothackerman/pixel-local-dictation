@@ -28,7 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = 'app/src/androidTest/kotlin'
 CLASSIFICATION = 'app/src/androidTest/device-classes.json'
-LAYOUT, WRAPPER = 'app/src/benchmark/test-folders.json', 'tools/phone'
+WRAPPER = 'tools/phone'
+LAB_FOLDER = 'files/lab'  # Storage.labFolder, relative to the app's data folder
 KINDS = ('test', 'lab_run', 'guided_check', 'helper')
 _PACKAGE = re.compile(r'^package\s+([\w.]+)', re.M)
 _CLASS = re.compile(r'^(?:\w+\s+)*(?:class|object|interface)\s+(\w+)', re.M)
@@ -125,7 +126,7 @@ def wrapper_problems(root, package, classes):
     if harness is None:
         return found + [f'{SOURCES}: the Lab run harness {package}.LabRun is missing']
     text = harness[1]
-    lab = json.loads((Path(root) / LAYOUT).read_text(encoding='utf-8'))['labFolder']
+    lab = LAB_FOLDER
     inputs = re.search(r'const\s+val\s+INPUTS\s*=\s*"([^"]*)"', text)
     if not inputs or lab + '/' + inputs.group(1) != phone.LAB_RUN_INPUTS:
         found.append(f'{harness[2]}: INPUTS must name the folder the wrapper names, {phone.LAB_RUN_INPUTS}, inside {lab}')

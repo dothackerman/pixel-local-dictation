@@ -88,7 +88,7 @@ The owner's Dictionary, History (transcripts and their checkpoints), History not
 _Avoid_: user data, personal data, app data, real data
 
 **Lab build**:
-The debuggable build marked with the test storage layout, its own app `ch.og.dictation.lab` beside release; it reaches only test folders (Gradle calls it `benchmark`).
+The debuggable build, its own app `ch.og.dictation.lab` beside release, so Android keeps its data apart from owner data; it has the Benchmark switch, and its build marker says `layout=test` (Gradle calls it `benchmark`).
 _Avoid_: benchmark build, test build, debug build
 
 **Guided check**:
@@ -108,13 +108,13 @@ The speech-model files on the laptop, laid out as in the phone's lab folder; its
 _Avoid_: model backup, model snapshot
 
 **Switch copy**:
-The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before the first marked build is installed; only the owner deletes it.
+The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before release replaces it; only the owner deletes it.
 _Avoid_: switch snapshot, full backup
 
 ## Code
 
 **Wiring**:
-What one app process is built from: the recorder factory, the storage layout and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
+What one app process is built from: the recorder factory, the storage and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
 _Avoid_: environment, container, hooks
 
 **Editor port**:

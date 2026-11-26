@@ -53,17 +53,15 @@ HOST_VERBS = ('help', '-h', '--help', 'check')  # no device, no lock, no state
 MARKER_GUARD = 1  # tools/gate/apply.sh refuses to install a wrapper without this line
 MARKER_NAME = PKG + '.build'
 MARKER = re.compile(r'layout=(owner|test);commit=[0-9a-f]{40};hash=[0-9a-f]{64}')
-# Left out of the switch copy's fingerprint: the lab folder (speech model, test output) and the test
-# folders. tools/storage_guard.py fails when this differs from the test layout.
-EXCLUDED = ('files/lab', 'files/test', 'no_backup/test', 'shared_prefs/test_history_notices.xml',
-            'shared_prefs/test_settings.xml')
+LAB_FOLDER = 'files/lab'
+# Left out of the switch copy's fingerprint: the lab folder (speech model, test output).
+EXCLUDED = (LAB_FOLDER,)
 # Written by Android and androidx on their own (caches, cleared on update; the profile installer's note
 # of the last update). Never owner data; left out of the fingerprint too.
 SYSTEM_FILES = ('cache', 'code_cache', 'files/profileInstalled')
 OWNER_SKIP = EXCLUDED + SYSTEM_FILES  # what the fingerprint leaves out
-LAB_FOLDER = EXCLUDED[0]
-# Read-only: test output, owner recordings, the reserved timing-receipt folder, lab-build recordings.
-PULL_ROOTS = (LAB_FOLDER, 'files/benchmark', 'files/timing-receipts', 'files/test')
+# Read-only: test output, recordings, the reserved timing-receipt folder.
+PULL_ROOTS = (LAB_FOLDER, 'files/benchmark', 'files/timing-receipts')
 # What the switch copy must hold before the one-time switch may go on (owner layout, ADR-028).
 SWITCH_HOLDS = {'History': 'no_backup/history/', 'Dictionary': 'files/dictionary/',
                 'History notices': 'shared_prefs/history_notices.xml', 'settings': 'shared_prefs/settings.xml'}
@@ -394,7 +392,7 @@ class Device:
 
     def replace(self, archive, skip, of=LAB_APP):
         """Delete every app-data file outside `skip`, then extract a host-validated tar: what is in
-        `skip` (the lab folder with the speech model, the test folders) is never touched.
+        `skip` (the lab folder with the speech model) is never touched.
 
         The archive is uploaded before anything is deleted: exec-out does not pass stdin EOF,
         so streaming into `tar x` hung after the wipe (2026-10-21)."""
@@ -945,8 +943,8 @@ USAGE = """App-scoped phone access for release (ch.og.dictation) and the lab app
   push DIR [--model]              make the lab app's files/lab hold DIR; sends only changed files;
                                   speech-model files are kept, never added, deleted or overwritten,
                                   unless --model
-  pull PATH... [--to DIR]         read-only, from the lab app's files/lab, files/benchmark,
-                                  files/timing-receipts or files/test into corpus/lab/pull/<ts>/
+  pull PATH... [--to DIR]         read-only, from the lab app's files/lab, files/benchmark or
+                                  files/timing-receipts into corpus/lab/pull/<ts>/
   pull --switch PATH...           the same from the unmarked build of the one-time switch, never release
   run CLASS[#method][,...] [k=v]  am instrument on the lab test package; saves output + lab app logcat
   measure CLASS[#method][,...] [k=v]

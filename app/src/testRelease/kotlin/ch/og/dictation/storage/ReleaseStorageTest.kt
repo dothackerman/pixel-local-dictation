@@ -17,7 +17,6 @@ import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,14 +24,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.shadows.ShadowApplication
 
-/** Release is the owner's daily build: literal owner paths and the owner marker (ADR-028). */
+/** Release is the owner's daily build: literal owner paths and the owner marker. */
 @RunWith(RobolectricTestRunner::class)
 class ReleaseStorageTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
     @Test fun historyIsTheOwnersHistory() {
         val root = app.wiring.storage.historyRoot
-        assertEquals("owner", app.wiring.storage.layout)
         assertEquals(File(app.noBackupFilesDir, "history"), root)
         assertTrue(root.path, root.path.endsWith("/no_backup/history"))
     }
@@ -59,8 +57,6 @@ class ReleaseStorageTest {
         assertEquals(setOf("INCOMPLETE", "SAVE"), app.getSharedPreferences("history_notices", 0).getStringSet("pending", null))
         assertFalse(app.getSharedPreferences("settings", 0).getBoolean("benchmark", true))
         assertTrue(File(app.dataDir, "shared_prefs/history_notices.xml").isFile)
-        assertFalse(File(app.dataDir, "shared_prefs/test_history_notices.xml").exists())
-        assertFalse(File(app.dataDir, "shared_prefs/test_settings.xml").exists())
         assertEquals(setOf("INCOMPLETE", "SAVE"), Wiring.forApp(app).storage.historyNotices.names("pending"))
     }
 
@@ -92,19 +88,16 @@ class ReleaseStorageTest {
         base.deleteRecursively()
     }
 
-    @Test fun aTemporaryRootKeepsTheLayoutAndNoOtherHistoryRootExists() {
+    @Test fun aTemporaryRootKeepsThePaths() {
         val base = Files.createTempDirectory("storage").toFile()
         app.overrideWiring { it.with(storage = Storage.under(base)) }.use {
             assertEquals(File(base, "no_backup/history"), app.wiring.storage.historyRoot)
             assertEquals(File(base, "files/dictionary"), app.wiring.storage.dictionaryRoot)
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            app.wiring.storage.withHistoryRoot(File(app.noBackupFilesDir, "test/history"))
-        }
         base.deleteRecursively()
     }
 
-    @Test fun aSecondProcessGetsTheSameLayout() {
+    @Test fun aSecondProcessGetsTheSameStorage() {
         val main = app.wiring.storage.historyRoot
         ShadowApplication.setProcessName("ch.og.dictation:other")
         try {
@@ -134,10 +127,6 @@ class ReleaseStorageTest {
         assertFalse(BenchmarkStore.isEnabled(app))
         BenchmarkStore.setEnabled(app, true)
         assertFalse(BenchmarkStore.isEnabled(app))
-    }
-
-    @Test fun theTimingReceiptFolderIsReserved() {
-        assertEquals("files/timing-receipts", OwnerLayout.TIMING_RECEIPTS)
     }
 
     @Test fun theBuildMarkerNamesTheOwnerLayout() {
