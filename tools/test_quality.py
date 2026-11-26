@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -5,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import jvm_environment, preparation_problem, staged_errors
+from quality import gradle, jvm_environment, preparation_problem, staged_errors
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -68,6 +70,32 @@ class PreparationTests(unittest.TestCase):
             self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree), 'jars still missing')
             (worktree / '.gradle/robolectric').mkdir(parents=True)
             self.assertIsNone(preparation_problem(worktree))
+
+
+    def test_the_shared_home_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main, _ = self.repository(Path(directory))
+            (main / '.gradle/home').mkdir(parents=True)
+            os.environ['GRADLE_USER_HOME'] = str(Path.home() / '.gradle')
+            self.assertIn('shared ~/.gradle', preparation_problem(main))
+
+
+class OfflineMissTests(unittest.TestCase):
+    def run_gradle(self, script):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = gradle(['sh', '-c', script], Path.cwd(), dict(os.environ))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_missing_offline_dependency_names_the_fill_command(self):
+        code, out, err = self.run_gradle('echo "No cached version available for offline mode"; exit 1')
+        self.assertEqual(code, 1)
+        self.assertIn('No cached version', out, 'Gradle output still shown')
+        self.assertIn('python3 tools/prepare_checkout.py --fill', err)
+
+    def test_other_failures_add_nothing(self):
+        self.assertEqual(self.run_gradle('echo compile error; exit 1')[1:], ('compile error\n', ''))
+        self.assertEqual(self.run_gradle('echo ok')[0], 0)
 
 
 class JvmEnvironmentTests(unittest.TestCase):

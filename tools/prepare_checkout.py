@@ -7,8 +7,8 @@ real file. In any checkout, links the cached Robolectric Android jar into
 .gradle/robolectric, which quality.py hands to Robolectric's offline mode, and seeds this
 checkout's own Gradle home (ADR-028) with the wrapper distribution. Downloads come from
 the shared read-only copy, built from ~/.gradle when missing or on --refresh. Downloads
-nothing. Every check runs before any write to the checkout. Gate installation (ADR-024)
-is reported, never done.
+nothing, except --fill. Every check runs before any write to the checkout. Gate
+installation (ADR-024) is reported, never done.
 """
 import argparse
 import os
@@ -23,8 +23,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/gate'))  # check_installation, when run directly
 from check_installation import errors as gate_installation_errors  # noqa: E402
-FILL_CACHES = ('in the main checkout, outside the sandbox: GRADLE_USER_HOME=~/.gradle ./gradlew testBenchmarkUnitTest, '
-               'then python3 tools/prepare_checkout.py --refresh')
+FILL_CACHES = 'in the main checkout, outside the sandbox: python3 tools/prepare_checkout.py --fill'
+# The quality gate's Gradle tasks; --fill also builds the APKs agents assemble.
+GATE_TASKS = ('testBenchmarkUnitTest', 'compileBenchmarkAndroidTestKotlin', 'lintBenchmark')
+FILL_TASKS = GATE_TASKS + ('assembleRelease', 'assembleBenchmark', 'assembleBenchmarkAndroidTest')
 # gradlew sets both unless already set; keep them in step with it (ADR-028).
 GRADLE_HOME = Path('.gradle/home')  # under the checkout: its own Gradle home
 SHARED = Path('.gradle/ro-dep-cache')  # under $HOME: read-only copy of ~/.gradle's downloads
@@ -98,10 +100,21 @@ def refresh(source, shared, out):
     link = generation.with_name(generation.name + '-link')
     link.symlink_to(generation.name)
     os.replace(link, shared)
-    for old in sorted(shared.parent.glob(shared.name + '.*'))[:-2]:
-        old.unlink() if old.is_symlink() else shutil.rmtree(old)  # a link left by a crash too
+    complete = [p for p in shared.parent.glob(shared.name + '.*') if p.name.split('.')[-1].isdigit()]
+    for old in sorted(complete)[:-2]:
+        shutil.rmtree(old)
     print(f'read-only copy {shared} -> {generation}', file=out)
     return 0
+
+
+def fill(root, source, shared, out, run=subprocess.run):
+    """Downloads what every gate and APK build needs into source, then refreshes the copy.
+    No other Gradle may use source meanwhile: the copy must not catch a half-written index."""
+    command = [str(root / 'gradlew'), *FILL_TASKS]
+    if run(command, cwd=root, env={**os.environ, 'GRADLE_USER_HOME': str(source)}).returncode:
+        print(f'{" ".join(command)} failed; read-only copy unchanged', file=out)
+        return 1
+    return refresh(source, shared, out)
 
 
 def robolectric_jars(root, caches, m2, problems):
@@ -172,7 +185,8 @@ def prepare(root, main, gradle_home, shared, m2, out):
         print('nothing changed', file=out)
         return 1
     seeded = gradle_home / 'wrapper/dists' / dist.name
-    if fresh := not seeded.is_dir():
+    if fresh := not any(seeded.glob('*/*.zip.ok')):  # the wrapper's own marker of a complete unpack
+        shutil.rmtree(seeded, ignore_errors=True)
         # The wrapper makes its own .lck; nothing writable is shared with the copy.
         shutil.copytree(dist, seeded, ignore=UNLOCKED, copy_function=link_or_copy)
         print(f'seeded {seeded} from {dist}', file=out)
@@ -192,11 +206,19 @@ def prepare(root, main, gradle_home, shared, m2, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--refresh', action='store_true',
-                        help='rebuild the read-only copy from ~/.gradle; safe while builds run')
+                        help='rebuild the read-only copy from ~/.gradle; safe while checkouts build, '
+                             'but only while no Gradle uses ~/.gradle itself')
+    parser.add_argument('--fill', action='store_true',
+                        help='download into ~/.gradle what the gate and APK builds need, then --refresh; '
+                             'needs network, so outside the sandbox')
     args = parser.parse_args()
     gradle_home = Path(os.environ.get('GRADLE_USER_HOME') or ROOT / GRADLE_HOME)
     shared = Path(os.environ.get('GRADLE_RO_DEP_CACHE') or Path.home() / SHARED)
-    if (args.refresh or not shared.exists()) and refresh(Path.home() / '.gradle', shared, sys.stdout):
+    source = Path.home() / '.gradle'
+    if args.fill:
+        if fill(ROOT, source, shared, sys.stdout):
+            return 1
+    elif (args.refresh or not shared.exists()) and refresh(source, shared, sys.stdout):
         return 1
     code = prepare(ROOT, main_checkout(ROOT), gradle_home, shared, Path.home() / '.m2/repository', sys.stdout)
     if gate_installation_errors(ROOT):

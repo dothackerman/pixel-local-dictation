@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zipfile
 
-from prepare_checkout import GRADLE_HOME, ROOT, SHARED, prepare, refresh
+from prepare_checkout import FILL_TASKS, GATE_TASKS, GRADLE_HOME, ROOT, SHARED, fill, prepare, refresh
 
 PASSWORD = 'not-a-real-password-71'
 JAR = 'android-all-instrumented-16-robolectric-13921718-i7.jar'
@@ -111,12 +111,12 @@ class PrepareCheckoutTests(unittest.TestCase):
 
     def test_missing_robolectric_android_jar_names_the_cache_and_how_to_fill_it(self):
         (self.fixture.m2 / 'org/robolectric/android-all-instrumented/16-robolectric-13921718-i7' / JAR).unlink()
-        self.assert_refused('Maven cache', 'android-all-instrumented', './gradlew testBenchmarkUnitTest')
+        self.assert_refused('Maven cache', 'android-all-instrumented', 'python3 tools/prepare_checkout.py --fill')
 
     def test_missing_gradle_distribution_names_it_and_how_to_fill_it(self):
         dist = self.fixture.shared / 'wrapper/dists/gradle-9.8.1-bin'
         os.rename(dist, dist.with_name('gone'))
-        self.assert_refused('gradle-9.8.1-bin', 'outside the sandbox', '--refresh')
+        self.assert_refused('gradle-9.8.1-bin', 'outside the sandbox', 'python3 tools/prepare_checkout.py --fill')
 
     def test_fresh_home_gets_the_distribution_linked_from_the_read_only_copy_without_its_lock(self):
         code, output = self.fixture.prepare()
@@ -125,6 +125,15 @@ class PrepareCheckoutTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in seeded.iterdir()), ['gradle-9.8.1', 'gradle-9.8.1-bin.zip.ok'])
         jar = seeded / 'gradle-9.8.1/lib/gradle.jar'
         self.assertTrue(jar.samefile(self.fixture.source / 'wrapper/dists/gradle-9.8.1-bin/abc/gradle-9.8.1/lib/gradle.jar'))
+
+    def test_home_without_the_wrapper_marker_is_seeded_again(self):
+        self.fixture.prepare()
+        marker = self.fixture.gradle_home / 'wrapper/dists/gradle-9.8.1-bin/abc/gradle-9.8.1-bin.zip.ok'
+        marker.unlink()
+        code, output = self.fixture.prepare()
+        self.assertEqual(code, 0, output)
+        self.assertIn('seeded', output)
+        self.assertTrue(marker.is_file())
 
     def test_robolectric_found_only_in_the_read_only_copy(self):
         (self.fixture.source / 'caches/modules-2/files-2.1/org.robolectric/robolectric/4.17/31a1/robolectric-4.17.jar').unlink()
@@ -189,11 +198,44 @@ class RefreshTests(unittest.TestCase):
         self.assertNotIn(first.name, generations)
         self.assertEqual(shared.resolve().name, generations[-1])
 
+    def test_cleanup_keeps_two_complete_copies_and_ignores_partial_ones(self):
+        shared = self.fixture.shared
+        partial = shared.with_name(shared.name + '.1-partial')
+        partial.mkdir()
+        for _ in range(3):
+            self.assertEqual(refresh(self.fixture.source, shared, io.StringIO()), 0)
+        complete = [p for p in shared.parent.glob(shared.name + '.*') if p.name.split('.')[-1].isdigit()]
+        self.assertEqual(len(complete), 2, complete)
+        self.assertTrue(partial.is_dir(), 'a partial copy may belong to a refresh still running')
+
+    def test_fill_builds_every_gate_and_apk_task_into_the_shared_home_then_refreshes(self):
+        calls = []
+        def run(command, cwd, env):
+            calls.append((command, cwd, env['GRADLE_USER_HOME']))
+            return subprocess.CompletedProcess(command, 0)
+        out = io.StringIO()
+        before = self.fixture.shared.resolve()
+        self.assertEqual(fill(self.fixture.main, self.fixture.source, self.fixture.shared, out, run), 0, out.getvalue())
+        [(command, cwd, home)] = calls
+        self.assertEqual(command[1:], list(FILL_TASKS))
+        self.assertTrue(set(GATE_TASKS) <= set(FILL_TASKS))
+        self.assertTrue({'assembleRelease', 'assembleBenchmark', 'assembleBenchmarkAndroidTest'} <= set(FILL_TASKS))
+        self.assertNotIn('--offline', command)
+        self.assertEqual((cwd, home), (self.fixture.main, str(self.fixture.source)))
+        self.assertNotEqual(self.fixture.shared.resolve(), before, 'refreshed')
+
+    def test_failed_fill_keeps_the_copy(self):
+        out = io.StringIO()
+        before = self.fixture.shared.resolve()
+        run = lambda command, cwd, env: subprocess.CompletedProcess(command, 1)
+        self.assertEqual(fill(self.fixture.main, self.fixture.source, self.fixture.shared, out, run), 1)
+        self.assertEqual(self.fixture.shared.resolve(), before)
+
     def test_missing_source_changes_nothing(self):
         out = io.StringIO()
         before = self.fixture.shared.resolve()
         self.assertEqual(refresh(self.fixture.source / 'absent', self.fixture.shared, out), 1)
-        self.assertIn('outside the sandbox', out.getvalue())
+        self.assertIn('python3 tools/prepare_checkout.py --fill', out.getvalue())
         self.assertEqual(self.fixture.shared.resolve(), before)
 
 
