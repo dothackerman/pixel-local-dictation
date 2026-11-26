@@ -77,7 +77,7 @@ class InstallGuardTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assert_nothing_installed(directory, root)
 
-    def test_the_shim_passes_the_callers_directory_first_and_runs_in_its_checkout(self):
+    def test_the_shim_passes_the_arguments_unchanged_and_runs_in_the_callers_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root, environment = checkout(directory)
             (root / '.claude/hooks').mkdir(parents=True)
@@ -87,11 +87,10 @@ class InstallGuardTests(unittest.TestCase):
             installed.parent.mkdir(parents=True)
             installed.write_text('import json, os, sys\nprint(json.dumps([os.getcwd(), sys.argv[1:]]))\n')
             caller = root / 'tools/gate'
-            result = subprocess.run([str(root / '.claude/hooks/phone'), '--caller', '/spoofed', 'app'], cwd=caller,
+            result = subprocess.run([str(root / '.claude/hooks/phone'), 'push', 'relative/dir'], cwd=caller,
                                     env=environment, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout),
-                             [str(root.resolve()), ['--caller', str(caller.resolve()), '--caller', '/spoofed', 'app']])
+            self.assertEqual(json.loads(result.stdout), [str(caller.resolve()), ['push', 'relative/dir']])
 
     def test_the_claude_allow_list_leaves_out_every_verb_that_asks(self):
         settings = json.loads((ROOT / 'tools/gate/settings.json').read_text())
@@ -104,7 +103,7 @@ class InstallGuardTests(unittest.TestCase):
         self.assertEqual(allowed, {'help', 'check', 'status', 'device', 'app', 'crash', 'logs', 'pull', 'push', 'run',
                                    'measure', 'snapshot'})
         self.assertIn('Bash(' + shim + 'measure:*)', settings['permissions']['allow'], 'like run: any class, any extras')
-        self.assertEqual(allowed & {'install', 'restore', 'stop', 'forget', 'uninstall'}, set())
+        self.assertEqual(allowed & {'install', 'restore', 'stop', 'uninstall'}, set())
         self.assertEqual([rule for rule in settings['permissions']['allow'] if '.claude/hooks/phone' not in rule], [],
                          'nothing but named shim verbs is allowed')
 

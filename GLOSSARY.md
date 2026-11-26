@@ -24,7 +24,7 @@ _Avoid_: segment, window
 How many audio samples the laptop replay hands to the chunker at once; three sizes give the noise floor.
 
 **Visit**:
-One connected phone lab period, from installing the lab app beside release until removing it: the lab app's data is copied first and found unchanged after every run; release is never touched.
+One connected phone lab period, from installing the lab app beside release until removing it; release is never touched.
 _Avoid_: phone session, lab session
 
 ## Recognition models
@@ -100,7 +100,7 @@ A short check by the owner on the release build with their own data, after a new
 _Avoid_: sanity check, manual check, owner test
 
 **Lab run**:
-A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and works only on copies of owner data that the wrapper placed.
+A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and runs in the lab app on data pushed from the laptop.
 _Avoid_: lab test, benchmark test, experiment run, phone test
 
 **Kept model copy**:
