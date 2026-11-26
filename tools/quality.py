@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from prepare_checkout import ROBOLECTRIC_JARS
+from prepare_checkout import GRADLE_HOME, ROBOLECTRIC_JARS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,15 +26,16 @@ def staged_errors(root=ROOT):
 
 
 def preparation_problem(root=ROOT):
-    """A linked worktree lacks the links tools/prepare_checkout.py makes; the main checkout owns its inputs."""
+    """A checkout lacks its own Gradle home, or a linked worktree the links tools/prepare_checkout.py
+    makes; the main checkout owns its inputs."""
     root = Path(root)
     git = lambda option: subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', option],
                                                  cwd=root, text=True).strip()
-    if git('--git-dir') == git('--git-common-dir'):
-        return None
-    needed = ('local.properties', 'app/libs', 'app/src/main/assets', str(ROBOLECTRIC_JARS))
+    needed = [str(GRADLE_HOME)]
+    if git('--git-dir') != git('--git-common-dir'):
+        needed += ['local.properties', 'app/libs', 'app/src/main/assets', str(ROBOLECTRIC_JARS)]
     missing = [name for name in needed if not (root / name).exists()]
-    return ('unprepared worktree, missing ' + ', '.join(missing)
+    return ('unprepared checkout, missing ' + ', '.join(missing)
             + ': run python3 tools/prepare_checkout.py') if missing else None
 
 

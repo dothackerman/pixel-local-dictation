@@ -39,7 +39,7 @@ class StagedQualityTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
-    """An unprepared worktree fails at once with the fix, not later inside Gradle."""
+    """An unprepared checkout fails at once with the fix, not later inside Gradle."""
     setUp = StagedQualityTests.setUp
 
     def repository(self, base):
@@ -57,7 +57,10 @@ class PreparationTests(unittest.TestCase):
     def test_fresh_worktree_names_the_setup_command(self):
         with tempfile.TemporaryDirectory() as directory:
             main, worktree = self.repository(Path(directory))
+            self.assertIn('.gradle/home', preparation_problem(main), 'every checkout has its own Gradle home')
+            (main / '.gradle/home').mkdir(parents=True)
             self.assertIsNone(preparation_problem(main))
+            (worktree / '.gradle/home').mkdir(parents=True)
             self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree))
             for name in ('local.properties', 'app/libs', 'app/src/main/assets'):
                 (worktree / name).parent.mkdir(parents=True, exist_ok=True)
