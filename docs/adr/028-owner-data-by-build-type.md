@@ -141,3 +141,16 @@ when it is removed; a release install no longer ends a Visit. The one-time switc
 installed with `--promote` over the unmarked build, given a current switch copy; afterwards no verb
 reads or writes release data: `restore --switch`, the switch's undo, works only before it, while
 the copy's unmarked build is release. Guards that only the shared package needed are walked back by #99 (wrapper) and #100 (app).
+
+## Amendment (2026-11-26, #100): app-side guards walked back
+
+The lab app has its own storage (#98), so the app no longer splits storage by build type. Removed: the
+two layouts (`OwnerLayout`, `TestLayout`), the test folders as the lab build's data paths and their
+published list `app/src/benchmark/test-folders.json`, the History-root check, and the host check
+`tools/storage_guard.py`. Storage stays as the one accessor per data kind, with release's paths in both
+builds; release paths and behaviour are unchanged. What still differs by build type is in
+`app/src/{release,benchmark}/kotlin/ch/og/dictation/storage/BuildType.kt`: whether recordings are saved
+(release is the product only) and Copy's target (the lab build keeps an in-app clipboard: the system
+clipboard is one for all apps). Device tests keep sibling History roots and scratch files under
+`no_backup/test` and `files/test` of the lab app. The build marker stays: the wrapper tells the builds
+apart by it (`layout=owner|test`). `files/timing-receipts` stays reserved in this ADR only.

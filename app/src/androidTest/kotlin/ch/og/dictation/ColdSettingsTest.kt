@@ -8,7 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Fresh process only: a synthetic edit of the lab build's test Dictionary, next to the real model, must
+ * Fresh process only: a synthetic edit of the lab app's Dictionary, next to the real model, must
  * not load it. The edit is removed afterwards, so the frozen Candidate A list applies again. No speech
  * or terms in output. Host twin: DictionaryRuntimeUpdateTest.
  */
@@ -16,7 +16,6 @@ import org.junit.runner.RunWith
 class ColdSettingsTest {
     @Test fun coldSettingsChangesDoNotInitialiseTheModel() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("the lab build has no owner Dictionary", "test", context.wiring.storage.layout)
         assertEquals("run this check first in a fresh instrumentation process", 0, context.wiring.engine.dictionaryModelLoads)
         val store = context.wiring.engine.dictionaryStore()
         val original = store.read()

@@ -79,7 +79,7 @@ def main():
             print('\n'.join(errors), file=sys.stderr)
             return 1
     for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
-                    # Release is compiled and its own host tests assert the owner layout and marker (ADR-028).
+                    # Release is compiled and its own host tests assert the owner paths and marker.
                     [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'testReleaseUnitTest',
                      'compileBenchmarkAndroidTestKotlin', 'lintBenchmark', 'processReleaseManifest',
                      'processBenchmarkManifest', 'processBenchmarkAndroidTestManifest'],

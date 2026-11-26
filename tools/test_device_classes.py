@@ -24,8 +24,6 @@ class DeviceClassTests(unittest.TestCase):
         self.root = Path(tmp.name)
         (self.root / 'tools').mkdir()
         shutil.copy2(ROOT / 'tools/phone', self.root / 'tools/phone')
-        (self.root / 'app/src/benchmark').mkdir(parents=True)
-        shutil.copy2(ROOT / device_classes.LAYOUT, self.root / device_classes.LAYOUT)
         self.listing = {
             'labRunPackage': 'ch.og.dictation.labrun',
             'classes': {'ch.og.dictation.ReadyTest': 'test', 'ch.og.dictation.ColdTest': 'test',

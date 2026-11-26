@@ -1,9 +1,0 @@
-{
-  "labFolder": "files/lab",
-  "testFolders": [
-    "files/test",
-    "no_backup/test",
-    "shared_prefs/test_history_notices.xml",
-    "shared_prefs/test_settings.xml"
-  ]
-}

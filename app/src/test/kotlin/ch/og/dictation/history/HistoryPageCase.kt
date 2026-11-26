@@ -23,7 +23,7 @@ import org.robolectric.android.controller.ActivityController
 
 /**
  * The History page on the laptop, for the suites that ran on the phone (#79): the real activity
- * and layouts on the build's History root (the test layout's, in the lab build), an Undo window
+ * and layouts on the build's History root, an Undo window
  * each case sets, and the main looper driven by hand.
  */
 abstract class HistoryPageCase {

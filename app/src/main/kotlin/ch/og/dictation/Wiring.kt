@@ -14,7 +14,7 @@ import android.content.Context
 class Wiring private constructor(
     /** A fresh platform recorder per take. */
     val recorderFactory: () -> Recorder,
-    /** Where this build keeps each kind of data: owner folders in release, test folders in the lab build. */
+    /** Where this build keeps each kind of data. */
     val storage: Storage,
     private val engineSource: Lazy<Engine>,
 ) {
