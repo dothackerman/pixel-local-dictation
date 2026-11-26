@@ -8,6 +8,8 @@ if [ ! -f "$installed" ]; then
   echo "failed: no installed wrapper at $installed; the user runs bash tools/gate/apply.sh" >&2
   exit 1
 fi
+# The wrapper refuses device verbs unless the caller stands in the main checkout (ADR-028).
+caller=$(pwd -P)
 root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 cd "$root"
-exec python3 -I "$installed" "$@"
+exec python3 -I "$installed" --caller "$caller" "$@"
