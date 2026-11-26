@@ -9,7 +9,7 @@ The lab app is its own package beside release (#98): every verb that reads or wr
 or stops acts on the lab app, whose data is test data. Release data is read only by the one-time
 switch, while release is still the unmarked debuggable build; afterwards `run-as` cannot reach it and
 no verb tries. APKs are told apart by their build marker (ADR-028). Any checkout or worktree may call;
-the lock in the main checkout's corpus/lab serializes callers.
+the lock in the main checkout's corpus/lab, which the shim names, serializes callers.
 
 Exit 0: success, one JSON object on stdout.
 Exit 3: `refused: <reason>` (policy).  Exit 1: `failed: <reason>` (device/transport).
@@ -817,6 +817,8 @@ class Phone:
             raise Refused('unsupported class list')
         if not all(item.startswith(LAB_RUN + '.') for item in classes.split(',')):
             raise Refused('measure refused: it runs only Lab run classes, those under %s; tests go through run' % LAB_RUN)
+        if any(item.startswith('inputs=') for item in arguments):
+            raise Refused('measure refused: inputs= is gone (#99); push the inputs under DIR/labrun-inputs/')
         pairs = self.extras(arguments)
         self.lab_build('measure')
         self.not_live('measure')
@@ -970,7 +972,7 @@ only when the owner asked for the measurement; its output is pulled like any tes
 Any checkout or worktree may call; one call at a time (the lock in the main checkout's corpus/lab).
 Speech model: the files of the kept model copy corpus/lab/model, laid out as in files/lab, are the
 speech-model files; everything else in files/lab is test output.
-The lab app has its own copy: push corpus/lab/model --model once (about 2.4 GB).
+The lab app has its own copy: push the main checkout's corpus/lab/model --model once (about 2.4 GB).
 Owner work, once per phone (agents never change phone settings or FUTO): enable "Local dictation lab"
 in Android's keyboard settings and grant the lab app the microphone; before keyboard-handoff tests set
 FUTO's voice input to "Local dictation lab", and back to "Local dictation" afterwards.
@@ -1040,7 +1042,20 @@ def dispatch(argv, phone):
     raise Refused('unknown command or arguments; see help')
 
 
+def home_checkout(path):
+    """The main checkout the shim named; never the caller's directory or GIT_* variables."""
+    home = Path(path)
+    if not home.is_absolute() or not (home / '.git').is_dir():
+        raise Refused('--home must be the absolute path of a main checkout (a folder holding .git)')
+    return home
+
+
 def main(argv):
+    home = None
+    if argv[:1] == ['--home']:  # passed by the shim, first; a later one is just an unknown verb
+        if len(argv) < 2:
+            raise Refused('--home needs a directory')
+        home, argv = argv[1], argv[2:]
     verb = argv[0] if argv else 'help'
     os.umask(0o077)
     device = Device(os.environ.get('ANDROID_HOME', Path.home() / 'Android/Sdk'))
@@ -1049,11 +1064,9 @@ def main(argv):
         print(result['usage'] if isinstance(result, dict) and set(result) == {'usage'}
               else json.dumps(result, indent=1, sort_keys=True))
         return 0
-    common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                            capture_output=True, text=True)
-    if common.returncode:
-        raise Failed('run from inside a checkout or worktree')
-    state = Path(common.stdout.strip()).parent / 'corpus' / 'lab'  # the main checkout's, from any worktree
+    if home is None:
+        raise Refused('device verbs run only through the shim, which names the main checkout (--home)')
+    state = home_checkout(home) / 'corpus' / 'lab'
     phone = Phone(device, state)
     handle = phone.lock() if verb != 'status' else None
     try:

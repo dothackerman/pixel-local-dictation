@@ -546,6 +546,10 @@ class MeasureTests(PhoneCase):
                          [('instrument', LAB_RUN_CLASS + '#savedTakesThroughTheServicePipeline', (('label', 'a'),))])
         self.assertEqual(self.did('fingerprint', 'copy', 'tar', 'push'), [])
 
+    def test_inputs_are_refused_not_passed_on(self):
+        self.refused('inputs= is gone', 'measure', LAB_RUN_CLASS, 'inputs=files/benchmark')
+        self.assertEqual(self.did('instrument'), [])
+
     def test_the_outcome_is_completed_only_when_every_lab_run_said_so(self):
         done, short = 'INSTRUMENTATION_STATUS: stream=LAB RUN completed: a\n', 'INSTRUMENTATION_STATUS: stream=LAB RUN incomplete: b\n'
         for report, expected in ((done, 'completed'), (done + done, 'completed'), (done + short, 'incomplete'),
@@ -572,7 +576,8 @@ class MeasureTests(PhoneCase):
 
 
 class CallerTests(PhoneCase):
-    """Any checkout or worktree calls; state and lock are the main checkout's corpus/lab."""
+    """State and lock are the corpus/lab of the main checkout the shim names (--home); the caller's
+    directory and git play no part."""
 
     def setUp(self):
         super().setUp()
@@ -581,41 +586,53 @@ class CallerTests(PhoneCase):
 
     def main_call(self, *argv):
         output = io.StringIO()
-        common = subprocess.CompletedProcess([], 0, str(self.main / '.git') + '\n', '')  # from the main checkout or any worktree
-        with patch.object(phone.subprocess, 'run', return_value=common), \
+        with patch.object(phone.subprocess, 'run', side_effect=AssertionError('no git, no subprocess')), \
              patch.object(phone, 'Device', return_value=self.device), \
              patch.object(phone.os, 'umask'), redirect_stdout(output):
             status = phone.main(list(argv))
         return status, output.getvalue()
 
-    def test_device_verbs_keep_state_in_the_main_checkout(self):
-        status, output = self.main_call('app')
+    def test_device_verbs_keep_state_in_the_named_main_checkout(self):
+        status, output = self.main_call('--home', str(self.main), 'app')
         self.assertEqual(status, 0)
         self.assertEqual(json.loads((self.main / 'corpus/lab/last.json').read_text()), json.loads(output))
+
+    def test_device_verbs_refuse_without_a_main_checkout_named(self):
+        worktree = self.root / 'worktree'
+        worktree.mkdir()
+        (worktree / '.git').write_text('gitdir: ' + str(self.main / '.git/worktrees/w'))
+        for home in ([], ['--home', 'main'], ['--home', str(worktree)], ['--home', str(self.root / 'none')]):
+            with self.subTest(home=home), self.assertRaises(phone.Refused):
+                self.main_call(*home, 'app')
+        self.assertEqual(self.device.calls, [])
+        self.assertFalse((self.main / 'corpus').exists())
 
     def test_a_second_caller_is_refused_while_one_holds_the_lock(self):
         held = phone.Phone(self.device, self.main / 'corpus/lab').lock()
         self.addCleanup(held.close)
         for verb in (['app'], ['run', NS + '.NormalBaselineTest'], ['uninstall']):
             with self.subTest(verb[0]), self.assertRaises(phone.Refused) as caught:
-                self.main_call(*verb)
+                self.main_call('--home', str(self.main), *verb)
             self.assertIn('another phone command is running', str(caught.exception))
         self.assertEqual(self.did('instrument', 'uninstall'), [])
         held.close()
-        self.assertEqual(self.main_call('app')[0], 0)
+        self.assertEqual(self.main_call('--home', str(self.main), 'app')[0], 0)
 
     def test_check_and_help_need_no_lock_or_state(self):
         app, test = self.apk('app.apk', APP, LAB, True), self.apk('test.apk', TEST, LAB, True)
-        status, output = self.main_call('check', app, test)
-        self.assertEqual(status, 0)
-        self.assertEqual([i['package'] for i in json.loads(output)], [APP, TEST])
-        self.assertIn('status', self.main_call('help')[1])
+        for home in ([], ['--home', str(self.main)]):
+            with self.subTest(home=home):
+                status, output = self.main_call(*home, 'check', app, test)
+                self.assertEqual(status, 0)
+                self.assertEqual([i['package'] for i in json.loads(output)], [APP, TEST])
+                self.assertIn('status', self.main_call(*home, 'help')[1])
         self.assertEqual(self.device.calls, [])
         self.assertFalse((self.main / 'corpus').exists())
 
-    def test_a_caller_flag_is_no_verb(self):
-        with self.assertRaises(phone.Refused):
-            self.main_call('--caller', str(self.main), 'app')
+    def test_a_second_home_or_a_caller_flag_is_no_verb(self):
+        for argv in (['--home', str(self.main), '--home', str(self.main), 'app'], ['--home', str(self.main), '--caller', 'x']):
+            with self.subTest(argv), self.assertRaises(phone.Refused):
+                self.main_call(*argv)
 
 
 class ScriptedRunner:
@@ -1284,7 +1301,7 @@ class UsageTests(PhoneCase):
         for text in ('install APP.apk TEST.apk', '--promote', 'push DIR [--model]', 'snapshot --switch NAME',
                      'restore --switch NAME', 'pull --switch', 'corpus/lab/model', 'files/timing-receipts',
                      'One-time switch', 'measure CLASS', 'Reports completed', 'files/lab/labrun-inputs',
-                     APP, TEST, 'push corpus/lab/model --model once', 'Any checkout or worktree'):
+                     APP, TEST, 'corpus/lab/model --model once', 'Any checkout or worktree'):
             self.assertIn(text, usage)
         # The owner's work, which agents never do (#98).
         for text in ('agents never change phone settings or FUTO', 'enable "Local dictation lab"', 'the microphone',

@@ -194,13 +194,17 @@ owner data inside one shared package goes from the wrapper.
 - Gone: the Visit record and copy (`corpus/lab/visits/`), `forget`, the whole-data fingerprint around
   `run` and `measure`, the refusals that need an open Visit (`run`, `push`, `measure`, `stop`), the
   emptying of test folders at install, plain `snapshot NAME` and `restore NAME`, the copies `measure`
-  placed in `files/lab/labrun-inputs` (and its `inputs=`), the uninstall token, and the main-checkout
-  refusal with the shim's `--caller`.
-- Kept: the wrapper as the only path to the phone; its lock, now taken in the main checkout's
-  `corpus/lab` by callers from any checkout or worktree; the build check before install and run; the
+  placed in `files/lab/labrun-inputs` (`inputs=` is refused), the uninstall token, and the
+  main-checkout refusal with the shim's `--caller`.
+- Kept: the wrapper as the only path to the phone; its lock, taken by callers from any checkout or
+  worktree in the `corpus/lab` of the main checkout that the shim names with `--home`, found from the
+  shim's own path with GIT_* variables cleared, never from the caller's directory; the build check before install and run; the
   model-safe `push`; Lab runs, on what `push` put in `files/lab` (inputs under `labrun-inputs/`); the
   release package facts around a lab install and `uninstall` (#98's proof); the one-time switch
   verbs (`snapshot --switch`, `pull --switch`, `restore --switch`, `install --promote`) with the
   fingerprint they use, until #83's switch is done.
 - Asking stays a harness rule: `install`, `restore`, `stop`, `uninstall` are not in the allow list.
+  Without the token, `uninstall` relies on Claude's ask alone; Codex has no per-verb approval. The
+  harm is bounded: `uninstall` removes only the lab app and test packages, so at worst lab data and the
+  lab app's model copy (pushed again from the kept copy).
 - `apply.sh` still installs only from the main checkout.
