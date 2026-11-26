@@ -8,8 +8,11 @@ if [ ! -f "$installed" ]; then
   echo "failed: no installed wrapper at $installed; the user runs bash tools/gate/apply.sh" >&2
   exit 1
 fi
-# The wrapper refuses device verbs unless the caller stands in the main checkout (ADR-028).
-caller=$(pwd -P)
-root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
-cd "$root"
-exec python3 -I "$installed" --caller "$caller" "$@"
+# The wrapper's lock and state are this repository's main checkout's corpus/lab, found from this file's
+# own path, never from the caller's directory or GIT_* variables. It runs in the caller's directory, so
+# relative paths resolve there; any checkout or worktree may call.
+for variable in $(compgen -e); do
+  case "$variable" in GIT_*) unset "$variable" ;; esac
+done
+common=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir)
+exec python3 -I "$installed" --home "$(dirname -- "$common")" "$@"
