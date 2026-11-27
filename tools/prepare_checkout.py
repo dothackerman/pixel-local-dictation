@@ -4,21 +4,35 @@
 In a linked worktree, links the main checkout's gitignored build inputs (signing in
 local.properties, app/libs, app/src/main/assets); links, never copies; never replaces a
 real file. In any checkout, links the cached Robolectric Android jar into
-.gradle/robolectric, which quality.py hands to Robolectric's offline mode. Checks the
-Gradle caches; downloads nothing. Every check runs before any write. Gate installation
+.gradle/robolectric, which quality.py hands to Robolectric's offline mode, and seeds this
+checkout's own Gradle home (ADR-028) with the wrapper distribution. Downloads come from
+the shared read-only copy, built from ~/.gradle when missing or on --refresh. Downloads
+nothing, except --fill. Every check runs before any write to the checkout. Gate
 installation (ADR-024) is reported, never done.
 """
+import argparse
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/gate'))  # check_installation, when run directly
 from check_installation import errors as gate_installation_errors  # noqa: E402
-FILL_CACHES = 'in the main checkout, outside the sandbox: ./gradlew testBenchmarkUnitTest'
+FILL_CACHES = 'in the main checkout, outside the sandbox: python3 tools/prepare_checkout.py --fill'
+# The quality gate's Gradle tasks; --fill also builds the APKs agents assemble.
+# Release is compiled and its own host tests assert the owner paths and marker.
+GATE_TASKS = ('testBenchmarkUnitTest', 'testReleaseUnitTest', 'compileBenchmarkAndroidTestKotlin', 'lintBenchmark',
+              'processReleaseManifest', 'processBenchmarkManifest', 'processBenchmarkAndroidTestManifest')
+FILL_TASKS = GATE_TASKS + ('assembleRelease', 'assembleBenchmark', 'assembleBenchmarkAndroidTest')
+# gradlew sets both unless already set; keep them in step with it (ADR-028).
+GRADLE_HOME = Path('.gradle/home')  # under the checkout: its own Gradle home
+SHARED = Path('.gradle/ro-dep-cache')  # under $HOME: read-only copy of ~/.gradle's downloads
+UNLOCKED = shutil.ignore_patterns('*.lock', '*.lck', 'gc.properties')
 # name in a worktree -> how to fill it in the main checkout
 INPUTS = {
     'local.properties': 'tools/set-signing-password.sh',
@@ -61,7 +75,51 @@ def input_links(root, main, problems):
     return links
 
 
-def robolectric_jars(root, gradle_home, m2, problems):
+def link_or_copy(source, target):
+    try:
+        os.link(source, target)
+    except OSError:  # another file system
+        shutil.copy2(source, target)
+
+
+def refresh(source, shared, out):
+    """Builds a lock-free copy of source's downloads beside shared, then swaps the shared
+    link to it in one rename. Builds still reading the previous copy keep it; older go."""
+    modules, dists = source / 'caches/modules-2', source / 'wrapper/dists'
+    missing = [f'{path} is missing' for path in (modules, dists) if not path.is_dir()]
+    if shared.exists() and not shared.is_symlink():
+        missing.append(f'{shared} is not a link this command made; move it away yourself')
+    if missing:
+        print(f'cannot build the read-only copy: {"; ".join(missing)}; fill it {FILL_CACHES}', file=out)
+        return 1
+    generation = shared.with_name(f'{shared.name}.{time.time_ns()}')
+    building = generation.with_name(generation.name + '-partial')
+    # Downloads are written once, so linked; metadata indexes are rewritten in place, so copied.
+    shutil.copytree(modules, building / 'modules-2', ignore=UNLOCKED,
+                    copy_function=lambda a, b: (shutil.copy2 if '/metadata-' in a else link_or_copy)(a, b))
+    shutil.copytree(dists, building / 'wrapper/dists', ignore=UNLOCKED, copy_function=link_or_copy)
+    building.rename(generation)
+    link = generation.with_name(generation.name + '-link')
+    link.symlink_to(generation.name)
+    os.replace(link, shared)
+    complete = [p for p in shared.parent.glob(shared.name + '.*') if p.name.split('.')[-1].isdigit()]
+    for old in sorted(complete)[:-2]:
+        shutil.rmtree(old)
+    print(f'read-only copy {shared} -> {generation}', file=out)
+    return 0
+
+
+def fill(root, source, shared, out, run=subprocess.run):
+    """Downloads what every gate and APK build needs into source, then refreshes the copy.
+    No other Gradle may use source meanwhile: the copy must not catch a half-written index."""
+    command = [str(root / 'gradlew'), *FILL_TASKS]
+    if run(command, cwd=root, env={**os.environ, 'GRADLE_USER_HOME': str(source)}).returncode:
+        print(f'{" ".join(command)} failed; read-only copy unchanged', file=out)
+        return 1
+    return refresh(source, shared, out)
+
+
+def robolectric_jars(root, caches, m2, problems):
     """The cached android-all jars the pinned Robolectric version asks for."""
     gradle = root / 'app/build.gradle.kts'
     version = re.search(r'org\.robolectric:robolectric:([^"]+)"', gradle.read_text())
@@ -69,10 +127,10 @@ def robolectric_jars(root, gradle_home, m2, problems):
         problems.append(f'{gradle} names no org.robolectric:robolectric version')
         return []
     version = version.group(1)
-    jars = sorted((gradle_home / 'caches/modules-2/files-2.1/org.robolectric/robolectric' / version)
-                  .glob(f'*/robolectric-{version}.jar'))
+    jars = sorted(jar for modules in caches
+                  for jar in (modules / 'files-2.1/org.robolectric/robolectric' / version).glob(f'*/robolectric-{version}.jar'))
     if not jars:
-        problems.append(f'Gradle cache {gradle_home} lacks Robolectric {version}; fill it {FILL_CACHES}')
+        problems.append(f'Gradle caches {", ".join(map(str, caches))} lack Robolectric {version}; fill them {FILL_CACHES}')
         return []
     with zipfile.ZipFile(jars[0]) as jar:
         provider = jar.read('org/robolectric/plugins/DefaultSdkProvider.class')
@@ -91,24 +149,25 @@ def robolectric_jars(root, gradle_home, m2, problems):
     return []
 
 
-def gradle_problems(root, gradle_home):
-    problems = []
+def distribution(root, shared, problems):
+    """The wrapper distribution in the read-only copy."""
     wrapper = (root / 'gradle/wrapper/gradle-wrapper.properties').read_text()
-    distribution = re.search(r'distributionUrl=.*/(gradle-[^/]+)\.zip', wrapper)
-    if not distribution:
+    name = re.search(r'distributionUrl=.*/(gradle-[^/]+)\.zip', wrapper)
+    if not name:
         problems.append('gradle/wrapper/gradle-wrapper.properties names no Gradle distribution')
-    elif not (gradle_home / 'wrapper/dists' / distribution.group(1)).is_dir():
-        problems.append(f'Gradle cache {gradle_home} lacks {distribution.group(1)}; fill it {FILL_CACHES}')
-    if not os.access(gradle_home, os.W_OK):
-        problems.append(f'Gradle home {gradle_home} is not writable in this sandbox')
-    return problems
+        return None
+    if not (shared / 'wrapper/dists' / name.group(1)).is_dir():
+        problems.append(f'read-only copy {shared} lacks {name.group(1)}; fill it {FILL_CACHES}')
+        return None
+    return shared / 'wrapper/dists' / name.group(1)
 
 
-def prepare(root, main, gradle_home, m2, out):
+def prepare(root, main, gradle_home, shared, m2, out):
     root, main = Path(root).resolve(), Path(main).resolve()
-    problems = gradle_problems(root, gradle_home)
+    problems = []
+    dist = distribution(root, shared, problems)
     links = input_links(root, main, problems) if root != main else []
-    cached = robolectric_jars(root, gradle_home, m2, problems)
+    cached = robolectric_jars(root, [gradle_home / 'caches/modules-2', shared / 'modules-2'], m2, problems)
     jars = root / ROBOLECTRIC_JARS
     links += [(jars / jar.name, jar) for jar in cached]
     if cached and jars.is_dir():
@@ -127,6 +186,12 @@ def prepare(root, main, gradle_home, m2, out):
         print('\n'.join(problems), file=out)
         print('nothing changed', file=out)
         return 1
+    seeded = gradle_home / 'wrapper/dists' / dist.name
+    if fresh := not any(seeded.glob('*/*.zip.ok')):  # the wrapper's own marker of a complete unpack
+        shutil.rmtree(seeded, ignore_errors=True)
+        # The wrapper makes its own .lck; nothing writable is shared with the copy.
+        shutil.copytree(dist, seeded, ignore=UNLOCKED, copy_function=link_or_copy)
+        print(f'seeded {seeded} from {dist}', file=out)
     for target, source in changes:
         if source is None:
             target.unlink()
@@ -135,14 +200,29 @@ def prepare(root, main, gradle_home, m2, out):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(source)
             print(f'linked {target} -> {source}', file=out)
-    if not changes:
+    if not changes and not fresh:
         print('nothing to do', file=out)
     return 0
 
 
 def main():
-    gradle_home = Path(os.environ.get('GRADLE_USER_HOME') or Path.home() / '.gradle')
-    code = prepare(ROOT, main_checkout(ROOT), gradle_home, Path.home() / '.m2/repository', sys.stdout)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--refresh', action='store_true',
+                        help='rebuild the read-only copy from ~/.gradle; safe while checkouts build, '
+                             'but only while no Gradle uses ~/.gradle itself')
+    parser.add_argument('--fill', action='store_true',
+                        help='download into ~/.gradle what the gate and APK builds need, then --refresh; '
+                             'needs network, so outside the sandbox')
+    args = parser.parse_args()
+    gradle_home = Path(os.environ.get('GRADLE_USER_HOME') or ROOT / GRADLE_HOME)
+    shared = Path(os.environ.get('GRADLE_RO_DEP_CACHE') or Path.home() / SHARED)
+    source = Path.home() / '.gradle'
+    if args.fill:
+        if fill(ROOT, source, shared, sys.stdout):
+            return 1
+    elif (args.refresh or not shared.exists()) and refresh(source, shared, sys.stdout):
+        return 1
+    code = prepare(ROOT, main_checkout(ROOT), gradle_home, shared, Path.home() / '.m2/repository', sys.stdout)
     if gate_installation_errors(ROOT):
         print('note: no gate installation here (ADR-024); laptop work does not need it. '
               'The owner runs bash tools/gate/apply.sh; this command does not.')

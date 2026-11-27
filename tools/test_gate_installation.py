@@ -154,6 +154,8 @@ class GateInstallationTests(unittest.TestCase):
                     self.assertEqual(paths[name], 'read', name)
                 claude = json.loads((root / '.claude/settings.json').read_text())
                 self.assertEqual(claude['sandbox']['filesystem']['allowWrite'], ['~/.gradle'])
+                # Agent worktrees start from the session's branch, not origin/main (#107).
+                self.assertEqual(claude['worktree']['baseRef'], 'head')
                 for name in ('./AGENTS.md', './CLAUDE.md'):
                     self.assertIn(name, claude['sandbox']['filesystem']['denyWrite'])
                 # Claude Code creates agent worktrees under .claude/worktrees; they must stay writable.
