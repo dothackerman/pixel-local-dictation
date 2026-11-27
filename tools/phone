@@ -804,6 +804,7 @@ class Phone:
                           % LAB_RUN)
         self.lab_build('run')
         self.not_live('run')
+        self.not_live('run', of=PKG)  # nor while the owner dictates on release
         folder, _, ok = self.instrumented('run', classes, pairs, timeout)
         return {'outcome': 'passed' if ok else 'failed', 'path': str(folder),
                 'lab': self.device.inventory(LAB_FOLDER)}
@@ -961,7 +962,8 @@ USAGE = """App-scoped phone access for release (ch.og.dictation) and the lab app
   uninstall                       removes the lab app and its test package, and once release is marked
                                   the 0.2.5 test package; never release
 Exit 0 ok · 3 refused (policy) · 1 failed (device; retry allowed).
-install, run, measure, restore, stop, uninstall refuse while the keyboard they touch is in use.
+install, run, measure, restore, stop, uninstall refuse while the keyboard they touch is in use; run also
+while the release keyboard is.
 Build marker: a debuggable APK must carry the test layout and be the lab app, a release APK the owner
 layout and be release, the test APK the app's marker; an APK without a marker is refused by check,
 install and run. run, measure and push need that lab build installed.

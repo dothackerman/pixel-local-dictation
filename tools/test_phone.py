@@ -510,6 +510,13 @@ class LabBuildGuardTests(PhoneCase):
                 self.refused('in use', *argv)
         self.assertEqual(self.did('instrument'), [])
 
+    def test_run_is_refused_while_the_owner_dictates_on_release(self):
+        self.device.release_ime['bound'] = True
+        self.refused('dictation keyboard is in use', 'run', NS + '.NormalBaselineTest')
+        self.assertEqual(self.did('instrument'), [])
+        self.device.release_ime['bound'] = False
+        self.assertEqual(self.call('run', NS + '.NormalBaselineTest')['outcome'], 'passed')
+
     def test_run_refuses_classes_of_the_lab_run_package(self):
         for classes in (NS + '.labrun.PipelineRun', NS + '.LabTest,' + NS + '.labrun.deep.Trace#collect'):
             with self.subTest(classes):
