@@ -134,7 +134,7 @@ Holds all take state and makes every take decision, on the IME main thread, with
 _Avoid_: take manager, take state machine, service logic, take control
 
 **Take host**:
-What the take controller asks of the keyboard service: show the panel frame, return to the previous keyboard, request the panel, copy, ask for the microphone permission, record a History notice.
+What the take controller asks of the keyboard service: six effects (show the panel frame, return to the previous keyboard, request the panel, copy, ask for the microphone permission, record a History notice) and three facts it reads when it decides (microphone permission, capture silenced, current field).
 _Avoid_: callbacks, service interface, view
 
 **Take scheduler**:
