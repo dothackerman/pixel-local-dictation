@@ -43,6 +43,9 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "head"
+  },
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
