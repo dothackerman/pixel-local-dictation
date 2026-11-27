@@ -19,6 +19,12 @@ internal class InAppClipboard : Clipboard {
     override fun copy(text: String) { this.text = text }
 }
 
+/*
+ * These two stay after #100: they never kept the lab build out of owner folders (its storage is its own,
+ * #98); they keep device tests' synthetic takes and files apart from the lab app's own History and lab
+ * folder, which the Guided check and the Lab runs use (ADR-029, #100 amendment).
+ */
+
 /** A further History root for screens and processes under test, apart from the lab app's own History. */
 fun Storage.testHistoryRoot(name: String): File = File(historyRoot.parentFile, "test/$name")
 
