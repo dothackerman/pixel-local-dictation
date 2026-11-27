@@ -26,6 +26,8 @@ import re
 import sys
 from pathlib import Path
 
+from kotlin_source import code
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = 'app/src/androidTest/kotlin'
 CLASSIFICATION = 'app/src/androidTest/device-classes.json'
@@ -38,12 +40,6 @@ _TEST = re.compile(r'@Test\b')
 _THROUGH_HARNESS = re.compile(r'@Test\s+fun\s+\w+\s*\(\s*\)\s*=\s*LabRun\.measure\(')
 _STORAGE = re.compile(r'\bstorage\b(?!\s*\.\s*labFolder\b)')
 _STORAGE_IMPORT = re.compile(r'^import\s+ch\.og\.dictation\.storage\b', re.M)
-
-
-def code(source):
-    """Source without comments; line structure kept."""
-    blank = lambda match: re.sub(r'[^\n]', ' ', match.group(0))
-    return re.sub(r'(?<![:"\w])//[^\n]*', '', re.sub(r'/\*.*?\*/', blank, source, flags=re.S))
 
 
 def device_classes(root):

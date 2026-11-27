@@ -14,6 +14,8 @@ import re
 import sys
 from pathlib import Path
 
+from kotlin_source import code
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('app/src/main', 'app/src/release', 'app/src/benchmark', 'app/src/androidTest')
 STORAGE = tuple(f'{source}/kotlin/ch/og/dictation/storage/' for source in SOURCES[:3])
@@ -28,12 +30,6 @@ RULES = {name: re.compile(pattern) for name, pattern in {
 
 # path -> {banned kind: why it is still needed}. A new entry needs a reason that survives review.
 EXCEPTIONS = {}
-
-
-def code(source):
-    """Source with comments blanked, line structure kept; strings stay."""
-    blank = lambda match: re.sub(r'[^\n]', ' ', match.group(0))
-    return re.sub(r'(?<![:"\w])//[^\n]*', '', re.sub(r'/\*.*?\*/', blank, source, flags=re.S))
 
 
 def problems(root=ROOT, exceptions=None):
