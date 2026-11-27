@@ -77,31 +77,52 @@ class InstallGuardTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assert_nothing_installed(directory, root)
 
-    def test_the_shim_passes_the_callers_directory_first_and_runs_in_its_checkout(self):
+    def test_the_shim_names_its_own_main_checkout_whatever_the_caller_stands_in(self):
+        """A real `git worktree add`: from the worktree, another repository or with GIT_DIR set, the shim
+        passes its own repository's main checkout as --home, then the arguments, in the caller's directory."""
         with tempfile.TemporaryDirectory() as directory:
-            root, environment = checkout(directory)
-            (root / '.claude/hooks').mkdir(parents=True)
-            shutil.copy2(ROOT / 'tools/gate/phone', root / '.claude/hooks/phone')
-            (root / '.claude/hooks/phone').chmod(0o755)
+            root, environment = checkout(directory, 'main-checkout')
+            git = lambda cwd, *arguments: subprocess.run(
+                ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', *arguments], cwd=cwd,
+                env=environment, check=True, capture_output=True)
+            git(root, 'add', '-A')
+            git(root, 'commit', '-q', '-m', 'gate sources')
+            worktree = Path(directory) / 'worktree'
+            git(root, 'worktree', 'add', '-q', '-b', 'other', str(worktree))
+            other = Path(directory) / 'other-repo'
+            git(directory, 'init', '-q', str(other))
             installed = Path(directory) / 'installed/pixel-phone/phone'
             installed.parent.mkdir(parents=True)
             installed.write_text('import json, os, sys\nprint(json.dumps([os.getcwd(), sys.argv[1:]]))\n')
-            caller = root / 'tools/gate'
-            result = subprocess.run([str(root / '.claude/hooks/phone'), '--caller', '/spoofed', 'app'], cwd=caller,
-                                    env=environment, text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout),
-                             [str(root.resolve()), ['--caller', str(caller.resolve()), '--caller', '/spoofed', 'app']])
+            for checkout_root in (root, worktree):
+                (checkout_root / '.claude/hooks').mkdir(parents=True)
+                shutil.copy2(ROOT / 'tools/gate/phone', checkout_root / '.claude/hooks/phone')
+                (checkout_root / '.claude/hooks/phone').chmod(0o755)
+            cases = {'main shim from the worktree': (root, worktree / 'tools', {}),
+                     'worktree shim from the worktree': (worktree, worktree, {}),
+                     'main shim from another repository': (root, other, {}),
+                     'main shim with GIT_DIR of another repository': (root, worktree, {'GIT_DIR': str(other / '.git'),
+                                                                                       'GIT_WORK_TREE': str(other)})}
+            for case, (shim_root, caller, extra) in cases.items():
+                with self.subTest(case):
+                    result = subprocess.run([str(shim_root / '.claude/hooks/phone'), 'push', 'relative/dir'], cwd=caller,
+                                            env={**environment, **extra}, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(json.loads(result.stdout),
+                                     [str(caller.resolve()), ['--home', str(root.resolve()), 'push', 'relative/dir']])
 
     def test_the_claude_allow_list_leaves_out_every_verb_that_asks(self):
         settings = json.loads((ROOT / 'tools/gate/settings.json').read_text())
-        shim = str(ROOT / '.claude/hooks/phone') + ' '
+        # The rules name the main checkout's shim, also when this runs in a worktree.
+        main = Path(subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                            cwd=ROOT, text=True).strip()).parent
+        shim = str(main / '.claude/hooks/phone') + ' '
         allowed = {rule[len('Bash(' + shim):].rstrip(')').split(':')[0]
                    for rule in settings['permissions']['allow'] if rule.startswith('Bash(' + shim)}
         self.assertEqual(allowed, {'help', 'check', 'status', 'device', 'app', 'crash', 'logs', 'pull', 'push', 'run',
                                    'measure', 'snapshot'})
         self.assertIn('Bash(' + shim + 'measure:*)', settings['permissions']['allow'], 'like run: any class, any extras')
-        self.assertEqual(allowed & {'install', 'restore', 'stop', 'forget', 'uninstall'}, set())
+        self.assertEqual(allowed & {'install', 'restore', 'stop', 'uninstall'}, set())
         self.assertEqual([rule for rule in settings['permissions']['allow'] if '.claude/hooks/phone' not in rule], [],
                          'nothing but named shim verbs is allowed')
 
@@ -133,8 +154,15 @@ class GateInstallationTests(unittest.TestCase):
                     self.assertEqual(paths[name], 'read', name)
                 claude = json.loads((root / '.claude/settings.json').read_text())
                 self.assertEqual(claude['sandbox']['filesystem']['allowWrite'], ['~/.gradle'])
+                # Agent worktrees start from the session's branch, not origin/main (#107).
+                self.assertEqual(claude['worktree']['baseRef'], 'head')
                 for name in ('./AGENTS.md', './CLAUDE.md'):
                     self.assertIn(name, claude['sandbox']['filesystem']['denyWrite'])
+                # Claude Code creates agent worktrees under .claude/worktrees; they must stay writable.
+                worktrees = Path('.claude/worktrees')
+                for entry in claude['sandbox']['filesystem']['denyWrite']:
+                    denied = Path(entry)
+                    self.assertFalse(denied == worktrees or denied in worktrees.parents, entry)
             # Copied absolute configuration must fail readiness in another checkout.
             other = Path(directory) / 'other-checkout'
             shutil.copytree(root, other, ignore=shutil.ignore_patterns('.git', '__pycache__'))

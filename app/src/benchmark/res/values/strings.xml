@@ -1,0 +1,7 @@
+<resources>
+    <!-- The lab app sits beside release (#98): the owner tells the two apart in Android's keyboard
+         list, FUTO's voice input dropdown and the launcher. -->
+    <string name="app_name">Dictation lab</string>
+    <string name="ime_label">Local dictation lab</string>
+    <string name="settings_label">Dictation lab</string>
+</resources>

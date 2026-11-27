@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -5,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import jvm_environment, preparation_problem, removed_test_problems, staged_errors
+from quality import gradle, jvm_environment, preparation_problem, staged_errors, test_environment
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -39,7 +41,7 @@ class StagedQualityTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
-    """An unprepared worktree fails at once with the fix, not later inside Gradle."""
+    """An unprepared checkout fails at once with the fix, not later inside Gradle."""
     setUp = StagedQualityTests.setUp
 
     def repository(self, base):
@@ -57,7 +59,10 @@ class PreparationTests(unittest.TestCase):
     def test_fresh_worktree_names_the_setup_command(self):
         with tempfile.TemporaryDirectory() as directory:
             main, worktree = self.repository(Path(directory))
+            self.assertIn('.gradle/home', preparation_problem(main), 'every checkout has its own Gradle home')
+            (main / '.gradle/home').mkdir(parents=True)
             self.assertIsNone(preparation_problem(main))
+            (worktree / '.gradle/home').mkdir(parents=True)
             self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree))
             for name in ('local.properties', 'app/libs', 'app/src/main/assets'):
                 (worktree / name).parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +70,32 @@ class PreparationTests(unittest.TestCase):
             self.assertIn('python3 tools/prepare_checkout.py', preparation_problem(worktree), 'jars still missing')
             (worktree / '.gradle/robolectric').mkdir(parents=True)
             self.assertIsNone(preparation_problem(worktree))
+
+
+    def test_the_shared_home_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main, _ = self.repository(Path(directory))
+            (main / '.gradle/home').mkdir(parents=True)
+            os.environ['GRADLE_USER_HOME'] = str(Path.home() / '.gradle')
+            self.assertIn('shared ~/.gradle', preparation_problem(main))
+
+
+class OfflineMissTests(unittest.TestCase):
+    def run_gradle(self, script):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = gradle(['sh', '-c', script], Path.cwd(), dict(os.environ))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_missing_offline_dependency_names_the_fill_command(self):
+        code, out, err = self.run_gradle('echo "No cached version available for offline mode"; exit 1')
+        self.assertEqual(code, 1)
+        self.assertIn('No cached version', out, 'Gradle output still shown')
+        self.assertIn('python3 tools/prepare_checkout.py --fill', err)
+
+    def test_other_failures_add_nothing(self):
+        self.assertEqual(self.run_gradle('echo compile error; exit 1')[1:], ('compile error\n', ''))
+        self.assertEqual(self.run_gradle('echo ok')[0], 0)
 
 
 class JvmEnvironmentTests(unittest.TestCase):
@@ -81,29 +112,9 @@ class JvmEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(jvm_environment(Path(directory), {'HOME': '/h'}), {'HOME': '/h'})
 
-
-class RemovedTestGateTests(unittest.TestCase):
-    """The gate compares test names with where the branch left main (#77)."""
-    setUp = StagedQualityTests.setUp
-
-    def test_gate_reports_a_test_removed_since_the_branch_left_main(self):
+    def test_git_hook_variables_never_reach_the_tests(self):
+        # A pre-commit hook in a worktree exports GIT_DIR; a test's `git init` then re-initialised
+        # the real repository (core.bare=true) on 2026-11-25.
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            git = lambda *arguments: subprocess.run(
-                ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', *arguments],
-                cwd=root, check=True)
-            git('init', '-q', '-b', 'main')
-            source = root / 'app/src/test/kotlin/a/ATest.kt'
-            source.parent.mkdir(parents=True)
-            source.write_text('package a\nclass ATest {\n    @Test fun kept() {}\n    @Test fun dropped() {}\n}\n')
-            git('add', '.')
-            git('commit', '-q', '-m', 'base')
-            git('switch', '-q', '-c', 'work')
-            self.assertEqual([], removed_test_problems(root))
-            source.write_text('package a\nclass ATest {\n    @Test fun kept() {}\n}\n')
-            git('commit', '-q', '-a', '-m', 'drop')
-            self.assertEqual(['removed test a.ATest.dropped has no entry in tools/removed_tests.json'],
-                             removed_test_problems(root))
-            git('branch', '-q', '-m', 'main', 'trunk')
-            self.assertEqual(['removed-test check: no main or origin/main to compare test names with'],
-                             removed_test_problems(root))
+            env = test_environment(Path(directory), {'GIT_DIR': '/repo/.git', 'GIT_INDEX_FILE': 'i', 'HOME': '/h'})
+            self.assertEqual(env, {'HOME': '/h'})

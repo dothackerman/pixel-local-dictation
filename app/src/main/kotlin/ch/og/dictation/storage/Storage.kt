@@ -21,97 +21,59 @@ fun interface Clipboard {
 }
 
 /**
- * What Android hands the app: its private folders, its named preferences and the system
- * clipboard. A temporary base stands in for all three in host tests.
- */
-internal class AppData(val files: File, val noBackup: File, val preferences: (String) -> Preferences, val systemClipboard: Clipboard)
-
-/**
- * Where one build type keeps each kind of data (ADR-028). Exactly one implementation is compiled
- * into a build, as `buildLayout`: the owner layout in release, the test layout in the lab build.
- */
-internal interface StorageLayout {
-    /** The layout word of the build marker: `owner` or `test`. */
-    val name: String
-    fun historyRoot(data: AppData): File
-    /** Throws unless this layout allows [root] as a History root. */
-    fun requireHistoryRoot(data: AppData, root: File)
-    fun dictionaryRoot(data: AppData): File
-    /** The preferences name of the History notices. */
-    val historyNotices: String
-    /** The preferences name of the settings. */
-    val settings: String
-    /** The clipboard Copy writes; [system] is the phone's. */
-    fun clipboard(system: Clipboard): Clipboard
-    /** Benchmark recordings: a take's audio and its metadata. */
-    fun recordingsRoot(data: AppData): File
-    /** Whether this build offers the Benchmark switch and saves recordings at all. */
-    val savesRecordings: Boolean
-}
-
-/**
- * Storage: the only code that resolves app-private files, folders and preferences and the only
- * code that writes the clipboard. One accessor per data kind; what they name is fixed by the
- * build's layout, never chosen at run time.
+ * Storage: where the app keeps each kind of data, one accessor per kind. Both builds use the same
+ * paths; the lab build is its own app (#98), so Android keeps its data apart from release's. What
+ * differs by build type is in `BuildType.kt` of `src/release` and `src/benchmark`.
  */
 class Storage private constructor(
-    internal val data: AppData,
-    history: File,
-    /** Copy's target: the system clipboard in release; in the lab build a text kept in the app. */
-    val clipboard: Clipboard,
+    private val files: File,
+    noBackup: File,
+    private val preferences: (String) -> Preferences,
+    system: Clipboard,
 ) {
-    init { buildLayout.requireHistoryRoot(data, history) }
-
-    /** `owner` or `test`, as in the build marker. */
-    val layout: String get() = buildLayout.name
-
     /** Where takes are kept. */
-    val historyRoot: File = history
+    val historyRoot: File = File(noBackup, "history")
 
     /** The Dictionary's saved revisions and the pointer to the current one. */
-    val dictionaryRoot: File get() = buildLayout.dictionaryRoot(data)
+    val dictionaryRoot: File get() = File(files, "dictionary")
 
     /** The pending History warnings: kinds only. */
-    val historyNotices: Preferences get() = data.preferences(buildLayout.historyNotices)
+    val historyNotices: Preferences get() = preferences("history_notices")
 
     /** The switches of the Settings page. */
-    val settings: Preferences get() = data.preferences(buildLayout.settings)
+    val settings: Preferences get() = preferences("settings")
+
+    /** Copy's target: the system clipboard in release; in the lab build a text kept in the app. */
+    val clipboard: Clipboard = copyTarget(system)
 
     /**
      * Benchmark recordings. Release only counts and deletes what earlier builds left there; the
      * lab build also saves into it.
      */
-    val recordingsRoot: File get() = buildLayout.recordingsRoot(data)
+    val recordingsRoot: File get() = File(files, "benchmark")
 
     /** False in release: no Benchmark switch, no recording saved, whatever the settings hold. */
-    val savesRecordings: Boolean get() = buildLayout.savesRecordings
+    val savesRecordings: Boolean get() = SAVES_RECORDINGS
 
-    /** The lab folder: the speech model, which both builds read, and the lab build's test output. */
-    val labFolder: File get() = File(data.files, LAB_FOLDER)
-
-    /** The same storage with History kept at [root]; the layout refuses a root outside its folders. */
-    internal fun withHistoryRoot(root: File) = Storage(data, root, clipboard)
+    /** The lab folder: the speech model and the lab build's test output. */
+    val labFolder: File get() = File(files, "lab")
 
     companion object {
-        private const val LAB_FOLDER = "lab"
-
         fun forApp(context: Context) = context.applicationContext.let { app ->
-            of(AppData(app.filesDir, app.noBackupFilesDir,
+            Storage(app.filesDir, app.noBackupFilesDir,
                 { name -> AndroidPreferences(app.getSharedPreferences(name, Context.MODE_PRIVATE)) },
                 // Plain text without the sensitive-content flag, by owner decision.
                 { text -> (app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                    .setPrimaryClip(ClipData.newPlainText("Transcript", text)) }))
+                    .setPrimaryClip(ClipData.newPlainText("Transcript", text)) })
         }
 
         /**
-         * The build's layout below [base] instead of the app's data folder: host tests. Preferences
-         * are files in `shared_prefs`; the file `clipboard` stands in for the system clipboard.
+         * The same paths below [base] instead of the app's data folder: host tests. Preferences are
+         * files in `shared_prefs`; the file `clipboard` stands in for the system clipboard.
          */
-        fun under(base: File) = of(AppData(File(base, "files"), File(base, "no_backup"),
+        fun under(base: File) = Storage(File(base, "files"), File(base, "no_backup"),
             { name -> FilePreferences(File(base, "shared_prefs/$name.xml")) },
-            { text -> runCatching { base.mkdirs(); File(base, "clipboard").writeText(text) } }))
-
-        private fun of(data: AppData) = Storage(data, buildLayout.historyRoot(data), buildLayout.clipboard(data.systemClipboard))
+            { text -> runCatching { base.mkdirs(); File(base, "clipboard").writeText(text) } })
     }
 }
 

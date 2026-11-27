@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 
 /**
  * History warnings live in one inline status row on the History page, never on Settings (#79; the
- * phone suite of this name is gone). The notices are the build's own: the test layout's in the lab build.
+ * phone suite of this name is gone). The notices are the build's own.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-port-xxhdpi")

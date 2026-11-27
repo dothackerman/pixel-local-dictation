@@ -21,9 +21,8 @@ val signingProblem: String? = when {
     else -> null
 }
 
-// Build marker (ADR-028): storage layout, commit and a hash over the build's inputs; the same value in
-// the app and its test APK. Release has the owner layout (src/release), the lab build the test layout
-// (src/benchmark).
+// Build marker (ADR-028): layout word, commit and a hash over the build's inputs; the same value in the
+// app and its test APK. The phone wrapper tells release (`owner`) from the lab build (`test`) by it.
 val buildIdentity: String = providers.exec {
     commandLine("python3", rootProject.layout.projectDirectory.file("tools/build_marker.py").asFile.path)
 }.standardOutput.asText.get().trim()
@@ -57,9 +56,11 @@ android {
             signingConfig = signingConfigs.getByName("release")
             manifestPlaceholders["buildMarker"] = "layout=owner;$buildIdentity"
         }
-        // The lab build: debuggable so the phone wrapper can reach its data; installed only during a Visit.
+        // The lab build: its own app beside release (#98), so Android gives it its own storage; debuggable
+        // so the phone wrapper can reach its data. The code namespace stays ch.og.dictation.
         create("benchmark") {
             initWith(getByName("release"))
+            applicationIdSuffix = ".lab"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("release")
             matchingFallbacks += "release"
@@ -83,7 +84,7 @@ androidComponents.onVariants(androidComponents.selector().withBuildType("benchma
 
 // No other build type exists, so no debuggable build resolves owner folders.
 androidComponents.beforeVariants(androidComponents.selector().withBuildType("debug")) { it.enable = false }
-// Release has host tests too: the gate asserts the owner layout and marker on the release variant.
+// Release has host tests too: the gate asserts the owner paths and marker on the release variant.
 androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { variant ->
     variant.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = true
 }

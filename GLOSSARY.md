@@ -24,7 +24,7 @@ _Avoid_: segment, window
 How many audio samples the laptop replay hands to the chunker at once; three sizes give the noise floor.
 
 **Visit**:
-One connected phone lab period: the lab build replaces the release build, owner data is copied first and found unchanged after every run, and the same release build is installed back at the end.
+One connected phone lab period, from installing the lab app beside release until removing it; release is never touched.
 _Avoid_: phone session, lab session
 
 ## Recognition models
@@ -88,7 +88,7 @@ The owner's Dictionary, History (transcripts and their checkpoints), History not
 _Avoid_: user data, personal data, app data, real data
 
 **Lab build**:
-The debuggable build marked with the test storage layout; it reaches only test folders and is on the phone only during a Visit (Gradle calls it `benchmark`).
+The debuggable build, its own app `ch.og.dictation.lab` beside release, so Android keeps its data apart from owner data; it has the Benchmark switch, and its build marker says `layout=test` (Gradle calls it `benchmark`).
 _Avoid_: benchmark build, test build, debug build
 
 **Guided check**:
@@ -100,7 +100,7 @@ A short check by the owner on the release build with their own data, after a new
 _Avoid_: sanity check, manual check, owner test
 
 **Lab run**:
-A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and works only on copies of owner data that the wrapper placed.
+A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and runs in the lab app on data pushed from the laptop.
 _Avoid_: lab test, benchmark test, experiment run, phone test
 
 **Kept model copy**:
@@ -108,13 +108,13 @@ The speech-model files on the laptop, laid out as in the phone's lab folder; its
 _Avoid_: model backup, model snapshot
 
 **Switch copy**:
-The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before the first marked build is installed; only the owner deletes it.
+The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before release replaces it; only the owner deletes it.
 _Avoid_: switch snapshot, full backup
 
 ## Code
 
 **Wiring**:
-What one app process is built from: the recorder factory, the storage layout and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
+What one app process is built from: the recorder factory, the storage and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
 _Avoid_: environment, container, hooks
 
 **Editor port**:

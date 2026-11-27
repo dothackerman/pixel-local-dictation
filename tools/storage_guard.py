@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Host check (ADR-028): only Storage resolves app storage, writes the clipboard or runs a shell.
+"""Host check (ADR-028, slimmed by #100): only Storage writes the clipboard; nothing runs a shell.
 
-Checked: app, lab-build and device-test sources. Storage is `ch/og/dictation/storage/` in the app's
-source sets. A banned call anywhere else needs a named exception; EXCEPTIONS is empty since every
-store is behind Storage (#80). An exception nothing needs fails too.
+Both survive the lab app's own package (#98): the system clipboard is one for all apps, and a shell in
+the lab app's instrumentation can act on release (`pm clear ch.og.dictation`). Checked: app, lab-build
+and device-test sources. Storage is `ch/og/dictation/storage/` in the app's source sets. A banned call
+anywhere else needs a named exception; EXCEPTIONS is empty. An exception nothing needs fails too.
 
-The wrapper's excluded locations (`EXCLUDED` in tools/phone: what its fingerprint and copies leave out)
-must equal the test layout's lab folder and test folders.
+Also checked: app and test manifest carry the build marker entry the wrapper reads.
 
 python3 tools/storage_guard.py   prints each problem; exit 1 when any exists.
 """
-import ast
-import json
 import re
 import sys
 from pathlib import Path
@@ -20,36 +18,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('app/src/main', 'app/src/release', 'app/src/benchmark', 'app/src/androidTest')
 STORAGE = tuple(f'{source}/kotlin/ch/og/dictation/storage/' for source in SOURCES[:3])
 MANIFESTS = ('app/src/main/AndroidManifest.xml', 'app/src/androidTest/AndroidManifest.xml')
-LAYOUT, WRAPPER = 'app/src/benchmark/test-folders.json', 'tools/phone'
 MARKER = re.compile(r'android:name="ch\.og\.dictation\.build"\s+android:value="\$\{buildMarker\}"')
 
 RULES = {name: re.compile(pattern) for name, pattern in {
-    'files folder': r'\bfilesDir\b|\bgetFilesDir\b',
-    'no-backup folder': r'\bnoBackupFilesDir\b|\bgetNoBackupFilesDir\b',
-    'cache folder': r'\bcacheDir\b|\bgetCacheDir\b',
-    'code-cache folder': r'\bcodeCacheDir\b|\bgetCodeCacheDir\b',
-    'data folder': r'\bdataDir\b|\bgetDataDir\b',
-    'external folders': r'\b(get)?[eE]xternal(Files|Cache|Media)Dirs?\b|\b(get)?[oO]bbDirs?\b|\bEnvironment\s*\.'
-                        r'|\bgetExternalStorage',
-    'device-protected context': r'\bcreate(Device|Credential)ProtectedStorageContext\b',
-    'preferences': r'\b(get|delete|moveTo|moveFrom)?SharedPreferences(From)?\s*\(|\bgetPreferences\s*\(|\bPreferenceManager\b',
-    'databases': r'\b(openOrCreateDatabase|getDatabasePath|deleteDatabase|databaseList|moveDatabaseFrom)\b'
-                 r'|\bSQLite(Database|OpenHelper)\b',
-    'file streams by name': r'\b(openFileInput|openFileOutput|getFileStreamPath|deleteFile|fileList)\s*\(',
-    'private directories': r'\bgetDir\s*\(',
-    'app-data absolute paths': r'/data/(data|user|user_de|local)\b|/sdcard\b|/storage/emulated\b',
     'clipboard service': r'\bCLIPBOARD_SERVICE\b|\bClipboardManager\b',
     'process execution': r'\bProcessBuilder\b|\.\s*exec\s*\(',
     'test-automation shell': r'\bexecuteShellCommand(Rw|Rwe)?\b|\bUiDevice\b',
 }.items()}
 
-# path -> {banned kind: the store it still reaches directly}. Every store is behind Storage (#80), so
-# nothing is listed; a new entry needs a reason that survives review.
+# path -> {banned kind: why it is still needed}. A new entry needs a reason that survives review.
 EXCEPTIONS = {}
 
 
 def code(source):
-    """Source with comments blanked, line structure kept; strings stay (paths live in them)."""
+    """Source with comments blanked, line structure kept; strings stay."""
     blank = lambda match: re.sub(r'[^\n]', ' ', match.group(0))
     return re.sub(r'(?<![:"\w])//[^\n]*', '', re.sub(r'/\*.*?\*/', blank, source, flags=re.S))
 
@@ -73,9 +55,9 @@ def problems(root=ROOT, exceptions=None):
                     else:
                         found.append(f'{name}:{number}: {rule}: {original.strip()}')
     for name in sorted(exceptions):
-        for rule, store in exceptions[name].items():
+        for rule, reason in exceptions[name].items():
             if (name, rule) not in used:
-                found.append(f'{name}: exception no longer needed: {rule} ({store})')
+                found.append(f'{name}: exception no longer needed: {rule} ({reason})')
     return found
 
 
@@ -85,26 +67,8 @@ def marker_problems(root=ROOT):
             if not MARKER.search((Path(root) / name).read_text(encoding='utf-8'))]
 
 
-def wrapper_problems(root=ROOT):
-    """The wrapper leaves out exactly the lab folder and the test folders the test layout publishes."""
-    root = Path(root)
-    layout = json.loads((root / LAYOUT).read_text(encoding='utf-8'))
-    expected = {layout['labFolder'], *layout['testFolders']}
-    excluded = None
-    for node in ast.parse((root / WRAPPER).read_text(encoding='utf-8')).body:
-        if isinstance(node, ast.Assign) and [getattr(target, 'id', None) for target in node.targets] == ['EXCLUDED']:
-            try:
-                excluded = ast.literal_eval(node.value)
-            except ValueError:
-                pass
-    if not isinstance(excluded, tuple) or not all(isinstance(item, str) for item in excluded):
-        return [f'{WRAPPER}: EXCLUDED must be one literal tuple of locations']
-    return ([f'{WRAPPER}: EXCLUDED lacks {item} of the test layout' for item in sorted(expected - set(excluded))]
-            + [f'{WRAPPER}: EXCLUDED names {item}, which the test layout does not' for item in sorted(set(excluded) - expected)])
-
-
 def main():
-    found = problems() + marker_problems() + wrapper_problems()
+    found = problems() + marker_problems()
     if found:
         print('\n'.join(found), file=sys.stderr)
     return 1 if found else 0

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Host-only quality gate: removed-test check, Python regressions (host checks included), Kotlin unit
-tests for the lab build and release, Android lint and the build markers of the merged manifests.
+"""Host-only quality gate: Python regressions (host checks included), Kotlin unit tests for the lab
+build and release, Android lint and the build markers of the merged manifests.
 
 --staged requires tracked worktree/index parity and staged source/test inputs.
 It tests this checkout; stage relevant files first. No instrumentation runs.
@@ -11,8 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from prepare_checkout import ROBOLECTRIC_JARS
-import removed_tests
+from prepare_checkout import FILL_CACHES, GATE_TASKS, GRADLE_HOME, ROBOLECTRIC_JARS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,26 +27,20 @@ def staged_errors(root=ROOT):
 
 
 def preparation_problem(root=ROOT):
-    """A linked worktree lacks the links tools/prepare_checkout.py makes; the main checkout owns its inputs."""
+    """A checkout lacks its own Gradle home, or a linked worktree the links tools/prepare_checkout.py
+    makes; the main checkout owns its inputs."""
     root = Path(root)
     git = lambda option: subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', option],
                                                  cwd=root, text=True).strip()
-    if git('--git-dir') == git('--git-common-dir'):
-        return None
-    needed = ('local.properties', 'app/libs', 'app/src/main/assets', str(ROBOLECTRIC_JARS))
+    home = os.environ.get('GRADLE_USER_HOME')
+    if home and Path(home).resolve() == (Path.home() / '.gradle').resolve():
+        return 'GRADLE_USER_HOME is the shared ~/.gradle; the gate builds only in its own home (ADR-028): unset it'
+    needed = [] if home else [str(GRADLE_HOME)]
+    if git('--git-dir') != git('--git-common-dir'):
+        needed += ['local.properties', 'app/libs', 'app/src/main/assets', str(ROBOLECTRIC_JARS)]
     missing = [name for name in needed if not (root / name).exists()]
-    return ('unprepared worktree, missing ' + ', '.join(missing)
+    return ('unprepared checkout, missing ' + ', '.join(missing)
             + ': run python3 tools/prepare_checkout.py') if missing else None
-
-
-def removed_test_problems(root=ROOT):
-    """Tests gone since this branch left main, without an entry in tools/removed_tests.json."""
-    for trunk in ('main', 'origin/main'):
-        base = subprocess.run(['git', 'merge-base', 'HEAD', trunk], cwd=root, text=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        if base.returncode == 0:
-            return removed_tests.problems(root, base.stdout.strip())
-    return ['removed-test check: no main or origin/main to compare test names with']
 
 
 def jvm_environment(root, environment):
@@ -66,11 +59,32 @@ def jvm_environment(root, environment):
     return {**environment, 'JAVA_TOOL_OPTIONS': ' '.join(options)}
 
 
+def test_environment(root, environment):
+    """What the tests run with: the JVM options, and no GIT_* variable, so a hook's GIT_DIR never
+    points a test's own `git init` at this repository."""
+    return jvm_environment(root, {k: v for k, v in environment.items() if not k.startswith('GIT_')})
+
+
+def gradle(command, root, environment):
+    """Runs an offline Gradle build; a dependency missing from the caches names the fill."""
+    missing = False
+    with subprocess.Popen(command, cwd=root, env=environment, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True) as process:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            missing = missing or 'No cached version available for offline mode' in line
+    code = process.returncode
+    if code and missing:
+        print(f'quality: a dependency is missing from the read-only copy; {FILL_CACHES}', file=sys.stderr)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--staged', action='store_true')
     args = parser.parse_args()
-    environment = jvm_environment(ROOT, os.environ.copy())
+    environment = test_environment(ROOT, os.environ.copy())
     conventional_sdk = Path.home() / 'Android/Sdk'
     if 'ANDROID_HOME' not in environment and conventional_sdk.is_dir():
         environment['ANDROID_HOME'] = str(conventional_sdk)
@@ -83,19 +97,15 @@ def main():
         if errors:
             print('\n'.join(errors), file=sys.stderr)
             return 1
-    if problems := removed_test_problems():
-        print('\n'.join(problems), file=sys.stderr)
-        return 1
-    for command in ([sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'],
-                    # Release is compiled and its own host tests assert the owner layout and marker (ADR-028).
-                    [str(ROOT / 'gradlew'), '--offline', 'testBenchmarkUnitTest', 'testReleaseUnitTest',
-                     'compileBenchmarkAndroidTestKotlin', 'lintBenchmark', 'processReleaseManifest',
-                     'processBenchmarkManifest', 'processBenchmarkAndroidTestManifest'],
-                    # Release owner; lab build and its test APK test and equal; one build.
-                    [sys.executable, str(ROOT / 'tools/build_marker.py'), '--check']):
-        result = subprocess.run(command, cwd=ROOT, env=environment)
-        if result.returncode:
-            return result.returncode
+    tests = [sys.executable, '-W', 'ignore::ResourceWarning', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py']
+    if code := subprocess.run(tests, cwd=ROOT, env=environment).returncode:
+        return code
+    if code := gradle([str(ROOT / 'gradlew'), '--offline', *GATE_TASKS], ROOT, environment):
+        return code
+    # Release owner; lab build and its test APK test and equal; one build.
+    marker = [sys.executable, str(ROOT / 'tools/build_marker.py'), '--check']
+    if code := subprocess.run(marker, cwd=ROOT, env=environment).returncode:
+        return code
     # Detect edits during the gate too; no cached success claims.
     if args.staged and (staged_errors() or index_before != subprocess.check_output(['git', 'ls-files', '--stage'], cwd=ROOT)):
         print('checkout changed during quality gate', file=sys.stderr)

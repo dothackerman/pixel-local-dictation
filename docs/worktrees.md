@@ -1,14 +1,9 @@
 # Worktrees
 
-1. `gh issue develop N --base main` creates a branch linked to issue N and prints its name.
-2. `git fetch origin BRANCH`, then `git worktree add ../pixel-local-dictation-worktrees/BRANCH BRANCH`:
-   all worktrees share one folder beside the repository, each named after its branch.
-   Start the agent session in that folder; the sandbox writes only inside its own folder.
-3. In the worktree, `python3 tools/prepare_checkout.py` before building; `python3 tools/quality.py` then passes in the sandbox.
-4. After merge: `git worktree remove ../pixel-local-dictation-worktrees/BRANCH`.
-
-Laptop work in a Claude worktree needs no gate installation. The phone is reached only from the main
-checkout: in a worktree the wrapper refuses every verb but `help` and the host-only `check`
-(`python3 tools/phone check APP.apk TEST.apk`). The wrapper is installed only from the main checkout
-(`bash tools/gate/apply.sh`, any branch) and never without the marker guard. Codex sessions stay in the
-main checkout: in a Codex worktree the harness files are writable (ADR-024 amendment).
+- Claude Code agent worktrees live under `.claude/worktrees/`; the sandbox lets agents write there.
+- An agent worktree starts from the spawning session's current branch (`worktree.baseRef: "head"`), unpushed commits included, uncommitted edits not.
+- In a new worktree, run `python3 tools/prepare_checkout.py` before building; `python3 tools/quality.py` then passes in the sandbox.
+- Each checkout builds with its own Gradle home, `.gradle/home` (gitignored), set by `gradlew` (ADR-028). `prepare_checkout.py` seeds it from the read-only copy `~/.gradle/ro-dep-cache`, building that copy if missing. The first build in a new home takes minutes and about 680 MB.
+- After a dependency change, in the main checkout, outside the sandbox: `python3 tools/prepare_checkout.py --fill` downloads into `~/.gradle` and rebuilds the copy. `--refresh` only rebuilds it: safe while checkouts build, not while a Gradle uses `~/.gradle`.
+- The phone is reached through the main checkout's `.claude/hooks/phone`, from any checkout or worktree; relative paths resolve from the caller's directory. One call at a time: the shim names the main checkout from its own path, and that checkout's `corpus/lab` holds the lock, state, `last.json` and the kept model copy.
+- The wrapper is installed only from the main checkout (`bash tools/gate/apply.sh`, any branch) and never without the marker guard.

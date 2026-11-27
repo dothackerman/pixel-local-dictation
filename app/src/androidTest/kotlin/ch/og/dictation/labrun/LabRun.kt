@@ -11,8 +11,8 @@ import java.io.File
  * Every class of this package runs through `phone measure` only, and each `@Test` is
  * `@Test fun name() = LabRun.measure("…") { lab -> … }`.
  *
- * Inputs come only from the lab folder: what `phone push` put there, and under [INPUTS] the copies of
- * owner recordings or receipts that `phone measure … inputs=…` placed for this run and removes after
+ * Inputs come only from the lab folder: what `phone push` put there, and under [INPUTS] the copies of the
+ * lab app's recordings or receipts that `phone measure … inputs=…` placed for this run and removes after
  * it. Results go to the lab folder. tools/device_classes.py checks all of this on the laptop.
  */
 object LabRun {
