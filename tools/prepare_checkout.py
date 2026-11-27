@@ -5,7 +5,7 @@ In a linked worktree, links the main checkout's gitignored build inputs (signing
 local.properties, app/libs, app/src/main/assets); links, never copies; never replaces a
 real file. In any checkout, links the cached Robolectric Android jar into
 .gradle/robolectric, which quality.py hands to Robolectric's offline mode. Checks the
-Gradle caches; downloads nothing. Every check runs before any write. Gate installation
+Gradle caches; downloads nothing. Every check runs before any write. Gate
 installation (ADR-024) is reported, never done.
 """
 import os
