@@ -156,7 +156,7 @@ clipboard is one for all apps). Device tests keep sibling History roots and scra
 `no_backup/test` and `files/test` of the lab app. The build marker stays: the wrapper tells the builds
 apart by it (`layout=owner|test`). `files/timing-receipts` stays reserved in this ADR only.
 
-## Status (#91, 2026-11-25): what still needs the phone
+## Status (#91, 2026-11-27): what still needs the phone
 
 Of the 58 phone tests of #73's start, 11 test cases in 7 classes still need the phone; each class names
 its reason in `app/src/androidTest/device-classes.json` (`phoneBatch`), and `tools/device_classes.py` fails
@@ -174,6 +174,6 @@ an entry without one. They need what the laptop does not have:
   across the death of the checkpoint producer's process (`HistoryProcessTest`, 3).
 
 Everything else is decided or rendered on the laptop: take rules in `TakeControllerTest`, the panel in
-`RenderPanelTest`, the gallery and the golden frame sequences, the History and Settings screens on the
-test layout. Not tests: the Guided check (the owner, on the lab build) and the Lab runs (measurements,
+`RenderPanelTest`, the gallery and the golden frame sequences, the History and Settings screens in
+Robolectric. Not tests: the Guided check (the owner, on the lab build) and the Lab runs (measurements,
 through `phone measure`). Whether an emulator can run some of the 11 is #93's spike.
