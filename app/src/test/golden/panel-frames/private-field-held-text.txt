@@ -1,0 +1,24 @@
+> open on a password field that refuses the write
+[new panel] status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | notice: retention_field_off | ringLive | preview: ""
+status_opening | microphone off: status_opening | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: ""
+> speech
+status_recording | microphone on: stop_recording | back: discard_recording | notice: retention_field_off | stopGlyph ringLive | preview: "first words"
+> Stop
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | notice: retention_field_off | preparing ringLive | preview: "first words"
+status_recording | microphone on: stop_recording | back: back_hold_and_choose | notice: retention_field_off | preparing | preview: "first words"
+status_finishing | microphone off: status_finishing | back: back_hold_and_choose | notice: retention_field_off | preparing | preview: "first words"
+> microphone released
+> text prepared
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | notice: retention_field_off | preview: "first words"
+status_finishing | microphone off: status_finishing | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | preview: ""
+status_unable_unsaved | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | held | preview: "first words"
+status_unable_unsaved | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | unableToInsert held | preview: "first words"
+> Discard text
+status_unable_insert | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | unableToInsert | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | notice: retention_field_off | preview: ""

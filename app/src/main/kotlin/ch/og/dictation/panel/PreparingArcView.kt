@@ -45,8 +45,10 @@ class PreparingArcView @JvmOverloads constructor(context: Context, attrs: Attrib
             return
         }
         canvas.drawOval(box, track)
-        if (startNs == 0L) startNs = System.nanoTime()
-        val turn = ((System.nanoTime() - startNs) / 1e9 * 300.0 % 360.0).toFloat()
+        // One clock read per frame: the first frame draws the arc exactly at the top.
+        val now = System.nanoTime()
+        if (startNs == 0L) startNs = now
+        val turn = ((now - startNs) / 1e9 * 300.0 % 360.0).toFloat()
         canvas.drawArc(box, turn - 90f, 90f, false, arc)
         if (isShown) postInvalidateOnAnimation()
     }

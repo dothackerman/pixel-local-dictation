@@ -1,9 +1,5 @@
 package ch.og.dictation.take
 
-import android.text.InputType
-import android.view.View
-import android.view.inputmethod.EditorInfo
-
 /**
  * What identifies the field a take started in (ADR-010). After a rotation hold the take's insert
  * authority may only return to an editor that [isSameFieldAs] the take's own field: a write's
@@ -13,6 +9,7 @@ import android.view.inputmethod.EditorInfo
  */
 class FieldIdentity(
     private val packageName: String?,
+    /** The field's view id, 0 when it has none. */
     private val fieldId: Int,
     private val inputType: Int,
     private val imeOptions: Int,
@@ -20,10 +17,10 @@ class FieldIdentity(
     private val initialSelStart: Int,
 ) {
     constructor(packageName: String?, fieldId: Int, typeClass: Int, variation: Int, imeOptions: Int, hintText: String?, initialSelStart: Int) :
-        this(packageName, fieldId, (typeClass and InputType.TYPE_MASK_CLASS) or (variation and InputType.TYPE_MASK_VARIATION),
+        this(packageName, fieldId, (typeClass and EditorBits.TYPE_MASK_CLASS) or (variation and EditorBits.TYPE_MASK_VARIATION),
             imeOptions, hintText, initialSelStart)
 
-    val typeNull: Boolean get() = (inputType and InputType.TYPE_MASK_CLASS) == InputType.TYPE_NULL
+    val typeNull: Boolean get() = (inputType and EditorBits.TYPE_MASK_CLASS) == EditorBits.TYPE_NULL
     val selValid: Boolean get() = initialSelStart >= 0
     private val hasId: Boolean get() = fieldId > 0
 
@@ -44,13 +41,8 @@ class FieldIdentity(
     override fun toString() = "FieldIdentity(typeNull=$typeNull, selValid=$selValid, hasId=$hasId, hasHint=${hintText != null})"
 
     companion object {
-        private const val TYPE_BITS = InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION
+        private const val TYPE_BITS = EditorBits.TYPE_MASK_CLASS or EditorBits.TYPE_MASK_VARIATION
         /** A field recreated once a second field exists gains or loses these. */
-        private const val NAVIGATION = EditorInfo.IME_FLAG_NAVIGATE_NEXT or EditorInfo.IME_FLAG_NAVIGATE_PREVIOUS
-
-        fun of(info: EditorInfo?): FieldIdentity? = info?.let {
-            FieldIdentity(it.packageName, it.fieldId.takeIf { id -> id != View.NO_ID } ?: 0, it.inputType, it.imeOptions,
-                it.hintText?.toString(), it.initialSelStart)
-        }
+        private const val NAVIGATION = EditorBits.IME_FLAG_NAVIGATE_NEXT or EditorBits.IME_FLAG_NAVIGATE_PREVIOUS
     }
 }

@@ -32,7 +32,7 @@ class GuidedVisitTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val visit = UUID.randomUUID().toString()
-        val output = File(context.filesDir, "lab/guided-visit-$visit.jsonl")
+        val output = File(context.wiring.storage.labFolder, "guided-visit-$visit.jsonl")
         output.parentFile?.mkdirs()
         fun show(intent: Intent, minutes: Long): Boolean {
             RotationProbeActivity.done = CountDownLatch(1)
@@ -57,8 +57,8 @@ class GuidedVisitTest {
             val run = UUID.randomUUID().toString()
             val traceCase = step.traceCase
             HistoryIo.executor.submit {}.get()
-            val history = context.wiring.historyRoot
-            val benchmark = File(context.filesDir, "benchmark")
+            val history = context.wiring.storage.historyRoot
+            val benchmark = context.wiring.storage.recordingsRoot
             val beforeHistory = inventory(history)
             val beforeBenchmark = inventory(benchmark)
             var traceComplete = false

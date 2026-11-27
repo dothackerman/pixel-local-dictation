@@ -11,6 +11,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.UnderlineSpan
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -41,9 +42,14 @@ open class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
         stored = findViewById(R.id.benchmark_stored)
-        findViewById<MaterialSwitch>(R.id.benchmark_switch).apply {
+        if (wiring.storage.savesRecordings) findViewById<MaterialSwitch>(R.id.benchmark_switch).apply {
             isChecked = BenchmarkStore.isEnabled(this@SettingsActivity)
             setOnCheckedChangeListener { _, on -> BenchmarkStore.setEnabled(this@SettingsActivity, on) }
+        } else {
+            // Release is the product only (ADR-010 amendment): no switch, its rule and its explanation;
+            // the count and the delete control for old recordings stay.
+            for (id in listOf(R.id.benchmark_switch, R.id.benchmark_switch_rule, R.id.benchmark_explanation))
+                findViewById<View>(id).let { (it.parent as ViewGroup).removeView(it) }
         }
         findViewById<MaterialButton>(R.id.benchmark_delete).apply {
             text = SpannableString(getString(R.string.benchmark_delete)).also {
@@ -64,7 +70,7 @@ open class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); showStored(); showHistoryCount(); showDictionaryCount() }
 
-    protected open fun historyRoot() = wiring.historyRoot
+    protected open fun historyRoot() = wiring.storage.historyRoot
 
     /** The History row shows only how many transcripts are saved; warnings live on the History page. */
     private fun showHistoryCount() {

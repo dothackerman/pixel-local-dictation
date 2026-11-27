@@ -2,7 +2,7 @@ package ch.og.dictation.diagnostics
 
 import ch.og.dictation.take.TakeOutcome
 import ch.og.dictation.take.TakeResult
-import android.content.ContextWrapper
+import android.os.Process
 import java.io.File
 import java.nio.file.Files
 import org.json.JSONObject
@@ -10,7 +10,6 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -27,11 +26,40 @@ class StartupTraceFileTest {
         throw AssertionError()
     }
 
+    /** The receipt seam is the lab folder Storage names; moved here from the device suite (#80). */
+    @Test fun persistsCapturedClocksAndOwnProcessBounds() {
+        val directory = Files.createTempDirectory("trace").toFile()
+        try {
+            val trace = StartupTrace(ch.og.dictation.storage.Storage.under(directory).labFolder)
+            // Literal historical stamps must survive the asynchronous file writer unchanged.
+            trace.event("serviceCreate", ns = 123_000_000L, uptimeMs = 123L)
+            trace.event("panelDraw", "test-take")
+            trace.event("modelReady", ns = 456_000_000L)
+            val file = File(directory, "files/lab/startup.jsonl")
+            val rows = rows(file, 3)
+            assertEquals("all asynchronous receipts must reach disk", 3, rows.size)
+            val create = rows[0]
+            assertEquals(123_000_000L, create.getLong("ns"))
+            assertEquals(123L, create.getLong("uptimeMs"))
+            assertEquals(Process.getStartRequestedUptimeMillis(), create.getLong("processStartRequestedUptimeMs"))
+            assertEquals(Process.getStartUptimeMillis(), create.getLong("processStartUptimeMs"))
+            val draw = rows[1]
+            assertEquals("test-take", draw.getString("takeId"))
+            assertTrue(draw.getLong("uptimeMs") >= Process.getStartUptimeMillis())
+            assertFalse(draw.has("processStartUptimeMs"))
+            assertEquals(create.getString("processId"), draw.getString("processId"))
+            assertEquals(456_000_000L, rows[2].getLong("ns"))
+            assertFalse("observer uptime must not be paired with a historical event", rows[2].has("uptimeMs"))
+            assertTrue(file.length() <= LabReceipts.MAX_BYTES)
+            assertEquals(listOf("startup.jsonl"), File(directory, "files/lab").list()!!.toList())
+            assertEquals("nothing outside the lab folder", listOf("files"), directory.list()!!.toList())
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun eachReceiptKeepsItsProtocolFileAndRotatesAtTheCap() {
         val directory = Files.createTempDirectory("trace").toFile()
-        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) { override fun getFilesDir() = directory }
         try {
-            val trace = StartupTrace(context)
+            val trace = StartupTrace(File(directory, "lab"))
             val take = trace.beginTake(modelReady = true)
             trace.geometry("preDraw", take, 7L, JSONObject().put("panelHeightPx", 1))
             trace.liveResult(take, JSONObject().put("verified", true),

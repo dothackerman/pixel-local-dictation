@@ -104,3 +104,24 @@ adoption-deciding phone comparison. It is not a work plan. Laptop screening runs
 append rows to a results file with their identities. Phone visits that only screen keep the wrapper's snapshot
 and `meta.json` receipts. Planned work, gates, thresholds and schedules live only in GitHub specs and tickets,
 never in tracked files. The rules above stay in force for the adoption-deciding comparison.
+
+## Amendment 2026-11-25 (ADR-029): Lab runs leave the test batch
+
+Phone replays and measurements are Lab runs: their classes live in one Lab run package
+(`ch.og.dictation.labrun`), reached only through `phone measure`, never in the named phone batch, reporting
+completed or incomplete. They read copies of owner recordings or receipts that `measure` places in the lab
+folder (`files/lab/labrun-inputs/`) and removes afterwards. The ADR-003 replay spike is retired.
+
+As built (#81): `app/src/androidTest/device-classes.json` classifies every class of the test APK (test,
+Lab run, Guided check, helper; retired classes with their reason) and holds the named phone batch: one
+batched run and the classes that each need a fresh process. `tools/device_classes.py`, part of the host
+gate, fails on an unclassified class, a Lab run outside the package or in the batch, a test inside it, Lab
+run code that reads app storage other than the lab folder, and a Lab run that bypasses the harness
+`LabRun.measure`. A measurement manifest names owner recordings as `labrun-inputs/benchmark/NAME.wav`;
+manifests with `../benchmark/…` inputs no longer resolve. Report files keep their own fields
+(`result.json` `outcome`, the panel report's `passed`); only the Lab run as a whole is completed or
+incomplete. The self-rotation probe is split: its assertions stay a test, its trace summary is a Lab run.
+
+#90 (2026-11-25): the self-rotation probe's assertions are host controller tests now; its device test class is
+retired and its trace summary stays a Lab run. The named phone batch keeps one rotation-continuity and one
+rotation-finishing case.

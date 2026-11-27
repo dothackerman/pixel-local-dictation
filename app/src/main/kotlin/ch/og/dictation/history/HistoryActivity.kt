@@ -63,7 +63,7 @@ open class HistoryActivity : AppCompatActivity() {
     private var visibleSavedCount = 0
     private var hasStoredHistoryCopies = false
     private var submittedClearToken: Long? = null
-    protected open fun historyRoot() = wiring.historyRoot
+    protected open fun historyRoot() = wiring.storage.historyRoot
     /** How long a deleted transcript can be brought back. */
     protected open val undoWindowMs: Long get() = 8000L
     private val storeRoot by lazy { historyRoot() }

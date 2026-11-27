@@ -2,27 +2,21 @@ package ch.og.dictation
 
 import ch.og.dictation.audio.Recorder
 import ch.og.dictation.recognition.Engine
+import ch.og.dictation.storage.Storage
 import android.content.Context
-import android.inputmethodservice.InputMethodService
-import android.os.Handler
-import java.io.File
 
 /**
  * Wiring: what this process's parts are built from, one immutable value per process, held by
  * [DictationApplication] and reached through [Context.wiring]. Read it at each use; a take
- * captures it once, so its History root cannot change mid-take. Tests replace it only through
+ * captures it once, so its storage cannot change mid-take. Tests replace it only through
  * [WiringOverride], which derives from the current value and always restores it.
  */
 class Wiring private constructor(
     /** A fresh platform recorder per take. */
     val recorderFactory: () -> Recorder,
-    /** Where takes are kept; the one definition of the owner's History root is [forApp]. */
-    val historyRoot: File,
+    /** Where this build keeps each kind of data. */
+    val storage: Storage,
     private val engineSource: Lazy<Engine>,
-    /** Asks Android to show the input method's own panel (leaves Wiring with the take controller). */
-    val requestPanel: (InputMethodService) -> Unit,
-    /** Delivers an unexpected capture end to the main thread (leaves Wiring with the take controller). */
-    val postCaptureEnd: (Handler, Runnable) -> Unit,
 ) {
     /** Created once, on first use: editing Settings or the Dictionary never loads speech recognition. */
     val engine: Engine get() = engineSource.value
@@ -30,17 +24,15 @@ class Wiring private constructor(
     /** A derived value; unchanged parts, the engine included, are shared. */
     fun with(
         recorderFactory: () -> Recorder = this.recorderFactory,
-        historyRoot: File = this.historyRoot,
+        storage: Storage = this.storage,
         engine: Engine? = null,
-        requestPanel: (InputMethodService) -> Unit = this.requestPanel,
-        postCaptureEnd: (Handler, Runnable) -> Unit = this.postCaptureEnd,
-    ) = Wiring(recorderFactory, historyRoot, engine?.let { lazyOf(it) } ?: engineSource, requestPanel, postCaptureEnd)
+    ) = Wiring(recorderFactory, storage, engine?.let { lazyOf(it) } ?: engineSource)
 
     companion object {
         fun forApp(context: Context): Wiring {
             val app = context.applicationContext
-            return Wiring(::Recorder, File(app.noBackupFilesDir, "history"), lazy { Engine.forApp(app) },
-                { it.requestShowSelf(0) }, { handler, callback -> handler.post(callback) })
+            val storage = Storage.forApp(app)
+            return Wiring(::Recorder, storage, lazy { Engine.forApp(app, storage) })
         }
     }
 }

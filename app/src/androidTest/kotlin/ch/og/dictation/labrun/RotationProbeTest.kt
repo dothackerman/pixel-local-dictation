@@ -1,0 +1,37 @@
+package ch.og.dictation.labrun
+
+import ch.og.dictation.diagnostics.RotationTrace
+import ch.og.dictation.probe.RotationProbeActivity
+import android.content.Intent
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** Rotation-probe trace collection: the owner operates the host and any other app; no gesture is automated. */
+@RunWith(AndroidJUnit4::class)
+class RotationProbeTest {
+    @Test fun observeUntilOwnerFinishes() = LabRun.measure("RotationProbeTest.observeUntilOwnerFinishes") { observe() }
+
+    private fun observe() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val caseName = requireNotNull(InstrumentationRegistry.getArguments().getString("case")) { "case argument required" }
+        RotationTrace.beginProbe(caseName)
+        RotationProbeActivity.done = CountDownLatch(1)
+        try {
+            instrumentation.startActivitySync(Intent(context, RotationProbeActivity::class.java)
+                .putExtra("case", caseName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            assertTrue("owner did not finish probe within five minutes",
+                RotationProbeActivity.done.await(5, TimeUnit.MINUTES))
+            assertTrue("view teardown or take terminal acknowledgement missing; or trace write failed",
+                RotationTrace.finishProbe(10_000))
+        } finally {
+            RotationTrace.abortProbe()
+        }
+    }
+}

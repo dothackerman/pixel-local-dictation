@@ -6,6 +6,8 @@
   <!-- androidx-test merges package visibility for orchestrator/test services; unused, and ADR-024 refuses <queries>. -->
   <queries tools:node="remove" />
   <application>
+    <!-- Build marker (ADR-029): equal to the marker of the lab build this test APK was built with. -->
+    <meta-data android:name="ch.og.dictation.build" android:value="${buildMarker}" />
     <uses-native-library tools:node="removeAll" />
     <uses-native-library android:name="libOpenCL.so" android:required="false" />
     <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

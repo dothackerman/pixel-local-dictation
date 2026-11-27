@@ -60,8 +60,6 @@
         android:layout_marginStart="56dp"
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="@dimen/panel_notice_gap"
-        android:drawableStart="@drawable/ic_lock"
-        tools:ignore="UseCompatTextViewDrawableXml"
         android:drawablePadding="6dp"
         android:gravity="center_vertical"
         android:textAppearance="?attr/textAppearanceLabelMedium"

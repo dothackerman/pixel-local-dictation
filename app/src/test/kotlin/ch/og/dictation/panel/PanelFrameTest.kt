@@ -22,8 +22,6 @@ class PanelFrameTest {
             PanelPhase.NO_PERMISSION to Triple(R.string.status_no_permission, false, R.string.status_no_permission),
             PanelPhase.FAILED to Triple(R.string.status_failed, true, R.string.retry_recording),
             PanelPhase.NOT_INSERTED to Triple(R.string.status_unable_insert, true, R.string.start_recording),
-            PanelPhase.NOT_INSERTED_WAITING to Triple(R.string.status_unable_insert, false, R.string.status_stopping_recording),
-            PanelPhase.IDLE_WAITING to Triple(R.string.status_idle, false, R.string.status_stopping_recording),
         )
         assertEquals(PanelPhase.entries.toSet(), table.keys)
         for ((phase, expected) in table) {
@@ -73,5 +71,32 @@ class PanelFrameTest {
         assertEquals(R.string.retention_field_off, frame.notice)
         assertTrue(frame.banner); assertTrue(frame.ringLive)
         assertNull(panelFrame(PanelState()).notice)
+    }
+
+    /** The frame builder reads the phase itself, not its status text (#84). */
+    @Test fun onlyTheNotInsertedPhaseCarriesTheNotInsertedMark() {
+        assertEquals(setOf(PanelPhase.NOT_INSERTED),
+            PanelPhase.entries.filter { panelFrame(PanelState(phase = it)).unableToInsert }.toSet())
+        assertEquals(PanelPhase.entries.filter { it.status == R.string.status_unable_insert }, listOf(PanelPhase.NOT_INSERTED))
+    }
+
+    /**
+     * The pending outcome is the take's fact, not a phase (#89): while it is not in, the two phases that
+     * offer a new take keep their status and offer none; every other phase is as it is without it.
+     */
+    @Test fun whileTheOutcomeIsNotInNoNewTakeIsOffered() {
+        for (phase in PanelPhase.entries) {
+            val plain = panelFrame(PanelState(phase = phase))
+            val waiting = panelFrame(PanelState(phase = phase, awaitingOutcome = true))
+            if (phase == PanelPhase.IDLE || phase == PanelPhase.NOT_INSERTED) {
+                assertEquals(phase.name, plain.copy(microphoneEnabled = false, microphoneLabel = R.string.status_stopping_recording), waiting)
+                assertTrue(phase.name, plain.microphoneEnabled)
+            } else assertEquals(phase.name, plain, waiting)
+        }
+        // Held text keeps its own status and actions meanwhile.
+        val held = panelFrame(PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = true), awaitingOutcome = true))
+        assertTrue(held.held && held.unableToInsert)
+        assertEquals(R.string.status_unable_history, held.status)
+        assertFalse(held.microphoneEnabled)
     }
 }

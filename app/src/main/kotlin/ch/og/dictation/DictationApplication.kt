@@ -14,6 +14,6 @@ open class DictationApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        startHistory(owns = getProcessName() == applicationInfo.processName, root = wiring.historyRoot)
+        startHistory(owns = getProcessName() == applicationInfo.processName, root = wiring.storage.historyRoot)
     }
 }

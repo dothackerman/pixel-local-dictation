@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from quality import gradle, jvm_environment, preparation_problem, staged_errors
+from quality import gradle, jvm_environment, preparation_problem, staged_errors, test_environment
 
 
 class StagedQualityTests(unittest.TestCase):
@@ -111,3 +111,10 @@ class JvmEnvironmentTests(unittest.TestCase):
     def test_unprepared_checkout_without_tmpdir_keeps_the_environment(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(jvm_environment(Path(directory), {'HOME': '/h'}), {'HOME': '/h'})
+
+    def test_git_hook_variables_never_reach_the_tests(self):
+        # A pre-commit hook in a worktree exports GIT_DIR; a test's `git init` then re-initialised
+        # the real repository (core.bare=true) on 2026-11-25.
+        with tempfile.TemporaryDirectory() as directory:
+            env = test_environment(Path(directory), {'GIT_DIR': '/repo/.git', 'GIT_INDEX_FILE': 'i', 'HOME': '/h'})
+            self.assertEqual(env, {'HOME': '/h'})

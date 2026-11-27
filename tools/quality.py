@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Host-only quality gate: Python regressions, Kotlin unit tests and Android lint.
+"""Host-only quality gate: Python regressions (host checks included), Kotlin unit tests for the lab
+build and release, Android lint and the build markers of the merged manifests.
 
 --staged requires tracked worktree/index parity and staged source/test inputs.
 It tests this checkout; stage relevant files first. No instrumentation runs.
@@ -58,6 +59,12 @@ def jvm_environment(root, environment):
     return {**environment, 'JAVA_TOOL_OPTIONS': ' '.join(options)}
 
 
+def test_environment(root, environment):
+    """What the tests run with: the JVM options, and no GIT_* variable, so a hook's GIT_DIR never
+    points a test's own `git init` at this repository."""
+    return jvm_environment(root, {k: v for k, v in environment.items() if not k.startswith('GIT_')})
+
+
 def gradle(command, root, environment):
     """Runs an offline Gradle build; a dependency missing from the caches names the fill."""
     missing = False
@@ -77,7 +84,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--staged', action='store_true')
     args = parser.parse_args()
-    environment = jvm_environment(ROOT, os.environ.copy())
+    environment = test_environment(ROOT, os.environ.copy())
     conventional_sdk = Path.home() / 'Android/Sdk'
     if 'ANDROID_HOME' not in environment and conventional_sdk.is_dir():
         environment['ANDROID_HOME'] = str(conventional_sdk)
@@ -94,6 +101,10 @@ def main():
     if code := subprocess.run(tests, cwd=ROOT, env=environment).returncode:
         return code
     if code := gradle([str(ROOT / 'gradlew'), '--offline', *GATE_TASKS], ROOT, environment):
+        return code
+    # Release owner; lab build and its test APK test and equal; one build.
+    marker = [sys.executable, str(ROOT / 'tools/build_marker.py'), '--check']
+    if code := subprocess.run(marker, cwd=ROOT, env=environment).returncode:
         return code
     # Detect edits during the gate too; no cached success claims.
     if args.staged and (staged_errors() or index_before != subprocess.check_output(['git', 'ls-files', '--stage'], cwd=ROOT)):

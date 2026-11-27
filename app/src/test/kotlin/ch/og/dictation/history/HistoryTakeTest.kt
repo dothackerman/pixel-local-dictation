@@ -101,6 +101,43 @@ class HistoryTakeTest {
             runtime.close().join()
         } finally { dir.deleteRecursively() }
     }
+    /** Was asserted on the phone by RecoveryTimingTest, which now only times the Stop (Lab run). */
+    @Test fun safeStopCompletesWithTheTextPrivateHistoryHolds() {
+        val dir = Files.createTempDirectory("history-safe-stop").toFile()
+        try {
+            var feed: ((FloatArray) -> Unit)? = null
+            val capture = object : TakeCapture {
+                override fun start(accept: (FloatArray) -> Unit) { feed = accept }
+                override fun stop(done: (Result<ByteArray>) -> Unit) = done(Result.success(byteArrayOf()))
+                override fun cancel(done: () -> Unit) = done()
+            }
+            val direct = Executor { it.run() }
+            var finished: TakeResult? = null
+            val editor = object : TakeOutput {
+                override fun preview(text: String) {}
+                override fun commit(text: String) = true
+                override fun returnToKeyboard() = true
+                override fun finished(result: TakeResult, pcm: ByteArray) { finished = result }
+            }
+            val segments = { object : Segmenter {
+                override fun accept(samples: FloatArray) = listOf(Chunk(samples, true))
+                override fun flush() = emptyList<Chunk>()
+                override fun reset() {}
+            } }
+            val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "synthetic words" } }, segments)
+            val id = java.util.UUID.randomUUID().toString()
+            val take = runtime.open(capture, HistoryTakeOutput(editor, { HistoryStore(dir) }, direct, { fail("save failed") },
+                id = id), direct, retentionEligible = true)
+            take.start(); feed!!(floatArrayOf(1f)); take.stop()
+            val completed = requireNotNull(finished)
+            assertEquals(TakeOutcome.COMPLETED, completed.outcome)
+            val saved = requireNotNull(HistoryStore(dir).get(id)) { "final transcript was not saved" }
+            assertEquals("synthetic words", completed.text)
+            assertEquals(completed.text, saved.text)
+            runtime.close().join()
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun completedChunkIsRecoverableBeforeStop() {
         val dir = Files.createTempDirectory("history-checkpoint").toFile()
         try {

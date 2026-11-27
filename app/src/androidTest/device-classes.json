@@ -1,0 +1,43 @@
+{
+  "labRunPackage": "ch.og.dictation.labrun",
+  "classes": {
+    "ch.og.dictation.PhoneReadyTest": "test",
+    "ch.og.dictation.NormalBaselineTest": "test",
+    "ch.og.dictation.DictionarySettingsTest": "test",
+    "ch.og.dictation.RotationContinuityDemoTest": "test",
+    "ch.og.dictation.RotationFinishingDemoTest": "test",
+    "ch.og.dictation.ColdSettingsTest": "test",
+    "ch.og.dictation.HistoryProcessTest": "test",
+    "ch.og.dictation.GuidedVisitTest": "guided_check",
+    "ch.og.dictation.PrivacyProbeTest": "guided_check",
+    "ch.og.dictation.KeyboardHandoff": "helper",
+    "ch.og.dictation.SelfRotationProbe": "helper",
+    "ch.og.dictation.labrun.LabRun": "helper",
+    "ch.og.dictation.labrun.MeasurementRun": "helper",
+    "ch.og.dictation.labrun.SessionReplayKt": "helper",
+    "ch.og.dictation.labrun.LabTest": "lab_run",
+    "ch.og.dictation.labrun.PipelineTest": "lab_run",
+    "ch.og.dictation.labrun.PanelPerformanceTest": "lab_run",
+    "ch.og.dictation.labrun.RecoveryTimingTest": "lab_run",
+    "ch.og.dictation.labrun.EditorGeometryTest": "lab_run",
+    "ch.og.dictation.labrun.RotationProbeTest": "lab_run",
+    "ch.og.dictation.labrun.SelfRotationTrace": "lab_run"
+  },
+  "retired": {
+    "ch.og.dictation.ReplayTest": "the ADR-003 replay spike: decided long ago, and it wrote its results into the owner's recordings folder",
+    "ch.og.dictation.SelfRotationProbeTest": "what a self-rotating editor does to a take is decided by the take controller and tested on the host (TakeControllerTest, #90); the Lab run labrun.SelfRotationTrace still measures the trace"
+  },
+  "phoneBatch": {
+    "batch": {
+      "ch.og.dictation.PhoneReadyTest": "reads the real phone's state before every batch (unlocked, screen on, FUTO current, model and fixtures pushed); there is nothing to read on the laptop",
+      "ch.og.dictation.NormalBaselineTest": "Candidate A baseline parity: the real speech model and native sherpa-onnx runtime on the Pixel's CPU must give the retained outputs; neither runs on the laptop",
+      "ch.og.dictation.DictionarySettingsTest": "the Dictionary add sheet above the real keyboard in landscape at large text: only the phone has the real keyboard's insets; the portrait cases run on the laptop",
+      "ch.og.dictation.RotationContinuityDemoTest": "one rotation-continuity case through FUTO's key: a recreated hidden editor gets our panel back only because real Android honours our request; the controller decides every other order on the laptop",
+      "ch.og.dictation.RotationFinishingDemoTest": "one rotation-finishing case through FUTO's key: the real platform reset and recreated editor during the final decode; the controller decides every other Stop-wait boundary on the laptop"
+    },
+    "freshProcess": {
+      "ch.og.dictation.ColdSettingsTest": "cold Settings: a Dictionary edit in a fresh app process must not load the real model; needs a real process start and the real model",
+      "ch.og.dictation.HistoryProcessTest": "History across process death: a real checkpoint-producer process is killed and a new process owns its checkpoint; Robolectric has one process"
+    }
+  }
+}

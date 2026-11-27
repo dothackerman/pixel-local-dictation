@@ -21,6 +21,12 @@ val signingProblem: String? = when {
     else -> null
 }
 
+// Build marker (ADR-029): layout word, commit and a hash over the build's inputs; the same value in the
+// app and its test APK. The phone wrapper tells release (`owner`) from the lab build (`test`) by it.
+val buildIdentity: String = providers.exec {
+    commandLine("python3", rootProject.layout.projectDirectory.file("tools/build_marker.py").asFile.path)
+}.standardOutput.asText.get().trim()
+
 android {
     namespace = "ch.og.dictation"
     compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -48,13 +54,17 @@ android {
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
+            manifestPlaceholders["buildMarker"] = "layout=owner;$buildIdentity"
         }
-        // Debuggable so run-as can copy benchmark data; installed only for recording sessions.
+        // The lab build: its own app beside release (#98), so Android gives it its own storage; debuggable
+        // so the phone wrapper can reach its data. The code namespace stays ch.og.dictation.
         create("benchmark") {
             initWith(getByName("release"))
+            applicationIdSuffix = ".lab"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("release")
             matchingFallbacks += "release"
+            manifestPlaceholders["buildMarker"] = "layout=test;$buildIdentity"
         }
     }
     testBuildType = "benchmark"
@@ -72,9 +82,29 @@ androidComponents.onVariants(androidComponents.selector().withBuildType("benchma
     variant.androidTest?.packaging?.jniLibs?.useLegacyPackaging?.set(true)
 }
 
+// No other build type exists, so no debuggable build resolves owner folders.
+androidComponents.beforeVariants(androidComponents.selector().withBuildType("debug")) { it.enable = false }
+// Release has host tests too: the gate asserts the owner paths and marker on the release variant.
+androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    variant.hostTests[com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE]?.enable = true
+}
+
 tasks.withType<Test>().configureEach {
     // Android 16's FileDescriptor bridge in Robolectric needs this JDK 21 export.
     jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+}
+// Golden panel-frame sequences (#77) are test inputs; -PupdateGolden rewrites them from this run
+// (only after the owner decided from the BEFORE/AFTER pairs).
+tasks.withType<Test>().matching { it.name == "testBenchmarkUnitTest" }.configureEach {
+    inputs.dir("src/test/golden").withPathSensitivity(PathSensitivity.RELATIVE)
+    if (providers.gradleProperty("updateGolden").isPresent) {
+        systemProperty("golden.update", "true")
+        outputs.upToDateWhen { false }
+    }
+}
+// Release host tests are the ones written for release (src/testRelease); the shared suite runs on the lab build.
+tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
+    filter { includeTestsMatching("ch.og.dictation.storage.Release*") }
 }
 
 // Release and benchmark builds fail without the key instead of falling back to debug signing.

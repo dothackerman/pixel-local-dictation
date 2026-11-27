@@ -25,7 +25,9 @@ sys.path.insert(0, str(ROOT / 'tools/gate'))  # check_installation, when run dir
 from check_installation import errors as gate_installation_errors  # noqa: E402
 FILL_CACHES = 'in the main checkout, outside the sandbox: python3 tools/prepare_checkout.py --fill'
 # The quality gate's Gradle tasks; --fill also builds the APKs agents assemble.
-GATE_TASKS = ('testBenchmarkUnitTest', 'compileBenchmarkAndroidTestKotlin', 'lintBenchmark')
+# Release is compiled and its own host tests assert the owner paths and marker.
+GATE_TASKS = ('testBenchmarkUnitTest', 'testReleaseUnitTest', 'compileBenchmarkAndroidTestKotlin', 'lintBenchmark',
+              'processReleaseManifest', 'processBenchmarkManifest', 'processBenchmarkAndroidTestManifest')
 FILL_TASKS = GATE_TASKS + ('assembleRelease', 'assembleBenchmark', 'assembleBenchmarkAndroidTest')
 # gradlew sets both unless already set; keep them in step with it (ADR-028).
 GRADLE_HOME = Path('.gradle/home')  # under the checkout: its own Gradle home

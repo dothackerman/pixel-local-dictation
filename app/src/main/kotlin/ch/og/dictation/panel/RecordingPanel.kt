@@ -2,7 +2,9 @@ package ch.og.dictation.panel
 
 import ch.og.dictation.R
 import ch.og.dictation.audio.RecordingFeedback
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +17,12 @@ import androidx.appcompat.widget.TooltipCompat
 import kotlin.math.roundToInt
 
 private const val PREVIEW_LINES = 3
+
+/**
+ * Test seam, null in the app: sees each frame a panel is about to show (`fresh`: on a new panel).
+ * The golden frame sequences record it (#77).
+ */
+@Volatile internal var onPanelFrame: ((frame: PanelFrame, fresh: Boolean) -> Unit)? = null
 
 /**
  * Renders [frame] on [panel] (built from ime.xml, either orientation) and returns it as the frame
@@ -33,6 +41,7 @@ fun renderPanel(panel: View, frame: PanelFrame, shown: PanelFrame?, feedback: Re
     val ringTarget = if (frame.ringLive) feedback else null
     if (ring != null && ring.following !== ringTarget) ring.follow(ringTarget)
     if (frame == shown) return frame
+    onPanelFrame?.invoke(frame, shown == null)
     val preview = panel.findViewById<TextView>(R.id.preview)
     if (shown != null && frame == shown.copy(preview = frame.preview)) {
         preview?.let { PanelPreview.bind(it, frame.preview) }
@@ -128,16 +137,20 @@ fun renderPanel(panel: View, frame: PanelFrame, shown: PanelFrame?, feedback: Re
 
 /**
  * The secondary notice (the private-field line), independent of the recording status. The lock
- * glyph keeps the mock's 16dp-to-14sp proportion, so it grows with the font.
+ * glyph keeps the mock's 16dp-to-14sp proportion, so it grows with the font. It is parsed for
+ * this view, not taken from the Resources cache: a cached vector copies the raster size of the
+ * one cached first, which only grows, so after a larger font the lock would be drawn from a
+ * larger raster, scaled down and soft. getXml on a drawable is how a vector is parsed uncached.
  */
+@SuppressLint("ResourceType")
 private fun bindNotice(view: TextView, message: Int?) {
     if (message == null) view.text = "" else view.setText(message)
     view.visibility = if (message == null) View.GONE else View.VISIBLE
-    view.compoundDrawablesRelative[0]?.let { lock ->
-        val size = (view.textSize * 16 / 14).roundToInt()
-        lock.setBounds(0, 0, size, size)
-        view.setCompoundDrawablesRelative(lock, null, null, null)
-    }
+    val lock = view.compoundDrawablesRelative[0]
+        ?: Drawable.createFromXml(view.resources, view.resources.getXml(R.drawable.ic_lock), view.context.theme)
+    val size = (view.textSize * 16 / 14).roundToInt()
+    lock.setBounds(0, 0, size, size)
+    view.setCompoundDrawablesRelative(lock, null, null, null)
 }
 
 /** Where the choice row sits in a narrow landscape panel: its place in the status column, or the stage. */

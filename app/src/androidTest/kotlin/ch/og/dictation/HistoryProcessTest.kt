@@ -1,5 +1,6 @@
 package ch.og.dictation
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.history.HistoryCompletion
 import ch.og.dictation.history.HistoryDelivery
 import ch.og.dictation.history.HistoryIo
@@ -44,7 +45,7 @@ class HistoryProcessTest {
     private data class ScenarioResult(val root: File, val prefixBeforeDeath: String?)
 
     private fun runScenario(context: Context, id: String, mode: String, fixtureId: String): ScenarioResult {
-        val root = File(context.noBackupFilesDir, "issue54-producer/$id")
+        val root = context.wiring.storage.testHistoryRoot("issue54-producer/$id")
         root.deleteRecursively()
         val intent = Intent().setClassName(context, "ch.og.dictation.probe.CheckpointProducerService")
             .putExtra("mode", mode).putExtra("case_id", id).putExtra("fixture_id", fixtureId)
@@ -86,7 +87,7 @@ class HistoryProcessTest {
 
     @Test fun unboundProducerDeathWithNoCheckpointLeavesNoRecoverableText() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = File(context.noBackupFilesDir, "checkpoint-process-test")
+        val root = context.wiring.storage.testHistoryRoot("checkpoint-process-test")
         root.deleteRecursively()
         try {
             context.startService(Intent().setClassName(context, "ch.og.dictation.probe.CheckpointProducerService")
@@ -104,8 +105,8 @@ class HistoryProcessTest {
 
     @Test fun unboundProducerLeavesInterruptedCheckpointForNewProcessOwner() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = File(context.noBackupFilesDir, "checkpoint-process-test")
-        val normalRoot = context.wiring.historyRoot
+        val root = context.wiring.storage.testHistoryRoot("checkpoint-process-test")
+        val normalRoot = context.wiring.storage.historyRoot
         // Represents an in-progress write belonging to the already-running main process.
         val pending = File(normalRoot, "${UUID.randomUUID()}.tmp")
         root.deleteRecursively()

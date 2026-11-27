@@ -2,11 +2,15 @@ package ch.og.dictation.panel
 
 import ch.og.dictation.R
 import ch.og.dictation.audio.RecordingFeedback
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -80,6 +84,51 @@ class RenderPanelTest {
         assertSame("a new take's feedback is followed even when the frame is equal", next, ring.following)
     }
 
+    /** The seam of the golden frame sequences (#77): each frame a panel is about to show, once. */
+    @Test fun everyFrameAPanelIsAboutToShowReachesTheObserverOnce() {
+        val seen = mutableListOf<Pair<PanelFrame, Boolean>>()
+        onPanelFrame = { frame, fresh -> seen += frame to fresh }
+        try {
+            val panel = inflate()
+            var shown = renderPanel(panel, recording, null, null)
+            shown = renderPanel(panel, recording, shown, null)
+            val newer = recording.copy(preview = "newer words")
+            shown = renderPanel(panel, newer, shown, null)
+            renderPanel(inflate(), newer, null, null)
+            assertEquals(listOf(recording to true, newer to false, newer to true), seen)
+        } finally { onPanelFrame = null }
+    }
+
+    /**
+     * One mark per state (One Mark Rule): text that was not inserted carries the "not inserted" mark, an
+     * unconfirmed write the "Insertion uncertain" one. The mark reads with the words, directly after them;
+     * at the far edge it would read as a button.
+     */
+    @Test fun theStatusMarkIsNotInsertedOrUncertainAndFollowsTheWords() {
+        val notInserted = PanelFrame(unableToInsert = true, status = R.string.status_unable_insert, microphoneEnabled = true,
+            microphoneLabel = R.string.start_recording)
+        val uncertain = heldText.copy(uncertain = true, status = R.string.status_unconfirmed)
+        val panel = inflate()
+        var shown: PanelFrame? = null
+        for ((frame, drawable) in listOf(notInserted to R.drawable.ic_marker_not_inserted, uncertain to R.drawable.ic_marker_uncertain,
+            heldText to R.drawable.ic_marker_not_inserted)) {
+            for (view in listOf(inflate().also { renderPanel(it, frame, null, null) }, panel.also { shown = renderPanel(it, frame, shown, null) })) {
+                val marker = view.findViewById<android.widget.ImageView>(R.id.status_marker)
+                assertEquals(View.VISIBLE, marker.visibility)
+                assertEquals(drawable, org.robolectric.Shadows.shadowOf(marker.drawable).createdFromResId)
+                layOut(view, 411)
+                val status = view.findViewById<TextView>(R.id.status)
+                val statusBounds = android.graphics.Rect(0, 0, status.width, status.height)
+                val markerBounds = android.graphics.Rect(0, 0, marker.width, marker.height)
+                (view as android.view.ViewGroup).offsetDescendantRectToMyCoords(status, statusBounds)
+                view.offsetDescendantRectToMyCoords(marker, markerBounds)
+                val textEnd = statusBounds.left + status.totalPaddingLeft + status.layout.getLineWidth(0)
+                assertTrue("mark ${markerBounds.left - textEnd}px after the words", markerBounds.left - textEnd <= 12 * view.resources.displayMetrics.density)
+                assertTrue("mark beside the words", markerBounds.centerY() in statusBounds.top..statusBounds.bottom)
+            }
+        }
+    }
+
     @Test fun theMicrophoneBannerAndNoticeComeFromTheFrame() {
         val panel = inflate()
         renderPanel(panel, recording.copy(banner = true, notice = R.string.retention_field_off), null, null)
@@ -95,26 +144,7 @@ class RenderPanelTest {
         assertEquals(View.GONE, notice.visibility)
     }
 
-    /** Every take state the panel shows, each also in a private field. */
-    private val states: List<Pair<String, PanelState>> = listOf(
-        "opening" to PanelState(PanelPhase.OPENING, running = true),
-        "recording" to PanelState(PanelPhase.RECORDING, running = true, preview = "words so far", ringLive = true),
-        "paused" to PanelState(PanelPhase.PAUSED, PanelChoice.RECORDING, running = true, preview = "words so far"),
-        "preparing" to PanelState(PanelPhase.FINISHING, running = true, finishing = true, preview = "words so far"),
-        "finishing-choice" to PanelState(PanelPhase.FINISHING_CHOICE, PanelChoice.FINISHING, running = true, finishing = true),
-        "stopping" to PanelState(PanelPhase.STOPPING),
-        "release-failed" to PanelState(PanelPhase.RELEASE_FAILED),
-        "idle" to PanelState(PanelPhase.IDLE),
-        "no-permission" to PanelState(PanelPhase.NO_PERMISSION),
-        "failed" to PanelState(PanelPhase.FAILED),
-        "not-inserted" to PanelState(PanelPhase.NOT_INSERTED),
-        "not-inserted-waiting" to PanelState(PanelPhase.NOT_INSERTED_WAITING),
-        "idle-waiting" to PanelState(PanelPhase.IDLE_WAITING),
-        "held" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = true), preview = "held words"),
-        "held-unsaved" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(inHistory = false), preview = "held words"),
-        "held-uncertain" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, unconfirmed = true), preview = "held words"),
-        "held-warned" to PanelState(PanelPhase.NOT_INSERTED, held = HeldPanel(true, warned = true), preview = "held words"),
-    ).flatMap { (name, state) -> listOf(name to state, "$name-private" to state.copy(privateField = true)) }
+    private val states = PanelStates.all(words = "words so far", heldWords = "held words")
 
     private fun everyState(widthDp: Int) {
         val panel = inflate()
@@ -202,5 +232,37 @@ class RenderPanelTest {
         renderPanel(panel, recording, shown, null)
         layOut(panel, 960)
         assertTrue("private line adds ${(withLine - panel.height) / density}dp", withLine - panel.height <= 4 * density)
+    }
+
+    /**
+     * The lock is as sharp as a freshly parsed one whatever was drawn before (#77). A vector
+     * drawable from the Resources cache copies the raster size of the cached one, and that size
+     * only grows: after a panel at font 2×, a cached lock at font 1× is drawn from the larger
+     * raster, scaled down. The cached one lives until a garbage collection, so the panel gallery
+     * differed from run to run.
+     */
+    @Test @Config(qualifiers = "w411dp-h891dp-port-xxhdpi") @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun privateFieldLockIsSharpAfterAPanelAtLargerText() {
+        val private = recording.copy(notice = R.string.retention_field_off)
+        fun lock(fontScale: Float): Drawable {
+            RuntimeEnvironment.setFontScale(fontScale)
+            val panel = inflate()
+            renderPanel(panel, private, null, null)
+            return panel.findViewById<TextView>(R.id.retention_notice).compoundDrawablesRelative[0]
+        }
+        fun pixels(drawable: Drawable): IntArray {
+            val image = Bitmap.createBitmap(drawable.bounds.width(), drawable.bounds.height(), Bitmap.Config.ARGB_8888)
+            drawable.draw(Canvas(image))
+            return IntArray(image.width * image.height).also { image.getPixels(it, 0, image.width, 0, 0, image.width, image.height) }
+        }
+        val large = lock(2f)
+        val largePixels = pixels(large)
+        val small = lock(1f)
+        val context = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.Theme_Dictation)
+        val fresh = Drawable.createFromXml(context.resources, context.resources.getXml(R.drawable.ic_lock), context.theme)
+        fresh.bounds = small.bounds
+        assertArrayEquals(pixels(fresh), pixels(small))
+        // The larger lock is still referenced here, so the cache kept it throughout.
+        assertTrue(large.bounds.width() > small.bounds.width() && largePixels.size > small.bounds.width() * small.bounds.height())
     }
 }

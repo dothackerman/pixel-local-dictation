@@ -389,13 +389,111 @@ class TakeSessionTest {
         take.start()
         capture.feed(floatArrayOf(1f))
         take.stop()
-        assertTrue(take.holdDelivery())
+        assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
         capture.drained(Result.success(byteArrayOf()))
         assertTrue(output.inserted.isEmpty())
-        take.resumeDelivery()
+        take.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
         assertEquals(listOf("word"), output.inserted)
-        take.resumeDelivery()
+        take.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
         assertEquals(1, output.returns)
+    }
+
+    private lateinit var capture: Capture
+
+    /** A take that was stopped; its text is dispatched once [capture] drains and nothing holds it. */
+    private fun stoppedTake(output: TakeOutput): TakeSession {
+        val runtime = DictationRuntime(Variant.HISTORICAL_INT8, direct, { Recognizer { "word" } }, segments)
+        capture = Capture()
+        val take = runtime.open(capture, output, direct)
+        take.start()
+        capture.feed(floatArrayOf(1f))
+        take.stop()
+        return take
+    }
+
+    @Test fun deliveryHeldForTwoReasonsIsReleasedOnlyWhenNoneIsLeft() {
+        for (order in listOf(listOf(DeliveryHold.ROTATION, DeliveryHold.FINISHING_CHOICE), listOf(DeliveryHold.FINISHING_CHOICE, DeliveryHold.ROTATION))) {
+            val output = Output()
+            val take = stoppedTake(output)
+            assertTrue(take.holdDelivery(DeliveryHold.ROTATION))
+            assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
+            capture.drained(Result.success(byteArrayOf()))
+            assertTrue(output.inserted.isEmpty())
+            take.releaseDelivery(order[0])
+            assertTrue("$order: one reason is left", output.inserted.isEmpty())
+            take.releaseDelivery(order[0])
+            assertTrue("$order: releasing the same reason twice releases nothing", output.inserted.isEmpty())
+            take.releaseDelivery(order[1])
+            assertEquals("$order", listOf("word"), output.inserted)
+            assertEquals(1, output.returns)
+        }
+    }
+
+    @Test fun holdingForTheSameReasonTwiceNeedsOneRelease() {
+        val output = Output()
+        val take = stoppedTake(output)
+        assertTrue(take.holdDelivery(DeliveryHold.ROTATION))
+        assertTrue(take.holdDelivery(DeliveryHold.ROTATION))
+        capture.drained(Result.success(byteArrayOf()))
+        take.releaseDelivery(DeliveryHold.ROTATION)
+        assertEquals(listOf("word"), output.inserted)
+    }
+
+    @Test fun aRefusedHoldHoldsNothingAndKeepsTheReasonAlreadyHolding() {
+        val output = Output()
+        val take = stoppedTake(output)
+        capture.drained(Result.success(byteArrayOf()))
+        assertEquals("dispatched: nothing held it", listOf("word"), output.inserted)
+        assertFalse("a take that ended cannot be held", take.holdDelivery(DeliveryHold.ROTATION))
+
+        var attempted = false
+        var commits = 0
+        lateinit var held: TakeSession
+        var refused: Boolean? = null
+        val reentrant = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun commit(text: String): Boolean = error("guarded commit required")
+            override fun commitAttempted() = attempted
+            override fun commit(text: String, allowed: () -> Boolean): Boolean {
+                if (!allowed()) return false
+                attempted = true
+                // The write has started: a hold asked for now is refused and must not hold the take back.
+                refused = held.holdDelivery(DeliveryHold.FINISHING_CHOICE)
+                commits++
+                return true
+            }
+            override fun returnToKeyboard() = true
+            override fun finished(result: TakeResult, pcm: ByteArray) {}
+        }
+        held = stoppedTake(reentrant)
+        assertTrue(held.holdDelivery(DeliveryHold.ROTATION))
+        capture.drained(Result.success(byteArrayOf()))
+        assertEquals(0, commits)
+        held.releaseDelivery(DeliveryHold.ROTATION)
+        assertEquals(false, refused)
+        assertEquals(1, commits)
+    }
+
+    @Test fun interruptionReleasesEveryReasonAndNothingIsDispatched() {
+        var commits = 0
+        var saved = 0
+        var result: TakeResult? = null
+        val output = object : TakeOutput {
+            override fun preview(text: String) {}
+            override fun saveInterrupted(text: String, retentionEligible: Boolean, done: (Boolean) -> Unit) { saved++; done(true) }
+            override fun commit(text: String): Boolean { commits++; return true }
+            override fun returnToKeyboard(): Boolean { fail("must not return"); return false }
+            override fun finished(value: TakeResult, pcm: ByteArray) { result = value }
+        }
+        val take = stoppedTake(output)
+        assertTrue(take.holdDelivery(DeliveryHold.ROTATION))
+        assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
+        capture.drained(Result.success(byteArrayOf()))
+        take.interrupt()
+        assertEquals(1, saved)
+        assertEquals(0, commits)
+        assertEquals(TakeOutcome.INPUT_CHANGED, result!!.outcome)
+        assertFalse(take.holdDelivery(DeliveryHold.ROTATION))
     }
 
     @Test fun finishingChoiceOpenedReentrantlyBeforeDispatchHoldsUntilKept() {
@@ -410,7 +508,7 @@ class TakeSessionTest {
             override fun commit(text: String): Boolean = error("guarded commit required")
             override fun commitAttempted() = attempted
             override fun commit(text: String, allowed: () -> Boolean): Boolean {
-                if (commits == 0 && !attempted) assertTrue(take.holdDelivery())
+                if (commits == 0 && !attempted) assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
                 if (!allowed()) return false
                 attempted = true
                 commits++
@@ -425,7 +523,7 @@ class TakeSessionTest {
         assertEquals(0, commits)
         // The second dispatch must be allowed to proceed.
         attempted = true
-        take.resumeDelivery()
+        take.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
         assertEquals(1, commits)
         assertEquals(1, results)
     }
@@ -447,7 +545,7 @@ class TakeSessionTest {
         val take = runtime.open(capture, output, direct)
         take.start(); capture.feed(floatArrayOf(1f)); take.stop()
         capture.drained(Result.success(byteArrayOf()))
-        assertTrue(take.holdDelivery())
+        assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
         var deleted = false
         take.cancel(onDiscarded = { deleted = it })
         ready(false)
@@ -471,11 +569,11 @@ class TakeSessionTest {
         val take = runtime.open(capture, output, direct)
         take.start(); capture.feed(floatArrayOf(1f)); take.stop()
         capture.drained(Result.success(byteArrayOf()))
-        assertTrue(take.holdDelivery())
+        assertTrue(take.holdDelivery(DeliveryHold.FINISHING_CHOICE))
         ready(false)
         assertEquals(0, commits)
-        take.resumeDelivery()
-        take.resumeDelivery()
+        take.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
+        take.releaseDelivery(DeliveryHold.FINISHING_CHOICE)
         assertEquals(1, commits)
     }
 

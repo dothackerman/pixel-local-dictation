@@ -24,6 +24,9 @@ import android.view.inputmethod.InputMethodManager
  * key labels.
  */
 
+/** Release's package: FUTO opens release's panel when its voice input still names release, not the lab app (#98). */
+const val RELEASE_PACKAGE = "ch.og.dictation"
+
 /** Whether an IME id or package name belongs to FUTO Keyboard. */
 fun isFuto(idOrPackage: CharSequence?): Boolean = idOrPackage?.startsWith("org.futo.") == true
 
@@ -33,7 +36,7 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         it.serviceInfo = it.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
     }
 
-    enum class Shown { FUTO, OURS, NONE }
+    enum class Shown { FUTO, OURS, RELEASE, NONE }
 
     /**
      * The selected keyboard's id from the IME service only; null when unknown. Compare it or
@@ -69,6 +72,7 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
     fun shown(): Shown {
         val roots = imeRoots()
         if (roots.any { isFuto(it.packageName) }) return Shown.FUTO
+        if (context.packageName != RELEASE_PACKAGE && roots.any { it.packageName == RELEASE_PACKAGE }) return Shown.RELEASE
         if (ourNode(R.id.microphone) != null) return Shown.OURS
         return Shown.NONE
     }
@@ -147,6 +151,7 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         var explicit = false
         var oursSince = 0L
         val ok = waitFor(timeoutMs) {
+            if (shown() == Shown.RELEASE) failOnRelease()
             val ours = shown() == Shown.OURS
             if (!ours) oursSince = 0L else if (oursSince == 0L) oursSince = SystemClock.uptimeMillis()
             if (ours && captureStarted()) return@waitFor true
@@ -162,6 +167,16 @@ class KeyboardHandoff(private val instrumentation: Instrumentation, private val 
         }
         if (!ok) throw AssertionError("timed out: our panel recording (shown=${shown()}, explicitStartTapped=$explicit)")
         return explicit
+    }
+
+    /**
+     * FUTO's voice key opened release's panel: closes it with the system Back (bounded, never touching
+     * release's own controls) and fails, so no test drives the owner's app.
+     */
+    private fun failOnRelease(): Nothing {
+        repeat(3) { if (shown() == Shown.RELEASE) { ui.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK); waitFor(1_000) { shown() != Shown.RELEASE } } }
+        throw AssertionError("FUTO's voice input opened release (Local dictation), not the lab app: the owner sets it to " +
+            "\"Local dictation lab\" before keyboard-handoff tests (release panel closed: ${shown() != Shown.RELEASE})")
     }
 
     /**

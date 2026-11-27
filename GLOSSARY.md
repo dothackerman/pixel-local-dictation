@@ -24,7 +24,7 @@ _Avoid_: segment, window
 How many audio samples the laptop replay hands to the chunker at once; three sizes give the noise floor.
 
 **Visit**:
-One connected phone lab period with a snapshot before any change and a restore after.
+One connected phone lab period, from installing the lab app beside release until removing it; release is never touched.
 _Avoid_: phone session, lab session
 
 ## Recognition models
@@ -81,8 +81,66 @@ A word that belongs to a dictionary entry.
 The score bonus a token gets while it continues a dictionary entry.
 _Avoid_: bias score, hotword score
 
+## Phone work
+
+**Owner data**:
+The owner's Dictionary, History (transcripts and their checkpoints), History notices, app settings, recordings and receipts collected in daily use, and clipboard; never the speech model or test output.
+_Avoid_: user data, personal data, app data, real data
+
+**Lab build**:
+The debuggable build, its own app `ch.og.dictation.lab` beside release, so Android keeps its data apart from owner data; it has the Benchmark switch, and its build marker says `layout=test` (Gradle calls it `benchmark`).
+_Avoid_: benchmark build, test build, debug build
+
+**Guided check**:
+A scripted check on the lab build with test data, one step per screen, that the owner performs and marks Passed, Failed or Not observed.
+_Avoid_: owner visit, manual test, acceptance run
+
+**Smoke check**:
+A short check by the owner on the release build with their own data, after a new release is installed.
+_Avoid_: sanity check, manual check, owner test
+
+**Lab run**:
+A measurement on the phone that the owner asked for (accuracy, Stop wait, startup, geometry or rotation traces); it reports numbers, never passes or fails, and runs in the lab app on data pushed from the laptop.
+_Avoid_: lab test, benchmark test, experiment run, phone test
+
+**Kept model copy**:
+The speech-model files on the laptop, laid out as in the phone's lab folder; its paths say which lab-folder files are the speech model, and a changed model is pushed back from it.
+_Avoid_: model backup, model snapshot
+
+**Switch copy**:
+The copy of all app data except the speech model, with both APKs, taken once on the unmarked build before release replaces it; only the owner deletes it.
+_Avoid_: switch snapshot, full backup
+
 ## Code
 
 **Wiring**:
-What one app process is built from: the recorder factory, the History root and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
+What one app process is built from: the recorder factory, the storage and the engine. One immutable value per process; a take keeps the value it started with, and tests replace it only for their own scope.
 _Avoid_: environment, container, hooks
+
+**Editor port**:
+The only way take code reaches the editor: write text, read the text before the cursor, read the extracted text's length, and compare connections (the one a take started on, the one written to, the live one). It decides nothing.
+_Avoid_: input connection wrapper, editor adapter, commit helper
+
+**Take diagnostics**:
+Everything take code traces. Each event gets the take's facts as arguments (take active, live session, view and take numbers, rotation); diagnostics never read take state back.
+_Avoid_: trace helper, rotation logger
+
+**Delivery hold**:
+A reason, kept in the take session, why a finished result is not dispatched yet: a rotation hold, or the open finishing choice. The result is dispatched when no reason is left.
+_Avoid_: hold flag, delivery lock, paused delivery
+
+**Take controller**:
+Holds all take state and makes every take decision, on the IME main thread, without Android. The keyboard service is its adapter and holds no take state: it forwards Android's callbacks to it in their order, counts rotations, builds the panel and carries out the effects it asks for.
+_Avoid_: take manager, take state machine, service logic, take control
+
+**Take host**:
+What the take controller asks of the keyboard service: six effects (show the panel frame, return to the previous keyboard, request the panel, copy, ask for the microphone permission, record a History notice) and three facts it reads when it decides (microphone permission, capture silenced, current field).
+_Avoid_: callbacks, service interface, view
+
+**Take scheduler**:
+The take controller's one thread: post, cancellable delayed post, and the one FIFO executor that the take session and History deliver on. It has no clock.
+_Avoid_: handler, main executor, timer
+
+**Take opener**:
+Opens a take's session from the engine with History attached, from the Wiring read at the take's start.
+_Avoid_: take factory, session builder

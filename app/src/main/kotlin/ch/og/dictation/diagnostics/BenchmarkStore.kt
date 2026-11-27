@@ -1,6 +1,8 @@
 package ch.og.dictation.diagnostics
 
+import ch.og.dictation.recognition.SAMPLE_RATE
 import ch.og.dictation.take.TakeOutcome
+import ch.og.dictation.wiring
 import ch.og.dictation.take.TakeResult
 import android.content.Context
 import java.io.File
@@ -9,15 +11,16 @@ import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 /**
- * Benchmark mode (plan D4): the only code that writes audio to storage. Off by
- * default; when the user switches it on, each take is kept as <timestamp>.wav plus
- * <timestamp>.json under files/benchmark until he deletes it in the settings.
+ * Benchmark mode (plan D4): the only code that writes audio to storage, and only in the lab
+ * build (ADR-029). Off by default; switched on, each take is kept as <timestamp>.wav plus
+ * <timestamp>.json in Storage's recordings folder until it is deleted in the settings. Release
+ * never saves; it counts and deletes what earlier builds left.
  */
 class BenchmarkStore(private val dir: File) {
     companion object {
-        private const val PREFS = "settings"
         private const val KEY_ENABLED = "benchmark"
 
         /** Shared retention gate for benchmark now and future content writers. */
@@ -26,17 +29,37 @@ class BenchmarkStore(private val dir: File) {
 
         fun recordingEnabled(optIn: Boolean, liveReceipt: Boolean): Boolean = optIn && !liveReceipt
 
-        fun of(context: Context) = BenchmarkStore(File(context.filesDir, "benchmark"))
+        fun of(context: Context) = BenchmarkStore(context.wiring.storage.recordingsRoot)
 
         fun isEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+            context.wiring.storage.let { it.savesRecordings && it.settings.flag(KEY_ENABLED) }
 
-        fun setEnabled(context: Context, enabled: Boolean) {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, enabled).apply()
-        }
+        fun setEnabled(context: Context, enabled: Boolean) = context.wiring.storage.settings.setFlag(KEY_ENABLED, enabled)
 
         fun timestamp(now: Date = Date()): String =
             SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(now)
+
+        /** The .json beside a saved take: [app] version, recognizer, the take's timing, outcome and acknowledgements. */
+        fun receipt(app: String?, pcm: ByteArray, result: TakeResult): String {
+            fun ms(from: String, to: String): Long {
+                val start = result.eventsNs[from]
+                val end = result.eventsNs[to]
+                return if (start != null && end != null) (end - start) / 1_000_000 else 0
+            }
+            return JSONObject()
+                .put("app", app)
+                .put("recognizer", "parakeet-v3-matmul8 sherpa-onnx-1.13.8")
+                .put("text", result.text ?: JSONObject.NULL)
+                .put("audioSeconds", pcm.size / 2.0 / SAMPLE_RATE)
+                .put("recordingMs", ms("captureStart", "stopRequested"))
+                .put("stopToFinalMs", ms("stopRequested", "finalReady"))
+                .put("timingProtocol", "dictation-session-v1")
+                .put("eventsNs", JSONObject(result.eventsNs))
+                .put("outcome", result.outcome.name)
+                .put("commitAccepted", result.commitAccepted ?: JSONObject.NULL)
+                .put("returnAccepted", result.returnAccepted ?: JSONObject.NULL)
+                .toString(2)
+        }
 
         /** 16-bit mono PCM wrapped in a canonical 44-byte WAV header. */
         fun wav(pcm: ByteArray, sampleRate: Int): ByteArray {

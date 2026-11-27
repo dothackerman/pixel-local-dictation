@@ -69,8 +69,9 @@
                 android:paddingVertical="12dp"
                 android:textColor="?attr/colorOnSurface"
                 android:text="@string/benchmark_switch" />
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOutlineVariant" />
+            <View android:id="@+id/benchmark_switch_rule" android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOutlineVariant" />
             <TextView
+                android:id="@+id/benchmark_explanation"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"

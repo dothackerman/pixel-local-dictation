@@ -1,5 +1,6 @@
 package ch.og.dictation.history
 
+import ch.og.dictation.storage.lastCopy
 import ch.og.dictation.wiring
 import ch.og.dictation.R
 import android.app.Application
@@ -38,7 +39,7 @@ class HistoryScreenTest {
 
     @Before fun seed() {
         app = RuntimeEnvironment.getApplication()
-        root = app.wiring.historyRoot
+        root = app.wiring.storage.historyRoot
         root.deleteRecursively()
         HistoryNotice.entries.forEach(historyNotices(app)::dismiss)
         HistoryStore(root).save(HistoryEntry(a, 200, "First synthetic transcript", HistoryDelivery.ACCEPTED))
@@ -79,6 +80,8 @@ class HistoryScreenTest {
         assertFalse(shown(page, app.getString(R.string.history_delivery_rejected)))
         assertEquals(app.getString(R.string.history_row_description, HistoryRows.time(100), "Second synthetic transcript") + ", " +
             app.getString(R.string.marker_not_inserted_line), rowAt(page, 1).findViewById<View>(R.id.history_row_body).contentDescription.toString())
+        assertEquals("a complete, inserted take names no status", app.getString(R.string.history_row_description, HistoryRows.time(200), "First synthetic transcript"),
+            rowAt(page, 0).findViewById<View>(R.id.history_row_body).contentDescription.toString())
         assertEquals(HistoryRows.time(200), rowAt(page, 0).findViewById<TextView>(R.id.history_row_time).text.toString())
         // One day header above both rows.
         val days = texts(page.window.decorView).filter { it.id == R.id.history_day }.map { it.text.toString() }
@@ -96,11 +99,19 @@ class HistoryScreenTest {
         assertTrue(shown(page, "Second synthetic transcript"))
         assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
         assertTrue("transcript stays stored while Undo is open", File(root, "$a.history").exists())
+        // Nothing is written inside the window: after a process death a fresh page lists the row again.
+        assertFalse(File(root, "$a.deleted").exists())
         val undo = texts(page.window.decorView).first { it.text.toString() == app.getString(R.string.dictionary_undo) }
         undo.performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(shown(page, "First synthetic transcript"))
         assertTrue(File(root, "$a.history").exists())
+        // Undone is never deleted, also once the window would have ended.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(120))
+        HistoryIo.executor.submit {}.get()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(File(root, "$a.history").exists())
+        assertTrue(shown(page, "First synthetic transcript"))
     }
 
     @Test fun leavingThePageRemovesAPendingDelete() {
@@ -121,8 +132,8 @@ class HistoryScreenTest {
         return (0 until list.childCount).map(list::getChildAt).filter { it.findViewById<View>(R.id.history_row_body) != null }[n]
     }
     private fun firstRow(page: Page) = rowAt(page, 0)
-    private fun clipboard() = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-    private fun clipText() = clipboard().primaryClip?.getItemAt(0)?.text?.toString()
+    /** The build's clipboard (in the lab build the in-app one; plain text on the system clipboard: ReleaseStorageTest). */
+    private fun clipText() = lastCopy(app)
     private fun toolbar(page: Page) = page.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.history_toolbar)
 
     @Test fun detailHasItsOwnTitleIconActionsInOrderAndNoClearHistoryOrTextButtons() {
@@ -257,20 +268,14 @@ class HistoryScreenTest {
         assertTrue(toolbar.menu.findItem(R.id.history_clear_item).isVisible)
     }
 
-    @Test fun detailCopyIconCopiesWithoutTheSensitiveFlagAndLeavesTheConfirmationToTheSystem() {
+    @Test fun detailCopyIconCopiesAndLeavesTheConfirmationToTheSystem() {
         val page = open()
         firstRow(page).findViewById<View>(R.id.history_row_body).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         toolbar(page).menu.performIdentifierAction(R.id.history_copy_item, 0)
         settle { clipText() == "First synthetic transcript" }
-        assertNotSensitive()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(shown(page, "Copied"))
-    }
-
-    private fun assertNotSensitive() {
-        val extras = clipboard().primaryClip!!.description.extras
-        assertFalse(extras?.getBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE) ?: false)
     }
 
     @Test fun detailDeleteIconReturnsToTheListWithUndo() {
@@ -284,6 +289,11 @@ class HistoryScreenTest {
         assertFalse(shown(page, "First synthetic transcript"))
         assertTrue(shown(page, app.getString(R.string.dictionary_undo)))
         assertTrue(File(root, "$a.history").exists())
+        // The window ends: the transcript is removed, the other one stays.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(60))
+        settle { !File(root, "$a.history").exists() }
+        assertTrue(File(root, "$b.history").exists())
+        assertTrue(shown(page, "Second synthetic transcript"))
     }
 
     @Test fun longPressOnARowCopiesThatTranscriptWithoutOurSnackbarOnAndroid13Plus() {
@@ -293,7 +303,6 @@ class HistoryScreenTest {
         assertTrue(row.isLongClickable)
         assertTrue(row.performLongClick())
         settle { clipText() == "Second synthetic transcript" }
-        assertNotSensitive()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(shown(page, "Copied"))
         // Still the list: long-press does not open the detail.
@@ -310,6 +319,8 @@ class HistoryScreenTest {
         assertTrue(firstRow(page).findViewById<TextView>(R.id.history_row_preview).text.length <= 200)
         assertTrue(firstRow(page).findViewById<View>(R.id.history_row_body).performLongClick())
         settle { clipText() == long }
+        // Still the list: the copy does not open the detail.
+        assertNull(page.findViewById<View>(R.id.history_detail_text))
     }
 
     @Test fun rowExposesCopyAndDeleteAsAccessibilityActionsThatWork() {

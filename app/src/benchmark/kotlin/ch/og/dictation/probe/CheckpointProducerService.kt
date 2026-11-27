@@ -1,5 +1,6 @@
 package ch.og.dictation.probe
 
+import ch.og.dictation.storage.testHistoryRoot
 import ch.og.dictation.wiring
 import ch.og.dictation.history.HistoryIo
 import ch.og.dictation.history.HistoryStore
@@ -38,7 +39,7 @@ class CheckpointProducerService : Service() {
             return START_NOT_STICKY
         }
         Thread {
-            val root = File(noBackupFilesDir, "checkpoint-process-test")
+            val root = wiring.storage.testHistoryRoot("checkpoint-process-test")
             check(root.mkdirs() || root.isDirectory)
             val leaveWithoutCheckpoint = intent?.getBooleanExtra("zero_checkpoint", false) == true
             val direct = Executor { it.run() }
@@ -75,7 +76,7 @@ class CheckpointProducerService : Service() {
     private fun runFixtureScenario(mode: String, caseId: String, fixtureId: String) {
         Thread {
             runCatching { produceFixtureScenario(mode, caseId, fixtureId) }.onFailure {
-                val root = File(noBackupFilesDir, "issue54-producer/$caseId")
+                val root = wiring.storage.testHistoryRoot("issue54-producer/$caseId")
                 root.mkdirs()
                 File(root, "producer-failed").writeText("${it.javaClass.simpleName}")
                 Process.killProcess(Process.myPid())
@@ -84,8 +85,8 @@ class CheckpointProducerService : Service() {
     }
 
     private fun produceFixtureScenario(mode: String, caseId: String, fixtureId: String) {
-            val audio = SyntheticFixtureAudio.read(SyntheticFixtureAudio.file(filesDir, fixtureId))
-            val root = File(noBackupFilesDir, "issue54-producer/$caseId")
+            val audio = SyntheticFixtureAudio.read(SyntheticFixtureAudio.file(wiring.storage.labFolder, fixtureId))
+            val root = wiring.storage.testHistoryRoot("issue54-producer/$caseId")
             root.deleteRecursively()
             check(root.mkdirs() || root.isDirectory)
             val readyCheckpoint = CountDownLatch(1)

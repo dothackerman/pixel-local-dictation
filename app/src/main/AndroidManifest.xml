@@ -15,6 +15,9 @@
         android:fullBackupContent="false"
         android:theme="@style/Theme.Dictation">
 
+        <!-- Build marker (ADR-029): layout=<owner|test>;commit=…;hash=…, set per build type by Gradle. -->
+        <meta-data android:name="ch.og.dictation.build" android:value="${buildMarker}" />
+
         <service
             android:name=".DictationImeService"
             android:label="@string/ime_label"

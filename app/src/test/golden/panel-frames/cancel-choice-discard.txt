@@ -1,0 +1,19 @@
+> open on a text field
+[new panel] status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | preview: ""
+status_opening | microphone off: status_opening | back: back_to_keyboard | ringLive | preview: ""
+status_opening | microphone off: status_opening | back: discard_recording | stopGlyph ringLive | preview: ""
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: ""
+> speech
+status_recording | microphone on: stop_recording | back: discard_recording | stopGlyph ringLive | preview: "first words"
+> Back arrow
+status_recording | microphone on: stop_recording | back: continue_recording | choice: RECORDING | stopGlyph | preview: "first words"
+status_paused | microphone off: status_paused | back: continue_recording | choice: RECORDING | stopGlyph | preview: "first words"
+> Discard take
+status_paused | microphone off: status_paused | back: discard_recording | stopGlyph | preview: ""
+status_stopping_recording | microphone off: status_stopping_recording | back: discard_recording | stopGlyph | preview: ""
+> microphone released
+status_stopping_recording | microphone off: status_stopping_recording | back: back_to_keyboard | preview: ""
+status_idle | microphone on: start_recording | back: back_to_keyboard | preview: ""
+> late output

@@ -28,6 +28,30 @@ class BenchmarkStoreTest {
         assertArrayEquals(pcm, wav.copyOfRange(44, wav.size))
     }
 
+    /** A saved recording's receipt (#91: built here, no longer in the service): the take's timing, outcome and acknowledgements. */
+    @Test fun aRecordingsReceiptNamesTheTakesTimingOutcomeAndAcknowledgements() {
+        val result = TakeResult(TakeOutcome.COMPLETED, "hello", linkedMapOf("captureStart" to 1_000_000_000L,
+            "stopRequested" to 3_500_000_000L, "finalReady" to 3_740_000_000L), commitAccepted = true)
+        val receipt = org.json.JSONObject(BenchmarkStore.receipt("0.2.5", ByteArray(64_000), result))
+        assertEquals(setOf("app", "recognizer", "text", "audioSeconds", "recordingMs", "stopToFinalMs", "timingProtocol",
+            "eventsNs", "outcome", "commitAccepted", "returnAccepted"), receipt.keys().asSequence().toSet())
+        assertEquals("0.2.5", receipt.getString("app"))
+        assertEquals("parakeet-v3-matmul8 sherpa-onnx-1.13.8", receipt.getString("recognizer"))
+        assertEquals("hello", receipt.getString("text"))
+        assertEquals(2.0, receipt.getDouble("audioSeconds"), 0.0)
+        assertEquals(2500L, receipt.getLong("recordingMs"))
+        assertEquals(240L, receipt.getLong("stopToFinalMs"))
+        assertEquals("dictation-session-v1", receipt.getString("timingProtocol"))
+        assertEquals(3_740_000_000L, receipt.getJSONObject("eventsNs").getLong("finalReady"))
+        assertEquals("COMPLETED", receipt.getString("outcome"))
+        assertTrue(receipt.getBoolean("commitAccepted"))
+        assertTrue(receipt.isNull("returnAccepted"))
+        val missing = org.json.JSONObject(BenchmarkStore.receipt("0.2.5", ByteArray(0), result.copy(text = null, eventsNs = emptyMap())))
+        assertTrue(missing.isNull("text"))
+        assertEquals("a missing event gives 0 ms", 0L, missing.getLong("recordingMs"))
+        assertEquals(0L, missing.getLong("stopToFinalMs"))
+    }
+
     @Test fun saveCountDelete() {
         val dir = File(Files.createTempDirectory("bench").toFile(), "benchmark")
         val store = BenchmarkStore(dir)

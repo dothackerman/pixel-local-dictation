@@ -30,8 +30,8 @@ class PrivacyProbeTest {
         assertFalse("rotation trace must be inactive", RotationTrace.probeActive())
         fun inventory(dir: File): Map<String, Pair<Long, Long>> =
             if (!dir.exists()) emptyMap() else requireNotNull(dir.listFiles()).associate { it.name to (it.length() to it.lastModified()) }
-        val history = context.wiring.historyRoot
-        val benchmark = File(context.filesDir, "benchmark")
+        val history = context.wiring.storage.historyRoot
+        val benchmark = context.wiring.storage.recordingsRoot
         HistoryIo.executor.submit {}.get()
         val beforeHistory = inventory(history)
         val beforeBenchmark = inventory(benchmark)
