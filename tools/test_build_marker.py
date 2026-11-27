@@ -1,4 +1,4 @@
-"""Build marker: layout, commit and a hash over the build's inputs (ADR-028)."""
+"""Build marker: layout, commit and a hash over the build's inputs (ADR-029)."""
 import os
 import subprocess
 from pathlib import Path

@@ -129,7 +129,7 @@ class TakeBench : AutoCloseable {
     /** Puts [text] on the build's clipboard, as an earlier Copy did. */
     fun copy(text: String) = app.wiring.storage.clipboard.copy(text)
 
-    /** What the build's clipboard holds: the service's Copy goes through Storage (ADR-028). */
+    /** What the build's clipboard holds: the service's Copy goes through Storage (ADR-029). */
     fun copied(): String? = lastCopy(app)
 
     /** Runs [action] as the named step. */

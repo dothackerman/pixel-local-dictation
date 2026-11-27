@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BEFORE/AFTER images of the recording panel, Settings and History, in one checkout (#73, #77, #79, ADR-028).
+"""BEFORE/AFTER images of the recording panel, Settings and History, in one checkout (#73, #77, #79, ADR-029).
 
   before   render the gallery and store it as BEFORE; at a ticket's start
   compare  render it again and compare with BEFORE byte for byte

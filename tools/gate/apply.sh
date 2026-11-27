@@ -4,7 +4,7 @@
 # Run it again whenever tools/phone or tools/gate/* changed on the branch you
 # trust. Agents cannot write any of the target paths.
 # Only from the main checkout, on any branch, and never a wrapper without the
-# marker guard (ADR-028): a stale branch must not downgrade the installed one.
+# marker guard (ADR-029): a stale branch must not downgrade the installed one.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
@@ -16,7 +16,7 @@ if [ "$(git rev-parse --path-format=absolute --git-common-dir)" != "$(git rev-pa
   exit 3
 fi
 if ! grep -q '^MARKER_GUARD = [1-9]' tools/phone; then
-  echo "refused: tools/phone has no marker guard (ADR-028); this branch is older than the installed wrapper allows" >&2
+  echo "refused: tools/phone has no marker guard (ADR-029); this branch is older than the installed wrapper allows" >&2
   exit 3
 fi
 

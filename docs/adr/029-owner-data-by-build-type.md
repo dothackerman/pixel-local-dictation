@@ -1,4 +1,4 @@
-# ADR-028 — Owner data isolated by build type
+# ADR-029 — Owner data isolated by build type
 
 2026-11-24 · Accepted by the owner (#73). Amends ADR-010 and ADR-024.
 
@@ -158,7 +158,7 @@ apart by it (`layout=owner|test`). `files/timing-receipts` stays reserved in thi
 
 ## Status (#91, 2026-11-27): what still needs the phone
 
-Of the 58 phone tests of #73's start, 11 test cases in 7 classes still need the phone; each class names
+11 test cases in 7 classes still need the phone; each class names
 its reason in `app/src/androidTest/device-classes.json` (`phoneBatch`), and `tools/device_classes.py` fails
 an entry without one. They need what the laptop does not have:
 
@@ -177,3 +177,9 @@ Everything else is decided or rendered on the laptop: take rules in `TakeControl
 `RenderPanelTest`, the gallery and the golden frame sequences, the History and Settings screens in
 Robolectric. Not tests: the Guided check (the owner, on the lab build) and the Lab runs (measurements,
 through `phone measure`). Whether an emulator can run some of the 11 is #93's spike.
+
+## Amendment (2026-11-25, owner decision): no removed-test check
+
+Supersedes "No test disappears unnoticed" under Visible change (#77): `tools/removed_tests.py` and
+`tools/removed_tests.json` are deleted (f0606cf); the gate has no removed-test check, and a removed test
+needs no entry.

@@ -217,7 +217,7 @@ Signal after a rotation leaves input focus on a view that is not a text editor: 
 - The benchmark trace records only booleans and integers: per input start (`sameField`, `typeNull`, `selValid`, `connectionChanged`) and per read-back (`verified`, `check`). No text, field id or package.
 - Not covered: a field that is the same by these attributes but is another instance of the same kind (two identical id-less fields in one app).
 
-## Amendment — daily build (2026-11-25, ADR-028)
+## Amendment — daily build (2026-11-25, ADR-029)
 
 Release is the owner's daily build and the product only. "Benchmark storage is opt-in, visible and
 deletable" now applies to the lab build only; release has no Benchmark switch and saves no benchmark

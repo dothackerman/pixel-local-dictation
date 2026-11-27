@@ -135,15 +135,15 @@ class VisibleChangeTests(unittest.TestCase):
 
 
 class RuleTests(unittest.TestCase):
-    """One sentence, in the tool, the golden-sequence failure and ADR-028."""
+    """One sentence, in the tool, the golden-sequence failure and ADR-029."""
     SENTENCE = ('A differing frame or image stops the work: the owner decides from the BEFORE/AFTER pairs; '
                 'text alone is not accepted.')
 
     def test_the_tool_prints_the_recorded_rule(self):
         self.assertEqual(self.SENTENCE, visible_change.RULE)
 
-    def test_adr_028_records_it(self):
-        adr = (visible_change.ROOT / 'docs/adr/028-owner-data-by-build-type.md').read_text()
+    def test_adr_029_records_it(self):
+        adr = (visible_change.ROOT / 'docs/adr/029-owner-data-by-build-type.md').read_text()
         self.assertIn(self.SENTENCE, ' '.join(adr.split()))
 
     def test_a_differing_golden_sequence_prints_it(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build marker (ADR-028): which storage layout an APK has and which build it comes from.
+"""Build marker (ADR-029): which storage layout an APK has and which build it comes from.
 
 Manifest entry `ch.og.dictation.build` in app and test APK, value
 `layout=<owner|test>;commit=<40 hex>;hash=<64 hex>`. Gradle adds the layout per build type and

@@ -72,7 +72,7 @@ Open:
 - `tools/encoder_probe.py`, named above as an example host tool, is retired ([ADR-017](017-shared-take-experiments.md#retirements-and-preservation)).
 - Status unverified: the git interim (`git *` unsandboxed) is still the operating rule in `AGENTS.md`; Codex verification and the upstream report are not recorded.
 
-## Amendment (2026-11-24, ADR-028): owner data, wrapper guard (#75)
+## Amendment (2026-11-24, ADR-029): owner data, wrapper guard (#75)
 
 - `check`/`install` read the marker of both APKs (layout, commit, build hash): debuggable ⇔ test,
   non-debuggable ⇔ owner, test marker = app marker; no marker is refused for install and run. `install`
@@ -109,7 +109,7 @@ Open:
   "`python3 tools/phone` … irrelevant" still holds for device verbs, while `python3 tools/phone check`
   is the supported host-only call.
 
-## Amendment (2026-11-25, ADR-028): Visit lifecycle (#76)
+## Amendment (2026-11-25, ADR-029): Visit lifecycle (#76)
 
 - Visit start is `install APP.apk TEST.apk` over release: the release APK is pulled into the Visit
   record's folder, the lab build installed, owner data copied at once (everything the fingerprint sees,
@@ -158,13 +158,13 @@ Open:
 - Asking stays a harness rule: `install`, `restore`, `stop`, `forget` are not in the allow list. `push`
   is, with or without `--model`.
 - Withdrawn: "Test code runs as the app's uid and can copy `files/benchmark` into `files/lab`; accepted
-  and stated." The lab build has no path to owner recordings (ADR-028). Superseded above: `push … NAME`,
+  and stated." The lab build has no path to owner recordings (ADR-029). Superseded above: `push … NAME`,
   "`pull` is limited to `files/lab` and `files/benchmark`", and Recovery's "`snapshot`/`restore` cover the
   retained APK pair plus `files/`, `shared_prefs/`, `databases/`".
 - Not built: later Visit copies skipping the legacy recordings while their fingerprint is unchanged;
   every Visit copy holds them.
 
-## Amendment (2026-11-25, ADR-028): `measure`, Lab runs (#81)
+## Amendment (2026-11-25, ADR-029): `measure`, Lab runs (#81)
 
 - `measure CLASS[#method][,...] [inputs=PATH[,PATH...]] [k=v]` runs only classes under
   `ch.og.dictation.labrun`; `run` refuses those. The wrapper holds the package name, never a class list,

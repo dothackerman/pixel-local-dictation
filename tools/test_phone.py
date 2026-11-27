@@ -413,7 +413,7 @@ class PhoneTests(PhoneCase):
 
 
 class MarkerTests(PhoneCase):
-    """ADR-028: debuggable <=> test layout, non-debuggable <=> owner layout, test APK marker = app marker."""
+    """ADR-029: debuggable <=> test layout, non-debuggable <=> owner layout, test APK marker = app marker."""
 
     REFUSED = {  # case -> (package, app marker, app debuggable, test APK marker or ... for no test APK)
         'a debuggable build with the owner layout': (RELEASE, OWNER, True, ...),

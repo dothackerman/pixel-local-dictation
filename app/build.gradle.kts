@@ -21,7 +21,7 @@ val signingProblem: String? = when {
     else -> null
 }
 
-// Build marker (ADR-028): layout word, commit and a hash over the build's inputs; the same value in the
+// Build marker (ADR-029): layout word, commit and a hash over the build's inputs; the same value in the
 // app and its test APK. The phone wrapper tells release (`owner`) from the lab build (`test`) by it.
 val buildIdentity: String = providers.exec {
     commandLine("python3", rootProject.layout.projectDirectory.file("tools/build_marker.py").asFile.path)

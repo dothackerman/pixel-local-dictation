@@ -7,7 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 
 /**
- * Lab run harness (ADR-028). A Lab run measures; it is completed or incomplete, never passed or failed.
+ * Lab run harness (ADR-029). A Lab run measures; it is completed or incomplete, never passed or failed.
  * Every class of this package runs through `phone measure` only, and each `@Test` is
  * `@Test fun name() = LabRun.measure("…") { lab -> … }`.
  *

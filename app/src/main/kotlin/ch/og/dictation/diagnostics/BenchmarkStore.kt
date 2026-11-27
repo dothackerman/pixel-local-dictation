@@ -15,7 +15,7 @@ import org.json.JSONObject
 
 /**
  * Benchmark mode (plan D4): the only code that writes audio to storage, and only in the lab
- * build (ADR-028). Off by default; switched on, each take is kept as <timestamp>.wav plus
+ * build (ADR-029). Off by default; switched on, each take is kept as <timestamp>.wav plus
  * <timestamp>.json in Storage's recordings folder until it is deleted in the settings. Release
  * never saves; it counts and deletes what earlier builds left.
  */

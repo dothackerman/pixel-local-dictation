@@ -8,7 +8,7 @@ package constants; caller strings reach the device only as validated names.
 The lab app is its own package beside release (#98): every verb that reads or writes app data, runs
 or stops acts on the lab app, whose data is test data. Release data is read only by the one-time
 switch, while release is still the unmarked debuggable build; afterwards `run-as` cannot reach it and
-no verb tries. APKs are told apart by their build marker (ADR-028). Any checkout or worktree may call;
+no verb tries. APKs are told apart by their build marker (ADR-029). Any checkout or worktree may call;
 the lock in the main checkout's corpus/lab, which the shim names, serializes callers.
 
 Exit 0: success, one JSON object on stdout.
@@ -62,7 +62,7 @@ SYSTEM_FILES = ('cache', 'code_cache', 'files/profileInstalled')
 OWNER_SKIP = EXCLUDED + SYSTEM_FILES  # what the fingerprint leaves out
 # Read-only: test output, recordings, the reserved timing-receipt folder.
 PULL_ROOTS = (LAB_FOLDER, 'files/benchmark', 'files/timing-receipts')
-# What the switch copy must hold before the one-time switch may go on (owner layout, ADR-028).
+# What the switch copy must hold before the one-time switch may go on (owner layout, ADR-029).
 SWITCH_HOLDS = {'History': 'no_backup/history/', 'Dictionary': 'files/dictionary/',
                 'History notices': 'shared_prefs/history_notices.xml', 'settings': 'shared_prefs/settings.xml'}
 MICROPHONE = 'android.permission.RECORD_AUDIO'
@@ -116,7 +116,7 @@ def marker_layout(app, test=None):
     """The storage layout of an APK pair whose markers and debuggability agree; else refuse."""
     match = MARKER.fullmatch(app['marker'] or '')
     if not match:
-        raise Refused('app APK has no build marker: a build from before ADR-028 reaches owner data'
+        raise Refused('app APK has no build marker: a build from before ADR-029 reaches owner data'
                       if app['marker'] is None else 'app APK has a malformed build marker')
     layout = match.group(1)
     if app['debuggable'] != (layout == 'test'):
@@ -553,7 +553,7 @@ class Phone:
 
     def layout(self, app):
         """What is installed: None, 'owner' (release), 'test' (lab build) or 'unmarked' (a debuggable
-        build from before ADR-028, where the one-time switch starts). Anything else is refused."""
+        build from before ADR-029, where the one-time switch starts). Anything else is refused."""
         if not app['installed']:
             return None
         facts = self.installed_apk(app)

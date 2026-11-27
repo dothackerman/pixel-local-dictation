@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host check (ADR-028, slimmed by #100): only Storage writes the clipboard; nothing runs a shell.
+"""Host check (ADR-029, slimmed by #100): only Storage writes the clipboard; nothing runs a shell.
 
 Both survive the lab app's own package (#98): the system clipboard is one for all apps, and a shell in
 the lab app's instrumentation can act on release (`pm clear ch.og.dictation`). Checked: app, lab-build

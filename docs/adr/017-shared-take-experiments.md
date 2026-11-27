@@ -105,7 +105,7 @@ append rows to a results file with their identities. Phone visits that only scre
 and `meta.json` receipts. Planned work, gates, thresholds and schedules live only in GitHub specs and tickets,
 never in tracked files. The rules above stay in force for the adoption-deciding comparison.
 
-## Amendment 2026-11-25 (ADR-028): Lab runs leave the test batch
+## Amendment 2026-11-25 (ADR-029): Lab runs leave the test batch
 
 Phone replays and measurements are Lab runs: their classes live in one Lab run package
 (`ch.og.dictation.labrun`), reached only through `phone measure`, never in the named phone batch, reporting

@@ -1,4 +1,4 @@
-"""Host check (ADR-028, slimmed by #100): clipboard only inside Storage, no shell anywhere."""
+"""Host check (ADR-029, slimmed by #100): clipboard only inside Storage, no shell anywhere."""
 from pathlib import Path
 import tempfile
 import unittest

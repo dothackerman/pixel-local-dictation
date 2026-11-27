@@ -30,7 +30,7 @@ def apply(root, environment):
 
 
 class InstallGuardTests(unittest.TestCase):
-    """ADR-028: the wrapper is installed only from the main checkout and never without the marker guard."""
+    """ADR-029: the wrapper is installed only from the main checkout and never without the marker guard."""
 
     def assert_nothing_installed(self, directory, root):
         self.assertFalse((Path(directory) / 'installed').exists())
